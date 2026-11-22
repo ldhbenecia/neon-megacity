@@ -1,4 +1,3 @@
-// @ts-check
 import { defineConfig } from 'eslint/config';
 import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
@@ -41,7 +40,7 @@ export default defineConfig(
   // The app runs in the browser only; Node globals are for tests, scripts and configs.
   { files: ['src/**/*.ts'], languageOptions: { globals: globals.browser } },
   {
-    files: ['tests/**/*.ts', 'scripts/**/*.ts', '*.{js,ts}'],
+    files: ['tests/**/*.ts', 'scripts/**/*.ts', '*.ts'],
     languageOptions: { globals: globals.node },
   },
   // Playwright page callbacks run in the browser.
@@ -54,6 +53,5 @@ export default defineConfig(
     files: ['tests/**/*.ts'],
     rules: { '@typescript-eslint/no-non-null-assertion': 'off' },
   },
-  { files: ['**/*.js'], ...tseslint.configs.disableTypeChecked },
   prettier,
 );
