@@ -1,5 +1,3 @@
-// Street prop planning (6.2): street lights, stair lamps, sign poles, 포장마차, bus stops.
-// Pure: turns layout slots into plain placement data that `street.ts` instantiates.
 import { districtAt, type Layout, type Road, type StreetSlot, type Vec2 } from '../city/layout';
 import type { NeonName } from '../core/palette';
 import { createRng } from '../core/random';
@@ -9,16 +7,12 @@ import type { Catalog } from './catalog';
 export type LampKind = 'core' | 'sodium';
 
 export interface Lamp {
-  /** Pole foot (on the sidewalk top or terrain). */
   x: number;
   y: number;
   z: number;
-  /** Arm direction (rotation.y convention: local +X → world). */
   yaw: number;
-  /** 1 = 9 m street light, ~0.35 = 3 m stair lamp. */
   scale: number;
   kind: LampKind;
-  /** Lamp head world position. */
   hx: number;
   hy: number;
   hz: number;
@@ -62,16 +56,12 @@ export interface StreetPlan {
   stalls: Stall[];
   busStops: BusStop[];
   poles: Pole[];
-  /** Pole panels, bus-stop ads and stall banners (atlas quads). */
   flats: FlatSign[];
 }
 
-/** Street light geometry constants (9 m pole, 2.8 m arm). */
 export const LAMP = { height: 9, arm: 2.8, headDrop: 0.35 } as const;
-/** Pools float this far above the surface they light (never under the sidewalk). */
 export const POOL_LIFT = 0.03;
 
-/** Closest point on segment ab to p, and its distance. */
 export function pointSegment(p: Vec2, a: Vec2, b: Vec2): { x: number; z: number; d: number } {
   const abx = b.x - a.x;
   const abz = b.z - a.z;
@@ -82,10 +72,8 @@ export function pointSegment(p: Vec2, a: Vec2, b: Vec2): { x: number; z: number;
   return { x, z, d: Math.hypot(p.x - x, p.z - z) };
 }
 
-/** Yaw that turns local +X toward (dx, dz). */
 export const yawToward = (dx: number, dz: number): number => Math.atan2(-dz, dx);
 
-/** Nearest traffic road segment to a point (linear scan over a coarse grid). */
 function makeRoadIndex(roads: readonly Road[]): (x: number, z: number) => Road | null {
   const cell = 128;
   const grid = new Map<string, Road[]>();
@@ -124,7 +112,6 @@ function makeRoadIndex(roads: readonly Road[]): (x: number, z: number) => Road |
   };
 }
 
-/** Direction from a slot toward the closest point on its nearest road (unit), or the slot yaw normal. */
 export function towardRoad(
   nearest: (x: number, z: number) => Road | null,
   s: StreetSlot,
@@ -137,7 +124,6 @@ export function towardRoad(
     const len = Math.hypot(dx, dz);
     if (len > 0.3) return { x: dx / len, z: dz / len };
   }
-  // Fallback: perpendicular to the slot's road yaw.
   return { x: -Math.sin(s.rotY), z: -Math.cos(s.rotY) };
 }
 
@@ -183,7 +169,6 @@ export function planStreet(L: Layout, cat: Catalog, sidewalkH: number, seed = 42
       const h = rng.range(6, 10);
       const y = s.y + lift(s);
       out.poles.push({ x: s.x, y, z: s.z, h });
-      // Panels face along the street (readable by people walking it), stacked up the pole.
       const along = { x: Math.cos(s.rotY), z: -Math.sin(s.rotY) };
       const side = towardRoad(nearest, s);
       const count = rng.int(4, 8);
@@ -219,7 +204,6 @@ export function planStreet(L: Layout, cat: Catalog, sidewalkH: number, seed = 42
     } else if (s.kind === 'busStop') {
       const y = s.y + lift(s);
       out.busStops.push({ x: s.x, y, z: s.z, yaw: s.rotY });
-      // Side light box at the shelter's end, facing along the street.
       const along = { x: Math.cos(s.rotY), z: -Math.sin(s.rotY) };
       const cell = ads.length ? rng.pick(ads) : -1;
       out.flats.push({

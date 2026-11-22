@@ -29,7 +29,6 @@ describe('neon street props', () => {
     expect(plan.pools.length).toBeGreaterThan(400);
     for (const l of plan.lamps.filter((k) => k.scale === 1)) {
       const ground = surfaceHeight(l.x, l.z);
-      // Street lights stand on the sidewalk (riverside parks have none).
       expect(l.y).toBeGreaterThanOrEqual(ground - 1e-6);
     }
     for (const p of plan.pools) {
@@ -140,7 +139,6 @@ describe('neon point lights', () => {
     }));
     const picked = pickLights(cands, { x: 0, y: 0, z: 0 });
     expect(picked.length).toBe(total);
-    // Nearest street candidates win.
     expect(picked.slice(0, LIGHT_BUDGET.street)).toEqual([0, 4, 8]);
   });
 });

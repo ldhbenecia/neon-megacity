@@ -1,6 +1,3 @@
-// Real PointLight budget (6.2, 11): a fixed pool of lights that follow the camera.
-// Every 0.25 s the nearest candidates per group are re-picked; lights fade between spots.
-// The light count never changes, so shader programs are never recompiled.
 import * as THREE from 'three';
 
 export type LightGroup = 'street' | 'screen' | 'stall' | 'river';
@@ -10,14 +7,11 @@ export interface LightCandidate {
   x: number;
   y: number;
   z: number;
-  /** Linear color. */
   color: [number, number, number];
-  /** Intensity (candela) at neonGain 1, night. */
   intensity: number;
   distance: number;
 }
 
-/** Lights per group. Total 6 = the 11 target (hard cap 8). */
 export const LIGHT_BUDGET: Readonly<Record<LightGroup, number>> = {
   street: 3,
   screen: 1,
@@ -26,7 +20,6 @@ export const LIGHT_BUDGET: Readonly<Record<LightGroup, number>> = {
 };
 export const MAX_POINT_LIGHTS = 8;
 
-/** Pure: indices of the nearest candidates per group within the budget. */
 export function pickLights(
   cands: readonly LightCandidate[],
   cam: { x: number; y: number; z: number },
@@ -69,6 +62,7 @@ export interface LightPool {
   dispose(): void;
 }
 
+// The light count never changes (intensity fades instead), so shader programs never recompile.
 export function createLightPool(cands: readonly LightCandidate[]): LightPool {
   const group = new THREE.Group();
   group.name = 'neon-point-lights';
@@ -96,7 +90,6 @@ export function createLightPool(cands: readonly LightCandidate[]): LightPool {
         camPos.y = cam.y;
         camPos.z = cam.z;
         const picked = pickLights(cands, camPos);
-        // Keep lights that are still wanted where they are; hand the rest out.
         const wanted = new Set(picked);
         for (const s of slots)
           if (s.current >= 0 && wanted.has(s.current)) wanted.delete(s.current);
@@ -107,7 +100,6 @@ export function createLightPool(cands: readonly LightCandidate[]): LightPool {
         }
       }
       for (const s of slots) {
-        // Fade out, jump, fade in (0.15 s each way).
         if (s.target !== s.current) {
           s.level = Math.max(0, s.level - dt / 0.15);
           if (s.level === 0) {

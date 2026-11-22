@@ -1,6 +1,3 @@
-// Ground, elevated and flying traffic (6.2). One path texture holds every lane polyline; each
-// vehicle is an instance that the vertex shader moves with u = fract(u0 + speed * time).
-// Two draw calls for cars (lights + bodies) and two for flying vehicles.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { MATERIAL, NEON } from '../core/palette';
@@ -12,9 +9,9 @@ export const PATH_TEX_WIDTH = 512;
 
 const PATH_PARS = /* glsl */ `
 uniform sampler2D uPath;
-attribute vec4 iPath;   // row, closed, fadeFrac, flying
-attribute vec4 iMotion; // u0, speed (1/s), dir, lane
-attribute vec2 iExtra;  // lift, seed
+attribute vec4 iPath;
+attribute vec4 iMotion;
+attribute vec2 iExtra;
 vec3 pathAt(float row, float u) {
   int r = int(row + 0.5);
   float n = texelFetch(uPath, ivec2(0, r), 0).w;
@@ -25,7 +22,6 @@ vec3 pathAt(float row, float u) {
   return mix(a, b, f - i);
 }
 float wrapU(float u, float closed) { return closed > 0.5 ? fract(u) : clamp(u, 0.0, 1.0); }
-// Vehicle frame: position P, forward F, right R; fade = 0 at open path ends (never pops in).
 void vehicleFrame(out vec3 P, out vec3 F, out vec3 R, out float fade) {
   float u = fract(iMotion.x + iMotion.y * uTime);
   float ff = iPath.z;
@@ -88,7 +84,6 @@ function instanceAttributes(
   geo.instanceCount = n;
 }
 
-/** Light sprites: per-vertex local center (position), billboard corner and kind. */
 function lightGeometry(flying: boolean): THREE.BufferGeometry {
   const pos: number[] = [];
   const corner: number[] = [];
@@ -116,7 +111,6 @@ function lightGeometry(flying: boolean): THREE.BufferGeometry {
   if (flying) {
     sprite(0, -0.6, 0, 3);
   } else {
-    // Ground beam: a flat quad on the road ahead (kind 2 uses position as a real vertex).
     const base = pos.length / 3;
     for (const [x, z] of [
       [2.4, -1.4],
@@ -205,7 +199,6 @@ function lightMaterial(shared: NeonUniforms, pathTex: THREE.DataTexture): THREE.
           col = mix(uGlowA, uGlowB, step(0.5, fract(iExtra.y * 0.618)));
         }
         if (aKind < 1.5 || aKind > 2.5) {
-          // Billboard sprite; grows with distance so far streams stay readable (energy ~ k).
           float size = aKind > 2.5 ? 1.1 : (aKind < 0.5 ? 0.32 : 0.28);
           k = clamp(-mvPosition.z / 90.0, 1.0, 7.0);
           mvPosition.xy += aCorner * size * k;
@@ -227,7 +220,6 @@ function lightMaterial(shared: NeonUniforms, pathTex: THREE.DataTexture): THREE.
       void main() {
         float a;
         if (vKind > 1.5 && vKind < 2.5) {
-          // Beam: bright near the car, fading forward and to the sides.
           a = (1.0 - vCorner.x) * (1.0 - vCorner.y * vCorner.y);
         } else {
           float d = dot(vCorner, vCorner);
@@ -255,6 +247,7 @@ function bodyMaterial(
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>\nuniform float uTime;\n${PATH_PARS}`)
       .replace(
+        // beginnormal_vertex runs before begin_vertex, so the vehicle frame is computed here.
         '#include <beginnormal_vertex>',
         `vec3 vP; vec3 vF; vec3 vR; float vFade;
         vehicleFrame(vP, vF, vR, vFade);
@@ -279,7 +272,6 @@ export interface Traffic {
   dispose(): void;
 }
 
-/** Builds car + flying vehicle meshes. `vehicles` index into `paths`. */
 export function buildTraffic(
   shared: NeonUniforms,
   paths: readonly Path[],
@@ -309,7 +301,8 @@ export function buildTraffic(
     lights.name = flying ? 'flying-lights' : 'car-lights';
     bodies.name = flying ? 'flying-bodies' : 'car-bodies';
     for (const m of [lights, bodies]) {
-      m.frustumCulled = false; // positions come from the shader
+      // Positions come from the shader; geometry bounds are meaningless.
+      m.frustumCulled = false;
       m.castShadow = false;
       m.receiveShadow = false;
       group.add(m);

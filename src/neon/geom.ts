@@ -1,7 +1,6 @@
-// Small geometry helpers for the shader-instanced neon meshes.
 import * as THREE from 'three';
 
-/** Copies a geometry's index and attributes into a new InstancedBufferGeometry and disposes the source. */
+// Shares the source attributes; disposing the source only drops GPU buffers it never uploaded.
 export function toInstanced(g: THREE.BufferGeometry): THREE.InstancedBufferGeometry {
   const ig = new THREE.InstancedBufferGeometry();
   ig.setIndex(g.getIndex());
@@ -10,7 +9,6 @@ export function toInstanced(g: THREE.BufferGeometry): THREE.InstancedBufferGeome
   return ig;
 }
 
-/** Adds float instance attributes in one call; returns the geometry for chaining. */
 export function setInstanceAttributes(
   g: THREE.InstancedBufferGeometry,
   count: number,
@@ -23,7 +21,6 @@ export function setInstanceAttributes(
   return g;
 }
 
-/** Linear-space color × HDR multiplier as an [r, g, b] triple. */
 const tmp = new THREE.Color();
 export function hdrColor(hex: number, mult: number): [number, number, number] {
   tmp.setHex(hex);

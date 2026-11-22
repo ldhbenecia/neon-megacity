@@ -1,42 +1,29 @@
-// Traffic paths and vehicle streams (ART_DIRECTION 6.2). Pure: produces path polylines
-// (ground roads, bridge decks, elevated highway curves, flying lanes) and per-vehicle stream
-// parameters. The GPU evaluates `u = fract(u0 + speed * t / length)` along a path texture,
-// so no vehicle is ever moved on the CPU.
 import type { Bridge, Highway, Road, Vec3 } from '../city/layout';
 import { createRng } from '../core/random';
 import { isDivided, laneOffsets } from '../infra/profile';
 
-/** Arc-length parameterized polyline (evenly spaced samples). */
 export interface Path {
   id: string;
   points: Vec3[];
   length: number;
   closed: boolean;
   kind: 'ground' | 'bridge' | 'highway' | 'flying';
-  /** Distance (m) over which vehicles fade in / out at open ends (0 for closed paths). */
   fade: number;
-  /** Flying lanes: world altitude band [min, max] (m). */
   altitude?: readonly [number, number];
 }
 
 export interface Vehicle {
   path: number;
-  /** Start parameter 0..1. */
   u0: number;
-  /** Normalized speed: (m/s) / path length. */
   speed: number;
-  /** +1 travels in increasing u, -1 reverse. */
   dir: 1 | -1;
-  /** Lateral offset to the right of travel (m). */
   lane: number;
-  /** Height above the path (m). */
   lift: number;
   seed: number;
 }
 
 export const LANE_W = 3.3;
 
-/** Resample a polyline to `n` evenly spaced points (arc length). */
 export function resample(pts: readonly Vec3[], n: number): { points: Vec3[]; length: number } {
   const cum: number[] = [0];
   for (let i = 1; i < pts.length; i++) {
@@ -59,7 +46,6 @@ export function resample(pts: readonly Vec3[], n: number): { points: Vec3[]; len
   return { points: out, length };
 }
 
-/** Vehicle fade at the open ends of a path: 0 at both ends, 1 inside (closed paths: always 1). */
 export function endFade(u: number, path: Pick<Path, 'closed' | 'fade' | 'length'>): number {
   if (path.closed || path.fade <= 0) return 1;
   const f = Math.min(0.45, path.fade / Math.max(path.length, 1e-6));
@@ -70,7 +56,6 @@ export function endFade(u: number, path: Pick<Path, 'closed' | 'fade' | 'length'
   return s(0, f, u) * s(1, 1 - f, u);
 }
 
-/** Ground roads with traffic (arterials and streets; alleys and stairs stay empty). */
 export function groundPaths(
   roads: readonly Road[],
   roadY: (x: number, z: number) => number,
@@ -94,7 +79,6 @@ export function groundPaths(
   return out;
 }
 
-/** Bridge decks from landing to landing (deck height profile from `deckY`). */
 export function bridgePaths(
   bridges: readonly Bridge[],
   deckY: (x: number, z: number) => number,
@@ -120,11 +104,6 @@ export function bridgePaths(
   });
 }
 
-/**
- * Highway path from curve samples (InfraApi.curves or layout `highwayCurve`).
- * Open highways fade over 30 m at their ends: ramps merge into their parent highway there and
- * the riverside highways end outside the map, so no vehicle ever pops in on screen.
- */
 export function highwayPath(
   id: string,
   samples: readonly Vec3[],
@@ -137,16 +116,11 @@ export function highwayPath(
 
 export interface StreamOptions {
   seed?: number;
-  /** Vehicles per lane per km by path kind. */
   density?: Partial<Record<Path['kind'], number>>;
 }
 
-/** Lanes per direction for a path. */
-/**
- * Lane slots of a path. Highways use infra's real lane centers (`laneOffsets`, + = right of the
- * curve direction): divided roads drive on the right half in both directions (the reverse
- * direction's frame is mirrored, so it reuses the positive offsets); ramps are one-way.
- */
+// laneOffsets: + = right of the curve direction. The reverse direction's frame is mirrored, so
+// divided highways reuse the positive offsets for both directions; ramps are one-way.
 export function laneSlots(
   p: Path,
   hw: ReadonlyMap<string, Highway>,
@@ -204,7 +178,6 @@ export function vehicleStreams(
   return out;
 }
 
-/** Texture rows: one path per row, `width` samples per row (xyz, w = sample count). */
 export function packPaths(paths: readonly Path[], width: number): Float32Array {
   const data = new Float32Array(width * paths.length * 4);
   paths.forEach((p, row) => {
@@ -220,7 +193,6 @@ export function packPaths(paths: readonly Path[], width: number): Float32Array {
   return data;
 }
 
-/** CPU mirror of the shader path lookup (for tests): position at parameter u. */
 export function pathPoint(p: Path, u: number): Vec3 {
   const n = p.points.length;
   const f = Math.min(Math.max(u, 0), 1) * (n - 1);

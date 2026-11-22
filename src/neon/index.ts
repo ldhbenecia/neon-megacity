@@ -1,9 +1,3 @@
-// neon module (ART_DIRECTION 5, 6, 13.1): signs, giant screens, ring billboards, crosses,
-// holograms, halos, wet-road reflections, street lights and props, ground / elevated / flying
-// traffic, the PointLight budget and the selection highlight.
-//
-// Works against the real BuildingsApi / InfraApi when they are published, and falls back to
-// the layout's pure functions (buildingFaces, highwayCurve, deckHeightAt) while they are stubs.
 import * as THREE from 'three';
 import {
   buildingFaces,
@@ -43,11 +37,8 @@ import { buildStreet } from './street';
 import { planStreet, type StreetPlan } from './streetPlan';
 import { buildTraffic } from './traffic';
 
-/** Sidewalk top used while buildings is still a stub (BuildingsApi.sidewalkHeight otherwise). */
 export const SIDEWALK_FALLBACK = 0.2;
-/** Highway curve samples per path (arc-length spaced). */
 const CURVE_SAMPLES = 400;
-/** Max wet-road reflection streaks (6.1). */
 const MAX_DECALS = 1500;
 
 const SCREEN_HUES: readonly NeonName[] = ['neonCyan', 'neonOrange', 'neonMagenta'];
@@ -208,7 +199,7 @@ export function init(ctx: Ctx): CityModuleInstance {
   group.name = 'neon';
   const disposables: { dispose(): void }[] = [];
 
-  // --- contracts: real APIs when present, layout fallbacks otherwise ---
+  // Real BuildingsApi / InfraApi when published, layout pure functions while they are stubs.
   const api = ctx.buildings;
   const specs = api?.specs ?? L.buildings;
   const faces: readonly (readonly BuildingFace[])[] =
@@ -231,14 +222,12 @@ export function init(ctx: Ctx): CityModuleInstance {
   shared.uMotion.value = reduce ? 0 : 1;
   shared.uScroll.value = reduce ? 0.3 : 1;
 
-  // --- atlas + placement ---
   const catalog = buildCatalog({ buildings: [...specs] });
   const atlas = buildAtlas(catalog, ctx.renderer);
   disposables.push(atlas.texture);
   const P = placeSigns(L, faces, catalog);
   const street = planStreet(L, catalog, sidewalkH);
 
-  // --- signs ---
   const flats = buildFlatSigns(shared, atlas.texture, catalog, [...P.flats, ...street.flats]);
   const solidMat = emissiveSolidMaterial(shared);
   const tubes: SolidInstance[] = P.tubes.map((t) => ({
@@ -270,7 +259,6 @@ export function init(ctx: Ctx): CityModuleInstance {
     zone: c.zone,
   }));
   const crossMesh = buildEmissiveSolids(crossGeometry(), solidMat, crossSolids, 'neon-crosses');
-  // Steel poles under the crosses (3–6 m on the roof).
   const poleMat = new THREE.MeshStandardMaterial({
     color: MATERIAL.bracing,
     metalness: 0.8,
@@ -305,12 +293,10 @@ export function init(ctx: Ctx): CityModuleInstance {
   }
   group.add(flats, tubeMesh, crossMesh, crossPoles, screens, rings, holos, halos, decals);
 
-  // --- street props ---
   const streetMeshes = buildStreet(shared, street, solidMat);
   group.add(streetMeshes.group);
   disposables.push(streetMeshes);
 
-  // --- traffic ---
   const paths: Path[] = [
     ...groundPaths(L.roads, (x, z) => surfaceHeight(x, z) + roadY),
     ...bridgePaths(L.bridges, deckY),
@@ -319,7 +305,6 @@ export function init(ctx: Ctx): CityModuleInstance {
     const s = curveSamples(hw.id);
     if (s) paths.push(highwayPath(hw.id, s, hw.closed));
   }
-  // Three flying lanes: the ring and the river highway lifted into the sky (6.2).
   const ringS = curveSamples('hw-ring');
   const riverS = curveSamples('hw-river-north');
   if (ringS) {
@@ -333,7 +318,6 @@ export function init(ctx: Ctx): CityModuleInstance {
   group.add(traffic.group);
   disposables.push(traffic);
 
-  // --- point lights + selection ---
   const lights = createLightPool(lightCandidates(P, street));
   group.add(lights.group);
   disposables.push(lights);
@@ -344,7 +328,6 @@ export function init(ctx: Ctx): CityModuleInstance {
   for (const o of group.children) o.castShadow = false;
   scene.add(group);
 
-  // --- GUI ---
   const folder = ctx.gui.addFolder('Neon');
   const view = { signs: true, traffic: true, halos: true, reflections: true, holograms: true };
   folder.add(view, 'signs').onChange((v: boolean) => {
@@ -357,7 +340,6 @@ export function init(ctx: Ctx): CityModuleInstance {
   folder.close();
 
   if (typeof window !== 'undefined') {
-    // Debug / perf hook (read-only numbers).
     (window as unknown as { __neon?: unknown }).__neon = {
       signs: P.flats.length + street.flats.length,
       tubes: P.tubes.length,

@@ -1,5 +1,3 @@
-// Street prop meshes from a StreetPlan (6.2): pole bodies, lamp heads, 포장마차 tents,
-// bus shelters and additive light pools. Static instancing, a few draw calls in total.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { MATERIAL, NEON } from '../core/palette';
@@ -34,7 +32,6 @@ function shelterGeometry(): THREE.BufferGeometry {
 }
 
 function stallBodyGeometry(): THREE.BufferGeometry {
-  // Table, stools and the cart base under the tent.
   return merge([
     new THREE.BoxGeometry(2.6, 0.9, 0.8).translate(0, 0.45, 0.4),
     new THREE.BoxGeometry(1.6, 0.06, 0.7).translate(0, 0.72, -1.6),
@@ -43,7 +40,6 @@ function stallBodyGeometry(): THREE.BufferGeometry {
   ]);
 }
 
-/** Tent: 3 × 2.4 m box (0..1.9 m) with a peaked roof to 2.2 m, unit-free (scaled 1). */
 function tentGeometry(): THREE.BufferGeometry {
   const box = new THREE.BoxGeometry(3, 1.9, 2.4).translate(0, 0.95, 0);
   const roof = new THREE.CylinderGeometry(1.7, 1.7, 3, 3, 1)
@@ -127,7 +123,6 @@ function buildPools(shared: NeonUniforms, pools: readonly Pool[]): THREE.Mesh {
         gl_Position = projectionMatrix * mvPosition;
         vUv = position.xz;
         vCol = iColor;
-        // Street props cull at 250 m (6.2): fade the pools out instead of popping.
         vFade = 1.0 - smoothstep(200.0, 250.0, length(cameraPosition - iPos.xyz));
         #include <fog_vertex>
       }
@@ -171,7 +166,6 @@ export function buildStreet(
   });
   disposables.push(metal);
 
-  // Lamp poles (street lights and stair lamps share one mesh, stair lamps scaled ~0.35).
   const lampGeo = lampBodyGeometry();
   const lampBodies = instancedBody(
     lampGeo,
@@ -182,7 +176,6 @@ export function buildStreet(
   group.add(lampBodies);
   disposables.push(lampGeo);
 
-  // Plain poles: sign poles.
   const poleGeo = new THREE.CylinderGeometry(0.09, 0.12, 1, 6).translate(0, 0.5, 0);
   group.add(
     instancedBody(
@@ -194,7 +187,6 @@ export function buildStreet(
   );
   disposables.push(poleGeo);
 
-  // Bus shelters and stall furniture.
   const shelterGeo = shelterGeometry();
   group.add(
     instancedBody(
@@ -215,7 +207,6 @@ export function buildStreet(
   );
   disposables.push(shelterGeo, stallGeo);
 
-  // Lamp heads, bus-shelter light strips and stall bulbs: emissive boxes in one mesh.
   const heads: SolidInstance[] = [];
   for (const l of plan.lamps) {
     const hex = l.kind === 'core' ? MATERIAL.streetLightCore : MATERIAL.streetLightSodium;
@@ -252,7 +243,6 @@ export function buildStreet(
     for (const side of [-0.8, 0.8]) {
       const c = Math.cos(s.yaw);
       const sn = Math.sin(s.yaw);
-      // Bulbs hang just inside the open front (local -Z).
       const lx = side;
       const lz = -1.0;
       heads.push({
@@ -275,7 +265,6 @@ export function buildStreet(
   group.add(headMesh);
   disposables.push(headMesh.geometry);
 
-  // 포장마차 tents: orange tarp glowing from inside (HDR ×1.8).
   const tents: SolidInstance[] = plan.stalls.map((s) => ({
     x: s.x,
     y: s.y,

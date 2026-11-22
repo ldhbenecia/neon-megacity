@@ -1,6 +1,3 @@
-// Building and street signs as a handful of instanced meshes (5.1, 5.4, 5.5, 6.1):
-// textured quads (bands, blades, vertical letters, crowns, pole panels, ads, tents),
-// emissive solids (neon tubes, crosses, lamp heads), halos and wet-road reflection streaks.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { NEON, type NeonName } from '../core/palette';
@@ -9,15 +6,12 @@ import { ADDITIVE_TAIL, COMMON_PARS, EMISSIVE_TAIL, neonMaterial, type NeonUnifo
 import { hdrColor, setInstanceAttributes, toInstanced } from './geom';
 import type { FlatSign } from './placement';
 
-/** HDR multiplier for a neon color (3.2 night range, varied per sign by `t` in 0..1). */
 export function neonHdr(name: NeonName, t: number): number {
   const [a, b] = NEON[name].hdr;
   return a + (b - a) * t;
 }
 
 const FAR_FADE_KINDS = new Set(['band', 'blade', 'panel', 'ad', 'tent']);
-
-// --- textured sign quads -------------------------------------------------------
 
 export function buildFlatSigns(
   shared: NeonUniforms,
@@ -27,10 +21,10 @@ export function buildFlatSigns(
 ): THREE.Mesh {
   const n = flats.length;
   const iPos = new Float32Array(n * 3);
-  const iDir = new Float32Array(n * 4); // nx, nz, doubleSided, farFade
-  const iSize = new Float32Array(n * 4); // w, h, cellAspect, chars
+  const iDir = new Float32Array(n * 4);
+  const iSize = new Float32Array(n * 4);
   const iRect = new Float32Array(n * 4);
-  const iAnim = new Float32Array(n * 4); // mode, seed, zone, hdr
+  const iAnim = new Float32Array(n * 4);
   flats.forEach((s, i) => {
     const cell = cat.cells[s.cell];
     iPos.set([s.x, s.y, s.z], i * 3);
@@ -90,7 +84,6 @@ export function buildFlatSigns(
       varying float vFar; varying float vPower;
       #include <fog_pars_fragment>
       void main() {
-        // Small signs dissolve between 600 and 700 m (dithered, no popping).
         if (vFar < 1.0 && nHash2(gl_FragCoord.xy) > vFar) discard;
         vec2 uv = vUv;
         if (!gl_FrontFacing) {
@@ -102,7 +95,6 @@ export function buildFlatSigns(
         vec2 q = uv;
         float mode = vAnim.x;
         if (mode > 1.5 && mode < 2.5) {
-          // Marquee: text tiles and scrolls at 0.5–1.5 glyphs per second.
           float glyphs = max(4.0, cellAspect * 1.4);
           q.x = fract(uv.x * quadAspect / cellAspect + uTime * uScroll * mix(0.5, 1.5, vAnim.y) / glyphs);
         } else if (quadAspect > cellAspect) {
@@ -116,7 +108,6 @@ export function buildFlatSigns(
         float on = vPower;
         if (mode > 0.5 && mode < 1.5) on *= flicker(vAnim.y * 100.0);
         if (mode > 2.5 && mode < 3.5 && uMotion > 0.5) {
-          // One broken glyph blinking irregularly at 0.5–2 Hz.
           float glyph = floor(q.x * vSize.w);
           float target = floor(vAnim.y * vSize.w);
           float rate = mix(0.5, 2.0, fract(vAnim.y * 7.0));
@@ -135,8 +126,6 @@ export function buildFlatSigns(
   return mesh;
 }
 
-// --- emissive solids (tubes, crosses, lamp heads, bulbs, tents) ---------------
-
 export interface SolidInstance {
   x: number;
   y: number;
@@ -145,16 +134,13 @@ export interface SolidInstance {
   sy: number;
   sz: number;
   rotY: number;
-  /** Linear HDR color. */
   color: [number, number, number];
   anim: number;
   seed: number;
   zone: number;
-  /** 1 = thicken in x/z with distance so thin tubes stay ~1.5 px wide. */
   minPx?: number;
 }
 
-/** Shared material for unlit emissive solids; geometry spans y 0..1 (fill animation uses it). */
 export function emissiveSolidMaterial(
   shared: NeonUniforms,
   opts: { additive?: boolean; alpha?: number } = {},
@@ -165,10 +151,10 @@ export function emissiveSolidMaterial(
     uniforms: { uAlpha: { value: opts.alpha ?? 1 } },
     vertexShader: /* glsl */ `
       ${COMMON_PARS}
-      attribute vec4 iPos;   // x, y, z, rotY
+      attribute vec4 iPos;
       attribute vec3 iScale;
       attribute vec3 iColor;
-      attribute vec4 iAnim;  // mode, seed, zone, rate
+      attribute vec4 iAnim;
       varying vec3 vCol; varying float vY; varying vec4 vAnim; varying float vPower;
       #include <fog_pars_vertex>
       void main() {
@@ -196,7 +182,6 @@ export function emissiveSolidMaterial(
         float mode = vAnim.x;
         if (mode > 0.5 && mode < 1.5) on *= flicker(vAnim.y * 100.0);
         if (mode > 3.5) {
-          // Sequential fill: rises over 1.2–2.5 s, holds 0.5 s, resets (5.4).
           float rise = mix(1.2, 2.5, vAnim.y);
           float ph = mod(uTime + vAnim.y * 13.0, rise + 0.5);
           float level = uMotion > 0.5 ? min(ph / rise, 1.0) : 1.0;
@@ -239,12 +224,10 @@ export function buildEmissiveSolids(
   return mesh;
 }
 
-/** Unit tube: radius 1, y 0..1. */
 export function tubeGeometry(): THREE.BufferGeometry {
   return new THREE.CylinderGeometry(1, 1, 1, 6, 1, true).translate(0, 0.5, 0);
 }
 
-/** Reference cross (6 m tall, arm 0.55 × h, tube 0.35 m); instances scale it by h / 6. */
 export const CROSS_REF_H = 6;
 export function crossGeometry(): THREE.BufferGeometry {
   const t = 0.35;
@@ -258,13 +241,10 @@ export function crossGeometry(): THREE.BufferGeometry {
   return g;
 }
 
-// --- halos (5.5 #2) ------------------------------------------------------------
-
 export interface HaloInstance {
   x: number;
   y: number;
   z: number;
-  /** Sign size (m): radius = size × (1 + distance / 400). */
   size: number;
   color: [number, number, number];
   zone: number;
@@ -297,7 +277,7 @@ export function buildHalos(shared: NeonUniforms, list: readonly HaloInstance[]):
         vec4 mvPosition = viewMatrix * vec4(iPos.xyz, 1.0);
         float dist = -mvPosition.z;
         float r = iPos.w * (1.0 + dist / 400.0);
-        // Pull toward the camera so the disc does not clip into the wall behind the sign.
+        // Pulled toward the camera so the disc does not clip into the wall behind the sign.
         mvPosition.xyz *= max(0.2, 1.0 - min(r * 0.6, dist * 0.3) / max(dist, 1.0));
         mvPosition.xy += position.xy * r;
         gl_Position = projectionMatrix * mvPosition;
@@ -333,8 +313,6 @@ export function buildHalos(shared: NeonUniforms, list: readonly HaloInstance[]):
   return mesh;
 }
 
-// --- wet-road reflection streaks (6.1 #3) ------------------------------------
-
 export interface DecalInstance {
   x: number;
   y: number;
@@ -344,7 +322,6 @@ export interface DecalInstance {
   color: [number, number, number];
 }
 
-/** Additive quads lying on the road, stretched toward the camera. Visible within 400 m. */
 export function buildReflections(shared: NeonUniforms, list: readonly DecalInstance[]): THREE.Mesh {
   const n = list.length;
   const iPos = new Float32Array(n * 3);
@@ -401,7 +378,6 @@ export function buildReflections(shared: NeonUniforms, list: readonly DecalInsta
         if (vFade <= 0.0) discard;
         float across = exp(-vUv.x * vUv.x * 9.0);
         float along = pow(1.0 - vUv.y, 1.4) * smoothstep(0.0, 0.08, vUv.y);
-        // Puddle mask + ripple that drifts at 0.3 m/s.
         vec2 p = vWorld * 0.35 + vec2(0.0, uTime * 0.3 * 0.35);
         float puddle = smoothstep(0.35, 0.75, vnoise(vWorld * 0.06));
         float ripple = 0.6 + 0.4 * vnoise(p + vnoise(p * 2.3) * 0.8);
@@ -421,7 +397,6 @@ export function buildReflections(shared: NeonUniforms, list: readonly DecalInsta
   return mesh;
 }
 
-/** Linear HDR color for a sign. */
 export function signColor(name: NeonName, mult: number): [number, number, number] {
   return hdrColor(NEON[name].hex, mult);
 }

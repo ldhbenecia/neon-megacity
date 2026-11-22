@@ -1,7 +1,3 @@
-// Sign placement (ART_DIRECTION 5.1, 5.2). Pure and deterministic: the same layout, faces and
-// catalog always give the same signs. Every wall sign sits strictly inside one tier face
-// (`face.y0 + 2 ≤ y ≤ face.y1 - 2`, 1 m in from the face edges), never cuts into any building
-// solid (tiers, twin stack, cantilever, skybridge, neighbours) and never floats off its wall.
 import { createRng, type Rng } from '../core/random';
 import type { NeonName } from '../core/palette';
 import { type BuildingFace, type BuildingSpec, type Layout, type Tier } from '../city/layout';
@@ -9,24 +5,18 @@ import type { Catalog } from './catalog';
 import { CARGO_CROWN } from './content';
 import { firstHit, type Solid } from './solids';
 
-/** Shader animation modes (5.4). Stored per instance; animated on the GPU only. */
 export const Anim = { none: 0, flicker: 1, scroll: 2, broken: 3, fill: 4 } as const;
 export type AnimMode = (typeof Anim)[keyof typeof Anim];
 
 export type FlatKind = 'band' | 'blade' | 'vtext' | 'crown' | 'panel' | 'ad' | 'tent';
 
-/** A textured sign quad. */
 export interface FlatSign {
   kind: FlatKind;
-  /** Host building id, -1 for street props. */
   building: number;
-  /** Index into faces[building], -1 when not wall-mounted. */
   face: number;
-  /** Quad center (world). */
   x: number;
   y: number;
   z: number;
-  /** Direction the readable side faces (unit, horizontal). */
   nx: number;
   nz: number;
   w: number;
@@ -34,17 +24,13 @@ export interface FlatSign {
   cell: number;
   color: NeonName;
   anim: AnimMode;
-  /** 0..1 power-on delay (river → core → sangga → hillside crosses → apartment). */
   zone: number;
   seed: number;
-  /** Readable from both sides (blades, pole panels). */
   doubleSided: boolean;
-  /** For wall signs: face-local rectangle (u along the face tangent, y) and wall offset. */
   u0: number;
   u1: number;
   y0: number;
   y1: number;
-  /** Volume used for the clearance test (wall-mounted signs and roof props). */
   vol: Solid | null;
 }
 
@@ -67,10 +53,8 @@ export interface Cross {
   building: number;
   x: number;
   z: number;
-  /** Roof y the steel pole stands on. */
   roofY: number;
   poleH: number;
-  /** Cross height; arm length = 0.55 h; tube diameter 0.35. */
   h: number;
   rotY: number;
   zone: number;
@@ -86,12 +70,9 @@ export interface Screen {
   nz: number;
   w: number;
   h: number;
-  /** 0 cyan, 1 orange, 2 magenta. */
   hue: number;
   seed: number;
-  /** Vertical text cell used by the typography scene. */
   cell: number;
-  /** Corp logo cell. */
   logo: number;
   zone: number;
   u0: number;
@@ -105,13 +86,11 @@ export interface Ring {
   building: number;
   x: number;
   z: number;
-  /** Ring center y. */
   y: number;
   radius: number;
   h: number;
   cell: number;
   color: NeonName;
-  /** Scroll speed (rev/s), signed. */
   rate: number;
   zone: number;
 }
@@ -122,7 +101,6 @@ export interface Holo {
   z: number;
   size: number;
   cell: number;
-  /** Y rotation speed (rad/s). */
   spin: number;
   alpha: number;
   seed: number;
@@ -138,9 +116,7 @@ export interface Placement {
   holos: Holo[];
 }
 
-/** Wall offset of the sign front plane (m). */
 export const WALL_GAP = { band: 0.12, vtext: 0.35, blade: 0.15, screen: 0.4 } as const;
-/** Clearance from face edges and tier top / bottom (5.1). */
 export const EDGE_IN = 1;
 export const TIER_MARGIN = 2;
 
@@ -159,7 +135,6 @@ export function zoneDelay(district: string, rng: Rng): number {
   return rng.range(a, b);
 }
 
-/** True when the face-local rectangle respects the 5.1 margins on that face. */
 export function insideFace(
   f: BuildingFace,
   u0: number,
@@ -178,7 +153,6 @@ export function insideFace(
   );
 }
 
-/** Volume of a wall-attached box: face-local u range, y range, from `gap0` to `gap1` off the wall. */
 export function wallVolume(
   f: BuildingFace,
   b: BuildingSpec,
@@ -227,13 +201,10 @@ interface Ctx {
   faces: readonly (readonly BuildingFace[])[];
   cat: Catalog;
   out: Placement;
-  /** Occupied rectangles per "building:face". */
   occupied: Map<string, Rect[]>;
-  /** Distance (m) from a point to the edge of the nearest street, arterial or alley. */
   roadGap: (x: number, z: number) => number;
 }
 
-/** Coarse grid over traffic roads and alleys for `roadGap`. */
 function roadGapIndex(L: Layout): (x: number, z: number) => number {
   const cell = 64;
   const grid = new Map<string, Layout['roads']>();
@@ -265,7 +236,6 @@ function roadGapIndex(L: Layout): (x: number, z: number) => number {
   };
 }
 
-/** Reserve a rectangle on a face; false (and nothing reserved) when it overlaps an earlier sign. */
 function reserve(c: Ctx, b: number, fi: number, r: Rect): boolean {
   const key = `${b}:${fi}`;
   const list = c.occupied.get(key) ?? [];
@@ -284,7 +254,6 @@ function cellColor(c: Ctx, cell: number, fallback: NeonName): NeonName {
   return c.cat.cells[cell]?.color ?? fallback;
 }
 
-/** Wall sign candidate: validates margins, overlap and clearance, then records it. */
 function tryWallSign(
   c: Ctx,
   b: BuildingSpec,
@@ -321,8 +290,6 @@ function tryWallSign(
   return s;
 }
 
-// --- per-kind placers -------------------------------------------------------
-
 function animFor(rng: Rng, scrollP: number): AnimMode {
   const r = rng.next();
   if (r < 0.04) return Anim.flicker;
@@ -333,11 +300,6 @@ function animFor(rng: Rng, scrollP: number): AnimMode {
 
 const OPPOSITE: Record<string, string> = { px: 'nx', nx: 'px', pz: 'nz', nz: 'pz' };
 
-/**
- * Shop-front faces of tier 0: the street front, plus the opposite face (sangga blocks put one
- * lot row on the street and the other on the mid-block alley, so both sides carry signs).
- * Faces against a neighbour are rejected later by the clearance test.
- */
 function shopFaces(c: Ctx, b: BuildingSpec): number[] {
   const faces = c.faces[b.id] ?? [];
   const front = faces.findIndex((f) => f.street && f.tier === 0 && f.stack === 0);
@@ -346,7 +308,6 @@ function shopFaces(c: Ctx, b: BuildingSpec): number[] {
   const out = [front];
   faces.forEach((f, fi) => {
     if (fi === front || f.tier !== 0 || f.stack !== 0) return;
-    // Any other wall that looks onto a road or alley within 6 m is a shop front too.
     const near = c.roadGap(f.center.x + f.normal.x * 2, f.center.z + f.normal.z * 2) < 6;
     if (near || f.side === OPPOSITE[fr.side]) out.push(fi);
   });
@@ -405,7 +366,6 @@ function placeBlades(c: Ctx, b: BuildingSpec, rng: Rng, zone: number, p: number,
     const y0 = b.baseY + b.groundFloorH + 0.4;
     const h = Math.min(rng.range(4, 14), f.y1 - TIER_MARGIN - y0);
     if (h < 4) continue;
-    // A blade is perpendicular to the wall: its footprint on the face is a thin strip at the edge.
     const uc = end * (f.width / 2 - EDGE_IN - 0.1);
     const r: Rect = { u0: uc - 0.1, u1: uc + 0.1, y0, y1: y0 + h };
     if (!insideFace(f, r.u0, r.u1, r.y0, r.y1)) continue;
@@ -421,7 +381,6 @@ function placeBlades(c: Ctx, b: BuildingSpec, rng: Rng, zone: number, p: number,
       x: f.center.x + f.tangent.x * uc + f.normal.x * (g0 + w / 2),
       y: y0 + h / 2,
       z: f.center.z + f.tangent.z * uc + f.normal.z * (g0 + w / 2),
-      // Readable along the street: the quad faces along the wall tangent.
       nx: f.tangent.x,
       nz: f.tangent.z,
       w,
@@ -488,7 +447,6 @@ function placeVText(c: Ctx, b: BuildingSpec, rng: Rng, zone: number): void {
   const faces = c.faces[b.id] ?? [];
   const front = faces.find((f) => f.street && f.tier === 0 && f.stack === 0);
   if (!front) return;
-  // Side walls: perpendicular to the street front.
   const sides = faces
     .map((f, fi) => ({ f, fi }))
     .filter(
@@ -511,7 +469,6 @@ function placeVText(c: Ctx, b: BuildingSpec, rng: Rng, zone: number): void {
   const top = f.y1 - TIER_MARGIN;
   const y0 = Math.max(f.y0 + TIER_MARGIN, b.baseY + 6, top - h - rng.range(0, 4));
   if (y0 + h > top) return;
-  // Toward the street-front corner of the side wall.
   const toward = Math.sign(f.tangent.x * front.normal.x + f.tangent.z * front.normal.z) || 1;
   const uc = toward * (f.width / 2 - EDGE_IN - w / 2 - rng.range(0, 1.5));
   tryWallSign(
@@ -554,7 +511,6 @@ function placeCrown(
     const w = Math.min(f.width * 0.7, f.width - 2 * EDGE_IN);
     const h = Math.min(8, Math.max(3, w / 6.5));
     const leg = 0.6;
-    // Stands on the roof, 1.5 m inside the parapet line, facing out.
     const inset = 1.5;
     const x = f.center.x - f.normal.x * inset;
     const z = f.center.z - f.normal.z * inset;
@@ -631,7 +587,6 @@ function placeCross(c: Ctx, b: BuildingSpec, rng: Rng, zone: number): void {
   });
 }
 
-/** 5.1 giant vertical screens on megatower faces: 25–75% height, ≤ 85% of the tier, ratio ≥ 3:1. */
 function placeScreens(c: Ctx, b: BuildingSpec, rng: Rng, zone: number, maxScreens: number): void {
   const lo = b.baseY + b.h * 0.25;
   const hi = b.baseY + b.h * 0.75;
@@ -645,7 +600,6 @@ function placeScreens(c: Ctx, b: BuildingSpec, rng: Rng, zone: number, maxScreen
     const h = Math.min(150, tierH * 0.85, y1 - y0);
     const w = Math.min(28, f.width - 2 * EDGE_IN, h / 3);
     if (h < 60 || w < 12) return;
-    // Favour faces seen from the south bank hero views (+Z) and the street front.
     const score = w * h * (1 + 0.6 * f.normal.z + (f.street ? 0.2 : 0));
     cands.push({ f, fi, h, w, y0, score });
   });
@@ -684,7 +638,6 @@ function placeScreens(c: Ctx, b: BuildingSpec, rng: Rng, zone: number, maxScreen
   }
 }
 
-/** 5.1 ring billboards on cylinder towers: 30–60% height, ≥ 25 m apart, radius = cylinder + 3. */
 function placeRings(c: Ctx, b: BuildingSpec, rng: Rng, zone: number, budget: number): number {
   const t = b.tiers[0];
   if (!t || t.shape !== 'cylinder' || budget <= 0) return 0;
@@ -712,8 +665,8 @@ function placeRings(c: Ctx, b: BuildingSpec, rng: Rng, zone: number, budget: num
       tier: -10,
       stack: 0,
     };
+    // The ring wraps its own cylinder, so only other solids count as collisions.
     const hit = firstHit(c.L, vol);
-    // The ring surrounds its own cylinder: only other solids count.
     if (hit && !(hit.building === b.id && hit.tier === 0)) continue;
     ys.push(y);
     placed++;
@@ -773,20 +726,15 @@ function placeHolo(
   return true;
 }
 
-// --- entry ------------------------------------------------------------------
-
 export interface PlacementOptions {
   seed?: number;
-  /** Hard caps (5.1). */
   maxScreens?: number;
   maxRings?: number;
   maxHolos?: number;
 }
 
-/**
- * Places every building-mounted sign. `faces[id]` must equal `buildingFaces(L.buildings[id])`
- * (BuildingsApi.faces or the layout function).
- */
+// `faces[id]` must equal `buildingFaces(L.buildings[id])`. Wall signs stay inside one tier face
+// (y0 + 2 ≤ y ≤ y1 − 2, 1 m in from the edges) and never cut into any building solid.
 export function placeSigns(
   L: Layout,
   faces: readonly (readonly BuildingFace[])[],
@@ -806,7 +754,6 @@ export function placeSigns(
   let ringBudget = opts.maxRings ?? 14;
   const maxHolos = opts.maxHolos ?? 36;
 
-  // Big things first (they win face space), tallest buildings first.
   const byHeight = [...L.buildings].sort((a, z) => z.h - a.h);
   for (const b of byHeight) {
     const rng = createRng((seed ^ Math.imul(b.seed | 0, 0x9e3779b1)) >>> 0);
@@ -852,7 +799,6 @@ export function placeSigns(
     ) {
       placeVText(c, b, rng, zone);
     }
-    // Crowns: corp names on megatowers, complex names on apartments, a few offices and 운해물류.
     if (b.tags.corp) {
       const cell = cat.cells.findIndex((k) => k.kind === 'crown' && k.key === b.tags.corp);
       placeCrown(c, b, rng, zone, cell, 2);
@@ -869,7 +815,6 @@ export function placeSigns(
       placeCross(c, b, rng, b.district === 'hillside' ? rng.range(0.62, 0.8) : zone);
   }
 
-  // Holograms over tower roofs (60–220 m) and a few koi over the river.
   const hrng = createRng(seed + 77);
   const koi = cat.byKind.koi[0] ?? -1;
   const logos = cat.byKind.logo;
@@ -894,7 +839,6 @@ export function placeSigns(
   return c.out;
 }
 
-/** Signs that touch the tier list of a building (for tests and debugging). */
 export function hostTier(b: BuildingSpec, f: BuildingFace): Tier | undefined {
   return f.stack === 0 ? b.tiers[f.tier] : b.twin?.[f.tier];
 }

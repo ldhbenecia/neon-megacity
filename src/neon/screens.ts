@@ -1,6 +1,3 @@
-// Giant vertical screens, ring billboards and holograms (5.2, 5.4). Fully procedural shaders:
-// screens draw a fictional SDF face, a walking silhouette or flowing English type, switching every
-// 12–20 s through a 0.4 s glitch. Nothing here is a real person, brand or logo.
 import * as THREE from 'three';
 import { NEON } from '../core/palette';
 import type { Catalog } from './catalog';
@@ -18,10 +15,10 @@ export function buildScreens(
 ): THREE.Mesh {
   const n = list.length;
   const iPos = new Float32Array(n * 3);
-  const iDir = new Float32Array(n * 4); // nx, nz, w, h
+  const iDir = new Float32Array(n * 4);
   const iRect = new Float32Array(n * 4);
   const iLogo = new Float32Array(n * 4);
-  const iParam = new Float32Array(n * 4); // hue, seed, zone, cellAspect
+  const iParam = new Float32Array(n * 4);
   list.forEach((s, i) => {
     iPos.set([s.x, s.y, s.z], i * 3);
     iDir.set([s.nx, s.nz, s.w, s.h], i * 4);
@@ -73,7 +70,6 @@ export function buildScreens(
       }
       float fill(float d, float px) { return 1.0 - smoothstep(-px, px, d); }
 
-      // Scene 0: a fictional face close-up (oval face, hair, blinking eyes, talking mouth).
       vec3 sceneFace(vec2 p, vec3 hue, float seed, float t) {
         float px = 0.01;
         vec3 col = mix(hue * 0.05, hue * 0.25, smoothstep(-1.5, 1.2, p.y));
@@ -86,7 +82,6 @@ export function buildScreens(
         col = mix(col, hue * 0.03, max(hair, shoulders));
         col = mix(col, mix(hue, vec3(1.0), 0.55) * 0.55, neck * (1.0 - hair * 0.0));
         col = mix(col, mix(hue, vec3(1.0), 0.6) * 0.85, face);
-        // Rim light from the hair edge.
         col += hue * 0.6 * hair * (1.0 - face) * smoothstep(0.25, 0.42, abs(p.x));
         float period = mix(4.0, 7.0, seed);
         float bt = mod(t + seed * 9.0, period);
@@ -104,7 +99,6 @@ export function buildScreens(
         return col;
       }
 
-      // Scene 1: a walking silhouette against a glowing backdrop.
       vec3 sceneWalk(vec2 p, vec3 hue, float seed, float t) {
         float px = 0.012;
         vec3 col = mix(hue * 0.9, hue * 0.2, smoothstep(-1.0, 1.5, p.y));
@@ -173,7 +167,6 @@ export function buildScreens(
         float scan = 0.85 + 0.15 * sin(uv.y * vSize.y * 1.3 - t * 2.0);
         float bright = mix(1.5, 2.2, fract(seed * 13.0));
         col *= mix(0.45, 1.0, mask) * scan * bright * uScreenGain * vPower;
-        // Thin bezel.
         float edge = min(min(vUv.x, 1.0 - vUv.x) * vSize.x, min(vUv.y, 1.0 - vUv.y) * vSize.y);
         col *= smoothstep(0.2, 0.5, edge);
         gl_FragColor = vec4(col, 1.0);
@@ -194,9 +187,9 @@ export function buildRings(
   list: readonly Ring[],
 ): THREE.Mesh {
   const n = list.length;
-  const iPos = new Float32Array(n * 4); // x, y, z, radius
+  const iPos = new Float32Array(n * 4);
   const iRect = new Float32Array(n * 4);
-  const iParam = new Float32Array(n * 4); // h, rate, cellAspect, zone
+  const iParam = new Float32Array(n * 4);
   const iColor = new Float32Array(n * 3);
   const col = new THREE.Color();
   list.forEach((r, i) => {
@@ -272,15 +265,14 @@ export function buildHolograms(
   list: readonly Holo[],
 ): THREE.Mesh {
   const n = list.length;
-  const iPos = new Float32Array(n * 4); // x, y, z, size
+  const iPos = new Float32Array(n * 4);
   const iRect = new Float32Array(n * 4);
-  const iParam = new Float32Array(n * 4); // spin, alpha, seed, zone
+  const iParam = new Float32Array(n * 4);
   list.forEach((h, i) => {
     iPos.set([h.x, h.y, h.z, h.size], i * 4);
     iRect.set(cat.cells[h.cell]?.uv ?? [0, 0, 0, 0], i * 4);
     iParam.set([h.spin, h.alpha, (h.seed % 9973) / 9973, h.zone], i * 4);
   });
-  // Two crossed vertical quads.
   const a = new THREE.PlaneGeometry(1, 1);
   const b = new THREE.PlaneGeometry(1, 1).rotateY(Math.PI / 2);
   const merged = new THREE.BufferGeometry();
@@ -309,7 +301,6 @@ export function buildHolograms(
         float ang = uTime * iParam.x + iParam.z * 6.28;
         float c = cos(ang); float s = sin(ang);
         vec3 p = position * iPos.w;
-        // Vertical jitter of 1–2% every 3–7 s (5.4).
         float period = mix(3.0, 7.0, iParam.z);
         float jt = mod(uTime + iParam.z * 20.0, period);
         float jitter = (jt < 0.12 && uMotion > 0.5) ? (nHash(floor(uTime * 20.0) + iParam.z) - 0.5) * 0.04 : 0.0;

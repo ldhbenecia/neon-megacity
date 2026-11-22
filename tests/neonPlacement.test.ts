@@ -19,14 +19,11 @@ const EPS = 1e-6;
 const face = (b: number, fi: number): BuildingFace => faces[b]![fi]!;
 const spec = (id: number): BuildingSpec => LAYOUT.buildings[id]!;
 
-/** Signed distance of a point from the face plane (positive = outside the wall). */
 const planeDist = (f: BuildingFace, x: number, z: number): number =>
   (x - f.center.x) * f.normal.x + (z - f.center.z) * f.normal.z;
-/** Face-local u (along the tangent). */
 const faceU = (f: BuildingFace, x: number, z: number): number =>
   (x - f.center.x) * f.tangent.x + (z - f.center.z) * f.tangent.z;
 
-/** Corner + center points of a flat sign quad, nudged 2 cm toward its readable side. */
 function quadPoints(s: FlatSign): [number, number, number][] {
   const tx = -s.nz;
   const tz = s.nx;
@@ -50,7 +47,6 @@ describe('neon sign placement: zero penetration (5.1)', () => {
       expect(s.y1).toBeLessThanOrEqual(f.y1 - TIER_MARGIN + EPS);
       expect(Math.abs(s.u0)).toBeLessThanOrEqual(f.width / 2 - EDGE_IN + EPS);
       expect(Math.abs(s.u1)).toBeLessThanOrEqual(f.width / 2 - EDGE_IN + EPS);
-      // The quad's vertical extent matches the reserved rectangle.
       expect(s.y - s.h / 2).toBeCloseTo(s.y0, 6);
       expect(s.y + s.h / 2).toBeCloseTo(s.y1, 6);
     }
@@ -95,7 +91,6 @@ describe('neon sign placement: zero penetration (5.1)', () => {
       const f = face(s.building, s.face);
       const d = planeDist(f, s.x, s.z);
       if (s.kind === 'blade') {
-        // Perpendicular to the wall: inner edge 0.15 m off the wall, quad faces along the tangent.
         expect(d - s.w / 2).toBeGreaterThan(0);
         expect(d - s.w / 2).toBeLessThanOrEqual(0.3);
         expect(Math.abs(s.nx * f.tangent.x + s.nz * f.tangent.z)).toBeCloseTo(1, 6);
@@ -266,7 +261,6 @@ describe('neon sign placement: zero penetration (5.1)', () => {
       P.holos.length;
     expect(total).toBeGreaterThanOrEqual(2500);
     expect(total).toBeLessThanOrEqual(4000);
-    // At most 10% of signs animate visibly (5.4).
     const moving =
       P.flats.filter((s) => s.anim !== 0).length + P.tubes.filter((t) => t.anim !== 0).length;
     expect(moving / (P.flats.length + P.tubes.length)).toBeLessThanOrEqual(0.1);

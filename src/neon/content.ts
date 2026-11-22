@@ -1,39 +1,18 @@
-// Sign copy for HANGANG (한강), a future Seoul. Every name here is fictional: no real shops, brands, places or
-// names from existing works. Pure data, shared by the atlas and placement.
-//
-// Language rule (user feedback):
-// - No hanja anywhere.
-// - Street level (shop bands, blades, vertical letters, pole panels, bus ads, 포장마차):
-//   Korean first, Seoul-alley feel, a little English (≥ 85% Korean).
-// - High rise (giant screens, ring billboards, rooftop crowns, corp logos, hologram copy):
-//   English (fictional corp names and short English copy).
 import { CORPS } from '../city/layout';
 import type { NeonName } from '../core/palette';
 
-/** Which atlas cell family a piece of copy is drawn into. */
 export type CellKind =
-  | 'band' // horizontal shop band (상가 가로 간판 띠)
-  | 'blade' // narrow vertical projecting sign
-  | 'vtext' // big vertical letters on a side wall
-  | 'crown' // rooftop crown / corp name (English)
-  | 'panel' // small sign-pole panel
-  | 'ring' // ring billboard strip (English)
-  | 'line' // one English line for the giant screens' type scene
-  | 'ad' // bus-stop light box
-  | 'tent' // 포장마차 tent banner
-  | 'logo' // corp logo (holograms, screens; English)
-  | 'koi'; // black-scale koi hologram
+  'band' | 'blade' | 'vtext' | 'crown' | 'panel' | 'ring' | 'line' | 'ad' | 'tent' | 'logo' | 'koi';
 
 export interface Shop {
-  /** Korean name (main line). */
   name: string;
-  /** Small secondary mark: a little English or a short Korean tag, never hanja. */
   sub: string;
   kind: CellKind;
   color: NeonName;
 }
 
-/** 5.3: the twenty fictional shops, reworked into Seoul-alley Korean. */
+// Copy rule: no hanja; high-rise kinds (crown, ring, line, logo, koi) are English, street-level
+// kinds are at least 85% Korean. All names are fictional (tests/neonCopy.test.ts).
 export const SHOPS: readonly Shop[] = [
   { name: '검은비늘수산', sub: '', kind: 'vtext', color: 'neonCyan' },
   { name: '달무리 코인노래방', sub: '', kind: 'band', color: 'neonMagenta' },
@@ -57,7 +36,6 @@ export const SHOPS: readonly Shop[] = [
   { name: '24시 할매해장국', sub: '', kind: 'band', color: 'neonRed' },
 ];
 
-/** English names and taglines for the six fictional megacorps (layout CORPS keys). */
 export const CORP_EN: Readonly<Record<(typeof CORPS)[number], { name: string; tag: string }>> = {
   연무중공업: { name: 'YEONMU HEAVY', tag: 'LIFT TOMORROW' },
   휘광바이오: { name: 'HWIGWANG BIO', tag: 'CELLS REBORN' },
@@ -67,16 +45,13 @@ export const CORP_EN: Readonly<Record<(typeof CORPS)[number], { name: string; ta
   청람로보틱스: { name: 'CHEONGRAM ROBOTICS', tag: 'MACHINES BY YOUR SIDE' },
 };
 
-/** Rooftop crown for an apartment complex name ("새빛마을 3단지" → "SAEBIT VILLAGE 3"). */
 export function complexCrown(name: string): string {
   const m = /(\d+)\s*단지/.exec(name);
   return m ? `SAEBIT VILLAGE ${m[1] ?? ''}` : 'SAEBIT VILLAGE';
 }
 
-/** Rooftop crown of the logistics warehouses. */
 export const CARGO_CROWN = { name: 'UNHAE CARGO', tag: 'HANGANG PORT' } as const;
 
-/** Extra street-level copy so ~3000 signs do not repeat too visibly (Korean first). */
 export const GENERIC_BANDS: readonly { name: string; sub: string }[] = [
   { name: '반달 당구장', sub: '' },
   { name: '해오름 공인중개사', sub: '' },
@@ -160,7 +135,6 @@ export const PANEL_WORDS: readonly string[] = [
   '꽃집',
 ];
 
-/** Ring billboard strips (high rise → English). */
 export const RING_COPY: readonly string[] = [
   '◆ YEONMU HEAVY ◆ LIFT TOMORROW',
   '◆ HWIGWANG BIO ◆ CELLS REBORN',
@@ -170,7 +144,6 @@ export const RING_COPY: readonly string[] = [
   '◆ CHEONGRAM ROBOTICS ◆ MACHINES BY YOUR SIDE',
 ];
 
-/** One-line English copy for the giant screens' type scene (high rise). */
 export const SCREEN_LINES: readonly string[] = [
   'WELCOME TO NEO SEOUL',
   'RAIN 82% TONIGHT',
@@ -182,7 +155,6 @@ export const SCREEN_LINES: readonly string[] = [
   'STAY WARM, STAY WIRED',
 ];
 
-/** Bus-stop light boxes (street level → Korean). */
 export const AD_COPY: readonly { name: string; sub: string }[] = [
   { name: '휘광바이오', sub: '새 피부 상담' },
   { name: '심연통신', sub: '6G 무제한' },
@@ -199,7 +171,6 @@ export const TENT_COPY: readonly string[] = [
   '달빛 꼼장어',
 ];
 
-/** Neon colors for generic copy, weighted toward red / orange and teal (principle 2). */
 export const GENERIC_COLORS: readonly NeonName[] = [
   'neonRed',
   'neonOrange',
@@ -213,12 +184,10 @@ export const GENERIC_COLORS: readonly NeonName[] = [
   'neonMagenta',
 ];
 
-/** True when a string contains CJK ideographs (hanja), which no sign may use. */
 export function hasHanja(s: string): boolean {
   return /[㐀-鿿豈-﫿]/u.test(s);
 }
 
-/** True when a string contains Hangul syllables or jamo. */
 export function hasHangul(s: string): boolean {
   return /[가-힣ᄀ-ᇿ㄰-㆏]/u.test(s);
 }

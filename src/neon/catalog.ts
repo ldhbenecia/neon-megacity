@@ -1,6 +1,3 @@
-// Atlas catalog: the list of sign graphics and where each sits in the atlas canvas.
-// Pure (no DOM) so placement and tests can pick cells without drawing anything;
-// `atlas.ts` paints exactly these rectangles.
 import { CORPS, type Layout } from '../city/layout';
 import type { NeonName } from '../core/palette';
 import {
@@ -25,23 +22,17 @@ export interface CellSpec {
   text: string;
   sub: string;
   color: NeonName;
-  /** Size in atlas pixels. */
   pw: number;
   ph: number;
-  /** For vertical text: number of square character cells (1 per glyph). */
   chars: number;
-  /** Source identity for lookups (corp, complex or shop name), defaults to `text`. */
   key: string;
 }
 
 export interface Cell extends CellSpec {
   index: number;
-  /** Pixel position in the atlas. */
   px: number;
   py: number;
-  /** UV rect (x, y = bottom-left, w, h), flipY convention (canvas top = v 1). */
   uv: readonly [number, number, number, number];
-  /** pw / ph. */
   aspect: number;
 }
 
@@ -49,29 +40,23 @@ export interface Catalog {
   width: number;
   height: number;
   cells: readonly Cell[];
-  /** Cell indices by kind. */
   byKind: Readonly<Record<CellKind, readonly number[]>>;
 }
 
 export const ATLAS_WIDTH = 2048;
-/** Pixel size of one vertical character square. */
 export const VCHAR_PX = 96;
 const PAD = 2;
 
-/**
- * Canvas y (from the cell top) of glyph i in a vertical sign. Glyph 0 is at the top: with
- * the atlas flipY convention its v is the largest, so text reads top to bottom.
- */
+// Glyph 0 is drawn at the cell top; with CanvasTexture flipY its v is the largest, so vertical
+// text reads top to bottom. Atlas drawing and tests must both go through this function.
 export function glyphSlotY(i: number, cellPx: number): number {
   return cellPx * (i + 0.5);
 }
 
-/** Atlas v of the center of glyph i of a vertical-text cell. */
 export function glyphCenterV(cell: Cell, i: number, atlasHeight: number): number {
   return 1 - (cell.py + glyphSlotY(i, cell.pw)) / atlasHeight;
 }
 
-/** Characters of a name drawn vertically (spaces dropped, at most 6). */
 export function verticalGlyphs(text: string): string[] {
   return Array.from(text.replace(/\s+/g, '')).slice(0, 6);
 }
@@ -133,7 +118,6 @@ function specs(complexes: readonly string[]): CellSpec[] {
   return out;
 }
 
-/** Shelf-pack the catalog (tallest first). Deterministic for a given layout. */
 export function buildCatalog(L: Pick<Layout, 'buildings'>): Catalog {
   const complexes = [
     ...new Set(L.buildings.map((b) => b.tags.complex).filter((c): c is string => !!c)),
@@ -174,7 +158,7 @@ export function buildCatalog(L: Pick<Layout, 'buildings'>): Catalog {
   const cells: Cell[] = list.map((s, index) => {
     const p = pos[index] as { x: number; y: number };
     byKind[s.kind].push(index);
-    // Half-texel inset so mip / bilinear sampling never bleeds into the neighbour.
+    // Half-texel inset so bilinear / mip sampling never bleeds into the neighbouring cell.
     const u0 = (p.x + 0.5) / W;
     const u1 = (p.x + s.pw - 0.5) / W;
     const vTop = 1 - (p.y + 0.5) / height;

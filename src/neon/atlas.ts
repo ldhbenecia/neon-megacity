@@ -1,5 +1,3 @@
-// Draws the sign atlas (one canvas, all sign graphics) at startup (5.3).
-// System Korean font stack only; no external fonts or images. Glow is baked into the canvas.
 import * as THREE from 'three';
 import { MATERIAL, NEON } from '../core/palette';
 import { createRng, type Rng } from '../core/random';
@@ -97,7 +95,7 @@ function board(g: G, w: number, h: number, color: number, lightbox: boolean): vo
 
 function drawBand(g: G, c: Cell, rng: Rng): void {
   const col = NEON[c.color].hex;
-  const style = rng.int(0, 2); // 0 neon text, 1 lightbox, 2 neon text + tube frame
+  const style = rng.int(0, 2);
   board(g, c.pw, c.ph, col, style === 1);
   if (style === 2) {
     roundRect(g, 5, 5, c.pw - 10, c.ph - 10, 8);
@@ -158,7 +156,6 @@ function drawCrown(g: G, c: Cell, rng: Rng): void {
   g.fillRect(0, 0, c.pw, c.ph);
   const col = NEON[c.color].hex;
   const accent = NEON[rng.pick(['neonCyan', 'neonOrange', 'neonRed'] as const)].hex;
-  // Geometric mark on the left: circle + diagonal (never a real logo).
   g.beginPath();
   g.arc(c.ph * 0.55, c.ph / 2, c.ph * 0.3, 0, Math.PI * 2);
   tube(g, accent, 4);
@@ -211,7 +208,6 @@ function drawRing(g: G, c: Cell): void {
     g.fillText(seg, x, c.ph * 0.54);
   }
   g.shadowBlur = 0;
-  // LED dot mask.
   g.fillStyle = 'rgba(0,0,0,0.75)';
   for (let y = 0; y < c.ph; y += 4) g.fillRect(0, y, c.pw, 1);
   for (let x = 0; x < c.pw; x += 4) g.fillRect(x, 0, 1, c.ph);
@@ -275,7 +271,7 @@ function drawLogo(g: G, c: Cell, idx: number): void {
   const R = c.ph * 0.26;
   g.beginPath();
   switch (idx % 6) {
-    case 0: // ring with a slash
+    case 0:
       g.arc(cx, cy, R, 0, Math.PI * 2);
       tube(g, col, 6);
       g.beginPath();
@@ -283,7 +279,7 @@ function drawLogo(g: G, c: Cell, idx: number): void {
       g.lineTo(cx + R, cy - R);
       tube(g, alt, 6);
       break;
-    case 1: // triangle in circle
+    case 1:
       g.arc(cx, cy, R, 0, Math.PI * 2);
       tube(g, alt, 5);
       g.beginPath();
@@ -294,14 +290,14 @@ function drawLogo(g: G, c: Cell, idx: number): void {
       g.closePath();
       tube(g, col, 6);
       break;
-    case 2: // nested arcs (depth)
+    case 2:
       for (let i = 0; i < 3; i++) {
         g.beginPath();
         g.arc(cx, cy + R * 0.4, R * (1 - i * 0.3), Math.PI, Math.PI * 2);
         tube(g, i === 1 ? alt : col, 5);
       }
       break;
-    case 3: // two diagonals over a wave
+    case 3:
       g.moveTo(cx - R, cy + R * 0.6);
       g.lineTo(cx - R * 0.2, cy - R);
       g.moveTo(cx - R * 0.1, cy + R * 0.6);
@@ -312,7 +308,7 @@ function drawLogo(g: G, c: Cell, idx: number): void {
       g.quadraticCurveTo(cx, cy + R * 0.4, cx + R * 1.1, cy + R * 0.9);
       tube(g, alt, 4);
       break;
-    case 4: // square chip with pins
+    case 4:
       g.rect(cx - R * 0.6, cy - R * 0.6, R * 1.2, R * 1.2);
       tube(g, col, 5);
       g.beginPath();
@@ -324,7 +320,7 @@ function drawLogo(g: G, c: Cell, idx: number): void {
       }
       tube(g, alt, 3);
       break;
-    default: // hexagon with an eye
+    default:
       for (let i = 0; i < 6; i++) {
         const a = (i * Math.PI) / 3;
         g.lineTo(cx + Math.cos(a) * R, cy + Math.sin(a) * R);
@@ -347,20 +343,17 @@ function drawKoi(g: G, c: Cell): void {
   g.save();
   g.translate(s / 2, s / 2);
   g.rotate(-0.5);
-  // Body.
   g.beginPath();
   g.moveTo(-s * 0.36, 0);
   g.bezierCurveTo(-s * 0.2, -s * 0.16, s * 0.18, -s * 0.13, s * 0.3, 0);
   g.bezierCurveTo(s * 0.18, s * 0.13, -s * 0.2, s * 0.16, -s * 0.36, 0);
   tube(g, col, 4);
-  // Tail.
   g.beginPath();
   g.moveTo(s * 0.28, 0);
   g.quadraticCurveTo(s * 0.38, -s * 0.02, s * 0.45, -s * 0.13);
   g.quadraticCurveTo(s * 0.4, 0, s * 0.45, s * 0.13);
   g.quadraticCurveTo(s * 0.38, s * 0.02, s * 0.28, 0);
   tube(g, NEON.neonOrange.hex, 3);
-  // Fins, eye, scales.
   g.beginPath();
   g.moveTo(-s * 0.12, s * 0.09);
   g.quadraticCurveTo(-s * 0.05, s * 0.22, s * 0.02, s * 0.1);
@@ -383,7 +376,6 @@ export interface Atlas {
   catalog: Catalog;
 }
 
-/** Paints every catalog cell into one canvas texture (SRGB, mipmapped). */
 export function buildAtlas(catalog: Catalog, renderer: THREE.WebGLRenderer, seed = 5353): Atlas {
   const canvas = document.createElement('canvas');
   canvas.width = catalog.width;

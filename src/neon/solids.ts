@@ -1,5 +1,3 @@
-// Building solids for sign clearance tests (pure). A sign may only touch the face it hangs on:
-// it must not cut into any tier, twin stack, cantilever mass or skybridge of any building.
 import {
   buildingVolumes,
   buildingsInAabb,
@@ -10,18 +8,15 @@ import {
   type Layout,
 } from '../city/layout';
 
-/** Oriented box (XZ rectangle rotated by rotY, plus a y range) or vertical cylinder. */
 export interface Solid {
   kind: 'box' | 'cyl';
   x: number;
   z: number;
-  /** Half extents along the local X / Z axes (box) or radius in hw (cyl). */
   hw: number;
   hd: number;
   rotY: number;
   y0: number;
   y1: number;
-  /** Which building / tier it came from (tier -1 = cantilever, -2 = skybridge). */
   building: number;
   tier: number;
   stack: 0 | 1;
@@ -29,7 +24,8 @@ export interface Solid {
 
 const solidCache = new WeakMap<BuildingSpec, Solid[]>();
 
-/** Every solid volume of a building (tiers of both stacks, cantilever mass, skybridge). */
+// Own cantilever / skybridge boxes plus the layout's buildingVolumes extras (spire): a
+// deliberately conservative union.
 export function buildingSolids(b: BuildingSpec): Solid[] {
   const hit = solidCache.get(b);
   if (hit) return hit;
@@ -95,7 +91,6 @@ export function buildingSolids(b: BuildingSpec): Solid[] {
       stack: 0,
     });
   }
-  // The layout's own extra volumes (cantilever, skybridge, spire) as well: conservative union.
   const nTiers = b.tiers.length + (b.twin?.length ?? 0);
   buildingVolumes(b)
     .slice(nTiers)
@@ -130,7 +125,6 @@ function boxCorners(s: Pick<Solid, 'x' | 'z' | 'hw' | 'hd' | 'rotY'>): { x: numb
   });
 }
 
-/** Overlap depth > `eps` between two solids (separating axis in XZ, interval in y). */
 export function solidsOverlap(a: Solid, b: Solid, eps = 0.01): boolean {
   if (Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0) <= eps) return false;
   if (a.kind === 'cyl' && b.kind === 'cyl') {
@@ -144,7 +138,6 @@ export function solidsOverlap(a: Solid, b: Solid, eps = 0.01): boolean {
     const dz = Math.max(Math.abs(l.z) - o.hd, 0);
     return Math.hypot(dx, dz) < c.hw - eps;
   }
-  // Box vs box: SAT on the 4 local axes with an epsilon (touching is fine).
   const axes = [a.rotY, a.rotY + Math.PI / 2, b.rotY, b.rotY + Math.PI / 2].map((r) =>
     toWorld(1, 0, r),
   );
@@ -170,7 +163,6 @@ export function solidsOverlap(a: Solid, b: Solid, eps = 0.01): boolean {
   return true;
 }
 
-/** XZ bounds of a solid. */
 export function solidBounds(s: Solid): { minX: number; minZ: number; maxX: number; maxZ: number } {
   if (s.kind === 'cyl') {
     return { minX: s.x - s.hw, minZ: s.z - s.hw, maxX: s.x + s.hw, maxZ: s.z + s.hw };
@@ -184,10 +176,6 @@ export function solidBounds(s: Solid): { minX: number; minZ: number; maxX: numbe
   };
 }
 
-/**
- * First building solid that the volume cuts into, or null when it is clear.
- * Buildings come from the layout's 64 m spatial hash (a small margin finds touching neighbours).
- */
 export function firstHit(L: Layout, v: Solid): Solid | null {
   const bb = solidBounds(v);
   const ids = buildingsInAabb(L, bb.minX - 2, bb.minZ - 2, bb.maxX + 2, bb.maxZ + 2);

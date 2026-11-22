@@ -1,6 +1,3 @@
-// Selection highlight (8.3): cyan 0.15 m lines along the tier edges of env.selectedBuilding,
-// pulsing with a 1.5 s period. Rebuilt only when the selection changes; lines thicken with
-// distance so they stay at least ~2 px wide.
 import * as THREE from 'three';
 import { toWorld, type BuildingSpec, type Tier } from '../city/layout';
 import { NEON } from '../core/palette';
@@ -13,7 +10,6 @@ export interface Segment3 {
   b: [number, number, number];
 }
 
-/** Pure: edge segments of every tier (box: 12 edges, cylinder: 24-gon rings + 4 verticals). */
 export function tierEdges(b: BuildingSpec): Segment3[] {
   const out: Segment3[] = [];
   const tiers: Tier[] = b.twin ? [...b.tiers, ...b.twin] : b.tiers;
@@ -65,7 +61,6 @@ export function tierEdges(b: BuildingSpec): Segment3[] {
   return out;
 }
 
-/** Thin boxes along segments; `aAxis` holds the nearest point on the segment for thickening. */
 function edgeGeometry(segs: readonly Segment3[]): THREE.BufferGeometry {
   const pos: number[] = [];
   const axis: number[] = [];
