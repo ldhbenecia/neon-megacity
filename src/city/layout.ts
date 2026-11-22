@@ -35,7 +35,18 @@ export {
   terrainHeight,
   surfaceHeight,
 } from './river';
-export { RING, ringDeckY, highwayCurve, highwaySamples, onBridge } from './highways';
+export {
+  RING,
+  ringDeckY,
+  highwayCurve,
+  highwaySamples,
+  onBridge,
+  bridgeDeckY,
+  BRIDGE_LAND,
+  BRIDGE_LAND_SOUTH,
+  MAX_DECK_THICKNESS,
+  MIN_ROAD_CLEARANCE,
+} from './highways';
 export {
   buildingsInAabb,
   buildingContaining,
