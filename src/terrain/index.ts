@@ -4,7 +4,6 @@
 // riverSignedDistance, ridgeHeight, ridgePoint) and env colors written by lighting.
 // Draw calls: ground 1, channel 1, water 1, ridge rings 1, beacons 1 (budget 8).
 import * as THREE from 'three';
-import { paletteAt } from '../core/palette';
 import type { Ctx, CityModuleInstance } from '../core/types';
 import { buildChannel, buildGround } from './ground';
 import { createRidges, type RidgeEnv } from './ridges';
@@ -38,6 +37,10 @@ export function init(ctx: Ctx): CityModuleInstance {
     vertexColors: true,
     roughness: 0.85,
     metalness: 0,
+    // Behind roads / sidewalks at y = 0 (offset 0), ahead of the ground it overlaps (1, 4).
+    polygonOffset: true,
+    polygonOffsetFactor: 1,
+    polygonOffsetUnits: 2,
   });
   const channel = new THREE.Mesh(channelGeo, channelMat);
   channel.name = 'river-channel';
@@ -54,22 +57,17 @@ export function init(ctx: Ctx): CityModuleInstance {
 
   scene.add(group);
 
-  // Ridge colors follow lighting's horizon; the anti-sun horizon comes from the same palette.
+  // Ridge colors follow lighting's horizon colors (env.horizonColor / horizonAntiColor), shared
+  // by reference: no per-frame palette lookups here.
   const ridgeEnv: RidgeEnv = {
     horizon: env.horizonColor,
-    horizonAnti: new THREE.Color(),
+    horizonAnti: env.horizonAntiColor ?? env.horizonColor,
     sunDirection: env.sunDirection,
     dayFactor: env.dayFactor,
   };
-  let antiTime = Number.NaN;
 
   return {
     update(_dt, elapsed) {
-      if (env.timeOfDay !== antiTime) {
-        antiTime = env.timeOfDay;
-        const a = paletteAt(antiTime).horizonAntiSun;
-        ridgeEnv.horizonAnti.setRGB(a[0], a[1], a[2], THREE.SRGBColorSpace);
-      }
       ridgeEnv.dayFactor = env.dayFactor;
       water.update(elapsed);
       ridges.update(elapsed, ridgeEnv, renderer.getPixelRatio());

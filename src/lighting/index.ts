@@ -1,7 +1,8 @@
 // Lighting module (ART_DIRECTION 3, 13.1): time of day, sun / moon key light, hemisphere,
 // shadows, exposure, sky dome and the PMREM environment map.
 // Runs first every frame and writes the env fields it owns: timeOfDay, sunDirection,
-// sunElevation, dayFactor, nightFactor, horizonColor, skyColor, neonGain, windowLitRatio.
+// sunElevation, dayFactor, nightFactor, horizonColor, horizonAntiColor, skyColor, neonGain,
+// windowLitRatio.
 // Also owns renderer.toneMappingExposure, renderer.shadowMap policy, scene.environment and
 // scene.environmentIntensity.
 import * as THREE from 'three';
@@ -75,6 +76,8 @@ export function init(ctx: Ctx): CityModuleInstance {
 
   // --- scratch (no per-frame allocation)
   const moonDir = new THREE.Vector3();
+  const horizonAnti = new THREE.Color();
+  env.horizonAntiColor = horizonAnti;
   const lastShadowSun = new THREE.Vector3(0, -1, 0);
   let lastShadowFrame: ShadowFrame | null = null;
   let secondsSinceShadow = 0;
@@ -130,6 +133,7 @@ export function init(ctx: Ctx): CityModuleInstance {
     // Palette-driven env fields.
     setSrgb(env.horizonColor, pal.horizonColor);
     setSrgb(env.skyColor, pal.skyColor);
+    setSrgb(horizonAnti, pal.horizonAntiSun);
     env.neonGain = pal.neonGain;
     env.windowLitRatio = pal.windowLitRatio;
 
@@ -161,7 +165,7 @@ export function init(ctx: Ctx): CityModuleInstance {
     const u = sky.uniforms;
     setSrgb(u.uZenith.value, pal.skyColor);
     setSrgb(u.uHorizon.value, pal.horizonColor);
-    setSrgb(u.uHorizonAnti.value, pal.horizonAntiSun);
+    u.uHorizonAnti.value.copy(horizonAnti);
     setSrgb(u.uGlow.value, pal.cityGlow, pal.cityGlowIntensity);
     setSrgb(u.uGround.value, pal.fogColor);
     u.uSunDir.value.copy(env.sunDirection);

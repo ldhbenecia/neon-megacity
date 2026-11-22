@@ -40,6 +40,7 @@ Only the owner writes a field; everyone else reads it. Types and comments live i
 | `sunDirection`, `sunElevation` | lighting   | unit vector toward the sun, and its y                                   |
 | `dayFactor`, `nightFactor`     | lighting   | 0..1 smooth blend, sum to 1                                             |
 | `horizonColor`, `skyColor`     | lighting   | sky colors (palette)                                                    |
+| `horizonAntiColor`             | lighting   | horizon away from the sun (optional; set in lighting init)              |
 | `neonGain`                     | lighting   | sign brightness multiplier: night 1.0, sunset 0.7, day 0.3              |
 | `windowLitRatio`               | lighting   | city-wide lit window ratio; buildings applies per-district factors      |
 | `rain`                         | atmosphere | 0..1 rain intensity. Initial value from `?rain` (default 0.35)          |

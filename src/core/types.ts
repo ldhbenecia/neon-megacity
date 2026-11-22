@@ -28,6 +28,12 @@ export interface Env {
   /** Sky horizon / zenith colors (palette 3.1). Owner: lighting. */
   horizonColor: THREE.Color;
   skyColor: THREE.Color;
+  /**
+   * Horizon color away from the sun (palette `horizonAntiSun`; teal at sunset, = horizonColor at
+   * night and noon). Created and written by lighting during its init, so it is undefined only
+   * before lighting runs. Owner: lighting.
+   */
+  horizonAntiColor?: THREE.Color;
   /** Emissive brightness multiplier for signs: night 1.0, sunset 0.7, day 0.3 (palette). Owner: lighting. */
   neonGain: number;
   /** City-wide lit-window ratio 0..1 (night median 0.32); buildings multiplies per district. Owner: lighting. */
