@@ -2,7 +2,8 @@
 // material compiles (compilation happens on the first render / compileAsync, after every init).
 //
 // Adds to three's FogExp2:
-//   - height fog: full density at the ground, ×0.35 above 260 m, ×1.25 under y = 0 (river haze)
+//   - height fog: full density at the ground, ×0.35 above 260 m, ×1.25 under y = 0 (river haze);
+//     seen from above, the mean density along the ray is used when lower (topdown stays readable)
 //   - sun scattering: fog turns toward the sun color on the sun side (sunset), teal elsewhere
 //   - RAMHA_FOG helpers that the emissive chunk (src/core/shaders/emissiveFog.ts) reuses
 //
@@ -53,6 +54,16 @@ const FOG_PARS_FRAGMENT = /* glsl */ `
     if ( ramhaFogHeight.w > 0.5 ) {
       float fy = cameraPosition.y + vFogWorld.y;
       float fh = mix( 1.0, ramhaFogHeight.y, smoothstep( 0.0, ramhaFogHeight.x, fy ) );
+      // Looking down from high up the ray crosses mostly thin air: use the mean density along
+      // the ray when it is lower (linear ramp, closed form), so the city stays readable from above.
+      float fH = ramhaFogHeight.x;
+      float fLo = max( min( fy, cameraPosition.y ), 0.0 );
+      float fHi = max( max( fy, cameraPosition.y ), 0.0 );
+      if ( fHi - fLo > 1.0 ) {
+        float fA = fLo < fH ? fLo * fLo / ( 2.0 * fH ) : fLo - 0.5 * fH;
+        float fB = fHi < fH ? fHi * fHi / ( 2.0 * fH ) : fHi - 0.5 * fH;
+        fh = min( fh, 1.0 - ( 1.0 - ramhaFogHeight.y ) * ( fB - fA ) / ( fHi - fLo ) );
+      }
       fh *= fy < 0.0 ? ramhaFogHeight.z : 1.0;
       fogF = min( fogF * fh, 1.0 );
     }

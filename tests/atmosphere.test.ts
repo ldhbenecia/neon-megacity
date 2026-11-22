@@ -48,6 +48,11 @@ describe('fog chunks', () => {
     expect(heightFogScale(0)).toBe(1);
     expect(heightFogScale(400)).toBeCloseTo(HEIGHT_FOG.top, 9);
     expect(heightFogScale(-2)).toBeCloseTo(HEIGHT_FOG.water, 9);
+    // Looking up from the street keeps the doc's point value (tower tops poke out) ...
+    expect(heightFogScale(400, 5)).toBeCloseTo(HEIGHT_FOG.top, 9);
+    // ... looking down from the topdown preset uses the thinner mean along the ray.
+    expect(heightFogScale(0, 1900)).toBeLessThan(0.45);
+    expect(heightFogScale(0, 5)).toBeGreaterThan(0.98);
     const d = NIGHT.fogDensity;
     // 7.5 layering at ground level: midground 150..800 m 10..50 %, far 800..2000 m 50..90 %+.
     expect(fogFactor(d, 150)).toBeLessThan(0.1);

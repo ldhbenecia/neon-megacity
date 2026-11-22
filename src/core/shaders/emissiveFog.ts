@@ -86,25 +86,41 @@ export function applyEmissiveFog(shader: ShaderSource): boolean {
   return true;
 }
 
-/** CPU mirror of the height falloff in the fog chunk (1 at the ground, HEIGHT_FOG.top up high). */
-export function heightFogScale(worldY: number): number {
-  const t = Math.min(1, Math.max(0, worldY / HEIGHT_FOG.heightTop));
+/**
+ * CPU mirror of the height falloff in the fog chunk: 1 at the ground, HEIGHT_FOG.top up high.
+ * With `cameraY`, the mean density along the camera ray (linear ramp) is used when it is lower,
+ * as the shader does, so looking down from high up is not fogged like looking along the ground.
+ */
+export function heightFogScale(worldY: number, cameraY = worldY): number {
+  const H = HEIGHT_FOG.heightTop;
+  const t = Math.min(1, Math.max(0, worldY / H));
   const s = t * t * (3 - 2 * t);
-  const k = 1 + (HEIGHT_FOG.top - 1) * s;
+  let k = 1 + (HEIGHT_FOG.top - 1) * s;
+  const lo = Math.max(Math.min(worldY, cameraY), 0);
+  const hi = Math.max(Math.max(worldY, cameraY), 0);
+  if (hi - lo > 1) {
+    const F = (y: number): number => (y < H ? (y * y) / (2 * H) : y - H / 2);
+    k = Math.min(k, 1 - ((1 - HEIGHT_FOG.top) * (F(hi) - F(lo))) / (hi - lo));
+  }
   return worldY < 0 ? k * HEIGHT_FOG.water : k;
 }
 
 /** CPU mirror of the ordinary FogExp2 factor with height fog, as the atmosphere chunk computes it. */
-export function fogFactor(fogDensity: number, depth: number, worldY = 0): number {
+export function fogFactor(fogDensity: number, depth: number, worldY = 0, cameraY = worldY): number {
   const x = fogDensity * depth;
-  return Math.min(1, (1 - Math.exp(-x * x)) * heightFogScale(worldY));
+  return Math.min(1, (1 - Math.exp(-x * x)) * heightFogScale(worldY, cameraY));
 }
 
 /**
  * CPU mirror of the emissive FogExp2 factor (for tests, halo sprites and LOD decisions).
- * `worldY` applies the height fog like the shader; omit it for ground level.
+ * `worldY` / `cameraY` apply the height fog like the shader; omit them for ground level.
  */
-export function emissiveFogFactor(fogDensity: number, depth: number, worldY = 0): number {
+export function emissiveFogFactor(
+  fogDensity: number,
+  depth: number,
+  worldY = 0,
+  cameraY = worldY,
+): number {
   const x = fogDensity * EMISSIVE_FOG_DENSITY_SCALE * depth;
-  return Math.min(1, (1 - Math.exp(-x * x)) * heightFogScale(worldY));
+  return Math.min(1, (1 - Math.exp(-x * x)) * heightFogScale(worldY, cameraY));
 }
