@@ -68,11 +68,11 @@ describe('layout v2: determinism', () => {
       digest: digest(LAYOUT),
     }).toMatchInlineSnapshot(`
       {
-        "blocks": 1027,
-        "buildings": 2828,
-        "digest": "973ca52d",
-        "roads": 1214,
-        "slots": 1854,
+        "blocks": 936,
+        "buildings": 4329,
+        "digest": "6a79d000",
+        "roads": 1082,
+        "slots": 1802,
       }
     `);
   });
@@ -94,12 +94,12 @@ describe('layout v2: determinism', () => {
 describe('layout v2: counts (ART_DIRECTION 2.6)', () => {
   const count = (pred: (b: BuildingSpec) => boolean) => B.filter(pred).length;
 
-  it('has 2000..3200 buildings, 900..1400 hill houses, 8..12 megatowers', () => {
-    expect(B.length).toBeGreaterThanOrEqual(2000);
-    expect(B.length).toBeLessThanOrEqual(3200);
+  it('has 3600..4800 buildings, 2200..3200 hill houses, 8..12 megatowers', () => {
+    expect(B.length).toBeGreaterThanOrEqual(3600);
+    expect(B.length).toBeLessThanOrEqual(4800);
     const hill = count((b) => b.archetype === 'hillHouse');
-    expect(hill).toBeGreaterThanOrEqual(900);
-    expect(hill).toBeLessThanOrEqual(1400);
+    expect(hill).toBeGreaterThanOrEqual(2200);
+    expect(hill).toBeLessThanOrEqual(3200);
     const mega = count((b) => b.h >= MEGA_MIN_H);
     expect(mega).toBeGreaterThanOrEqual(8);
     expect(mega).toBeLessThanOrEqual(12);

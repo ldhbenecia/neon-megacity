@@ -45,8 +45,44 @@ const BRIDGE_DEFS: {
   },
 ];
 
-/** Distance from the centerline to the approach landing (outer edge of the riverside band). */
+/** Distance from the centerline to the north approach landing (outer edge of the riverside band). */
 export const BRIDGE_LAND = RIVERSIDE_HALF;
+/**
+ * South approach landing distance. The south approach crosses over hw-south (150 ± 12 m at
+ * y 0.3), so it lands further out to keep ≥ MIN_ROAD_CLEARANCE under the deck there
+ * (deck 10 m → about 7 m at 162 m).
+ */
+export const BRIDGE_LAND_SOUTH = 260;
+/**
+ * hw-river-north deck height. 16 m (ART_DIRECTION had 14) so the deck underside stays
+ * MIN_ROAD_CLEARANCE above the north bridge approaches it crosses (≈ 8.6 m at 137 m).
+ */
+export const HW_RIVER_NORTH_Y = 16;
+/** Thickest deck slab the clearance guarantee assumes (m). Infra decks must not be thicker. */
+export const MAX_DECK_THICKNESS = 1.5;
+/** Minimum vertical clearance between a deck underside and a road or deck below it (m). */
+export const MIN_ROAD_CLEARANCE = 5;
+
+/**
+ * Upper deck surface of a bridge (span + approach ramps) over (x, z), or null when the point
+ * is off the bridge footprint. The span is flat at deckY between the abutments; each approach
+ * descends linearly to 0 at its landing. The lower deck of 'doubleDeck' spans abutment to
+ * abutment only. `margin` widens the footprint sideways (e.g. by a road half width).
+ */
+export function bridgeDeckY(br: Bridge, x: number, z: number, margin = 0): number | null {
+  const p = { x, z };
+  if (pointSegmentDistance(p, br.landA, br.landB) > br.width / 2 + margin) return null;
+  const ux = br.b.x - br.a.x;
+  const uz = br.b.z - br.a.z;
+  const span = Math.hypot(ux, uz);
+  // Signed distance along the bridge axis from abutment a (north) toward b (south).
+  const s = ((x - br.a.x) * ux + (z - br.a.z) * uz) / span;
+  if (s >= 0 && s <= span) return br.deckY;
+  const rampA = Math.hypot(br.a.x - br.landA.x, br.a.z - br.landA.z);
+  const rampB = Math.hypot(br.b.x - br.landB.x, br.b.z - br.landB.z);
+  const over = s < 0 ? -s / rampA : (s - span) / rampB;
+  return over > 1 ? null : br.deckY * (1 - over);
+}
 
 export function makeBridges(): Bridge[] {
   return BRIDGE_DEFS.map((d) => {
@@ -59,7 +95,7 @@ export function makeBridges(): Bridge[] {
       a: at(-half),
       b: at(half),
       landA: at(-BRIDGE_LAND),
-      landB: at(BRIDGE_LAND),
+      landB: at(BRIDGE_LAND_SOUTH),
       deckY: d.deckY,
       width: d.width,
       lanes: d.lanes,
@@ -123,15 +159,15 @@ function bezierPoints(p0: Vec3, p1: Vec3, p2: Vec3, p3: Vec3, n = 12): Vec3[] {
 
 function rampPoints(id: 'a' | 'b'): Vec3[] {
   if (id === 'a') {
-    // Ring east side → river-north, eastbound (inner ramp, descending 25 → 14).
+    // Ring east side → river-north, eastbound (inner ramp, descending 25 → 16).
     const p0 = { x: RING.x1, y: ringDeckY(RING.x1, -300), z: -300 };
-    const end = riverNorthAt(480, 14);
-    const pre = riverNorthAt(360, 14);
+    const end = riverNorthAt(480, HW_RIVER_NORTH_Y);
+    const pre = riverNorthAt(360, HW_RIVER_NORTH_Y);
     return bezierPoints(p0, { x: RING.x1 + 15, y: 0, z: -200 }, pre, end);
   }
-  // River-north westbound → ring east side (outer ramp, climbing 14 → ~25).
-  const p0 = riverNorthAt(620, 14);
-  const p1 = riverNorthAt(480, 14);
+  // River-north westbound → ring east side (outer ramp, climbing 16 → ~25).
+  const p0 = riverNorthAt(620, HW_RIVER_NORTH_Y);
+  const p1 = riverNorthAt(480, HW_RIVER_NORTH_Y);
   const p3 = { x: RING.x1, y: ringDeckY(RING.x1, -440), z: -440 };
   return bezierPoints(p0, { ...p1, z: p1.z - 30 }, { x: RING.x1 + 20, y: 0, z: -360 }, p3);
 }
@@ -151,7 +187,7 @@ function hwDefs(): HwDef[] {
     {
       id: 'hw-river-north',
       kind: 'elevated',
-      points: riverOffsetPoints(-HW_OFFSET, 14),
+      points: riverOffsetPoints(-HW_OFFSET, HW_RIVER_NORTH_Y),
       closed: false,
       width: 26,
       lanes: 6,

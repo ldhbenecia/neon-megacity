@@ -74,8 +74,10 @@ export interface Bridge {
   a: Vec2;
   b: Vec2;
   /**
-   * Where the approach ramps meet the ground (y = 0), on the outer edge of the riverside band.
-   * The deck descends linearly from `deckY` at the abutment to 0 at the landing.
+   * Where the approach ramps meet the ground (y = 0). The ramps are asymmetric: `landA` (north)
+   * is RIVERSIDE_HALF (180 m) from the centerline, a 60 m ramp; `landB` (south) is
+   * BRIDGE_LAND_SOUTH (260 m), a 140 m ramp that clears hw-south. The deck descends linearly
+   * from `deckY` at the abutment to 0 at the landing (see `bridgeDeckY`).
    */
   landA: Vec2;
   landB: Vec2;
