@@ -1,20 +1,5 @@
-// Post-processing (ART_DIRECTION 3.3, 11). Replaces ctx.render.
-//
-//   scene ──► HDR target (HalfFloat, MSAA by DPR) ──► UnrealBloomPass mip chain (≤ ½ res)
-//                         │                                   │
-//                         └──────────► final pass ◄───────────┘  (one full-res draw)
-//                                      bloom add + lens drops + chromatic aberration
-//                                      + tone mapping / sRGB (OutputPass) + vignette + grain
-//
-// Cost control compared to a stock EffectComposer chain (RenderPass → Bloom → OutputPass → lens):
-//   - bloom's additive blend back into the full-res target (and its MSAA re-resolve) is skipped;
-//     the final pass adds the bloom texture itself
-//   - OutputPass and the lens pass are merged: a single full-screen pass at device resolution
-//   - bloom input never exceeds CSS resolution (blur gains nothing from DPR) and halves on tier 1
-// Draw calls: bright pass 1 + blur 10 + composite 1 + final 1 = 13.
-// renderer.info: never reset here. Every renderer.render() call resets it only when
-// info.autoReset is true; ux sets autoReset = false and resets once per frame, so stats
-// cover the scene and all post passes.
+// bloom's own full-res additive blend is skipped on purpose: the final pass adds tBloom.
+// Never reset renderer.info here: ux aggregates it with autoReset = false.
 import {
   ACESFilmicToneMapping,
   AgXToneMapping,
@@ -43,7 +28,7 @@ import type { Ctx } from '../core/types';
 import { LENS, TIME_WRAP, bloomScaleFor, msaaSamplesFor, wrapTime } from './logic';
 import { HASH_GLSL } from './noise';
 
-// UnrealBloomPass.BlurDirectionX / Y (static in JS, missing from the type definitions).
+// UnrealBloomPass.BlurDirectionX/Y exist in JS but not in the type definitions.
 const BLUR_X = new Vector2(1, 0);
 const BLUR_Y = new Vector2(0, 1);
 
@@ -74,8 +59,6 @@ uniform float uDrops;
 varying vec2 vUv;
 ${HASH_GLSL}
 
-// Sparse raindrops on the lens: one candidate per grid cell, each living a few seconds.
-// Returns a UV offset: the drop refracts (flips) what is behind it, no outline.
 vec2 lensDrops( vec2 uv ) {
   vec2 p = uv * vec2( uAspect, 1.0 ) * 7.0;
   vec2 id = floor( p );
@@ -86,7 +69,7 @@ vec2 lensDrops( vec2 uv ) {
   float life = fract( cycle );
   float alive = step( 1.0 - 0.3 * uDrops, hash12( id + floor( cycle ) * 13.7 ) );
   vec2 center = ( vec2( hash12( id + 3.3 ), hash12( id + 5.9 ) ) - 0.5 ) * 0.5;
-  center.y -= life * 0.12; // slow slide
+  center.y -= life * 0.12;
   float r = 0.07 + 0.13 * hash12( id + 9.4 );
   vec2 d = f - center;
   d.y *= 1.0 + 0.25 * life;
@@ -101,7 +84,6 @@ void main() {
   if ( uDrops > 0.001 ) uv += lensDrops( uv );
 
   vec2 c = uv - 0.5;
-  // Radial chromatic aberration, stronger toward the frame edges.
   vec2 off = c * uAberration * ( 0.4 + 3.0 * dot( c, c ) );
   vec3 col = vec3(
     texture2D( tScene, uv + off ).r,
@@ -134,7 +116,6 @@ void main() {
     outColor = sRGBTransferOETF( outColor );
   #endif
 
-  // Film grain in display space, weighted away from pure black so the night stays clean.
   float g = hash12( gl_FragCoord.xy + fract( uTime * 7.31 ) * 517.0 ) - 0.5;
   float lum = dot( outColor.rgb, vec3( 0.2126, 0.7152, 0.0722 ) );
   outColor.rgb += g * uGrain * smoothstep( 0.0, 0.12, lum );
@@ -146,22 +127,14 @@ export interface PostSettings {
   strength: number;
   radius: number;
   threshold: number;
-  /** Lens: chromatic aberration, vignette, grain on/off. */
   lens: boolean;
-  /** Raindrops on the lens 0..1 (already scaled by rain and altitude). */
   drops: number;
 }
 
 export interface Post {
   render(): void;
-  /**
-   * Compile every scene material for the HDR target (tone mapping off, linear output: a different
-   * program variant than a compile against the canvas) plus the post materials.
-   */
   warmup(): void;
-  /** Per-frame parameters, called from atmosphere update. */
   update(elapsed: number, s: PostSettings): void;
-  /** Quality tier (0 full, ≥1 bloom at half resolution). */
   setTier(tier: number): void;
   dispose(): void;
 }
@@ -193,19 +166,11 @@ const uniform = (uniforms: Record<string, IUniform>, name: string): IUniform => 
   return u;
 };
 
-/**
- * Whether the GPU can render into half-float targets (the HDR scene target and bloom's own
- * mips are RGBA16F). WebGL2 needs EXT_color_buffer_float or EXT_color_buffer_half_float.
- */
 export function supportsHalfFloatTargets(ctx: Ctx): boolean {
   const ext = ctx.renderer.extensions;
   return ext.has('EXT_color_buffer_float') || ext.has('EXT_color_buffer_half_float');
 }
 
-/**
- * Creates the post chain, or returns null when half-float targets are unsupported: the caller
- * then keeps the default `renderer.render` (tone mapping and sRGB on the canvas, no bloom/lens).
- */
 export function createPost(ctx: Ctx): Post | null {
   if (!supportsHalfFloatTargets(ctx)) return null;
   const { renderer, scene, camera } = ctx;
@@ -279,19 +244,20 @@ export function createPost(ctx: Ctx): Post | null {
     pixelRatio = pr;
     const samples = msaaSamplesFor(pr);
     if (samples !== sceneTarget.samples) {
+      // three applies a new sample count only after dispose().
       sceneTarget.samples = samples;
-      sceneTarget.dispose(); // re-created lazily with the new sample count
+      sceneTarget.dispose();
     }
     resize();
   }
 
   resize();
-  // ctx.onResize has no unsubscribe: the handler goes inert after dispose.
+  // ctx.onResize has no unsubscribe.
   let disposed = false;
   ctx.onResize((w, h) => {
     if (disposed) return;
     cssSize.set(w, h);
-    pixelRatio = -1; // force a re-sync (the renderer may have changed DPR as well)
+    pixelRatio = -1;
     syncPixelRatio();
   });
 
@@ -308,7 +274,6 @@ export function createPost(ctx: Ctx): Post | null {
     finalMaterial.needsUpdate = true;
   }
 
-  /** UnrealBloomPass.render without its final full-res additive blend (the final pass adds it). */
   function renderBloom(): void {
     renderer.getClearColor(oldClear);
     const oldAlpha = renderer.getClearAlpha();

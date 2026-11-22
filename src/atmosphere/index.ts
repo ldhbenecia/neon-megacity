@@ -1,10 +1,4 @@
-// Atmosphere module (ART_DIRECTION 3.3, 5.5, 7, 11): fog chunks, rain, clouds, stars,
-// searchlights and post-processing. Runs last in the frame and owns `ctx.render`.
-//
-// Writes: env.rain (GUI only, never per frame: the `?rain` query value is kept), env.wetness,
-//         env.fogColor, env.fogDensity, scene.fog, ctx.render.
-// Reads:  env.timeOfDay (palette base values), env.sunDirection / sunElevation, env.nightFactor,
-//         env.horizonColor.
+// env.rain is written only by the GUI: never overwrite the ?rain value from main.
 import { Color, FogExp2, SRGBColorSpace, Vector3 } from 'three';
 import { NIGHT, paletteAt, type PaletteSample, type RGB } from '../core/palette';
 import { FOG_UNIFORMS } from '../core/shaders/emissiveFog';
@@ -28,7 +22,6 @@ import { createRain } from './rain';
 import { createSearchlights } from './searchlights';
 import { createStars } from './stars';
 
-/** Recompute the palette when timeOfDay moved by more than this (≈ 9 s of game time). */
 const PALETTE_EPSILON = 1e-4;
 
 const setSrgb = (c: Color, rgb: RGB, k = 1): Color =>
@@ -54,25 +47,23 @@ export function init(ctx: Ctx): CityModuleInstance {
   const previousFog = scene.fog;
   scene.fog = fog;
 
-  // Boot straight into the steady state for the initial rain so screenshots are deterministic.
   env.wetness = Math.max(env.wetness, wetnessTarget(env.rain));
 
   const searchlights = createSearchlights(ctx);
   const stars = createStars(ctx);
   const clouds = createClouds(ctx, searchlights.spots, searchlights.colors);
   const rain = createRain(ctx);
-  const post = createPost(ctx); // null without half-float render targets
+  const post = createPost(ctx);
   const previousRender = ctx.render;
   if (post) ctx.render = () => post.render();
-  // main's boot 'compile' stage calls this instead of renderer.compile(scene, camera), so the
-  // programs for the HDR target and the post chain are compiled once, in the right variant.
+  // main's compile stage calls this instead of renderer.compile: the HDR target needs
+  // different program variants than the canvas.
   const userData = scene.userData as { compile?: () => void };
   const warmup = (): void => post?.warmup();
   if (post) userData.compile = warmup;
 
   const quality = createQualityState();
 
-  // ---- GUI
   const folder = gui.addFolder('Atmosphere');
   folder.add(env, 'rain', 0, 1, 0.01).name('Rain').listen();
   folder.add(settings, 'fogScale', 0, 3, 0.01).name('Fog density ×');
@@ -91,7 +82,6 @@ export function init(ctx: Ctx): CityModuleInstance {
     .name('Auto quality')
     .onChange((on: boolean) => {
       if (on) return;
-      // Turning it off restores full quality instead of freezing a lowered tier.
       Object.assign(quality, createQualityState());
       post?.setTier(0);
       rain.setTier(0);
@@ -99,7 +89,6 @@ export function init(ctx: Ctx): CityModuleInstance {
   folder.add(quality, 'tier', 0, 2, 1).name('Quality tier (0 = full)').listen().disable();
   folder.close();
 
-  // ---- per-frame scratch (no allocation in update)
   let palette: PaletteSample = paletteAt(env.timeOfDay);
   let paletteTime = env.timeOfDay;
   const sunFogColor = new Color();
@@ -112,7 +101,6 @@ export function init(ctx: Ctx): CityModuleInstance {
   const sun = FOG_UNIFORMS.ramhaFogSun.value;
   const sunCol = FOG_UNIFORMS.ramhaFogSunColor.value;
   const postSettings = { strength: 0, radius: 0, threshold: 0, lens: true, drops: 0 };
-  /** Cloud colors that depend only on the palette sample. */
   const applyPalette = (): void => {
     setSrgb(dayLow, palette.hemiSky).lerp(setSrgb(tmp, palette.horizonColor), 0.5);
     setSrgb(dayHigh, palette.horizonColor, 1.08);
@@ -140,15 +128,13 @@ export function init(ctx: Ctx): CityModuleInstance {
       }
       const r = env.rain;
 
-      // Fog: palette base × rain (7.1). env.rain itself is never written here.
       const f = computeFog(palette, r, settings.fogScale);
       env.fogDensity = f.density;
       setSrgb(env.fogColor, f.color);
       fog.color.copy(env.fogColor);
       fog.density = f.density;
 
-      // Shared fog chunk uniforms.
-      // Also read by the CPU mirrors (heightFogScale, fogFactor) so they match the shader.
+      // The CPU fog mirrors read this flag too.
       height[3] = settings.heightFog ? 1 : 0;
       const ds = env.sunDirection.lengthSq();
       if (ds > 1e-6) sunDir.copy(env.sunDirection).multiplyScalar(1 / Math.sqrt(ds));
@@ -164,7 +150,6 @@ export function init(ctx: Ctx): CityModuleInstance {
 
       env.wetness = stepWetness(env.wetness, r, dt);
 
-      // Rain and lens drops only under the cloud deck.
       const below = rainAltitudeFade(camera.position.y);
       rain.update(elapsed, r, env.fogColor, below);
 

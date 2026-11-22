@@ -1,8 +1,3 @@
-// Two cloud layers (ART_DIRECTION 7.3) in one draw call: a low fbm deck at y 650, underlit by
-// the city at night (#163a38 → #2a3a36, brighter toward the core (SKYLINE_PEAK) with exp(-r/1200): the
-// "city light dome"), and thin high cirrus at y 1400 that catches the sunset.
-// Noise comes from a 256² tileable texture baked once (3 taps per pixel instead of ALU fbm).
-// Searchlight beams that reach the low deck leave a soft spot on its underside.
 import {
   BufferGeometry,
   Color,
@@ -28,9 +23,7 @@ import { tileableFbm } from './noise';
 export const CLOUDS = {
   lowY: CLOUD_LAYERS.lowY,
   highY: CLOUD_LAYERS.highY,
-  /** Plane edge (m); the planes follow the camera on XZ, noise stays in world space. */
   size: 16000,
-  /** City glow falloff radius exp(-r / 1200). */
   glowRadius: 1200,
   noiseSize: 256,
 } as const;
@@ -75,7 +68,6 @@ void main() {
   bool high = vLayer > 0.5;
   float density;
   if ( high ) {
-    // Cirrus: stretched streaks, thin.
     vec2 q = vec2( p.x * 0.8 + p.y * 0.6, -p.x * 0.6 + p.y * 0.8 );
     float n = texture2D( tNoise, q * vec2( 1.0 / 5200.0, 1.0 / 1300.0 ) + uTime * vec2( 0.0012, 0.0 ) ).r;
     n = n * 0.7 + texture2D( tNoise, q * vec2( 1.0 / 1600.0, 1.0 / 500.0 ) - uTime * vec2( 0.002, 0.0 ) ).r * 0.3;
@@ -89,12 +81,10 @@ void main() {
     density = smoothstep( cov, cov + 0.22, n );
   }
 
-  // Night: underlit by the city, brighter near the center.
   float glow = exp( - length( p - uCityCenter ) / ${CLOUDS.glowRadius.toFixed(1)} );
   vec3 night = high
     ? uLow * 0.35
     : mix( uLow, uLowLit, glow ) * ( 0.55 + 0.75 * glow ) * ( 0.75 + 0.35 * density );
-  // Day / sunset: ambient sky color, sun-side lobe.
   vec3 day = high ? uDayHigh : mix( uDayLow, uDayLow * 0.72, density );
   float sunLobe = pow( max( dot( view, uSunDir ), 0.0 ), high ? 3.0 : 6.0 );
   day += uSunColor * sunLobe * uSunset * ( high ? 1.0 : 0.5 );
@@ -112,12 +102,10 @@ void main() {
     }
   }
 
-  // Aerial perspective toward the horizon and a fade before the plane edge.
   float fa = dist * uFogK;
   col = mix( col, uHorizon, 1.0 - exp( - fa * fa ) );
   alpha *= 1.0 - smoothstep( 3500.0, 7500.0, dist );
 
-  // Do not slice through the camera; stay thin when seen from above so the city remains readable.
   float layerY = high ? ${CLOUDS.highY.toFixed(1)} : ${CLOUDS.lowY.toFixed(1)};
   float dy = cameraPosition.y - layerY;
   alpha *= smoothstep( 20.0, 120.0, abs( dy ) );
@@ -136,7 +124,6 @@ export interface CloudInputs {
   sunset: number;
   dayLow: Color;
   dayHigh: Color;
-  /** Distance fog coefficient for the planes (scaled from the scene fog density). */
   fogK: number;
 }
 
@@ -161,7 +148,7 @@ export function createClouds(
   const { scene, camera } = ctx;
   const half = CLOUDS.size / 2;
 
-  // High layer first: drawn before the low one when looking up from the city.
+  // High layer first: transparent quads in one draw are blended in index order.
   const hi = layerQuad(CLOUDS.highY, 1, half);
   const lo = layerQuad(CLOUDS.lowY, 0, half);
   const geometry = new BufferGeometry();
@@ -186,7 +173,6 @@ export function createClouds(
   const uniforms = {
     tNoise: { value: noise },
     uTime: { value: 0 },
-    // Light dome centered on the core skyline (layout), not the map origin.
     uCityCenter: { value: new Vector2(SKYLINE_PEAK.x, SKYLINE_PEAK.z) },
     uRain: { value: 0 },
     uNight: { value: 1 },

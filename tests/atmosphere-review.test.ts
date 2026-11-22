@@ -27,7 +27,6 @@ describe('searchlight mounts', () => {
       expect(m.y).toBeCloseTo(top + 4, 6);
       const host = tiers.find((t) => t.y1 === top)!;
       expect(Math.hypot(m.x - host.x, m.z - host.z)).toBeLessThan(1e-6);
-      // Just under the roof, the lamp position is inside that building.
       expect(buildingContaining(LAYOUT, m.x, top - 1, m.z)).toBe(b.id);
     }
     expect(searchlightMounts([], 2)).toEqual([]);

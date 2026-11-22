@@ -1,7 +1,3 @@
-// GPU rain (ART_DIRECTION 7.2). Instanced thin quads in a 120 m box that follows the camera.
-// Drop positions are computed in the vertex shader from uTime and wrapped with mod(), so the
-// field is infinite and costs no per-frame CPU work beyond a few uniforms. Streaks are expanded
-// in screen space to a fixed pixel width, so they stay thin (no 10 m bars) at any distance.
 import {
   Color,
   DoubleSide,
@@ -26,7 +22,6 @@ import {
   wrapTime,
 } from './logic';
 
-/** Linear brightness of the hue lift added to the rain color. */
 const RAIN_HUE_LIFT = 0.16;
 
 const VERTEX = /* glsl */ `
@@ -57,7 +52,7 @@ void main() {
   vTint = fract( aSeed.w * 71.13 + aSeed.x * 3.7 );
   if ( ch.w < 0.5 || ct.w < 0.5 ) {
     vAlpha = 0.0;
-    gl_Position = vec4( 2.0, 2.0, 2.0, 1.0 ); // behind / too close: collapse off screen
+    gl_Position = vec4( 2.0, 2.0, 2.0, 1.0 );
     return;
   }
   vec2 sh = ch.xy / ch.w;
@@ -114,7 +109,6 @@ export function createRain(ctx: Ctx): Rain {
   for (let i = 0; i < seeds.length; i++) seeds[i] = rng.next();
 
   const geometry = new InstancedBufferGeometry();
-  // x: -0.5 / 0.5 across the streak, y: 0 tail / 1 head.
   geometry.setAttribute(
     'position',
     new Float32BufferAttribute([-0.5, 0, 0, 0.5, 0, 0, 0.5, 1, 0, -0.5, 1, 0], 3),
@@ -143,7 +137,7 @@ export function createRain(ctx: Ctx): Rain {
     fragmentShader: FRAGMENT,
     transparent: true,
     depthWrite: false,
-    // Winding flips with the screen direction of the streak; never cull.
+    // Quad winding flips with the streak direction on screen: culling drops streaks.
     side: DoubleSide,
     fog: false,
   });
@@ -175,8 +169,6 @@ export function createRain(ctx: Ctx): Rain {
       uTime.value = wrapTime(elapsed, TIME_WRAP.rain);
       const slant = Math.tan(rainSlantRadians(rain));
       uWind.value.set(windDir.x * slant, windDir.z * slant);
-      // fogColor × 2.5 (7.2) plus a lift in the fog's own hue: drops catch the city light,
-      // so they stay visible (and teal, not grey) against a near-black night.
       const peak = Math.max(fogColor.r, fogColor.g, fogColor.b, 1e-4);
       uColor.value.copy(fogColor).multiplyScalar(2.5 + RAIN_HUE_LIFT / peak);
       uOpacity.value = rainAlpha(rain) * altitudeFade;

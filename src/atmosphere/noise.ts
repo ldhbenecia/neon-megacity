@@ -1,18 +1,12 @@
-// Procedural noise for atmosphere shaders. Clouds sample a small tileable fbm texture baked once
-// at init instead of evaluating fbm per pixel (much cheaper on integrated GPUs).
 import { createRng } from '../core/random';
 
-/**
- * Tileable value-noise fbm, `size`² bytes (0..255), wrapping seamlessly on both axes.
- * Pure and deterministic for a given seed.
- */
 export function tileableFbm(size: number, seed: number, octaves = 5): Uint8Array {
   const rng = createRng(seed);
   const out = new Float32Array(size * size);
   let amp = 0.5;
   let total = 0;
   for (let o = 0; o < octaves; o++) {
-    const cells = 4 << o; // lattice cells per tile on this octave
+    const cells = 4 << o;
     const lattice = new Float32Array(cells * cells);
     for (let i = 0; i < lattice.length; i++) lattice[i] = rng.next();
     const at = (x: number, y: number): number =>
@@ -44,7 +38,6 @@ export function tileableFbm(size: number, seed: number, octaves = 5): Uint8Array
   return bytes;
 }
 
-/** Cheap GLSL hash used by rain, stars and the lens pass. */
 export const HASH_GLSL = /* glsl */ `
 float hash12( vec2 p ) {
   vec3 p3 = fract( vec3( p.xyx ) * 0.1031 );

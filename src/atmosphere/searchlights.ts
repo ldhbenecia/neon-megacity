@@ -1,8 +1,3 @@
-// Searchlights (ART_DIRECTION 7.4): 3 beams from the roofs of the two tallest megatowers,
-// white 2 : cyan 1 (no rainbow). Each beam swings ±25° with an 18..30 s period. One draw call:
-// merged unit cones, oriented in the vertex shader from per-beam uniforms (no per-frame
-// geometry or instance-matrix uploads). Where a beam crosses the low cloud deck the cloud
-// shader draws a soft spot (`spots`).
 import {
   AdditiveBlending,
   BufferGeometry,
@@ -22,11 +17,8 @@ import type { Ctx } from '../core/types';
 import { type BeamParams, beamLength, searchlightDirection, searchlightMounts } from './logic';
 
 export const BEAMS = {
-  /** Beam length (m). Beams run up into the cloud deck; the clouds (drawn after) swallow them. */
   length: 1300,
-  /** Cone half-angle (rad). */
   halfAngle: 0.04,
-  /** Doc alpha 0.06 × fog density factor. */
   alpha: 0.06,
   amplitude: (25 * Math.PI) / 180,
 } as const;
@@ -68,8 +60,8 @@ const DEFS: readonly BeamDef[] = [
 
 const VERTEX = /* glsl */ `
 attribute float aBeam;
-uniform vec4 uOrigin[3]; // xyz origin, w intensity
-uniform vec4 uDir[3];    // xyz unit direction, w length
+uniform vec4 uOrigin[3];
+uniform vec4 uDir[3];
 varying float vT;
 varying vec3 vWorld;
 varying vec3 vNormalW;
@@ -104,7 +96,6 @@ void main() {
   vec3 V = normalize( cameraPosition - vWorld );
   float facing = pow( abs( dot( normalize( vNormalW ), V ) ), 1.5 );
   float along = pow( 1.0 - vT, 1.4 ) * smoothstep( 0.0, 0.01, vT );
-  // Fade where the camera is inside / right next to the cone.
   float nearFade = smoothstep( 8.0, 60.0, length( cameraPosition - vWorld ) );
   float a = facing * along * nearFade * uOrigin[ i ].w;
   gl_FragColor = vec4( uColor[ i ] * a, 1.0 );
@@ -112,13 +103,8 @@ void main() {
 `;
 
 export interface Searchlights {
-  /** Cloud spots: xyz = beam end on the cloud deck, w = intensity (0 = none). */
   readonly spots: readonly Vector4[];
   readonly colors: readonly Color[];
-  /**
-   * `level` 0..1 (time of day), `fogK` the fog density factor: beam alpha is
-   * 0.06 × level × fogK, cloud spots use `level` only (no fog boost on a lit surface).
-   */
   update(elapsed: number, level: number, fogK: number, cloudY: number): void;
   dispose(): void;
 }
@@ -161,10 +147,10 @@ export function createSearchlights(ctx: Ctx): Searchlights {
   const mesh = new Mesh(geometry, material);
   mesh.name = 'atmosphere.searchlights';
   mesh.frustumCulled = false;
-  mesh.renderOrder = 15; // before the clouds so dense cloud hides the beam above the deck
+  // Before the clouds, so dense cloud hides the beam above the deck.
+  mesh.renderOrder = 15;
   scene.add(mesh);
 
-  // Beams whose tower does not exist (tiny test layouts) stay off: no made-up coordinates.
   const origin = DEFS.map((d) => {
     const m = mounts[d.tower] ?? mounts[0];
     return m ? new Vector3(m.x, m.y, m.z) : null;
@@ -190,7 +176,6 @@ export function createSearchlights(ctx: Ctx): Searchlights {
         searchlightDirection(elapsed, def, dir);
         od.set(o.x, o.y, o.z, BEAMS.alpha * level * fogK);
         dd.set(dir[0], dir[1], dir[2], BEAMS.length);
-        // Spot where the beam crosses the cloud base, dimmer the farther the light traveled.
         const hit = beamLength(o.y, dir[1], cloudY, BEAMS.length);
         const reaches = hit < BEAMS.length && mesh.visible;
         sp.set(

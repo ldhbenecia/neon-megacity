@@ -1,6 +1,3 @@
-// Stars (ART_DIRECTION 7.5): 1500 dim points above 25° elevation on a camera-centered shell.
-// Night only (palette `stars`). The moon belongs to lighting and is not drawn here.
-// Brightness stays below the bloom threshold so stars never bloom.
 import {
   AdditiveBlending,
   BufferGeometry,
@@ -16,14 +13,13 @@ import { TIME_WRAP, wrapTime } from './logic';
 
 export const STARS = {
   count: 1500,
-  /** Minimum elevation (degrees). */
   minElevationDeg: 25,
-  /** Shell radius (m): inside camera.far (8000) and in front of a typical sky dome. */
+  // Must stay inside camera.far.
   radius: 4800,
 } as const;
 
 const VERTEX = /* glsl */ `
-attribute vec2 aStar; // size px, phase
+attribute vec2 aStar;
 uniform float uPixelRatio;
 uniform float uTime;
 varying float vTwinkle;
@@ -32,7 +28,6 @@ void main() {
   gl_Position = projectionMatrix * viewMatrix * vec4( world, 1.0 );
   gl_PointSize = aStar.x * uPixelRatio;
   vTwinkle = 0.75 + 0.25 * sin( uTime * ( 0.7 + fract( aStar.y ) * 1.6 ) + aStar.y );
-  // Dimmer toward the horizon haze.
   vTwinkle *= smoothstep( 0.42, 0.75, position.y ) * 0.6 + 0.4;
 }
 `;
@@ -60,7 +55,6 @@ export function createStars(ctx: Ctx): Stars {
   const pos: number[] = [];
   const star: number[] = [];
   for (let i = 0; i < STARS.count; i++) {
-    // Uniform on the spherical cap y ∈ [minY, 1].
     const y = minY + (1 - minY) * rng.next();
     const r = Math.sqrt(1 - y * y);
     const a = rng.next() * Math.PI * 2;
@@ -74,7 +68,6 @@ export function createStars(ctx: Ctx): Stars {
   const uniforms = {
     uPixelRatio: { value: renderer.getPixelRatio() },
     uTime: { value: 0 },
-    // neonWhite at ~half brightness: HDR well under the 0.85 bloom threshold.
     uColor: { value: new Color(NEON.neonWhite.hex).multiplyScalar(0.5) },
     uVisibility: { value: 0 },
   };

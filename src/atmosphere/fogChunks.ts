@@ -1,15 +1,4 @@
-// Fog ShaderChunk replacement (ART_DIRECTION 7.1). Installed by atmosphere init, before any
-// material compiles (compilation happens on the first render / compileAsync, after every init).
-//
-// Adds to three's FogExp2:
-//   - height fog: full density at the ground, ×0.35 above 260 m, ×1.25 under y = 0 (river haze);
-//     seen from above, the mean density along the ray is used when lower (topdown stays readable)
-//   - sun scattering: fog turns toward the sun color on the sun side (sunset), teal elsewhere
-//   - RAMHA_FOG helpers that the emissive chunk (src/core/shaders/emissiveFog.ts) reuses
-//
-// World-space data comes from the view-space position the standard fog_vertex already needs
-// (mvPosition), rotated back with the transposed view matrix: no extra attributes, works for
-// instanced and batched meshes, points and sprites alike.
+// Must run before any material compiles: three resolves #include chunks at compile time.
 import { ShaderChunk, ShaderLib, type IUniform } from 'three';
 import { FOG_UNIFORMS, SUN_SCATTER_POWER } from '../core/shaders/emissiveFog';
 
@@ -23,7 +12,7 @@ const FOG_PARS_VERTEX = /* glsl */ `
 const FOG_VERTEX = /* glsl */ `
 #ifdef USE_FOG
   vFogDepth = - mvPosition.z;
-  // camera -> vertex in world space (transpose of the view rotation).
+  // v * M multiplies by the transpose: view-space offset back to world space.
   vFogWorld = ( vec4( mvPosition.xyz, 0.0 ) * viewMatrix ).xyz;
 #endif
 `;
@@ -54,8 +43,7 @@ const FOG_PARS_FRAGMENT = /* glsl */ `
     if ( ramhaFogHeight.w > 0.5 ) {
       float fy = cameraPosition.y + vFogWorld.y;
       float fh = mix( 1.0, ramhaFogHeight.y, smoothstep( 0.0, ramhaFogHeight.x, fy ) );
-      // Looking down from high up the ray crosses mostly thin air: use the mean density along
-      // the ray when it is lower (linear ramp, closed form), so the city stays readable from above.
+      // Seen from above, the lower mean density along the ray keeps topdown readable.
       float fH = ramhaFogHeight.x;
       float fLo = max( min( fy, cameraPosition.y ), 0.0 );
       float fHi = max( max( fy, cameraPosition.y ), 0.0 );
@@ -95,10 +83,6 @@ const REPLACEMENTS: Record<FogChunkName, string> = {
 
 const UNIFORM_NAMES = Object.keys(FOG_UNIFORMS) as (keyof typeof FOG_UNIFORMS)[];
 
-/**
- * Swap three's fog chunks and give every built-in shader that uses fog the shared atmosphere
- * fog uniforms. Returns an uninstall function that restores the originals.
- */
 export function installFogChunks(): () => void {
   const original = {} as Record<FogChunkName, string>;
   for (const name of Object.keys(REPLACEMENTS) as FogChunkName[]) {

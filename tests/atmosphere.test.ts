@@ -48,17 +48,13 @@ describe('fog chunks', () => {
     expect(heightFogScale(0)).toBe(1);
     expect(heightFogScale(400)).toBeCloseTo(HEIGHT_FOG.top, 9);
     expect(heightFogScale(-2)).toBeCloseTo(HEIGHT_FOG.water, 9);
-    // Looking up from the street keeps the doc's point value (tower tops poke out) ...
     expect(heightFogScale(400, 5)).toBeCloseTo(HEIGHT_FOG.top, 9);
-    // ... looking down from the topdown preset uses the thinner mean along the ray.
     expect(heightFogScale(0, 1900)).toBeLessThan(0.45);
     expect(heightFogScale(0, 5)).toBeGreaterThan(0.98);
     const d = NIGHT.fogDensity;
-    // 7.5 layering at ground level: midground 150..800 m 10..50 %, far 800..2000 m 50..90 %+.
     expect(fogFactor(d, 150)).toBeLessThan(0.1);
     expect(fogFactor(d, 800)).toBeGreaterThan(0.4);
     expect(fogFactor(d, 2000)).toBeGreaterThan(0.9);
-    // Emissives keep more than half their color at 1 km (5.5).
     expect(emissiveFogFactor(d * 1.2, 1000)).toBeLessThan(0.5);
   });
 });
@@ -70,7 +66,6 @@ describe('fog', () => {
     const wet = computeFog(p, 1);
     expect(dry.density).toBeCloseTo(NIGHT.fogDensity, 9);
     expect(wet.density).toBeCloseTo(NIGHT.fogDensity * 1.5, 9);
-    // Same channel ratios: rain brightens, it does not grey the teal.
     expect(wet.color[1] / wet.color[2]).toBeCloseTo(dry.color[1] / dry.color[2], 6);
     expect(wet.color[1]).toBeGreaterThan(dry.color[1]);
     expect(computeFog(p, 0.5, 2).density).toBeCloseTo(NIGHT.fogDensity * 1.25 * 2, 9);
@@ -173,13 +168,13 @@ describe('post and quality', () => {
     };
     run(16, QUALITY.warmup + 1);
     expect(s.tier).toBe(0);
-    run(30, 6); // smoothing (~2 s) + downAfter (3 s)
+    run(30, 6);
     expect(s.tier).toBe(1);
     run(30, 3.5);
     expect(s.tier).toBe(2);
     run(30, 10);
     expect(s.tier).toBe(QUALITY.maxTier);
-    run(10, 9.5); // smoothing (~3 s) + upAfter (5 s)
+    run(10, 9.5);
     expect(s.tier).toBe(1);
     expect(t).toBeGreaterThan(0);
   });
@@ -196,7 +191,6 @@ describe('cloud noise', () => {
     const n = 64;
     const a = tileableFbm(n, 3);
     expect(tileableFbm(n, 3)).toEqual(a);
-    // Neighbouring texels across the wrap differ about as much as interior neighbours.
     let edge = 0;
     let inner = 0;
     for (let y = 0; y < n; y++) {
