@@ -5,7 +5,7 @@ import { GridHash, segmentBounds } from '../city/spatial';
 import type { BuildingsApi, CityModuleInstance, Ctx, Road } from '../core/types';
 import { GeoBuilder } from './builder';
 import { emitBuilding, industrialStacks, type Targets } from './archetypes';
-import { createFacadeMaterial } from './facadeMaterial';
+import { createFacadeMaterial, createFacadeUniforms } from './facadeMaterial';
 import { LOD_DISTANCES, LOD_HYSTERESIS, chunkCenter, chunkIndex } from './params';
 import {
   ROAD_Y,
@@ -86,7 +86,9 @@ export function init(ctx: Ctx): CityModuleInstance {
 
   const chunks = collectChunks(LAYOUT, half);
 
-  const { material: facade, uniforms } = createFacadeMaterial();
+  const uniforms = createFacadeUniforms();
+  const facade = createFacadeMaterial(uniforms, false);
+  const facadeNear = createFacadeMaterial(uniforms, true);
   const geometries: THREE.BufferGeometry[] = [];
   const lods: THREE.LOD[] = [];
   const triangles = [0, 0, 0];
@@ -101,7 +103,7 @@ export function init(ctx: Ctx): CityModuleInstance {
       let obj: THREE.Object3D;
       if (g) {
         geometries.push(g);
-        const mesh = new THREE.Mesh(g, facade);
+        const mesh = new THREE.Mesh(g, k === 0 ? facadeNear : facade);
         mesh.castShadow = true;
         mesh.receiveShadow = k < 2;
         mesh.matrixAutoUpdate = false;
@@ -142,7 +144,7 @@ export function init(ctx: Ctx): CityModuleInstance {
     maxHeight: specs.reduce((m, s) => Math.max(m, buildingTop(s)), 0),
     roadY: ROAD_Y,
     sidewalkHeight: SIDEWALK_H,
-    materials: { facade, road: roadMat, sidewalk: walkMat },
+    materials: { facade, facadeNear, road: roadMat, sidewalk: walkMat },
   };
   ctx.buildings = api;
 
@@ -170,6 +172,7 @@ export function init(ctx: Ctx): CityModuleInstance {
       scene.remove(group);
       for (const g of geometries) g.dispose();
       facade.dispose();
+      facadeNear.dispose();
       uniforms.uDigits.value.dispose();
       roadMat.dispose();
       walkMat.dispose();

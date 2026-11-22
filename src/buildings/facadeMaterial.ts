@@ -31,7 +31,7 @@ function digitAtlas(): THREE.CanvasTexture {
   g.font = 'bold 84px "Helvetica Neue", Arial, sans-serif';
   for (let i = 0; i < 10; i++) g.fillText(String(i), cw * (i + 0.5), ch * 0.54);
   const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.NoColorSpace; // mask, not color
+  tex.colorSpace = THREE.NoColorSpace;
   tex.generateMipmaps = true;
   tex.minFilter = THREE.LinearMipmapLinearFilter;
   tex.anisotropy = 4;
@@ -72,29 +72,77 @@ float fpulse(float x, float a, float b, float w) {
   return (pulseI(x + 0.5 * w, a, b) - pulseI(x - 0.5 * w, a, b)) / w;
 }
 
-vec3 windowLight(vec2 key, float office, float fx, float fy, float vy) {
+vec4 roomLight(vec2 key, float office) {
   float hC = fhash(key + 5.7);
   float h2 = fhash(key + 11.3);
   float warmT = ${WINDOW_MIX.windowWarm.toFixed(3)} - office * 0.25;
   float amberT = warmT + ${WINDOW_MIX.windowAmber.toFixed(3)};
   float coolT = amberT + ${WINDOW_MIX.windowCool.toFixed(3)} + office * 0.25;
-  vec3 c;
-  float hdr;
-  if (hC < warmT) { c = uWinColors[0]; hdr = ${NEON.windowWarm.hdr[0].toFixed(2)} + 0.3 * h2; }
-  else if (hC < amberT) { c = uWinColors[1]; hdr = ${NEON.windowAmber.hdr[0].toFixed(2)} + 0.25 * h2; }
-  else if (hC < coolT) { c = uWinColors[2]; hdr = ${NEON.windowCool.hdr[0].toFixed(2)} + 0.25 * h2; }
-  else {
-    c = uWinColors[3];
-    hdr = ${NEON.windowTV.hdr[0].toFixed(2)} + 0.12 * (1.0 + sin(uTime * 6.2832 * (0.3 + 0.7 * h2)));
-  }
-  if (fhash(key + 9.1) < 0.1) {
-    float level = 0.35 + 0.5 * fhash(key + 3.3);
-    hdr *= (0.4 + 0.3 * h2) * mix(1.0, 0.45, smoothstep(level - 0.04, level + 0.04, fy));
-  }
-  hdr *= 0.68 + 0.42 * fy;
-  hdr *= 0.7 + 0.3 * fhash(key + floor(fx * 3.0) * 7.31);
-  return c * hdr;
+  if (hC < warmT) return vec4(mix(uWinColors[1], uWinColors[0], 0.4 + 0.6 * h2), ${NEON.windowWarm.hdr[0].toFixed(2)} + 0.3 * h2);
+  if (hC < amberT) return vec4(uWinColors[1], ${NEON.windowAmber.hdr[0].toFixed(2)} + 0.25 * h2);
+  if (hC < coolT) return vec4(mix(uWinColors[0], uWinColors[2], 0.5 + 0.5 * h2), ${NEON.windowCool.hdr[0].toFixed(2)} + 0.25 * h2);
+  return vec4(uWinColors[3], ${NEON.windowTV.hdr[0].toFixed(2)} + 0.2 * h2);
 }
+
+#ifdef INTERIOR
+float boxHit(vec3 o, vec3 d, vec3 bmin, vec3 bmax) {
+  vec3 t0 = (bmin - o) / d;
+  vec3 t1 = (bmax - o) / d;
+  vec3 tn = min(t0, t1);
+  vec3 tf = max(t0, t1);
+  float a = max(max(tn.x, tn.y), tn.z);
+  float b = min(min(tf.x, tf.y), tf.z);
+  return (b > max(a, 0.0)) ? a : 1e9;
+}
+
+// Room space: x 0..R.x along the face, y 0..R.y up, z -R.z..0 into the building; p0 is on the glass.
+vec3 roomInterior(vec3 p0, vec3 d, vec3 R, vec2 key, vec3 light, float lit) {
+  d.x = abs(d.x) < 1e-4 ? 1e-4 : d.x;
+  d.y = abs(d.y) < 1e-4 ? 1e-4 : d.y;
+  d.z = min(d.z, -0.02);
+  float tx = ((d.x > 0.0 ? R.x : 0.0) - p0.x) / d.x;
+  float ty = ((d.y > 0.0 ? R.y : 0.0) - p0.y) / d.y;
+  float tz = (-R.z - p0.z) / d.z;
+  float t = min(min(tx, ty), tz);
+  vec3 h = p0 + d * t;
+  float hA = fhash(key + 31.7);
+  float hB = fhash(key + 47.3);
+  float hF = fhash(key + 59.1);
+  vec3 wallC = mix(vec3(0.62, 0.56, 0.46), vec3(0.46, 0.52, 0.5), hA);
+  vec3 floorC = mix(vec3(0.24, 0.15, 0.09), vec3(0.32, 0.3, 0.27), hB);
+  vec3 col = wallC;
+  float fixture = 0.0;
+  vec3 L = vec3(R.x * 0.5, R.y - 0.1, -R.z * 0.5);
+  if (t == ty) {
+    if (d.y > 0.0) {
+      col = vec3(0.34);
+      vec2 q = abs(h.xz - L.xz);
+      fixture = (1.0 - smoothstep(0.35, 0.45, q.x)) * (1.0 - smoothstep(0.2, 0.3, q.y));
+    } else {
+      col = floorC;
+    }
+  } else if (t == tz) {
+    col = wallC * 0.85;
+  }
+  float shade = 1.0 / (1.0 + dot(h - L, h - L) * 0.3);
+  if (hF < 0.7) {
+    float fw0 = R.x * (0.1 + 0.3 * fhash(key + 61.0));
+    float fw1 = min(R.x - 0.2, fw0 + R.x * (0.3 + 0.3 * hF));
+    float fz = R.z * (0.35 + 0.4 * fhash(key + 67.0));
+    float fh = hF < 0.35 ? 0.75 : 0.95;
+    float tb = boxHit(p0, d, vec3(fw0, 0.0, -fz - 0.9), vec3(fw1, fh, -fz));
+    if (tb < t) {
+      col = vec3(0.05, 0.045, 0.04);
+      shade = 0.6;
+      fixture = 0.0;
+    }
+  }
+  float deep = clamp(-h.z / R.z, 0.0, 1.0);
+  vec3 on = (col * shade * 2.2 * mix(1.0, 0.5, deep) + fixture * 1.1) * light;
+  vec3 off = col * (0.012 + 0.01 * shade);
+  return mix(off, on, lit);
+}
+#endif
 `;
 
 const FRAG_MAIN = /* glsl */ `
@@ -174,9 +222,10 @@ const FRAG_MAIN = /* glsl */ `
     float mask = 0.0;
     float cover = 0.0;
     vec2 unit = id;
-    float fy = fr.y;
     float present = 1.0;
     float corridor = 0.0;
+    vec4 rect = vec4(0.0, 1.0, 0.0, 1.0);
+    float roomCells = 1.0;
 
     if (fType < 1.5) {
       float ax = 0.5 * (1.0 - vWin.z / cw);
@@ -184,9 +233,11 @@ const FRAG_MAIN = /* glsl */ `
       float by = (0.55 + vWin.w) / chh;
       mask = fpulse(c.x, ax, 1.0 - ax, fw.x) * fpulse(c.y, ay, by, fw.y);
       cover = (1.0 - 2.0 * ax) * (by - ay);
+      rect = vec4(ax, 1.0 - ax, ay, by);
       unit = vec2(floor(id.x / 4.0), id.y);
-      fy = clamp((fr.y - ay) / (by - ay), 0.0, 1.0);
+      roomCells = 4.0;
       fAlbedo *= 1.0 + 0.25 * (1.0 - mask);
+      fAlbedo *= 1.0 - 0.45 * fpulse(c.y, 0.0, 0.3 / chh, fw.y);
     } else if (fType < 2.5 || fType > 6.5) {
       float sill = fType > 6.5 ? chh - vWin.w - 0.8 : 0.9;
       float ax = 0.5 * (1.0 - vWin.z / cw);
@@ -194,12 +245,12 @@ const FRAG_MAIN = /* glsl */ `
       float by = (sill + vWin.w) / chh;
       mask = fpulse(c.x, ax, 1.0 - ax, fw.x) * fpulse(c.y, ay, by, fw.y);
       cover = (1.0 - 2.0 * ax) * (by - ay);
+      rect = vec4(ax, 1.0 - ax, ay, by);
       if (fParam > 0.0) {
         present = step(fhash(id + fSeed * 31.0), fParam);
         mask *= mix(present, 1.0, far);
         cover *= fParam;
       }
-      fy = clamp((fr.y - ay) / (by - ay), 0.0, 1.0);
       float mw = 0.035 / cw;
       float mull = fpulse(c.x, 0.5 - mw, 0.5 + mw, fw.x);
       float tr = fpulse(c.y, ay + (by - ay) * 0.72, ay + (by - ay) * 0.72 + 0.05 / chh, fw.y);
@@ -213,11 +264,14 @@ const FRAG_MAIN = /* glsl */ `
       float m2 = fpulse(c.x, 3.7 / 6.0, 5.1 / 6.0, fw.x) * fpulse(c.y, 0.8 / chh, 2.3 / chh, fw.y);
       mask = m1 + m2;
       cover = (2.6 / 6.0) * (2.0 / chh) + (1.4 / 6.0) * (1.5 / chh);
-      fy = clamp((fr.y - 0.1) / 0.8, 0.0, 1.0);
+      rect = fr.x < 0.55
+        ? vec4(0.3 / 6.0, 2.9 / 6.0, 0.25 / chh, 2.25 / chh)
+        : vec4(3.7 / 6.0, 5.1 / 6.0, 0.8 / chh, 2.3 / chh);
     } else {
       float ax = 0.5 * (1.0 - vWin.z / cw);
       mask = fpulse(c.x, ax, 1.0 - ax, fw.x) * fpulse(c.y, 1.1 / chh, 2.0 / chh, fw.y);
       cover = (1.0 - 2.0 * ax) * (0.9 / chh);
+      rect = vec4(ax, 1.0 - ax, 1.1 / chh, 2.0 / chh);
       float strip = fpulse(c.y, (chh - 0.42) / chh, (chh - 0.3) / chh, fw.y);
       float segOn = step(fhash(vec2(floor(c.x / 2.0), id.y) + fSeed * 13.0), 0.85);
       corridor = strip * mix(segOn, 0.85, far);
@@ -229,11 +283,43 @@ const FRAG_MAIN = /* glsl */ `
       ? step(fhash(vec2(id.y * 1.7 + 3.1, fSeed * 53.1)), ratio)
       : step(fhash(key), ratio);
     float hT = fhash(key + 17.3);
-    if (hT < 0.01) lit = step(0.5, fract(uTime / (6.0 + 1400.0 * hT) + hT * 37.0));
+    if (hT < 0.002) lit = step(0.5, fract(uTime / (120.0 + 120000.0 * hT) + hT * 37.0));
 
-    vec3 nearE = windowLight(key, office, fr.x, fy, f.y) * lit * mask * present;
-    vec3 avgC = uWinColors[0] * 0.8;
-    vec3 farE = avgC * ratio * cover * 0.55;
+    vec4 light = roomLight(key, office);
+    vec3 lightC = light.rgb * light.a;
+    float wy = clamp((fr.y - rect.z) / max(rect.w - rect.z, 1e-3), 0.0, 1.0);
+    float edgeM = min(min(fr.x - rect.x, rect.y - fr.x) * cw, min(fr.y - rect.z, rect.w - fr.y) * chh);
+    float frame = 1.0 - smoothstep(0.03, 0.07, edgeM);
+    float inner = mix(0.5, 1.0, smoothstep(0.05, 0.45, edgeM));
+    vec3 nearE;
+#ifdef INTERIOR
+    if (far < 0.99 && mask > 0.001) {
+      vec3 nV = normalize(vNormal);
+      vec3 upV = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
+      vec3 tV = normalize(cross(upV, nV));
+      vec3 dv = normalize(-vViewPosition);
+      vec3 dl = vec3(dot(dv, tV), dot(dv, upV), dot(dv, nV));
+      float roomW = roomCells * cw;
+      float rx = roomCells > 1.5 ? fract(c.x / roomCells) * roomW : fr.x * cw;
+      vec3 R = vec3(roomW, chh, 3.5 + 4.0 * fhash(key + 23.1));
+      vec3 room = roomInterior(vec3(rx, fr.y * chh, 0.0), dl, R, key, lightC, lit);
+      float hCur = fhash(key + 9.1);
+      if (hCur < 0.2) {
+        float level = 1.0 - (0.25 + 0.5 * fhash(key + 3.3));
+        float curtain = smoothstep(level - 0.02, level + 0.02, wy);
+        float folds = 0.8 + 0.2 * sin(rx * 9.0 + hCur * 40.0);
+        vec3 cloth = mix(vec3(0.75, 0.68, 0.55), vec3(0.55, 0.6, 0.62), fhash(key + 71.0));
+        room = mix(room, cloth * folds * mix(vec3(0.006), lightC * 0.4, lit), curtain);
+      }
+      float mx = max(max(room.r, room.g), room.b);
+      room *= mx > 1.1 ? 1.1 / mx : 1.0;
+      nearE = room * inner * (1.0 - frame) * mask * present;
+    } else
+#endif
+    {
+      nearE = lightC * (0.68 + 0.42 * wy) * inner * lit * mask * present;
+    }
+    vec3 farE = uWinColors[0] * 0.8 * ratio * cover * 0.55;
     fEmit = mix(nearE, farE, far);
     fEmit += uWhite * 1.2 * corridor * uNight;
 
@@ -245,20 +331,20 @@ const FRAG_MAIN = /* glsl */ `
         fEmit = uShop * (0.3 + 0.35 * b) * step(0.15, b) * dayDim * (1.0 - smoothstep(-1.2, -0.6, f.y));
       }
     }
-    vec3 glass = vec3(0.012, 0.016, 0.02);
     float gm = clamp(mask, 0.0, 1.0) * (1.0 - 0.5 * far);
-    fAlbedo = mix(fAlbedo, glass, gm);
-    fRough = mix(0.8, 0.1, gm);
-    fMetal = mix(0.04, 0.75, gm);
+    float fm = frame * gm * (1.0 - far);
+    fAlbedo = mix(fAlbedo, vec3(0.012, 0.016, 0.02), gm);
+    fAlbedo = mix(fAlbedo, vec3(0.03), fm);
+    fRough = mix(0.8, 0.05, gm);
+    fRough = mix(fRough, 0.5, fm);
+    fMetal = mix(0.04, 0.0, gm);
+    fMetal = mix(fMetal, 0.6, fm);
   }
   diffuseColor.rgb = fAlbedo;
 `;
 
-export function createFacadeMaterial(): {
-  material: THREE.MeshStandardMaterial;
-  uniforms: FacadeUniforms;
-} {
-  const uniforms: FacadeUniforms = {
+export function createFacadeUniforms(): FacadeUniforms {
+  return {
     uLitRatio: { value: 0.32 },
     uNight: { value: 1 },
     uPower: { value: 1 },
@@ -276,12 +362,20 @@ export function createFacadeMaterial(): {
     uDong: { value: lin(MATERIAL.dongNumber) },
     uShop: { value: lin(NEON.windowAmber.hex) },
   };
+}
+
+// `interior` (LOD0 only) enables per-pixel interior mapping; LOD1/2 keep the cheap flat path.
+export function createFacadeMaterial(
+  uniforms: FacadeUniforms,
+  interior: boolean,
+): THREE.MeshStandardMaterial {
   const material = new THREE.MeshStandardMaterial({
     vertexColors: true,
     roughness: 0.8,
     metalness: 0.05,
   });
-  material.name = 'facade';
+  material.name = interior ? 'facadeNear' : 'facade';
+  if (interior) material.defines = { INTERIOR: '' };
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader
@@ -306,7 +400,7 @@ export function createFacadeMaterial(): {
         '#include <emissivemap_fragment>\ntotalEmissiveRadiance += fEmit * uPower;',
       );
   };
-  material.customProgramCacheKey = () => 'ramha-facade-v1';
+  material.customProgramCacheKey = () => (interior ? 'ramha-facade-near-v2' : 'ramha-facade-v2');
   material.userData.uLitRatio = uniforms.uLitRatio;
-  return { material, uniforms };
+  return material;
 }
