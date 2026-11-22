@@ -286,11 +286,11 @@ export class GeoBuilder {
     g.setAttribute('aFace', new THREE.BufferAttribute(this.face.arr.slice(0, this.face.len), 2));
     g.setAttribute('aWin', half(this.win.arr.subarray(0, this.win.len), 4));
     g.setAttribute('aInfo', half(this.info.arr.subarray(0, this.info.len), 4));
-    const idx = this.idx.arr.slice(0, this.idx.len);
+    const idx = this.idx.arr.subarray(0, this.idx.len);
     g.setIndex(
       this.count < 65536
         ? new THREE.BufferAttribute(Uint16Array.from(idx), 1)
-        : new THREE.BufferAttribute(idx, 1),
+        : new THREE.BufferAttribute(idx.slice(), 1),
     );
     g.computeBoundingSphere();
     g.computeBoundingBox();

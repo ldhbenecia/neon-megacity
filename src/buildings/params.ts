@@ -2,6 +2,7 @@
 // Everything here is unit tested in tests/buildings.test.ts; geometry code only consumes it.
 import { WINDOW_LIT } from '../core/palette';
 import { createRng } from '../core/random';
+import { sideNormal } from '../city/math';
 import type { Archetype, BuildingSpec, DistrictKind, Side } from '../city/types';
 
 // ---------------------------------------------------------------------------
@@ -150,23 +151,10 @@ export function columnOffsets(width: number, maxSpan = 24): number[] {
 // ---------------------------------------------------------------------------
 // Face roles.
 
-/** Outward normal of a local side for rotY (three.js convention, see city/math toWorld). */
-export function sideNormalXZ(side: Side, rotY: number): { x: number; z: number } {
-  const c = Math.cos(rotY);
-  const s = Math.sin(rotY);
-  switch (side) {
-    case 'px':
-      return { x: c, z: -s };
-    case 'nx':
-      return { x: -c, z: s };
-    case 'pz':
-      return { x: s, z: c };
-    case 'nz':
-      return { x: -s, z: -c };
-  }
-}
+/** Outward normal of a local side for rotY (alias of city/math `sideNormal`). */
+export const sideNormalXZ: (side: Side, rotY: number) => { x: number; z: number } = sideNormal;
 
-const OPPOSITE: Record<Side, Side> = { px: 'nx', nx: 'px', pz: 'nz', nz: 'pz' };
+export const OPPOSITE: Record<Side, Side> = { px: 'nx', nx: 'px', pz: 'nz', nz: 'pz' };
 
 /** Role of a local side for window styling. */
 export function faceRole(

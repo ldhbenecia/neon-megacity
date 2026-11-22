@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { buildingFaces, buildingTop } from '../city/layout';
 import { pointSegmentDistance } from '../city/math';
+import { GridHash, segmentBounds } from '../city/spatial';
 import type { BuildingsApi, CityModuleInstance, Ctx, Road } from '../core/types';
 import { GeoBuilder } from './builder';
 import { emitBuilding, industrialStacks, type Targets } from './archetypes';
@@ -24,44 +25,30 @@ import { alleyRetaining, stair, tree } from './street';
 
 /** True when (x, z) lies on (or within 2 m of) a street, arterial or alley surface. */
 function streetTest(roads: readonly Road[]): (x: number, z: number) => boolean {
-  const CELL = 32;
-  const grid = new Map<string, Road[]>();
-  for (const r of roads) {
-    if (r.kind === 'stair') continue;
-    const pad = r.width / 2 + 2;
-    const i0 = Math.floor((Math.min(r.a.x, r.b.x) - pad) / CELL);
-    const i1 = Math.floor((Math.max(r.a.x, r.b.x) + pad) / CELL);
-    const j0 = Math.floor((Math.min(r.a.z, r.b.z) - pad) / CELL);
-    const j1 = Math.floor((Math.max(r.a.z, r.b.z) + pad) / CELL);
-    for (let i = i0; i <= i1; i++) {
-      for (let j = j0; j <= j1; j++) {
-        const k = `${i},${j}`;
-        const list = grid.get(k);
-        if (list) list.push(r);
-        else grid.set(k, [r]);
-      }
-    }
-  }
-  return (x, z) => {
-    const list = grid.get(`${Math.floor(x / CELL)},${Math.floor(z / CELL)}`) ?? [];
-    return list.some((r) => pointSegmentDistance({ x, z }, r.a, r.b) <= r.width / 2 + 2);
-  };
+  const surfaces = roads.filter((r) => r.kind !== 'stair');
+  const grid = new GridHash(32);
+  surfaces.forEach((r, id) => grid.insert(id, segmentBounds(r.a, r.b, r.width / 2 + 2)));
+  return (x, z) =>
+    grid.query({ minX: x, minZ: z, maxX: x, maxZ: z }).some((id) => {
+      const r = surfaces[id];
+      return !!r && pointSegmentDistance({ x, z }, r.a, r.b) <= r.width / 2 + 2;
+    });
 }
 
 interface Chunk {
   i: number;
   j: number;
+  /** World center; the chunk's builders and LOD are positioned relative to it. */
+  o: { x: number; z: number };
   T: Targets;
 }
 
-export function init(ctx: Ctx): CityModuleInstance {
-  const { scene, LAYOUT, env, gui } = ctx;
-  const half = LAYOUT.extent / 2;
-  const group = new THREE.Group();
-  group.name = 'buildings';
-  scene.add(group);
-
-  // --- chunks -------------------------------------------------------------
+/**
+ * Emits every building, tree, stair and hillside retaining wall into per-chunk builders.
+ * Kept out of `init` so the builders' staging arrays are not retained by the closures
+ * `init` returns.
+ */
+function collectChunks(LAYOUT: Ctx['LAYOUT'], half: number): Chunk[] {
   const chunks = new Map<string, Chunk>();
   const chunkAt = (x: number, z: number): Chunk => {
     const { i, j } = chunkIndex(x, z, half);
@@ -72,6 +59,7 @@ export function init(ctx: Ctx): CityModuleInstance {
       c = {
         i,
         j,
+        o,
         T: {
           l0: new GeoBuilder(o.x, o.z),
           l1: new GeoBuilder(o.x, o.z),
@@ -99,13 +87,25 @@ export function init(ctx: Ctx): CityModuleInstance {
     else if (r.district === 'hillside' && r.kind === 'alley')
       alleyRetaining(chunkAt(mx, mz).T.l0, r);
   }
+  return [...chunks.values()];
+}
+
+export function init(ctx: Ctx): CityModuleInstance {
+  const { scene, LAYOUT, env, gui } = ctx;
+  const half = LAYOUT.extent / 2;
+  const group = new THREE.Group();
+  group.name = 'buildings';
+  scene.add(group);
+
+  // --- chunks -------------------------------------------------------------
+  const chunks = collectChunks(LAYOUT, half);
 
   const { material: facade, uniforms } = createFacadeMaterial();
   const geometries: THREE.BufferGeometry[] = [];
   const lods: THREE.LOD[] = [];
-  let triangles = [0, 0, 0];
-  for (const c of chunks.values()) {
-    const o = chunkCenter(c.i, c.j, half);
+  const triangles = [0, 0, 0];
+  for (const c of chunks) {
+    const { o } = c;
     const lod = new THREE.LOD();
     lod.name = `chunk ${c.i},${c.j}`;
     lod.position.set(o.x, 0, o.z);
@@ -132,7 +132,6 @@ export function init(ctx: Ctx): CityModuleInstance {
     group.add(lod);
     lods.push(lod);
   }
-  triangles = triangles.map(Math.round);
 
   // --- roads and sidewalks ------------------------------------------------
   const puddle = puddleTexture(LAYOUT.seed);
@@ -169,7 +168,7 @@ export function init(ctx: Ctx): CityModuleInstance {
   const folder = gui.addFolder('Buildings');
   folder.add(params, 'litScale', 0, 3, 0.05).name('Lit windows ×');
   const info = {
-    chunks: chunks.size,
+    chunks: chunks.length,
     'tris LOD0': triangles[0] ?? 0,
     'tris LOD1': triangles[1] ?? 0,
     'tris LOD2': triangles[2] ?? 0,

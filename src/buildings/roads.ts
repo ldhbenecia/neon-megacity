@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { createRng } from '../core/random';
 import { terrainHeight } from '../city/layout';
 import { toLocal } from '../city/math';
+import { GridHash, segmentBounds, type Bounds } from '../city/spatial';
 import type { Block, BuildingSpec, Layout, Road } from '../city/types';
 import { mergeIntervals } from './params';
 
@@ -108,6 +109,12 @@ function strip(
 export function buildRoads(L: Layout): THREE.BufferGeometry {
   const B = new FlatBuilder();
   const roads = L.roads.filter((r) => r.kind !== 'stair');
+  // Candidate crossings only (ids ascend, so the crossing order matches a full scan). The pad
+  // covers crossT's 2 % overshoot past either end of both segments.
+  const crossBounds = (r: Road): Bounds =>
+    segmentBounds(r.a, r.b, 0.03 * Math.hypot(r.b.x - r.a.x, r.b.z - r.a.z) + 1);
+  const grid = new GridHash();
+  roads.forEach((r, id) => grid.insert(id, crossBounds(r)));
   for (const r of roads) {
     const len = Math.hypot(r.b.x - r.a.x, r.b.z - r.a.z);
     if (len < 0.5) continue;
@@ -120,8 +127,9 @@ export function buildRoads(L: Layout): THREE.BufferGeometry {
 
     // Intersections on this road → keep markings out, add crosswalks just outside.
     const crossings: { t: number; half: number }[] = [];
-    for (const o of roads) {
-      if (o === r || o.kind === 'alley') continue;
+    for (const id of grid.query(crossBounds(r))) {
+      const o = roads[id];
+      if (!o || o === r || o.kind === 'alley') continue;
       const t = crossT(r.a, r.b, o.a, o.b);
       if (t !== null) crossings.push({ t, half: o.width / 2 + 1 });
     }
@@ -268,15 +276,20 @@ function periodicNoise(grid: Float32Array, x: number, y: number, period: number)
   const yi = Math.floor(y);
   const fx = x - xi;
   const fy = y - yi;
-  const at = (i: number, j: number): number => {
-    const wi = ((i % period) + period) % period;
-    const wj = ((j % period) + period) % period;
-    return grid[(wj & 255) * 256 + (wi & 255)] ?? 0;
-  };
+  // Wrapped lattice row offsets / columns, computed once per sample (hot: ~6M calls at boot).
+  const wrap = (i: number): number => (((i % period) + period) % period) & 255;
+  const x0 = wrap(xi);
+  const x1 = wrap(xi + 1);
+  const r0 = wrap(yi) * 256;
+  const r1 = wrap(yi + 1) * 256;
+  const g00 = grid[r0 + x0] ?? 0;
+  const g10 = grid[r0 + x1] ?? 0;
+  const g01 = grid[r1 + x0] ?? 0;
+  const g11 = grid[r1 + x1] ?? 0;
   const sx = fx * fx * (3 - 2 * fx);
   const sy = fy * fy * (3 - 2 * fy);
-  const a = at(xi, yi) + (at(xi + 1, yi) - at(xi, yi)) * sx;
-  const b = at(xi, yi + 1) + (at(xi + 1, yi + 1) - at(xi, yi + 1)) * sx;
+  const a = g00 + (g10 - g00) * sx;
+  const b = g01 + (g11 - g01) * sx;
   return a + (b - a) * sy;
 }
 

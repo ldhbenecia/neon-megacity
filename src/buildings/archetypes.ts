@@ -28,6 +28,7 @@ import {
   seeded01,
   keepInLod2,
   mixHex,
+  OPPOSITE,
   scaleHex,
   windowStyle,
 } from './params';
@@ -83,6 +84,10 @@ export type StreetTest = (x: number, z: number) => boolean;
 
 const SHOP_ARCHETYPES = new Set(['sangga', 'officeSlab', 'pavilion']);
 const ALL_SIDES: readonly Side[] = ['px', 'nx', 'pz', 'nz'];
+
+/** The tier stack, plus the second tower's stack for twin towers. */
+const tierStacks = (spec: BuildingSpec): Tier[][] =>
+  spec.twin ? [spec.tiers, spec.twin] : [spec.tiers];
 
 function shopSides(spec: BuildingSpec, onStreet?: StreetTest): Set<Side> {
   const out = new Set<Side>();
@@ -229,7 +234,7 @@ export function emitBuilding(spec: BuildingSpec, T: Targets, onStreet?: StreetTe
   if (spec.archetype === 'hillHouse') return hillHouse(b, T);
   const roofKind = roofTopKind(spec);
 
-  const stacks = spec.twin ? [spec.tiers, spec.twin] : [spec.tiers];
+  const stacks = tierStacks(spec);
   for (const [g, lv] of levels) {
     for (const tiers of stacks) {
       tiers.forEach((t, i) => {
@@ -263,7 +268,7 @@ export function emitBuilding(spec: BuildingSpec, T: Targets, onStreet?: StreetTe
 
 function detail(b: Bld, g: GeoBuilder): void {
   const { spec, rng } = b;
-  const stacks = spec.twin ? [spec.tiers, spec.twin] : [spec.tiers];
+  const stacks = tierStacks(spec);
   const parapetH =
     spec.archetype === 'sangga' ? 1.0 : spec.archetype === 'apartmentSlab' ? 1.5 : 1.2;
   const bandStyle = plain(scaleHex(b.wall, 1.35), 0.7);
@@ -484,7 +489,7 @@ function fins(g: GeoBuilder, b: Bld): void {
 /** Roof mechanical floors, condensers, antennas, rare tower crane (4.3 #1). */
 function roofMechanical(g: GeoBuilder, b: Bld, rng: Rng): void {
   const { spec } = b;
-  const stacks = spec.twin ? [spec.tiers, spec.twin] : [spec.tiers];
+  const stacks = tierStacks(spec);
   const dark = plain(scaleHex(b.roof, 0.8), 0.7);
   const metal = plain(0x2e3236, 0.5);
   for (const tiers of stacks) {
@@ -640,7 +645,7 @@ function sanggaProps(g: GeoBuilder, b: Bld, rng: Rng): void {
   }
   // Side walls: AC units hanging under windows-less walls, vertical drain pipes.
   const ac = plain(0x8a8e8e, 0.6);
-  for (const side of ['px', 'nx', 'pz', 'nz'] as Side[]) {
+  for (const side of ALL_SIDES) {
     if (side === spec.front) continue;
     const ff = frontFrame(spec, t, side);
     const floors = Math.max(1, spec.floors - 1);
@@ -669,9 +674,7 @@ function sanggaProps(g: GeoBuilder, b: Bld, rng: Rng): void {
 
 function fireEscape(g: GeoBuilder, b: Bld, t: Tier): void {
   const { spec } = b;
-  const back: Side =
-    spec.front === 'px' ? 'nx' : spec.front === 'nx' ? 'px' : spec.front === 'pz' ? 'nz' : 'pz';
-  const f = frontFrame(spec, t, back);
+  const f = frontFrame(spec, t, OPPOSITE[spec.front]);
   const steel = plain(0x24272a, 0.5);
   const n3: V3 = [f.out.x, 0, f.out.z];
   const w = 3;
@@ -780,7 +783,7 @@ function apartment(g: GeoBuilder, b: Bld, rng: Rng): void {
   if (!t) return;
   const slab = plain(scaleHex(b.wall, 1.2), 0.8);
   const rail = plain(scaleHex(b.wall, 1.05), 0.8);
-  for (const side of ['px', 'nx', 'pz', 'nz'] as Side[]) {
+  for (const side of ALL_SIDES) {
     const role = faceRole(spec, side);
     const f = frontFrame(spec, t, side);
     const yaw = Math.atan2(f.out.x, f.out.z);
