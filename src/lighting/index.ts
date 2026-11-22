@@ -76,6 +76,7 @@ export function init(ctx: Ctx): CityModuleInstance {
   let framesSinceShadow = 0;
   let frame = 0;
   let pal: PaletteSample = paletteAt(env.timeOfDay);
+  let palTime = env.timeOfDay;
 
   function updateShadowCamera(): void {
     const dist = camera.position.distanceTo(controls.target);
@@ -108,7 +109,11 @@ export function init(ctx: Ctx): CityModuleInstance {
 
   function apply(): void {
     const t = env.timeOfDay;
-    pal = paletteAt(t);
+    // paletteAt allocates; only resample when the time actually moved (never while locked).
+    if (t !== palTime) {
+      pal = paletteAt(t);
+      palTime = t;
+    }
 
     // Sun / moon geometry and the derived factors.
     sunDirectionAt(t, tmpDir);
