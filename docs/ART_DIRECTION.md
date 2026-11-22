@@ -86,8 +86,11 @@
 - 구역은 지도 전체를 나누는 폴리곤이다(`ZONES`, `zoneAt`). 강 양안 60 m 띠(제방 바깥)가 `riverside`이고, 강 북쪽 구역의 남쪽 경계는 이 띠의 바깥 가장자리다. `hw-river-north` 회랑(강 중심선에서 134~166 m)은 띠 안에 들어간다. hillside는 x 기준 3구역(`hill-w` -6°, `hill-c` 2°, `hill-e` 7°)으로 나눠 격자 각도를 달리했다.
 - 격자: core는 간선 30 m, 피치 180 m이고 도로선이 x = -150 + 180k, z = -470 + 180k에 놓여 스카이라인 정점이 블록 중앙에 온다. 정점 200 m 안의 core 블록은 2×2 lot(메가타워용), 나머지는 3×3 lot이다. midtown 120 m / 16 m, sangga 72 m / 12 m(블록 가운데 5 m 골목), apartment 270×210 m / 10 m, industrial 140 m / 20 m, hillside 44 m / 골목 4 m(오르막 골목 구간의 9%는 폭 3 m 계단)다.
 - 메가타워는 정점에서 가까운 큰 lot부터 10동을 고르고 블록당 최대 3동이다. 메가타워가 있는 블록은 플라자로 비우지 않는다(낮은 포디움 건물이 있어야 높이 비 규칙을 지킬 수 있다).
-- 높이 비 3 규칙은 블록에서 가장 낮은 비메가 건물을 `최고 높이 / 3` 이하(최소 4.2 m)로 낮춰서 지킨다. 그래서 sangga 블록마다 1~2층짜리 가게가 하나씩 생긴다.
-- 결과(seed 2077): 건물 2849동(hillHouse 1179, sangga 1089, 메가타워 10), 도로 세그먼트 1214, 거리 소품 slot 1853.
+- 블록 높이 규칙은 순서대로 적용한다. (1) 높이 비 3: 가장 높은 건물을 고정하고, 가장 낮은 비메가 건물을 `최고 높이 / 3` 이하(최소 4.2 m)로 낮춘다. 그래서 sangga 블록마다 1~2층짜리 가게가 하나씩 생긴다. (2) 이웃 ±10%: footprint 사이 거리가 4 m 미만인 두 건물을 이웃으로 본다. 높이 차가 10% 안이면 최고 건물이 아닌 쪽을 다시 뽑는데, 낮은 건물은 `최고 / 3` 이하, 나머지는 구역 상한(core 245, midtown 210, sangga 70) 이하 범위에서 뽑는다. 그래서 (1)이 깨지지 않는다. 메가타워끼리는 예외다. 여러 시드 테스트(`tests/layout-seeds.test.ts`)가 두 규칙과 상한을 검사한다.
+- 회전 지터(±4°)를 준 건물은 회전된 footprint가 lot 안에 0.05 m 여유를 두고 들어가도록 w, d를 줄인다.
+- `Block`은 실제로 남은 lot을 덮는 직사각형이다. 블록 사각형이 강이나 고가 회랑에 걸리면 걸리지 않는 가장 큰 lot 묶음만 남긴다. 강변 파빌리온은 lot 하나짜리 자기 블록을 가진다. 파빌리온의 `front`는 강을 향한다.
+- 필로티 아파트(30%)는 1층 5 m에 2.8 m 층을 쌓는다(`h = 5 + (floors - 1) × 2.8`).
+- 결과(seed 2077): 건물 2828동(hillHouse 1173, sangga 1083, 메가타워 10), 블록 1027, 도로 세그먼트 1214, 거리 소품 slot 1854.
 
 ### 2.3 강과 다리
 
@@ -308,7 +311,7 @@ layout 단위 테스트 (반드시 통과):
 - 추가 필드: `DistrictZone.name/origin/roadPitchV/roadWidth/roadKind`, `River.parkY/bandWidth`, `Bridge.landA/landB/lowerDeckY/structureH`, `Highway.corridorHalf`(교각은 `Vec3`), `Ridge.fog/baseY`, `Road.zoneId`, `Tier.chamfer`, `BuildingSpec.zoneId/blockId/groundFloorH/floors/twin/skybridge/cantilever/spireH/front`. `tags.name`은 항상 있다.
 - `tiers`의 `x, z`는 월드 좌표 중심이고 `y0, y1`은 baseY를 포함한 월드 높이다. 회전은 건물 `rotY`(three.js `rotation.y`와 같은 규약)를 공유한다. twinTower의 두 번째 동은 `twin`, 캔틸레버 매스는 `cantilever`(항상 포디움 footprint 안)로 따로 둔다. 모든 부분은 `(x, z, w, d, rotY)` footprint 안에 있다.
 - `baseY`는 footprint 아래 지형 높이의 최솟값이다(경사지에서는 옹벽이 보이게 된다).
-- 추가 질의 함수: `zoneAt`, `surfaceHeight`(제방, 둔치 -2, 수면 -4 포함), `riverZ`, `buildingContaining`(카메라 충돌), `buildingFaces`(tier 외벽 면, 간판 배치용), `buildingTop`, `deckHeightAt`(고가, 램프, 다리 상판), `highwayCurve`, `highwaySamples`, `ridgeHeight`, `ridgePoint`.
+- 추가 질의 함수: `zoneAt`, `surfaceHeight`(제방, 둔치 -2, 수면 -4 포함), `riverZ`, `buildingContaining`(카메라 충돌, 캔틸레버, 스카이브리지, 첨탑 포함), `buildingVolumes`, `buildingFaces`(tier 외벽 면, 간판 배치용), `buildingTop`, `deckHeightAt`(고가, 램프, 다리 상판), `highwayCurve`, `highwaySamples`, `ridgeHeight`, `ridgePoint`.
 
 ---
 
@@ -663,7 +666,7 @@ layout 단위 테스트 (반드시 통과):
 
 프리셋 3, 4, 7처럼 지면이나 데크 근처에 있는 위치는 layout 기준으로 가장 가까운 도로나 데크 중심선에 스냅하고, 건물과 충돌하면 8.1 규칙으로 밀어낸다.
 
-PR0 재검증 결과: 타깃이 카메라보다 높으면 극각이 π/2를 넘어 `maxPolarAngle` 제한에 걸리고 OrbitControls가 첫 프레임에 카메라를 옮긴다. 그래서 프리셋 1, 3, 7의 타깃 y를 카메라 높이 아래로 낮췄다(위 표). 올려다보는 구도가 필요하면 ux가 FOV나 타깃 거리로 해결한다. 현재 `?cam=` 프리셋은 layout v2에 맞춰 다시 잡았다: `overview` = 프리셋 2, `skyline` = 프리셋 1, `street` = 프리셋 3 근처 등불가 도로 중심선에 스냅, `core` = 정점 메가타워 사이 (180, 220, -120) → (-60, 160, -380), `topdown` = 프리셋 8. `CAMERA_LIMITS.maxDistance`는 탑다운을 위해 2600으로 올렸다. 모든 프리셋이 건물 밖, 지면 위에 있는지 `tests/query.test.ts`가 검사한다.
+PR0 재검증 결과: 타깃이 카메라보다 높으면 극각이 π/2를 넘어 `maxPolarAngle` 제한에 걸리고 OrbitControls가 첫 프레임에 카메라를 옮긴다. 그래서 프리셋 1, 3, 7의 타깃 y를 카메라 높이 아래로 낮췄다(위 표). 올려다보는 구도가 필요하면 ux가 FOV나 타깃 거리로 해결한다. 현재 `?cam=` 프리셋은 layout v2에 맞춰 다시 잡았다: `overview` = 프리셋 2, `skyline` = 프리셋 1, `street` = 프리셋 3 근처 등불가 도로 중심선에 스냅, `core` = 정점 메가타워 사이 (180, 220, -120) → (-60, 160, -380), `topdown` = 프리셋 8. `CAMERA_LIMITS.maxDistance`는 탑다운을 위해 2600으로 올렸다. 모든 프리셋이 건물 밖, 지면 위에 있는지 `tests/query.test.ts`가 검사한다. 포즈는 `cameraPreset(name)`으로 읽는다. `street`는 처음 읽을 때 layout에서 계산하고, 맞는 도로가 없으면 `STREET_FALLBACK`(프리셋 3 원래 좌표)을 쓴다. `CAMERA_PRESETS` 객체도 그대로 쓸 수 있다.
 
 URL 쿼리 `?preset=3&time=0.0&rain=0.5&hud=0`을 지원한다(스크린샷 스크립트용, `env.timeLocked = true`).
 
@@ -835,7 +838,7 @@ PR0에서 추가로 확정한 것:
 - `env.selectedBuilding: number | null`(ux 소유): 클릭이나 날아가기로 고른 건물 id다. neon이 이 값을 읽어 선택 하이라이트(8.3)를 그린다. `env.timeLocked`도 ux 소유다.
 - 초기값(main.ts): 밤 팔레트 값, `rain` 0.35, `wetness` 0.55, `powerOn` 1(ux 로더가 부팅 때 0으로 내렸다가 올린다), `selectedBuilding` null.
 - `BuildingsApi`: `group`, `specs`(= `LAYOUT.buildings`), `faces`(id별 `buildingFaces` 결과), `maxHeight`, `roadY`, `sidewalkHeight`, `materials`. `InfraApi`: `group`, `curves`(highway id → `CatmullRomCurve3`), `deckThickness`, `deckHeightAt(x, z)`. neon과 ux는 이 API가 없어도(스텁 상태) layout의 순수 함수만으로 개발할 수 있다.
-- ux 구조: `src/ux/index.ts`의 `initUx(ctx)`가 CameraRig(`cameraRig.ts`)와 HUD를 묶고, `createLoader()`(`loader.ts`)가 부팅 단계 보고를 받는다. main.ts는 이미 각 모듈 init 전에 `loader.stage(이름, 가중치)`를 부르고, 매 프레임 `ux.beforeUpdate → 모듈 update → ux.afterUpdate → ctx.render()` 순서로 돈다. 그래서 웨이브 1 PR은 main.ts를 고치지 않아도 된다(ux가 async 부팅으로 바꿀 때만 예외).
+- ux 구조: `src/ux/index.ts`의 `initUx(ctx)`가 CameraRig(`cameraRig.ts`)와 HUD를 묶고, `createLoader()`(`loader.ts`)가 부팅 단계 보고를 받는다. main.ts는 이미 각 모듈 init 전에 `loader.stage(이름, 가중치)`를 부르고(setup 5 + 모듈 77 + `compile` 15 + `first-frame` 3 = 100, `loader.done()`은 첫 프레임 뒤), 매 프레임 `ux.beforeUpdate → 모듈 update → ux.afterUpdate → ctx.render()` 순서로 돈다. 그래서 웨이브 1 PR은 main.ts를 고치지 않아도 된다(ux가 async 부팅으로 바꿀 때만 예외).
 
 ### 13.2 의존 관계
 
