@@ -43,6 +43,7 @@ export {
   buildingFaces,
   buildingTop,
   allTiers,
+  buildingVolumes,
   deckHeightAt,
   ridgeHeight,
   ridgePoint,

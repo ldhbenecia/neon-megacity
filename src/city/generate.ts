@@ -229,21 +229,32 @@ const SIDEWALK: Record<string, number> = {
 
 const SANGGA_ALLEY = 5;
 
+interface LotCell {
+  /** Grid index inside the block. */
+  i: number;
+  j: number;
+  /** Center and size in the block's local frame. */
+  u: number;
+  v: number;
+  w: number;
+  d: number;
+}
+
 /** Local lot rectangles (center u, v and size) inside a block centered at 0. */
 function lotGrid(
   kind: DistrictZone['kind'] | 'coreDense',
   bw: number,
   bd: number,
   rng: Rng,
-): { u: number; v: number; w: number; d: number }[] {
+): LotCell[] {
   const cells = (nu: number, nv: number, gapV = 0) => {
-    const out: { u: number; v: number; w: number; d: number }[] = [];
+    const out: LotCell[] = [];
     const lw = bw / nu;
     const ld = (bd - gapV) / nv;
     for (let i = 0; i < nu; i++) {
       for (let j = 0; j < nv; j++) {
         const v = -bd / 2 + ld * (j + 0.5) + (j >= nv / 2 ? gapV : 0);
-        out.push({ u: -bw / 2 + lw * (i + 0.5), v, w: lw, d: ld });
+        out.push({ i, j, u: -bw / 2 + lw * (i + 0.5), v, w: lw, d: ld });
       }
     }
     return out;
@@ -260,6 +271,76 @@ function lotGrid(
     default: // core (megatower lots), industrial, hillside
       return cells(2, 2);
   }
+}
+
+interface LocalRect {
+  u0: number;
+  u1: number;
+  v0: number;
+  v1: number;
+}
+
+/**
+ * Largest index rectangle of accepted cells whose covering rectangle passes `ok`
+ * (ties: first found, i.e. lowest indices). Returns its cells.
+ */
+function bestLotRect(
+  grid: readonly LotCell[],
+  accepted: ReadonlyMap<string, unknown>,
+  ok: (r: LocalRect) => boolean,
+): LotCell[] {
+  const at = new Map(grid.map((g) => [`${g.i},${g.j}`, g]));
+  const ni = Math.max(...grid.map((g) => g.i)) + 1;
+  const nj = Math.max(...grid.map((g) => g.j)) + 1;
+  let best: LotCell[] = [];
+  for (let i0 = 0; i0 < ni; i0++) {
+    for (let i1 = i0; i1 < ni; i1++) {
+      for (let j0 = 0; j0 < nj; j0++) {
+        for (let j1 = j0; j1 < nj; j1++) {
+          const n = (i1 - i0 + 1) * (j1 - j0 + 1);
+          if (n <= best.length) continue;
+          const cells: LotCell[] = [];
+          for (let i = i0; i <= i1; i++) {
+            for (let j = j0; j <= j1; j++) {
+              const k = `${i},${j}`;
+              const g = at.get(k);
+              if (g && accepted.has(k)) cells.push(g);
+            }
+          }
+          if (cells.length !== n) continue;
+          const r: LocalRect = { u0: Infinity, u1: -Infinity, v0: Infinity, v1: -Infinity };
+          for (const g of cells) {
+            r.u0 = Math.min(r.u0, g.u - g.w / 2);
+            r.u1 = Math.max(r.u1, g.u + g.w / 2);
+            r.v0 = Math.min(r.v0, g.v - g.d / 2);
+            r.v1 = Math.max(r.v1, g.v + g.d / 2);
+          }
+          if (n === 1 || ok(r)) best = cells;
+        }
+      }
+    }
+  }
+  return best;
+}
+
+/** Set a block's rectangle to the union of its lots (all share the block rotation). */
+function fitBlockToLots(block: Block, own: readonly Lot[]): void {
+  let u0 = Infinity;
+  let u1 = -Infinity;
+  let v0 = Infinity;
+  let v1 = -Infinity;
+  for (const l of own) {
+    const c = toLocal(l.obb.x - block.x, l.obb.z - block.z, block.rotY);
+    u0 = Math.min(u0, c.x - l.obb.hw);
+    u1 = Math.max(u1, c.x + l.obb.hw);
+    v0 = Math.min(v0, c.z - l.obb.hd);
+    v1 = Math.max(v1, c.z + l.obb.hd);
+  }
+  const mid = toWorld((u0 + u1) / 2, (v0 + v1) / 2, block.rotY);
+  block.x += mid.x;
+  block.z += mid.z;
+  block.w = u1 - u0;
+  block.d = v1 - v0;
 }
 
 interface LotsResult {
@@ -283,6 +364,18 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
       if (obbOverlap((lots[id] as Lot).obb, o, -1e-6)) return false; // touching lots are fine
     }
     return true;
+  };
+
+  /** Local rectangle (u0..u1, v0..v1) around block center c is free of obstacles. */
+  const clear = (c: Vec2, r: LocalRect, rotY: number): boolean => {
+    const mid = toWorld((r.u0 + r.u1) / 2, (r.v0 + r.v1) / 2, rotY);
+    return !obstacles.blocked({
+      x: c.x + mid.x,
+      z: c.z + mid.z,
+      hw: (r.u1 - r.u0) / 2,
+      hd: (r.v1 - r.v0) / 2,
+      rotY,
+    });
   };
 
   for (const zone of ZONES) {
@@ -315,6 +408,7 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
           zone.kind === 'core' &&
           Math.hypot(c.x - SKYLINE_PEAK.x, c.z - SKYLINE_PEAK.z) > CORE_MEGA_RADIUS;
         const grid = lotGrid(dense ? 'coreDense' : zone.kind, bw - 2 * walk, bd - 2 * walk, rng);
+        const cand = new Map<string, Obb>();
         for (const g of grid) {
           const off = toWorld(g.u, g.v, zone.gridAngle);
           const obb: Obb = {
@@ -324,11 +418,18 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
             hd: g.d / 2,
             rotY: zone.gridAngle,
           };
-          if (!accept(obb, zone)) continue;
+          if (accept(obb, zone)) cand.set(`${g.i},${g.j}`, obb);
+        }
+        // Keep the largest rectangle of surviving lots whose bounding rectangle is itself clear,
+        // so the block never spans a corridor or the river where lots were removed.
+        for (const g of bestLotRect(grid, cand, (r) => clear(c, r, zone.gridAngle))) {
+          const obb = cand.get(`${g.i},${g.j}`) as Obb;
           lotHash.insert(lots.length, obbBounds(obb));
           lots.push({ obb, zone, blockId: block.id });
         }
         if (lots.length > before) {
+          // Shrink the block to the lots that survived (corridors / river may have removed some).
+          fitBlockToLots(block, lots.slice(before));
           blocks.push(block);
           if (zone.kind === 'sangga') {
             const e = toWorld(bw / 2, 0, zone.gridAngle);
@@ -346,7 +447,6 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
   // Riverside pavilions (매점, 펌프장): a thin row between the embankment and the highway corridor.
   const rng = zoneRng(seed, 'lots:riverside');
   const riverside = zoneById('riverside');
-  let blockId = -1;
   for (const side of [-1, 1] as const) {
     for (let x = -1150; x <= 1150; x += 90) {
       if (!rng.chance(0.55)) continue;
@@ -357,20 +457,19 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
       const rotY = Math.atan2(-f.along.z, f.along.x);
       const obb: Obb = { x: p.x, z: p.z, hw: rng.range(3, 6), hd: rng.range(2, 3.5), rotY };
       if (!accept(obb, riverside)) continue;
-      if (blockId < 0) {
-        blockId = blocks.length;
-        blocks.push({
-          id: blockId,
-          zoneId: riverside.id,
-          district: 'riverside',
-          x: 0,
-          z: 150,
-          w: EXTENT,
-          d: RIVER.width + 2 * RIVER.bandWidth,
-          rotY: 0,
-          buildingIds: [],
-        });
-      }
+      // Each pavilion is its own one-lot block.
+      const blockId = blocks.length;
+      blocks.push({
+        id: blockId,
+        zoneId: riverside.id,
+        district: 'riverside',
+        x: obb.x,
+        z: obb.z,
+        w: obb.hw * 2,
+        d: obb.hd * 2,
+        rotY,
+        buildingIds: [],
+      });
       lotHash.insert(lots.length, obbBounds(obb));
       lots.push({ obb, zone: riverside, blockId });
     }
@@ -453,16 +552,45 @@ function footprint(rng: Rng, a: Archetype, lw: number, ld: number): { w: number;
   }
 }
 
+/** Gap kept between a footprint and its lot edge (m). */
+const LOT_MARGIN = 0.05;
+
+/**
+ * Scale (≤ 1) that makes a w × d rectangle rotated by `rot` and offset by (ox, oz) fit inside
+ * a lw × ld lot with LOT_MARGIN on every side.
+ */
+export function fitScale(
+  w: number,
+  d: number,
+  rot: number,
+  ox: number,
+  oz: number,
+  lw: number,
+  ld: number,
+): number {
+  const c = Math.abs(Math.cos(rot));
+  const sn = Math.abs(Math.sin(rot));
+  const ex = w * c + d * sn;
+  const ez = w * sn + d * c;
+  const ax = lw - 2 * Math.abs(ox) - 2 * LOT_MARGIN;
+  const az = ld - 2 * Math.abs(oz) - 2 * LOT_MARGIN;
+  return Math.max(0, Math.min(1, ax / ex, az / ez));
+}
+
 function draftsFor(zone: DistrictZone, lots: Lot[], rng: Rng): Draft[] {
   const drafts: Draft[] = [];
   const make = (lot: Lot, archetype: Archetype, h: number, extra: Partial<Draft> = {}): Draft => {
     const lw = lot.obb.hw * 2;
     const ld = lot.obb.hd * 2;
-    const { w, d } = footprint(rng, archetype, lw, ld);
+    let { w, d } = footprint(rng, archetype, lw, ld);
     const jitterable = zone.kind === 'sangga' || zone.kind === 'hillside';
     const ox = jitterable ? rng.range(-1, 1) * Math.max(0, (lw - w) / 2 - 1) * 0.6 : 0;
     const oz = jitterable ? rng.range(-1, 1) * Math.max(0, (ld - d) / 2 - 1) * 0.6 : 0;
     const jitter = jitterable ? rng.range(-4, 4) * (Math.PI / 180) : 0;
+    // Shrink so the rotated, offset footprint stays strictly inside its lot.
+    const s = fitScale(w, d, jitter, ox, oz, lw, ld);
+    w *= s;
+    d *= s;
     return { lot, archetype, w, d, h, ox, oz, jitter, ...extra };
   };
 
@@ -489,10 +617,10 @@ function draftsFor(zone: DistrictZone, lots: Lot[], rng: Rng): Draft[] {
       // The 520 m landmark is a single slender tower: setback or cylinder.
       const lead = bag.findIndex((x) => x === 'setbackTower' || x === 'cylinderTower');
       [bag[0], bag[lead]] = [bag[lead] as Archetype, bag[0] as Archetype];
-      const rest = Array.from({ length: big.length - MEGA_TOP.length }, () =>
+      const rest = Array.from({ length: Math.max(0, big.length - MEGA_TOP.length) }, () =>
         rng.range(MEGA_MIN_H + 10, 420),
       ).sort((a, b) => b - a);
-      const heights = [...MEGA_TOP, ...rest];
+      const heights = [...MEGA_TOP.slice(0, big.length), ...rest];
       const megaSet = new Set(big);
       big.forEach((lot, i) => {
         drafts.push(
@@ -587,9 +715,39 @@ function sanggaHeight(rng: Rng): number {
   return 4.2 + 3.3 * (rng.int(4, 9) - 1);
 }
 
-/** Height rules inside a block (ART_DIRECTION 2.2): neighbours differ by > 10 %, max/min ≥ 3. */
+/**
+ * Height rules inside a block (ART_DIRECTION 2.2), applied in this order:
+ * 1. ratio: tallest / lowest ≥ 3. The tallest is pinned and one "low" building is pushed to
+ *    ≤ tallest / 3.
+ * 2. neighbours: two footprints closer than NEIGHBOUR_GAP differ by more than 10 %. Non-megatower
+ *    buildings other than the tallest are re-drawn: the low one inside [4.2, tallest / 3],
+ *    the rest inside [4.2, min(cap, tallest)]. The tallest stays the max and the low one stays
+ *    ≤ tallest / 3, so step 1 can never be undone. Pairs of megatowers are exempt (their heights
+ *    are fixed landmarks).
+ * Caps (HEIGHT_CAP) hold for every non-megatower at the end.
+ */
 const RATIO_KINDS = new Set(['core', 'midtown', 'sangga']);
 const MIN_STOREY = 4.2;
+/** Footprints closer than this (m) count as neighbours for the ±10 % rule. */
+export const NEIGHBOUR_GAP = 4;
+
+/** World footprint of a draft (same math as buildSpecs). */
+function draftObb(d: Draft): Obb {
+  const off = toWorld(d.ox, d.oz, d.lot.obb.rotY);
+  return {
+    x: d.lot.obb.x + off.x,
+    z: d.lot.obb.z + off.z,
+    hw: d.w / 2,
+    hd: d.d / 2,
+    rotY: d.lot.obb.rotY + d.jitter,
+  };
+}
+
+/** True when two heights violate the ±10 % neighbour rule. */
+export function tooSimilar(a: number, b: number): boolean {
+  return Math.abs(a - b) <= 0.1 * Math.max(a, b);
+}
+
 function applyBlockHeightRules(drafts: Draft[], rng: Rng): void {
   const byBlock = new Map<number, Draft[]>();
   for (const d of drafts) {
@@ -599,42 +757,73 @@ function applyBlockHeightRules(drafts: Draft[], rng: Rng): void {
     else byBlock.set(d.lot.blockId, [d]);
   }
   for (const list of byBlock.values()) {
-    for (let i = 1; i < list.length; i++) {
-      const prev = list[i - 1] as Draft;
-      const cur = list[i] as Draft;
-      if (cur.corp) continue;
-      const cap = HEIGHT_CAP[cur.lot.zone.kind] ?? Infinity;
-      for (let k = 0; k < 4 && Math.abs(cur.h - prev.h) <= 0.1 * Math.max(cur.h, prev.h); k++) {
-        cur.h *= rng.chance(0.5) ? rng.range(1.15, 1.4) : rng.range(0.6, 0.85);
-        cur.h = Math.min(cur.h, cap);
-      }
-    }
+    const capOf = (d: Draft): number =>
+      d.corp ? Infinity : (HEIGHT_CAP[d.lot.zone.kind] ?? Infinity);
+    for (const d of list) d.h = Math.min(d.h, capOf(d));
     if (list.length < 2) continue;
+
+    // 1. Ratio rule.
     const top = list.reduce((x, y) => (y.h > x.h ? y : x));
     const low = list.filter((d) => !d.corp && d !== top);
     if (low.length === 0) continue;
     // A single-storey shop (4.2 m) is the floor, so the tallest must reach at least 12.6 m.
-    if (top.h < 3 * MIN_STOREY) top.h = 3 * MIN_STOREY + 1.5;
+    if (top.h < 3 * MIN_STOREY) top.h = Math.min(3 * MIN_STOREY + 1.5, capOf(top));
     const lowest = low.reduce((x, y) => (y.h < x.h ? y : x));
     if (top.h / lowest.h < 3) {
       lowest.h = Math.max(MIN_STOREY, (top.h / 3) * rng.range(0.6, 0.95));
       // Short sangga blocks get a 1–2 storey shop; tall blocks get a low podium building.
       if (lowest.archetype !== 'sangga' && lowest.h < 30) lowest.archetype = 'officeSlab';
     }
+
+    // 2. Neighbour rule on spatially touching lots.
+    const nbrs = list.map((a) =>
+      list.filter((b) => b !== a && obbOverlap(draftObb(a), draftObb(b), NEIGHBOUR_GAP)),
+    );
+    for (let pass = 0; pass < 6; pass++) {
+      let changed = false;
+      for (let i = 0; i < list.length; i++) {
+        const d = list[i] as Draft;
+        if (d.corp || d === top) continue;
+        const around = nbrs[i] as Draft[];
+        if (!around.some((n) => tooSimilar(n.h, d.h))) continue;
+        const lo = MIN_STOREY;
+        const hi = d === lowest ? top.h / 3 : Math.min(capOf(d), top.h);
+        for (let k = 0; k < 32; k++) {
+          // Stay close to the original draw first, then anywhere in range.
+          const h = k < 16 ? clamp(d.h * rng.range(0.55, 1.5), lo, hi) : rng.range(lo, hi);
+          if (!around.some((n) => tooSimilar(n.h, h))) {
+            d.h = h;
+            changed = true;
+            break;
+          }
+        }
+      }
+      if (!changed) break;
+    }
   }
 }
 
+/** Local side whose outward normal points most along the world direction (dx, dz). */
+function sideToward(dx: number, dz: number, rotY: number): Side {
+  const l = toLocal(dx, dz, rotY);
+  if (Math.abs(l.x) > Math.abs(l.z)) return l.x > 0 ? 'px' : 'nx';
+  return l.z > 0 ? 'pz' : 'nz';
+}
+
+/** Side facing the nearest road within `radius`, or null when there is none. */
 function nearestRoadSide(
   roads: readonly Road[],
   roadHash: GridHash,
   x: number,
   z: number,
   rotY: number,
-): Side {
+  radius: number,
+): Side | null {
   let best = Infinity;
-  let dir: Vec2 = { x: 0, z: 1 };
+  let dir: Vec2 | null = null;
   const p = { x, z };
-  for (const id of roadHash.query({ minX: x - 80, minZ: z - 80, maxX: x + 80, maxZ: z + 80 })) {
+  const q = { minX: x - radius, minZ: z - radius, maxX: x + radius, maxZ: z + radius };
+  for (const id of roadHash.query(q)) {
     const r = roads[id] as Road;
     const t = closestSegmentT(p, r.a, r.b);
     const cx = r.a.x + (r.b.x - r.a.x) * t;
@@ -646,9 +835,27 @@ function nearestRoadSide(
       dir = { x: cx - x, z: cz - z };
     }
   }
-  const l = toLocal(dir.x, dir.z, rotY);
-  if (Math.abs(l.x) > Math.abs(l.z)) return l.x > 0 ? 'px' : 'nx';
-  return l.z > 0 ? 'pz' : 'nz';
+  return dir ? sideToward(dir.x, dir.z, rotY) : null;
+}
+
+/** Street front: pavilions face the river, everything else the nearest real road. */
+function frontSide(
+  d: Draft,
+  roads: readonly Road[],
+  roadHash: GridHash,
+  x: number,
+  z: number,
+  rotY: number,
+): Side {
+  if (d.archetype === 'pavilion') {
+    const c = riverFrame(x).p;
+    return sideToward(c.x - x, c.z - z, rotY);
+  }
+  return (
+    nearestRoadSide(roads, roadHash, x, z, rotY, 80) ??
+    nearestRoadSide(roads, roadHash, x, z, rotY, 600) ??
+    'pz'
+  );
 }
 
 function buildSpecs(
@@ -670,11 +877,8 @@ function buildSpecs(
   const dongs = new Map<number, number>();
   return drafts.map((d, id): BuildingSpec => {
     const { lot } = d;
-    const rotY = lot.obb.rotY + d.jitter;
-    const off = toWorld(d.ox, d.oz, lot.obb.rotY);
-    const x = lot.obb.x + off.x;
-    const z = lot.obb.z + off.z;
-    const obb: Obb = { x, z, hw: d.w / 2, hd: d.d / 2, rotY };
+    const obb = draftObb(d);
+    const { x, z, rotY } = obb;
     const baseY = Math.min(
       terrainHeight(x, z),
       ...obbCorners(obb).map((p) => terrainHeight(p.x, p.z)),
@@ -682,6 +886,8 @@ function buildSpecs(
     const [floorH, groundFloorH0] = FLOOR_H[d.archetype];
     const piloti = d.archetype === 'apartmentSlab' && rng.chance(0.3);
     const groundFloorH = piloti ? 5 : groundFloorH0;
+    // Piloti slabs keep their floor count: a 5 m open ground floor plus 2.8 m floors.
+    if (piloti) d.h = 5 + (Math.round(d.h / floorH) - 1) * floorH;
     const m: Massing = { x, z, w: d.w, d: d.d, h: d.h, rotY, baseY, archetype: d.archetype };
     const tr = computeTiers(m, rng, lot.zone.kind);
     const block = blocks[lot.blockId] as Block;
@@ -733,7 +939,7 @@ function buildSpecs(
       floors: floorsFor(d.h, floorH, groundFloorH),
       tiers: tr.tiers,
       spireH: tr.spireH,
-      front: nearestRoadSide(roads, roadHash, x, z, rotY),
+      front: frontSide(d, roads, roadHash, x, z, rotY),
       seed: Math.floor(rng.next() * 1e9),
       tags,
     };

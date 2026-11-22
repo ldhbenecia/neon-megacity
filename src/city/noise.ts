@@ -26,6 +26,9 @@ function table(seed: number): Float64Array {
  * (period must be an integer ≤ 256), which keeps ring profiles seamless.
  */
 export function noise1(x: number, seed: number, period = 0): number {
+  if (period > LATTICE || !Number.isInteger(period)) {
+    throw new RangeError(`noise1 period must be an integer ≤ ${LATTICE}, got ${period}`);
+  }
   const t = table(seed);
   const i0 = Math.floor(x);
   const f = x - i0;
@@ -39,7 +42,10 @@ export function noise1(x: number, seed: number, period = 0): number {
   return a + (b - a) * s;
 }
 
-/** Fractal sum of `octaves` noise layers, normalized to [0, 1). */
+/**
+ * Fractal sum of `octaves` noise layers, normalized to [0, 1).
+ * With `period` > 0, `period * 2^(octaves - 1)` must stay ≤ 256 (noise1 throws otherwise).
+ */
 export function fbm1(x: number, seed: number, octaves = 4, period = 0): number {
   let sum = 0;
   let amp = 0.5;

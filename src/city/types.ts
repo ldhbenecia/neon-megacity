@@ -134,7 +134,11 @@ export interface Block {
   id: number;
   zoneId: string;
   district: DistrictKind;
-  /** Center and size (sidewalk included, roads excluded), rotated by `rotY`. */
+  /**
+   * Rectangle covering the block's lots (built area), rotated by `rotY`. Sidewalks and roads are
+   * outside it. Never overlaps the river channel or a highway corridor; a riverside pavilion is a
+   * one-lot block of its own.
+   */
   x: number;
   z: number;
   w: number;

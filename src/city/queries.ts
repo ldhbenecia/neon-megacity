@@ -38,7 +38,7 @@ function buildingIndex(L: Layout): BuildingIndex {
     for (const b of L.buildings) {
       hash.insert(b.id, bounds[b.id] as Bounds);
       const box = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
-      for (const t of allTiers(b)) {
+      for (const t of buildingVolumes(b)) {
         const hd = t.shape === 'cylinder' ? t.w / 2 : t.d / 2;
         const o = obbBounds({ x: t.x, z: t.z, hw: t.w / 2, hd, rotY: b.rotY });
         box[0] = Math.min(box[0] as number, o.minX);
@@ -108,6 +108,64 @@ export function allTiers(b: BuildingSpec): Tier[] {
   return b.twin ? [...b.tiers, ...b.twin] : b.tiers;
 }
 
+/** Spire / antenna radius used for picking and collision (m). */
+const SPIRE_RADIUS = 1.5;
+
+/**
+ * Every solid volume of a building as tier-like boxes / cylinders: both tier stacks, plus the
+ * cantilever mass, the twin-tower skybridge and the spire. Used by picking and collision.
+ */
+export function buildingVolumes(b: BuildingSpec): Tier[] {
+  const out = [...allTiers(b)];
+  const top = b.tiers[b.tiers.length - 1];
+  if (b.cantilever && top) {
+    const c = b.cantilever;
+    const alongX = c.side === 'px' || c.side === 'nx';
+    const half = alongX ? top.w / 2 : top.d / 2;
+    const n = sideNormal(c.side, b.rotY);
+    const k = half + c.out / 2;
+    out.push({
+      x: top.x + n.x * k,
+      z: top.z + n.z * k,
+      w: alongX ? c.out : c.width,
+      d: alongX ? c.width : c.out,
+      y0: c.y0,
+      y1: c.y1,
+      shape: 'box',
+      chamfer: 0,
+    });
+  }
+  const a = b.tiers[0];
+  const t = b.twin?.[0];
+  if (b.skybridge && a && t) {
+    // Stacks sit side by side along the local X axis; the bridge spans the gap between them.
+    const gap = Math.hypot(t.x - a.x, t.z - a.z) - (a.w + t.w) / 2;
+    out.push({
+      x: (a.x + t.x) / 2,
+      z: (a.z + t.z) / 2,
+      w: Math.max(gap, 0) + 1,
+      d: b.skybridge.width,
+      y0: b.skybridge.y0,
+      y1: b.skybridge.y1,
+      shape: 'box',
+      chamfer: 0,
+    });
+  }
+  if (b.spireH > 0 && top) {
+    out.push({
+      x: top.x,
+      z: top.z,
+      w: SPIRE_RADIUS * 2,
+      d: SPIRE_RADIUS * 2,
+      y0: top.y1,
+      y1: top.y1 + b.spireH,
+      shape: 'cylinder',
+      chamfer: 0,
+    });
+  }
+  return out;
+}
+
 /** World y of the highest point (spire included). */
 export function buildingTop(b: BuildingSpec): number {
   return b.baseY + b.h + b.spireH;
@@ -120,17 +178,22 @@ function insideTier(b: BuildingSpec, t: Tier, x: number, y: number, z: number): 
   return Math.abs(l.x) <= t.w / 2 && Math.abs(l.z) <= t.d / 2;
 }
 
-/** Id of the building whose tier volume contains the point, or null (camera collision). */
+/**
+ * Id of the building whose volume (tiers, cantilever, skybridge, spire) contains the point,
+ * or null (camera collision).
+ */
 export function buildingContaining(L: Layout, x: number, y: number, z: number): number | null {
   for (const id of buildingIndex(L).hash.query({ minX: x, minZ: z, maxX: x, maxZ: z })) {
     const b = L.buildings[id] as BuildingSpec;
-    if (allTiers(b).some((t) => insideTier(b, t, x, y, z))) return id;
+    if (buildingVolumes(b).some((t) => insideTier(b, t, x, y, z))) return id;
   }
   return null;
 }
 
+/** Ray parameter of the first hit with a volume; 0 when the origin is inside (box and cylinder alike). */
 function rayTier(b: BuildingSpec, t: Tier, o: Vec3Like, d: Vec3Like): number {
   if (t.shape === 'cylinder') {
+    if (insideTier(b, t, o.x, o.y, o.z)) return 0;
     const ox = o.x - t.x;
     const oz = o.z - t.z;
     const r = t.w / 2;
@@ -183,7 +246,7 @@ function rayTier(b: BuildingSpec, t: Tier, o: Vec3Like, d: Vec3Like): number {
 
 /**
  * Nearest building hit by the ray (dir need not be normalized; `t` is in units of dir).
- * Tests every tier as an OBB or cylinder.
+ * Tests every volume (`buildingVolumes`) as an OBB or cylinder; t = 0 when the origin is inside.
  */
 export function raycastBuildings(
   L: Layout,
@@ -194,7 +257,7 @@ export function raycastBuildings(
   let best: { id: number; t: number } | null = null;
   for (const b of L.buildings) {
     if (!rayMayHitBox(boxes, b.id, origin, dir)) continue;
-    for (const t of allTiers(b)) {
+    for (const t of buildingVolumes(b)) {
       const k = rayTier(b, t, origin, dir);
       if (k < (best?.t ?? Infinity)) best = { id: b.id, t: k };
     }
@@ -246,11 +309,15 @@ interface DeckSeg {
   half: number;
   bounds: Bounds;
 }
-const deckCache = new WeakMap<Layout, DeckSeg[]>();
-function deckSegments(L: Layout): DeckSeg[] {
-  let segs = deckCache.get(L);
-  if (!segs) {
-    segs = [];
+interface DeckIndex {
+  segs: DeckSeg[];
+  hash: GridHash;
+}
+const deckCache = new WeakMap<Layout, DeckIndex>();
+function deckIndex(L: Layout): DeckIndex {
+  let idx = deckCache.get(L);
+  if (!idx) {
+    const segs: DeckSeg[] = [];
     for (const hw of L.highways) {
       const s = highwaySamples(hw, 4);
       for (let i = 0; i < s.length - 1; i++) {
@@ -260,9 +327,12 @@ function deckSegments(L: Layout): DeckSeg[] {
         segs.push({ a, b, half, bounds: segmentBounds(a, b, half) });
       }
     }
-    deckCache.set(L, segs);
+    const hash = new GridHash();
+    segs.forEach((sg, i) => hash.insert(i, sg.bounds));
+    idx = { segs, hash };
+    deckCache.set(L, idx);
   }
-  return segs;
+  return idx;
 }
 
 /**
@@ -275,7 +345,9 @@ export function deckHeightAt(L: Layout, x: number, z: number): number | null {
   const take = (y: number): void => {
     if (best === null || y > best) best = y;
   };
-  for (const s of deckSegments(L)) {
+  const { segs, hash } = deckIndex(L);
+  for (const i of hash.query({ minX: x, minZ: z, maxX: x, maxZ: z })) {
+    const s = segs[i] as DeckSeg;
     const sb = s.bounds;
     if (x < sb.minX || x > sb.maxX || z < sb.minZ || z > sb.maxZ) continue;
     if (pointSegmentDistance(p, s.a, s.b) > s.half) continue;

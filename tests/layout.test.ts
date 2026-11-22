@@ -9,6 +9,9 @@ import {
   ZONES,
   allTiers,
   buildingContaining,
+  buildingTop,
+  buildingVolumes,
+  riverFrame,
   buildingFaces,
   buildingsInAabb,
   deckHeightAt,
@@ -25,7 +28,16 @@ import {
   type BuildingSpec,
   type Tier,
 } from '../src/city/layout';
-import { hashString, obbOverlap, obbSegmentDistance, pointSegmentDistance } from '../src/city/math';
+import { fitScale } from '../src/city/generate';
+import {
+  hashString,
+  obbOverlap,
+  obbSegmentDistance,
+  pointSegmentDistance,
+  sideNormal,
+  toLocal,
+} from '../src/city/math';
+import { fbm1 } from '../src/city/noise';
 
 const EPS = 1e-6;
 const B = LAYOUT.buildings;
@@ -56,11 +68,11 @@ describe('layout v2: determinism', () => {
       digest: digest(LAYOUT),
     }).toMatchInlineSnapshot(`
       {
-        "blocks": 996,
-        "buildings": 2849,
-        "digest": "433cdba5",
+        "blocks": 1027,
+        "buildings": 2828,
+        "digest": "973ca52d",
         "roads": 1214,
-        "slots": 1853,
+        "slots": 1854,
       }
     `);
   });
@@ -429,7 +441,7 @@ describe('layout queries', () => {
       { x: 0, y: -1, z: 0 },
     );
     expect(hit?.id).toBe(tall.id);
-    expect(hit!.t).toBeCloseTo(1000 - (tall.baseY + tall.h), 6);
+    expect(hit!.t).toBeCloseTo(1000 - buildingTop(tall), 6);
     expect(raycastBuildings(LAYOUT, { x: 0, y: 900, z: 0 }, { x: 0, y: 1, z: 0 })).toBeNull();
   });
 
@@ -473,5 +485,97 @@ describe('layout queries', () => {
         expect(s.y).toBe(RIVER.parkY);
       }
     }
+  });
+
+  it('buildingContaining and raycastBuildings see cantilevers, skybridges and spires', () => {
+    const withCant = B.find((b) => b.cantilever)!;
+    const vol = buildingVolumes(withCant);
+    expect(vol.length).toBeGreaterThan(allTiers(withCant).length);
+    const c = withCant.cantilever!;
+    const body = withCant.tiers.at(-1)!;
+    const n = sideNormal(c.side, withCant.rotY);
+    const half = c.side === 'px' || c.side === 'nx' ? body.w / 2 : body.d / 2;
+    const px = body.x + n.x * (half + c.out / 2);
+    const pz = body.z + n.z * (half + c.out / 2);
+    expect(buildingContaining(LAYOUT, px, (c.y0 + c.y1) / 2, pz)).toBe(withCant.id);
+    expect(buildingContaining(LAYOUT, px, c.y1 + 1, pz)).toBeNull();
+
+    const twin = B.find((b) => b.skybridge)!;
+    const a = twin.tiers[0]!;
+    const t = twin.twin![0]!;
+    const sy = (twin.skybridge!.y0 + twin.skybridge!.y1) / 2;
+    expect(buildingContaining(LAYOUT, (a.x + t.x) / 2, sy, (a.z + t.z) / 2)).toBe(twin.id);
+
+    const spired = B.find((b) => b.spireH > 5)!;
+    const top = spired.tiers.at(-1)!;
+    expect(buildingContaining(LAYOUT, top.x, top.y1 + spired.spireH / 2, top.z)).toBe(spired.id);
+  });
+
+  it('raycastBuildings returns t = 0 from inside boxes and cylinders alike', () => {
+    for (const shape of ['box', 'cylinder', 'chamfer'] as const) {
+      const b = B.find((x) => x.tiers[0]!.shape === shape && x.h > 30)!;
+      const t0 = b.tiers[0]!;
+      const hit = raycastBuildings(
+        LAYOUT,
+        { x: t0.x, y: t0.y0 + 2, z: t0.z },
+        { x: 1, y: 0, z: 0 },
+      );
+      expect(hit, shape).toEqual({ id: b.id, t: 0 });
+    }
+  });
+
+  it('gives piloti apartment slabs the same floor count as their height implies', () => {
+    const slabs = B.filter((b) => b.archetype === 'apartmentSlab');
+    const piloti = slabs.filter((b) => b.groundFloorH === 5);
+    expect(piloti.length).toBeGreaterThan(0);
+    for (const b of slabs) {
+      expect(b.h).toBeCloseTo(b.groundFloorH + (b.floors - 1) * b.floorH, 9);
+    }
+  });
+
+  it('turns riverside pavilions toward the river', () => {
+    const pav = B.filter((b) => b.archetype === 'pavilion');
+    expect(pav.length).toBeGreaterThan(0);
+    for (const b of pav) {
+      const c = riverFrame(b.x).p;
+      const n = sideNormal(b.front, b.rotY);
+      expect(n.x * (c.x - b.x) + n.z * (c.z - b.z), `pavilion ${b.id}`).toBeGreaterThan(0);
+    }
+  });
+
+  it('fitScale keeps a rotated, offset footprint inside its lot', () => {
+    for (const rot of [-0.07, 0, 0.05]) {
+      const s = fitScale(18, 22, rot, 0.4, -0.3, 19, 23);
+      const w = 18 * s;
+      const d = 22 * s;
+      // Corners of the rotated footprint, in the lot frame.
+      for (const [sx, sz] of [
+        [-1, -1],
+        [1, -1],
+        [1, 1],
+        [-1, 1],
+      ] as const) {
+        const l = toLocal((sx * w) / 2, (sz * d) / 2, -rot);
+        expect(Math.abs(0.4 + l.x)).toBeLessThan(19 / 2);
+        expect(Math.abs(-0.3 + l.z)).toBeLessThan(23 / 2);
+      }
+    }
+  });
+
+  it('deckHeightAt agrees with a brute-force scan of the highway samples', () => {
+    for (const hw of LAYOUT.highways) {
+      const s = highwaySamples(hw, 4);
+      for (let i = 0; i < s.length - 1; i += 25) {
+        const p = s[i]!;
+        expect(deckHeightAt(LAYOUT, p.x, p.z), hw.id).toBeGreaterThanOrEqual(p.y - 1e-6);
+      }
+    }
+  });
+});
+
+describe('noise', () => {
+  it('rejects periods larger than the lattice instead of reading zeros', () => {
+    expect(() => fbm1(1.5, 7, 4, 64)).toThrow(RangeError);
+    expect(() => fbm1(1.5, 7, 4, 32)).not.toThrow();
   });
 });
