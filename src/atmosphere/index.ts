@@ -100,6 +100,13 @@ export function init(ctx: Ctx): CityModuleInstance {
   const sun = FOG_UNIFORMS.ramhaFogSun.value;
   const sunCol = FOG_UNIFORMS.ramhaFogSunColor.value;
   const postSettings = { strength: 0, radius: 0, threshold: 0, lens: true, drops: 0 };
+  /** Cloud colors that depend only on the palette sample. */
+  const applyPalette = (): void => {
+    setSrgb(dayLow, palette.hemiSky).lerp(setSrgb(tmp, palette.horizonColor), 0.5);
+    setSrgb(dayHigh, palette.horizonColor, 1.08);
+    setSrgb(sunColor, palette.fogSunColor);
+  };
+  applyPalette();
   const cloudInputs = {
     rain: 0,
     night: 1,
@@ -117,6 +124,7 @@ export function init(ctx: Ctx): CityModuleInstance {
       if (Math.abs(env.timeOfDay - paletteTime) > PALETTE_EPSILON) {
         palette = paletteAt(env.timeOfDay);
         paletteTime = env.timeOfDay;
+        applyPalette();
       }
       const r = env.rain;
 
@@ -156,9 +164,6 @@ export function init(ctx: Ctx): CityModuleInstance {
         CLOUDS.lowY,
       );
 
-      setSrgb(dayLow, palette.hemiSky).lerp(setSrgb(tmp, palette.horizonColor), 0.5);
-      setSrgb(dayHigh, palette.horizonColor, 1.08);
-      setSrgb(sunColor, palette.fogSunColor);
       cloudInputs.rain = r;
       cloudInputs.night = env.nightFactor;
       cloudInputs.sunset = scatter * 0.8;

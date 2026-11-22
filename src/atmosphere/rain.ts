@@ -12,7 +12,6 @@ import {
   ShaderMaterial,
   Vector2,
   Vector3,
-  type IUniform,
 } from 'three';
 import { NEON } from '../core/palette';
 import { createRng } from '../core/random';
@@ -119,7 +118,7 @@ export function createRain(ctx: Ctx): Rain {
   const neon = [NEON.neonCyan.hex, NEON.neonOrange.hex, NEON.neonRed.hex].map((h) =>
     new Color(h).multiplyScalar(0.9),
   );
-  const uniforms: Record<string, IUniform> = {
+  const uniforms = {
     uTime: { value: 0 },
     uBox: { value: RAIN.box },
     uWind: { value: new Vector2() },
@@ -149,12 +148,12 @@ export function createRain(ctx: Ctx): Rain {
   const size = new Vector2();
   const windDir = new Vector3(0.8, 0, 0.6).normalize();
   let pool = rainPoolFor(0);
-  const uTime = uniforms.uTime as { value: number };
-  const uWind = uniforms.uWind as { value: Vector2 };
-  const uRes = uniforms.uResolution as { value: Vector2 };
-  const uWidth = uniforms.uWidthPx as { value: number };
-  const uColor = uniforms.uColor as { value: Color };
-  const uOpacity = uniforms.uOpacity as { value: number };
+  const uTime = uniforms.uTime;
+  const uWind = uniforms.uWind;
+  const uRes = uniforms.uResolution;
+  const uWidth = uniforms.uWidthPx;
+  const uColor = uniforms.uColor;
+  const uOpacity = uniforms.uOpacity;
 
   return {
     update(elapsed, rain, fogColor, altitudeFade) {

@@ -16,7 +16,6 @@ import {
   RepeatWrapping,
   ShaderMaterial,
   Vector3,
-  type IUniform,
   type Vector4,
 } from 'three';
 import { MATERIAL } from '../core/palette';
@@ -180,7 +179,7 @@ export function createClouds(
   noise.name = 'atmosphere.cloudNoise';
   noise.needsUpdate = true;
 
-  const uniforms: Record<string, IUniform> = {
+  const uniforms = {
     tNoise: { value: noise },
     uTime: { value: 0 },
     uRain: { value: 0 },
@@ -212,17 +211,16 @@ export function createClouds(
   mesh.frustumCulled = false;
   mesh.renderOrder = 20;
   scene.add(mesh);
-  const uTime = uniforms.uTime as { value: number };
-  const uRain = uniforms.uRain as { value: number };
-  const uNight = uniforms.uNight as { value: number };
-  const uDayLow = uniforms.uDayLow as { value: Color };
-  const uDayHigh = uniforms.uDayHigh as { value: Color };
-  const uHorizon = uniforms.uHorizon as { value: Color };
-  const uSunDir = uniforms.uSunDir as { value: Vector3 };
-  const uSunColor = uniforms.uSunColor as { value: Color };
-  const uSunset = uniforms.uSunset as { value: number };
-  const uFogK = uniforms.uFogK as { value: number };
-  let enabled = true;
+  const uTime = uniforms.uTime;
+  const uRain = uniforms.uRain;
+  const uNight = uniforms.uNight;
+  const uDayLow = uniforms.uDayLow;
+  const uDayHigh = uniforms.uDayHigh;
+  const uHorizon = uniforms.uHorizon;
+  const uSunDir = uniforms.uSunDir;
+  const uSunColor = uniforms.uSunColor;
+  const uSunset = uniforms.uSunset;
+  const uFogK = uniforms.uFogK;
 
   return {
     update(elapsed, i) {
@@ -237,10 +235,8 @@ export function createClouds(
       uSunColor.value.copy(i.sunColor);
       uSunset.value = i.sunset;
       uFogK.value = i.fogK;
-      mesh.visible = enabled;
     },
     setVisible(vis) {
-      enabled = vis;
       mesh.visible = vis;
     },
     dispose() {

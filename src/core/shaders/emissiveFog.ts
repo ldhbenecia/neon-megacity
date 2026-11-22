@@ -121,6 +121,5 @@ export function emissiveFogFactor(
   worldY = 0,
   cameraY = worldY,
 ): number {
-  const x = fogDensity * EMISSIVE_FOG_DENSITY_SCALE * depth;
-  return Math.min(1, (1 - Math.exp(-x * x)) * heightFogScale(worldY, cameraY));
+  return fogFactor(fogDensity * EMISSIVE_FOG_DENSITY_SCALE, depth, worldY, cameraY);
 }

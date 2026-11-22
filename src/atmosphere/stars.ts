@@ -8,7 +8,6 @@ import {
   Float32BufferAttribute,
   Points,
   ShaderMaterial,
-  type IUniform,
 } from 'three';
 import { NEON } from '../core/palette';
 import { createRng } from '../core/random';
@@ -71,7 +70,7 @@ export function createStars(ctx: Ctx): Stars {
   geometry.setAttribute('position', new Float32BufferAttribute(pos, 3));
   geometry.setAttribute('aStar', new Float32BufferAttribute(star, 2));
 
-  const uniforms: Record<string, IUniform> = {
+  const uniforms = {
     uPixelRatio: { value: renderer.getPixelRatio() },
     uTime: { value: 0 },
     // neonWhite at ~half brightness: HDR well under the 0.85 bloom threshold.
@@ -94,9 +93,9 @@ export function createStars(ctx: Ctx): Stars {
   points.renderOrder = 10;
   scene.add(points);
 
-  const uVis = uniforms.uVisibility as { value: number };
-  const uTime = uniforms.uTime as { value: number };
-  const uPr = uniforms.uPixelRatio as { value: number };
+  const uVis = uniforms.uVisibility;
+  const uTime = uniforms.uTime;
+  const uPr = uniforms.uPixelRatio;
 
   return {
     update(elapsed, visibility) {

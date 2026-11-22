@@ -160,8 +160,6 @@ export interface Post {
   update(elapsed: number, s: PostSettings): void;
   /** Quality tier (0 full, ≥1 bloom at half resolution). */
   setTier(tier: number): void;
-  /** Rough GPU memory of the post targets (MB), for the report / GUI. */
-  memoryMB(): number;
   dispose(): void;
 }
 
@@ -212,15 +210,15 @@ export function createPost(ctx: Ctx): Post {
   const highPass = bloom.materialHighPassFilter.uniforms;
   const composite = bloom.compositeMaterial.uniforms;
 
-  const finalUniforms: Record<string, IUniform> = {
+  const finalUniforms = {
     tScene: { value: sceneTarget.texture },
     tBloom: { value: bloom.renderTargetsHorizontal[0]?.texture ?? null },
     uBloomOn: { value: 1 },
     toneMappingExposure: { value: 1 },
     uTime: { value: 0 },
-    uAberration: { value: LENS.aberration },
-    uVignette: { value: LENS.vignette },
-    uGrain: { value: LENS.grain },
+    uAberration: { value: LENS.aberration as number },
+    uVignette: { value: LENS.vignette as number },
+    uGrain: { value: LENS.grain as number },
     uAspect: { value: 1 },
     uDrops: { value: 0 },
   };
@@ -237,14 +235,14 @@ export function createPost(ctx: Ctx): Post {
   let outColorSpace: string | null = null;
   let outToneMapping: ToneMapping | null = null;
 
-  const exposure = uniform(finalUniforms, 'toneMappingExposure');
-  const time = uniform(finalUniforms, 'uTime');
-  const aberration = uniform(finalUniforms, 'uAberration');
-  const vignette = uniform(finalUniforms, 'uVignette');
-  const grain = uniform(finalUniforms, 'uGrain');
-  const aspect = uniform(finalUniforms, 'uAspect');
-  const drops = uniform(finalUniforms, 'uDrops');
-  const bloomOnU = uniform(finalUniforms, 'uBloomOn');
+  const exposure = finalUniforms.toneMappingExposure;
+  const time = finalUniforms.uTime;
+  const aberration = finalUniforms.uAberration;
+  const vignette = finalUniforms.uVignette;
+  const grain = finalUniforms.uGrain;
+  const aspect = finalUniforms.uAspect;
+  const drops = finalUniforms.uDrops;
+  const bloomOnU = finalUniforms.uBloomOn;
 
   function resize(): void {
     const w = cssSize.x;
@@ -388,15 +386,6 @@ export function createPost(ctx: Ctx): Post {
       if (t === tier) return;
       tier = t;
       resize();
-    },
-    memoryMB() {
-      const px = sceneTarget.width * sceneTarget.height;
-      const samples = Math.max(1, sceneTarget.samples);
-      // MSAA color (RGBA16F) + depth24 renderbuffers, resolved RGBA16F texture.
-      const scene = px * (samples * (8 + 4) + 8);
-      const b = bloom.renderTargetBright;
-      const bloomPx = b.width * b.height * (1 + (2 * 4) / 3); // bright + H/V mip chains (~geometric)
-      return (scene + bloomPx * 8) / (1024 * 1024);
     },
     dispose() {
       sceneTarget.dispose();
