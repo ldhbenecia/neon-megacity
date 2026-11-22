@@ -1,10 +1,12 @@
 // Captures a fixed list of deterministic screenshots for visual review.
-// Usage: npm run shots -- [label] [--swiftshader] [--no-build]
+// Usage: npm run shots -- [label] [--swiftshader] [--no-build] [--only=<substring>]
 // Output: screenshots/<label>/<shot>.png (gitignored). Prints absolute paths.
+// Scene shots are taken only after the loader is gone and the power-on ramp has finished
+// (window.__city.powered). The ux shots also capture the boot skeleton itself.
 import { execSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { chromium } from '@playwright/test';
+import { chromium, type Browser, type Page } from '@playwright/test';
 import { preview } from 'vite';
 import { SWIFTSHADER_ARGS, collectErrors } from '../tests/e2e/helpers';
 
@@ -20,11 +22,64 @@ const SHOTS = [
 
 const args = process.argv.slice(2);
 const flags = new Set(args.filter((a) => a.startsWith('--')));
+const only = args.find((a) => a.startsWith('--only='))?.slice('--only='.length);
 const label =
   args.find((a) => !a.startsWith('--')) ?? new Date().toISOString().replace(/[:.]/g, '-');
 const outDir = resolve('screenshots', label);
 const PORT = 4174;
+const BASE = `http://localhost:${PORT}/`;
 const ANIMATION_MS = 3000;
+const VIEWPORT = { width: 1600, height: 900 };
+
+async function waitPowered(page: Page): Promise<void> {
+  await page.waitForFunction(() => window.__city?.powered === true, undefined, {
+    timeout: 90_000,
+  });
+}
+
+/** Boot skeleton exactly as the HTML paints it, before any JS runs. */
+async function bootSkeleton(browser: Browser, file: string): Promise<void> {
+  const page = await browser.newPage({ viewport: VIEWPORT });
+  await page.route('**/*.js', (route) => route.abort());
+  await page.goto(BASE);
+  await page.waitForTimeout(3200); // shimmer sweep + window dots lit
+  await page.screenshot({ path: file });
+  await page.close();
+}
+
+/** Boot in progress: CPU throttled so the real loader is caught mid-way. */
+async function bootProgress(browser: Browser, file: string): Promise<void> {
+  const page = await browser.newPage({ viewport: VIEWPORT });
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Emulation.setCPUThrottlingRate', { rate: 12 });
+  await page.goto(`${BASE}?nogui&time=0.0`);
+  await page.waitForFunction(
+    () => {
+      const p = Number(document.getElementById('boot')?.dataset.progress ?? 0);
+      return p >= 30 && p < 90;
+    },
+    undefined,
+    { timeout: 60_000, polling: 16 },
+  );
+  await page.screenshot({ path: file });
+  await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 });
+  await page.close();
+}
+
+/** HUD with the help panel, the stats overlay and a selected building card. */
+async function hudSelected(browser: Browser, file: string): Promise<void> {
+  const page = await browser.newPage({ viewport: VIEWPORT });
+  await page.goto(`${BASE}?nogui&stats&time=0.0&cam=overview`);
+  await waitPowered(page);
+  // Click the skyline peak (the overview target sits in the middle of the screen).
+  await page.mouse.click(VIEWPORT.width / 2, VIEWPORT.height / 2);
+  await page.waitForFunction(() => window.__ramha?.camera().mode === 'orbit', undefined, {
+    timeout: 10_000,
+  });
+  await page.waitForTimeout(600);
+  await page.screenshot({ path: file });
+  await page.close();
+}
 
 async function main(): Promise<void> {
   if (!flags.has('--no-build')) execSync('npx vite build', { stdio: 'inherit' });
@@ -35,20 +90,31 @@ async function main(): Promise<void> {
     args: flags.has('--swiftshader') ? SWIFTSHADER_ARGS : [],
   });
   const failures: string[] = [];
+  const want = (name: string): boolean => !only || name.includes(only);
   try {
     for (const shot of SHOTS) {
-      const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
+      if (!want(shot.name)) continue;
+      const page = await browser.newPage({ viewport: VIEWPORT });
       const errors = collectErrors(page);
-      await page.goto(`http://localhost:${PORT}/?nogui&${shot.query}`);
-      await page.waitForFunction(() => window.__city?.ready === true, undefined, {
-        timeout: 60_000,
-      });
+      await page.goto(`${BASE}?nogui&${shot.query}`);
+      await waitPowered(page);
       await page.waitForTimeout(ANIMATION_MS);
       const file = resolve(outDir, `${shot.name}.png`);
       await page.screenshot({ path: file });
       console.log(file);
       if (errors.length > 0) failures.push(`${shot.name}: ${errors.join(' | ')}`);
       await page.close();
+    }
+    const ux: [string, (b: Browser, f: string) => Promise<void>][] = [
+      ['ux-boot-skeleton', bootSkeleton],
+      ['ux-boot-progress', bootProgress],
+      ['ux-hud-selected', hudSelected],
+    ];
+    for (const [name, run] of ux) {
+      if (!want(name)) continue;
+      const file = resolve(outDir, `${name}.png`);
+      await run(browser, file);
+      console.log(file);
     }
   } finally {
     await browser.close();

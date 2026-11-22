@@ -13,8 +13,23 @@ export function collectErrors(page: Page): string[] {
   return errors;
 }
 
+/** Waits until boot finished, the loader is gone, the power-on ramp ended and `minFrames` ran. */
 export async function waitForCity(page: Page, minFrames = 30): Promise<void> {
-  await page.waitForFunction((n) => (window.__city?.frames ?? 0) >= n, minFrames, {
+  await page.waitForFunction(
+    (n) => (window.__city?.frames ?? 0) >= n && window.__city?.powered === true,
+    minFrames,
+    { timeout: 45_000 },
+  );
+}
+
+/** Frame counter right now (for "wait N more frames"). */
+export async function frameCount(page: Page): Promise<number> {
+  return page.evaluate(() => window.__city?.frames ?? 0);
+}
+
+export async function waitFrames(page: Page, n: number): Promise<void> {
+  const start = await frameCount(page);
+  await page.waitForFunction((target) => (window.__city?.frames ?? 0) >= target, start + n, {
     timeout: 45_000,
   });
 }
@@ -33,7 +48,7 @@ export async function canvasStats(page: Page): Promise<PixelStats> {
   const png = await page
     .locator('canvas')
     .first()
-    .screenshot({ style: '#hud, .lil-gui { visibility: hidden !important; }' });
+    .screenshot({ style: '#hud, #hud-stats, .lil-gui { visibility: hidden !important; }' });
   return page.evaluate(async (b64) => {
     const img = new Image();
     img.src = `data:image/png;base64,${b64}`;
