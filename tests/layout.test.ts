@@ -10,7 +10,7 @@ import {
 } from '../src/city/layout';
 
 const EPS = 1e-9;
-const inner = CITY.blockSize - CITY.sidewalk * 2;
+const inner = CITY.inner;
 
 const rect = (b: Building) => ({
   x0: b.x - b.w / 2,
@@ -22,7 +22,6 @@ const rect = (b: Building) => ({
 describe('layout', () => {
   it('is deterministic for the default seed', () => {
     const again = generateLayout();
-    expect(again.buildings.length).toBe(LAYOUT.buildings.length);
     expect(again).toEqual(LAYOUT);
     // Pin counts so accidental layout changes are noticed.
     expect(LAYOUT.blocks.length).toBe(CITY.gridN * CITY.gridN);

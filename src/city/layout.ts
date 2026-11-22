@@ -9,6 +9,7 @@ const gridN = 11; // blocks per side
 const blockSize = 64; // block footprint (square)
 const roadWidth = 18; // road between blocks
 const sidewalk = 3; // inset inside a block before lots start
+const inner = blockSize - sidewalk * 2; // usable lot area per block side
 const cell = blockSize + roadWidth;
 const size = gridN * cell;
 
@@ -17,6 +18,8 @@ export const CITY = {
   blockSize,
   roadWidth,
   sidewalk,
+  /** usable lot area per block side */
+  inner,
   cell,
   /** total extent of the block grid */
   size,
@@ -27,11 +30,28 @@ export const CITY = {
   extent: size + roadWidth,
 } as const;
 
-/** Height ranges per district (midtown may get a 1.6x landmark multiplier). */
+/** Chance and height multiplier for a midtown landmark tower. */
+const LANDMARK_CHANCE = 0.15;
+const LANDMARK_SCALE = 1.6;
+
+/** Per-district generation parameters: lots per block side and base height range. */
+const DISTRICT_PARAMS: Record<
+  District,
+  { lots: [number, number]; height: { min: number; max: number } }
+> = {
+  core: { lots: [1, 2], height: { min: 160, max: 420 } },
+  midtown: { lots: [2, 3], height: { min: 50, max: 160 } },
+  outer: { lots: [3, 4], height: { min: 12, max: 50 } },
+};
+
+/** Final height ranges per district, including the midtown landmark multiplier. */
 export const DISTRICT_HEIGHT: Record<District, { min: number; max: number }> = {
-  core: { min: 160, max: 420 },
-  midtown: { min: 50, max: 160 * 1.6 },
-  outer: { min: 12, max: 50 },
+  core: DISTRICT_PARAMS.core.height,
+  midtown: {
+    min: DISTRICT_PARAMS.midtown.height.min,
+    max: DISTRICT_PARAMS.midtown.height.max * LANDMARK_SCALE,
+  },
+  outer: DISTRICT_PARAMS.outer.height,
 };
 
 export interface Block {
@@ -111,14 +131,8 @@ export function generateLayout(seed = 2077): Layout {
         buildingIds: [],
       };
       blocks.push(block);
-      const inner = CITY.blockSize - CITY.sidewalk * 2;
-      // Lots per side: core = 1-2 (huge), midtown = 2-3, outer = 3-4
-      const n =
-        district === 'core'
-          ? rng.int(1, 2)
-          : district === 'midtown'
-            ? rng.int(2, 3)
-            : rng.int(3, 4);
+      const params = DISTRICT_PARAMS[district];
+      const n = rng.int(...params.lots);
       const lot = inner / n;
       for (let i = 0; i < n; i++) {
         for (let j = 0; j < n; j++) {
@@ -126,10 +140,8 @@ export function generateLayout(seed = 2077): Layout {
           const fill = rng.range(0.72, 0.92);
           const w = lot * fill * rng.range(0.85, 1);
           const d = lot * fill * rng.range(0.85, 1);
-          let h: number;
-          if (district === 'core') h = rng.range(160, 420);
-          else if (district === 'midtown') h = rng.range(50, 160) * (rng.chance(0.15) ? 1.6 : 1);
-          else h = rng.range(12, 50);
+          let h = rng.range(params.height.min, params.height.max);
+          if (district === 'midtown' && rng.chance(LANDMARK_CHANCE)) h *= LANDMARK_SCALE;
           const b: Building = {
             id: id++,
             x: cx - inner / 2 + lot * (i + 0.5),
