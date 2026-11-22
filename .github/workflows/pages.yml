@@ -1,7 +1,10 @@
 name: Pages
 
 on:
-  push:
+  # Deploy only after CI has passed for a push to main.
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
 
@@ -16,11 +19,19 @@ concurrency:
 jobs:
   build:
     name: build
+    # workflow_run fires for every completed CI run on main (including failures and
+    # manual dispatches); only deploy a successful run triggered by a push.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
         with:
+          # Build exactly the commit CI tested, not whatever main points to now.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           persist-credentials: false
 
       - uses: actions/setup-node@v7

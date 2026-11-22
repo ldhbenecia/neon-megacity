@@ -72,7 +72,7 @@ lighting → buildings → neon → atmosphere 순서로 초기화되고 갱신�
 
 - **CI** (`ci.yml`): PR과 main 푸시마다 포맷, 린트, 타입 검사, 단위 테스트, 빌드, e2e 테스트를 실행합니다.
 - **Autofix** (`autofix.yml`): 같은 저장소의 PR에서 린트/포맷 문제를 자동으로 고쳐 커밋하고, 그 커밋에 대해 CI를 다시 실행합니다.
-- **Pages** (`pages.yml`): main에 머지되면 `/neon-megacity/` 경로로 빌드해 GitHub Pages에 배포합니다.
+- **Pages** (`pages.yml`): main에 푸시된 커밋의 CI가 통과하면 그 커밋을 `/neon-megacity/` 경로로 빌드해 GitHub Pages에 배포합니다.
 
 ## 참고
 

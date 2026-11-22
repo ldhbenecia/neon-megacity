@@ -50,5 +50,5 @@ Read `docs/ARCHITECTURE.md` before editing. Summary:
 - Visual changes are verified with screenshots (`npm run shots -- <label>`, script `scripts/screenshot.ts`, output in `screenshots/<label>/`, gitignored), not by reading code alone.
 - CI (`.github/workflows/ci.yml`) runs format:check, lint, typecheck, unit tests, build and e2e on every PR and push to main.
 - Autofix (`autofix.yml`) pushes `style: 린트 및 포맷 자동 수정` commits as github-actions[bot] to same-repo PR branches, then dispatches CI for them. Pull before pushing again.
-- Pages (`pages.yml`) deploys `main` to https://ldhbenecia.github.io/neon-megacity/ with `BASE_PATH=/neon-megacity/`; locally `base` stays `./`.
+- Pages (`pages.yml`) deploys `main` after CI passes on it (`workflow_run`) to https://ldhbenecia.github.io/neon-megacity/ with `BASE_PATH=/neon-megacity/`; locally `base` stays `./`.
 - Never force-push, never rewrite history, never read `.env` or credentials.
