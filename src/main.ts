@@ -85,29 +85,15 @@ const moduleList: CityModule[] = [lighting, buildings, neon, atmosphere];
 const modules: CityModuleInstance[] = moduleList.map((m) => m.init(ctx));
 
 // Cinematic auto-orbit camera (toggle with C).
-let cinematic = false;
-const cineState = { angle: Math.atan2(camera.position.z, camera.position.x) };
+const cine = { enabled: false, angle: Math.atan2(camera.position.z, camera.position.x) };
 const setCinematic = (v: boolean): void => {
-  cinematic = v;
+  cine.enabled = v;
   controls.enabled = !v;
 };
 window.addEventListener('keydown', (e) => {
-  if (e.key === 'c' || e.key === 'C') setCinematic(!cinematic);
+  if (e.key === 'c' || e.key === 'C') setCinematic(!cine.enabled);
 });
-gui
-  .add(
-    {
-      get cinematic() {
-        return cinematic;
-      },
-      set cinematic(v: boolean) {
-        setCinematic(v);
-      },
-    },
-    'cinematic',
-  )
-  .name('Cinematic camera [C]')
-  .listen();
+gui.add(cine, 'enabled').name('Cinematic camera [C]').onChange(setCinematic).listen();
 
 window.addEventListener('resize', () => {
   const w = window.innerWidth;
@@ -122,19 +108,21 @@ const MIN_CAMERA_Y = 2;
 const clockEl = document.getElementById('clock');
 const timer = new THREE.Timer();
 timer.connect(document);
+const pad2 = (n: number): string => String(n).padStart(2, '0');
+let clockMins = -1;
 let frames = 0;
 renderer.setAnimationLoop((timestamp) => {
   timer.update(timestamp);
   const dt = Math.min(timer.getDelta(), 0.1);
   const t = timer.getElapsed();
 
-  if (cinematic) {
-    cineState.angle += dt * 0.05;
+  if (cine.enabled) {
+    cine.angle += dt * 0.05;
     const r = 480 + Math.sin(t * 0.07) * 160;
     camera.position.set(
-      Math.cos(cineState.angle) * r,
+      Math.cos(cine.angle) * r,
       140 + Math.sin(t * 0.11) * 90,
-      Math.sin(cineState.angle) * r,
+      Math.sin(cine.angle) * r,
     );
     camera.lookAt(0, 90, 0);
   } else {
@@ -146,9 +134,11 @@ renderer.setAnimationLoop((timestamp) => {
 
   for (const m of modules) m.update?.(dt, t);
 
-  if (clockEl) {
-    const mins = Math.floor(ctx.env.timeOfDay * 24 * 60);
-    clockEl.textContent = `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
+  // The clock only changes once per in-game minute; skip redundant DOM writes.
+  const mins = Math.floor(ctx.env.timeOfDay * 24 * 60);
+  if (clockEl && mins !== clockMins) {
+    clockMins = mins;
+    clockEl.textContent = `${pad2(Math.floor(mins / 60))}:${pad2(mins % 60)}`;
   }
 
   ctx.render();
