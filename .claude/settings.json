@@ -12,7 +12,6 @@
       "Bash(git commit *)"
     ],
     "ask": [
-      "Bash(git push *)",
       "Bash(gh repo create *)",
       "Bash(npm install *)",
       "Bash(npm i *)"
