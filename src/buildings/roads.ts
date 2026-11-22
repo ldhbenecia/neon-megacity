@@ -259,33 +259,50 @@ function slab(
 // ---------------------------------------------------------------------------
 // Wet asphalt material
 
-/** Puddle mask (R) + fine grain (G), tiled every 32 m. */
-export function puddleTexture(seed = 2077): THREE.DataTexture {
-  const N = 1024;
-  const rng = createRng(seed);
-  const G = 64;
-  const grid = Float32Array.from({ length: G * G }, () => rng.next());
-  const val = (x: number, y: number): number => {
-    const xi = Math.floor(x);
-    const yi = Math.floor(y);
-    const fx = x - xi;
-    const fy = y - yi;
-    const at = (i: number, j: number): number =>
-      grid[(((j % G) + G) % G) * G + (((i % G) + G) % G)] ?? 0;
-    const sx = fx * fx * (3 - 2 * fx);
-    const sy = fy * fy * (3 - 2 * fy);
-    const a = at(xi, yi) + (at(xi + 1, yi) - at(xi, yi)) * sx;
-    const b = at(xi, yi + 1) + (at(xi + 1, yi + 1) - at(xi, yi + 1)) * sx;
-    return a + (b - a) * sy;
+/**
+ * Periodic value noise: lattice indices wrap with `period`, so a field sampled over
+ * [0, period) tiles seamlessly. `grid` holds 256 × 256 lattice values.
+ */
+function periodicNoise(grid: Float32Array, x: number, y: number, period: number): number {
+  const xi = Math.floor(x);
+  const yi = Math.floor(y);
+  const fx = x - xi;
+  const fy = y - yi;
+  const at = (i: number, j: number): number => {
+    const wi = ((i % period) + period) % period;
+    const wj = ((j % period) + period) % period;
+    return grid[(wj & 255) * 256 + (wi & 255)] ?? 0;
   };
+  const sx = fx * fx * (3 - 2 * fx);
+  const sy = fy * fy * (3 - 2 * fy);
+  const a = at(xi, yi) + (at(xi + 1, yi) - at(xi, yi)) * sx;
+  const b = at(xi, yi + 1) + (at(xi + 1, yi + 1) - at(xi, yi + 1)) * sx;
+  return a + (b - a) * sy;
+}
+
+/**
+ * RGBA bytes of the road texture, N × N, tiling seamlessly (every octave completes a whole
+ * number of lattice periods across the tile). R: puddle mask — small irregular puddles,
+ * roughly 2-4 m across on the 32 m tile, sharp-ish edges. G: asphalt grain (3 m tile in use).
+ */
+export function puddleData(seed: number, N: number): Uint8Array {
+  const rng = createRng(seed);
+  const grid = Float32Array.from({ length: 256 * 256 }, () => rng.next());
   const data = new Uint8Array(N * N * 4);
+  const octaves: [number, number][] = [
+    [12, 0.45],
+    [24, 0.27],
+    [48, 0.17],
+    [96, 0.11],
+  ];
   for (let y = 0; y < N; y++) {
     for (let x = 0; x < N; x++) {
-      const u = (x / N) * 8;
-      const v = (y / N) * 8;
-      const n = val(u, v) * 0.55 + val(u * 2, v * 2) * 0.3 + val(u * 4, v * 4) * 0.15;
-      const p = Math.min(1, Math.max(0, (n - 0.56) / 0.1));
-      const grain = val(x * 0.25, y * 0.25) * 0.6 + rng.next() * 0.4;
+      let n = 0;
+      for (const [f, w] of octaves) n += periodicNoise(grid, (x / N) * f, (y / N) * f, f) * w;
+      const p = Math.min(1, Math.max(0, (n - 0.6) / 0.05));
+      const grain =
+        periodicNoise(grid, (x / N) * 128, (y / N) * 128, 128) * 0.5 +
+        periodicNoise(grid, (x / N) * 256 + 17, (y / N) * 256 + 31, 256) * 0.5;
       const k = (y * N + x) * 4;
       data[k] = Math.round(p * 255);
       data[k + 1] = Math.round(grain * 255);
@@ -293,6 +310,13 @@ export function puddleTexture(seed = 2077): THREE.DataTexture {
       data[k + 3] = 255;
     }
   }
+  return data;
+}
+
+/** Puddle mask (R) + fine grain (G) texture; puddles tile every 32 m, grain every 3 m. */
+export function puddleTexture(seed = 2077): THREE.DataTexture {
+  const N = 1024;
+  const data = puddleData(seed, N);
   const tex = new THREE.DataTexture(data, N, N, THREE.RGBAFormat);
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;
@@ -342,13 +366,13 @@ export function createWetMaterial(
         vec4 pz = texture2D(uPuddle, vWXZ / 32.0);
         wPud = pz.r * smoothstep(0.15, 0.6, uWet);
         wGrain = texture2D(uPuddle, vWXZ / 3.0).g;
-        diffuseColor.rgb *= (0.8 + 0.4 * wGrain) * mix(1.0, 0.6, wPud);`,
+        diffuseColor.rgb *= (0.85 + 0.3 * wGrain) * mix(1.0, 0.45, wPud);`,
       )
       .replace(
         '#include <roughnessmap_fragment>',
         `#include <roughnessmap_fragment>
         float dryR = ${dryRough.toFixed(2)} + 0.15 * (wGrain - 0.5);
-        float wetR = mix(dryR * 0.7, 0.05, wPud);
+        float wetR = mix(dryR * 0.75, 0.04, wPud);
         roughnessFactor = mix(dryR, wetR, uWet);`,
       );
   };
