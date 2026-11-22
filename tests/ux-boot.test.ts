@@ -72,6 +72,14 @@ describe('adaptive DPR (11)', () => {
     expect(run(d, 8, 6.5)).toEqual([1.5]);
   });
 
+  it('reset() restores the cap and starts a fresh window', () => {
+    const d = new AdaptiveDpr({ max: 1.5 });
+    run(d, 30, 2.1);
+    expect(d.dpr).toBe(1.25);
+    expect(d.reset()).toBe(1.5);
+    expect(d.averageMs).toBe(0);
+  });
+
   it('ignores hitches and respects a low device ratio', () => {
     const d = new AdaptiveDpr({ max: Math.min(1, 1.5) });
     expect(d.sample(5)).toBeNull();

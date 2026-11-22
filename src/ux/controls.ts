@@ -2,10 +2,9 @@
 // Bottom-center time scrubber with play/pause, and a collapsed top-right panel for weather,
 // camera presets, cinematic and fly mode. DOM lives in index.html.
 //
-// Ownership note: `env.timeLocked` is ux-owned. A user scrub also writes `env.timeOfDay`
-// (lighting-owned) but only while `timeLocked` is true, when lighting no longer advances it.
-// The weather buttons write `env.rain` once per click (user intent; atmosphere keeps owning
-// the per-frame value). Both are listed as contract requests in the PR.
+// Ownership (ARCHITECTURE env table): `timeLocked` and `rainTarget` are ux-owned. A user scrub
+// writes `timeOfDay` only while `timeLocked` is true (the documented exception: lighting does
+// not advance it while locked). Weather buttons set `rainTarget`; atmosphere eases `rain` to it.
 import { clockMinutes } from '../core/clock';
 import type { Ctx } from '../core/types';
 import type { CameraRig } from './cameraRig';
@@ -83,12 +82,12 @@ export function createControls(ctx: Ctx, rig: CameraRig, hud: Hud): Controls {
 
   // --- weather ---
   const renderWeather = (): void => {
-    const step = rainStep(env.rain);
+    const step = rainStep(env.rainTarget);
     weatherButtons.forEach((b, i) => b.setAttribute('aria-checked', String(i === step)));
   };
   for (const b of weatherButtons) {
     on(b, 'click', () => {
-      env.rain = Number(b.dataset.rain ?? 0);
+      env.rainTarget = Number(b.dataset.rain ?? 0);
       renderWeather();
     });
   }
@@ -99,7 +98,7 @@ export function createControls(ctx: Ctx, rig: CameraRig, hud: Hud): Controls {
     e.stopPropagation();
     const next = Math.min(
       weatherButtons.length - 1,
-      Math.max(0, rainStep(env.rain) + (e.code === 'ArrowRight' ? 1 : -1)),
+      Math.max(0, rainStep(env.rainTarget) + (e.code === 'ArrowRight' ? 1 : -1)),
     );
     weatherButtons[next]?.click();
     weatherButtons[next]?.focus();
@@ -147,6 +146,7 @@ export function createControls(ctx: Ctx, rig: CameraRig, hud: Hud): Controls {
   });
   on(input, 'pointerdown', () => (scrubbing = true));
   on(window, 'pointerup', () => (scrubbing = false));
+  on(window, 'pointercancel', () => (scrubbing = false));
   on(play, 'click', () => {
     env.timeLocked = !env.timeLocked;
   });
@@ -187,7 +187,7 @@ export function createControls(ctx: Ctx, rig: CameraRig, hud: Hud): Controls {
           c.setAttribute('aria-current', String(Number(c.dataset.preset) === rig.preset));
         }
       }
-      const step = rainStep(env.rain);
+      const step = rainStep(env.rainTarget);
       if (step !== lastRainStep) {
         lastRainStep = step;
         renderWeather();

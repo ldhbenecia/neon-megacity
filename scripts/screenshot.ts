@@ -66,7 +66,6 @@ async function bootProgress(browser: Browser, file: string): Promise<void> {
   await page.close();
 }
 
-/** HUD with the help panel, the stats overlay and a selected building card. */
 /** Default HUD on first entry (intro hint), then the settings panel opened. */
 async function hudPanel(browser: Browser, file: string): Promise<void> {
   const page = await browser.newPage({ viewport: VIEWPORT });
@@ -96,6 +95,7 @@ async function hudMobile(browser: Browser, file: string): Promise<void> {
   await context.close();
 }
 
+/** Selected building card (slides in on the right) with the `?stats` overlay. */
 async function hudSelected(browser: Browser, file: string): Promise<void> {
   const page = await browser.newPage({ viewport: VIEWPORT });
   await page.goto(`${BASE}?stats&time=0.0&cam=overview`);

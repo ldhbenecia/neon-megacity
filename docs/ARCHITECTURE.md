@@ -35,18 +35,22 @@ Only the owner writes a field; everyone else reads it. Types and comments live i
 
 | field                          | owner      | meaning                                                                 |
 | ------------------------------ | ---------- | ----------------------------------------------------------------------- |
-| `timeOfDay`                    | lighting   | 0..1, 0 = midnight, 0.5 = noon. Initial value from `?time`              |
+| `timeOfDay`                    | lighting\* | 0..1, 0 = midnight, 0.5 = noon. Initial value from `?time`              |
 | `timeLocked`                   | ux (main)  | true when `?time=` was given; lighting must not advance `timeOfDay`     |
 | `sunDirection`, `sunElevation` | lighting   | unit vector toward the sun, and its y                                   |
 | `dayFactor`, `nightFactor`     | lighting   | 0..1 smooth blend, sum to 1                                             |
 | `horizonColor`, `skyColor`     | lighting   | sky colors (palette)                                                    |
 | `neonGain`                     | lighting   | sign brightness multiplier: night 1.0, sunset 0.7, day 0.3              |
 | `windowLitRatio`               | lighting   | city-wide lit window ratio; buildings applies per-district factors      |
-| `rain`                         | atmosphere | 0..1 rain intensity. Initial value from `?rain` (default 0.35)          |
+| `rain`                         | atmosphere | 0..1 rain intensity this frame, eased toward `rainTarget`               |
+| `rainTarget`                   | ux         | 0..1 rain the user picked (weather buttons). Initial value from `?rain` |
 | `wetness`                      | atmosphere | 0..1 surface wetness (road roughness, reflection decals)                |
 | `fogColor`, `fogDensity`       | atmosphere | final FogExp2 color / density this frame (palette base × rain)          |
 | `powerOn`                      | ux         | 0..1 boot fade-in; lighting multiplies exposure, neon lights up by zone |
 | `selectedBuilding`             | ux         | picked building id or null; neon draws the highlight                    |
+
+\* Exception: while `timeLocked` is true, ux writes `timeOfDay` from the timeline scrubber. Lighting does not
+advance `timeOfDay` while locked, so the two never write it in the same frame.
 
 Colors and tuning numbers come from `src/core/palette.ts` (`paletteAt(t)`, `NEON`, `WINDOW_LIT`, `MATERIAL`, …);
 do not hard-code hex values in modules. Emissive materials use `applyEmissiveFog` from `src/core/shaders/emissiveFog.ts`.
@@ -60,7 +64,7 @@ They exist for deterministic screenshots, e2e tests and debugging.
 | ------------ | ----------------------------------------------------------------------------- |
 | `?time=0..1` | initial `env.timeOfDay` and sets `env.timeLocked = true` (cycle paused)       |
 | `?cam=name`  | camera preset from `CAMERA_PRESETS`: overview, street, core, topdown, skyline |
-| `?rain=0..1` | initial `env.rain`                                                            |
+| `?rain=0..1` | initial `env.rain` and `env.rainTarget`                                       |
 | `?nogui`     | hides the lil-gui panel                                                       |
 
 Numbers are clamped to 0..1; invalid values are ignored.

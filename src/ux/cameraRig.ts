@@ -3,9 +3,16 @@
 // (pointer lock mouse look), click-to-fly arcs, collision, presets 1-8, idle cinematic, touch.
 // Pure math lives in motion.ts / collision.ts / presets.ts (unit tested).
 import * as THREE from 'three';
-import { LAYOUT, surfaceHeight, type Vec3 } from '../city/layout';
+import { LAYOUT, buildingTop, surfaceHeight, type Vec3 } from '../city/layout';
 import type { Ctx } from '../core/types';
-import { cameraFloor, frameBuildingClear, pick, resolveCollision, targetFloor } from './collision';
+import {
+  WALL_MARGIN,
+  cameraFloor,
+  frameBuildingClear,
+  pick,
+  resolveCollision,
+  targetFloor,
+} from './collision';
 import type { Hud, RigMode } from './hud';
 import { reducedMotion } from './loader';
 import {
@@ -63,7 +70,8 @@ const TAP_MS = 250;
 const DOUBLE_TAP_MS = 320;
 const ZOOM_TAU = 0.12;
 const MOVE_TAU = 0.25;
-const MIN_DISTANCE = 8;
+/** Single source for the orbit minimum distance (also used by the preset tests). */
+const MIN_DISTANCE = CAMERA_LIMITS.minDistance;
 /** Keys that move the camera, by KeyboardEvent.code (layout independent: works with 한글 IME). */
 const MOVE_KEYS = new Set([
   'KeyW',
@@ -77,6 +85,9 @@ const MOVE_KEYS = new Set([
   'ArrowLeft',
   'ArrowRight',
 ]);
+
+/** Above this height no building volume (spires included) can be within the wall margin. */
+const SKY_CLEAR = LAYOUT.buildings.reduce((m, b) => Math.max(m, buildingTop(b)), 0) + WALL_MARGIN;
 
 const _v = new THREE.Vector3();
 const _w = new THREE.Vector3();
@@ -136,6 +147,8 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
   let flight: Flight | null = null;
   let flightTime = 0;
   let onLanded: (() => void) | null = null;
+  /** The running flight is the boot dolly-in, not something the user asked for. */
+  let dolly = false;
   const flightOut: Pose = { position: { x: 0, y: 0, z: 0 }, target: { x: 0, y: 0, z: 0 } };
 
   // Fly mode.
@@ -183,6 +196,7 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
     controls.update();
     flight = planFlight(start, opts.initial, 0, 2.5);
     flightTime = 0;
+    dolly = true;
     setMode('flight');
   }
 
@@ -192,6 +206,7 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
     if (mode === 'fly') exitFly();
     flight = planFlight(currentPose(), to, lift);
     flightTime = 0;
+    dolly = false;
     onLanded = landed;
     vel.set(0, 0, 0);
     zoomPending = 0;
@@ -200,6 +215,7 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
   const cancelFlight = (): void => {
     if (mode !== 'flight') return;
     flight = null;
+    dolly = false;
     onLanded = null;
     setMode('orbit');
     controls.update();
@@ -318,6 +334,10 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
     lastInput = elapsed;
     exitCinematic();
   };
+  /** HUD interaction: counts as activity for the idle timer, but leaves the camera alone. */
+  const touchIdle = (): void => {
+    lastInput = elapsed;
+  };
   /** The user steered the camera themselves: no preset is "current" any more. */
   const steered = (): void => {
     presetKey = null;
@@ -325,19 +345,46 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
 
   // --- picking (click / tap only, never per pointer move) ---
   const raycaster = new THREE.Raycaster();
-  const pickAt = (clientX: number, clientY: number): ReturnType<typeof pick> => {
+  const setRayFromPointer = (clientX: number, clientY: number): void => {
     const r = canvas.getBoundingClientRect();
     _ndc.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
     raycaster.setFromCamera(_ndc, camera);
-    return pick(LAYOUT, toV3(raycaster.ray.origin), toV3(raycaster.ray.direction));
+  };
+  const pickRay = (): ReturnType<typeof pick> =>
+    pick(LAYOUT, toV3(raycaster.ray.origin), toV3(raycaster.ray.direction));
+  const pickAt = (clientX: number, clientY: number): ReturnType<typeof pick> => {
+    setRayFromPointer(clientX, clientY);
+    return pickRay();
   };
 
   // --- listeners ---
-  let down: { id: number; x: number; y: number; at: number; button: number; type: string } | null =
-    null;
+  interface Down {
+    id: number;
+    x: number;
+    y: number;
+    at: number;
+    button: number;
+    type: string;
+    /** Rig mode when the press started: a press that stops a cinematic or the boot dolly-in
+     * must not also pick (and fly to) whatever is under the cursor. */
+    mode: RigMode;
+    dolly: boolean;
+    /** Building being flown to when the press started (re-clicking it does not restart). */
+    flyingTo: number | null;
+    /** The interrupted flight, so a click on the same building resumes it. */
+    resume: { flight: Flight; time: number; landed: (() => void) | null } | null;
+  }
+  let down: Down | null = null;
   let lastTap = { at: -1e9, x: 0, y: 0 };
 
   const onPointerDown = (e: PointerEvent): void => {
+    const startMode = mode;
+    const startDolly = dolly;
+    const flyingTo = mode === 'flight' ? env.selectedBuilding : null;
+    const resume =
+      mode === 'flight' && flight ? { flight, time: flightTime, landed: onLanded } : null;
+    // Capture phase: this runs before OrbitControls' own pointerdown, so leaving the cinematic
+    // re-enables the controls in time for this very drag.
     markInput();
     cancelFlight();
     steered();
@@ -348,6 +395,10 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
       at: performance.now(),
       button: e.button,
       type: e.pointerType,
+      mode: startMode,
+      dolly: startDolly,
+      flyingTo,
+      resume,
     };
     canvas.focus({ preventScroll: true });
   };
@@ -361,6 +412,8 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
     const d = down;
     down = null;
     if (!d || d.id !== e.pointerId || d.button !== 0 || mode === 'fly') return;
+    // That press only interrupted an automatic camera move.
+    if (d.mode === 'cinematic' || d.dolly) return;
     const moved = Math.hypot(e.clientX - d.x, e.clientY - d.y);
     const now = performance.now();
     if (d.type === 'touch' || d.type === 'pen') {
@@ -378,7 +431,14 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
     if (moved >= CLICK_PX) return;
     const hit = pickAt(e.clientX, e.clientY);
     if (hit?.kind === 'building') {
-      if (env.selectedBuilding === hit.id && mode === 'flight') return;
+      // Already flying there: the press paused the flight, resume it instead of restarting.
+      if (d.flyingTo === hit.id && d.resume) {
+        flight = d.resume.flight;
+        flightTime = d.resume.time;
+        onLanded = d.resume.landed;
+        setMode('flight');
+        return;
+      }
       select(hit.id, true);
     } else {
       select(null);
@@ -418,10 +478,16 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
       vel.addScaledVector(_v, amount * 60);
       return;
     }
-    // Re-pick the anchor only when the cursor moved or the gesture paused (throttled).
+    // Keep one anchor through a continuous scroll (re-picking every event would jitter), but
+    // re-pick when the cursor moved, the gesture paused, the camera has nearly reached the
+    // anchor, or the anchor drifted off the cursor ray (pan / rotate between wheel events).
+    setRayFromPointer(e.clientX, e.clientY);
     const moved = Math.hypot(e.clientX - lastAnchorPx.x, e.clientY - lastAnchorPx.y);
-    if (moved > 8 || elapsed - lastAnchorAt > 0.25) {
-      const hit = pickAt(e.clientX, e.clientY);
+    const toAnchor = _w.copy(zoomAnchor).sub(raycaster.ray.origin);
+    const near = toAnchor.length() < MIN_DISTANCE;
+    const offRay = toAnchor.normalize().dot(raycaster.ray.direction) < Math.cos(0.04);
+    if (moved > 8 || elapsed - lastAnchorAt > 0.25 || near || offRay) {
+      const hit = pickRay();
       if (hit) zoomAnchor.set(hit.point.x, hit.point.y, hit.point.z);
       else
         zoomAnchor
@@ -450,9 +516,15 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
   let lockedOnce = false;
 
   const onKeyDown = (e: KeyboardEvent): void => {
-    if (isTyping(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (isTyping(e.target) || e.metaKey || e.ctrlKey || e.altKey) {
+      touchIdle();
+      return;
+    }
     // Space / Enter belong to the focused HUD button, not the camera.
-    if (isHudButton(e.target) && (e.code === 'Space' || e.code === 'Enter')) return;
+    if (isHudButton(e.target) && (e.code === 'Space' || e.code === 'Enter')) {
+      touchIdle();
+      return;
+    }
     markInput();
     const code = e.code;
     if (MOVE_KEYS.has(code) || code === 'ShiftLeft' || code === 'ShiftRight') {
@@ -532,7 +604,10 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', onKeyUp);
   window.addEventListener('blur', onBlur);
-  canvas.addEventListener('pointerdown', onPointerDown);
+  canvas.addEventListener('pointerdown', onPointerDown, { capture: true });
+  // HUD presses (timeline, chips, card) are activity too: no idle cinematic while using them.
+  const hudRoot = document.getElementById('hud');
+  hudRoot?.addEventListener('pointerdown', touchIdle);
   canvas.addEventListener('pointermove', onPointerMove);
   canvas.addEventListener('pointerup', onPointerUp);
   canvas.addEventListener('dblclick', onDblClick);
@@ -610,12 +685,19 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
     }
   };
 
+  // Collision is skipped when the camera has not moved since the last resolved frame (the
+  // result is idempotent, see tests) or flies above the tallest building plus the wall margin.
+  const resolvedAt = new THREE.Vector3(Infinity, Infinity, Infinity);
   const clampCamera = (): void => {
     const p = camera.position;
-    const fixed = resolveCollision(LAYOUT, p);
-    if (fixed) p.set(fixed.x, fixed.y, fixed.z);
+    if (p.equals(resolvedAt)) return;
+    if (p.y <= SKY_CLEAR) {
+      const fixed = resolveCollision(LAYOUT, p);
+      if (fixed) p.set(fixed.x, fixed.y, fixed.z);
+    }
     const floor = cameraFloor(p.x, p.z);
     if (p.y < floor) p.y = floor;
+    resolvedAt.copy(p);
   };
 
   const updateOrbit = (dt: number): void => {
@@ -653,6 +735,7 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
     setPose(flightOut);
     if (flightTime >= flight.duration) {
       flight = null;
+      dolly = false;
       setMode('orbit');
       controls.update();
       const cb = onLanded;
@@ -749,7 +832,8 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('blur', onBlur);
-      canvas.removeEventListener('pointerdown', onPointerDown);
+      canvas.removeEventListener('pointerdown', onPointerDown, { capture: true });
+      hudRoot?.removeEventListener('pointerdown', touchIdle);
       canvas.removeEventListener('pointermove', onPointerMove);
       canvas.removeEventListener('pointerup', onPointerUp);
       canvas.removeEventListener('dblclick', onDblClick);

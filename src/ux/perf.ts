@@ -46,7 +46,17 @@ export function createPerf(ctx: Ctx, opts: { overlay: boolean; resize: () => voi
 
   const quality = { dpr: adaptive.dpr, adaptive: true, avgMs: 0 };
   const folder = gui.addFolder('Performance');
-  folder.add(quality, 'adaptive').name('Adaptive DPR');
+  const applyDpr = (v: number): void => {
+    renderer.setPixelRatio(v);
+    last.dpr = v;
+    quality.dpr = v;
+    opts.resize();
+  };
+  folder
+    .add(quality, 'adaptive')
+    .name('Adaptive DPR')
+    // Off means "full quality": restore the cap instead of freezing the last lowered value.
+    .onChange(() => applyDpr(adaptive.reset()));
   folder.add(quality, 'dpr').name('DPR').listen().disable();
   folder.add(quality, 'avgMs').name('avg frame (ms)').listen().disable();
   folder.close();
@@ -85,12 +95,7 @@ export function createPerf(ctx: Ctx, opts: { overlay: boolean; resize: () => voi
       }
       if (!quality.adaptive) return;
       const next = adaptive.sample(dt);
-      if (next !== null) {
-        renderer.setPixelRatio(next);
-        last.dpr = next;
-        quality.dpr = next;
-        opts.resize();
-      }
+      if (next !== null) applyDpr(next);
     },
     stats() {
       return { ...last };

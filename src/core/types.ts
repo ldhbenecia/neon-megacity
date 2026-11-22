@@ -14,7 +14,11 @@ export type * from '../city/types';
  * (lighting → terrain → buildings → infra → neon → atmosphere) later modules see this frame's value.
  */
 export interface Env {
-  /** 0..1, 0 = midnight, 0.5 = noon. Owner: lighting. Initial value comes from `?time`. */
+  /**
+   * 0..1, 0 = midnight, 0.5 = noon. Owner: lighting. Initial value comes from `?time`.
+   * Exception: while `timeLocked` is true, ux writes it from the timeline scrubber; lighting
+   * does not advance it while locked, so the two never write in the same frame.
+   */
   timeOfDay: number;
   /** When true (e.g. `?time=` was given), lighting must not advance `timeOfDay`. Owner: ux (set at boot). */
   timeLocked: boolean;
@@ -34,6 +38,11 @@ export interface Env {
   windowLitRatio: number;
   /** 0..1 rain intensity. Owner: atmosphere. Initial value comes from `?rain`. */
   rain: number;
+  /**
+   * 0..1 rain intensity the user asked for (weather buttons; initial value from `?rain`).
+   * Owner: ux. Atmosphere eases `rain` toward it.
+   */
+  rainTarget: number;
   /** 0..1 surface wetness (rises with rain, decays to 0.55). Owner: atmosphere. */
   wetness: number;
   /** Final fog color after rain / scattering adjustments. Owner: atmosphere (base value from palette). */

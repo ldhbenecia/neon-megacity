@@ -70,6 +70,12 @@ export class AdaptiveDpr {
     return null;
   }
 
+  /** Back to the cap with a fresh window (adaptive mode switched off, or on again). */
+  reset(): number {
+    this.fastFor = 0;
+    return this.set(this.max);
+  }
+
   private set(v: number): number {
     this.dpr = Math.min(this.max, Math.max(this.min, Math.round(v * 100) / 100));
     // Fresh window: the old samples were measured at the previous resolution.

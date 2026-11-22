@@ -121,11 +121,22 @@ export function createLoader(root: HTMLElement | null = document.getElementById(
       root.remove();
     },
     fail(stage, err) {
+      // Reported once: a module failure is rethrown and reaches main's boot().catch too.
+      if (failed) return;
       failed = true;
       console.error(`[boot] ${stage} failed`, err);
-      closeRunning();
       root?.classList.add('is-error');
-      line('ERR', stage);
+      // The running stage line becomes the error line: a failed stage never shows [OK].
+      if (running) {
+        running.dataset.tag = 'ERR';
+        running.replaceChildren(
+          Object.assign(document.createElement('b'), { textContent: '[ERR]' }),
+          ` ${stage}`,
+        );
+        running = null;
+      } else {
+        line('ERR', stage);
+      }
     },
   };
 }

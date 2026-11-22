@@ -83,6 +83,8 @@ async function boot(): Promise<void> {
     renderer.setSize(w, h);
     for (const fn of resizeHandlers) fn(w, h);
   };
+  // Registered right away: boot is async, the window may resize or rotate during compile.
+  window.addEventListener('resize', resize);
 
   /** Shared context handed to every module. Initial env values are night palette defaults. */
   const ctx: Ctx = {
@@ -106,6 +108,7 @@ async function boot(): Promise<void> {
       neonGain: NIGHT.neonGain,
       windowLitRatio: NIGHT.windowLitRatio,
       rain: query.rain ?? 0.35,
+      rainTarget: query.rain ?? 0.35,
       wetness: 0.55,
       fogColor: new THREE.Color(NIGHT.fogColor),
       fogDensity: NIGHT.fogDensity,
@@ -149,7 +152,6 @@ async function boot(): Promise<void> {
   }
 
   loader.stage('first-frame', BOOT_WEIGHTS.firstFrame);
-  window.addEventListener('resize', resize);
 
   const timer = new THREE.Timer();
   timer.connect(document);
@@ -174,6 +176,8 @@ async function boot(): Promise<void> {
     cityState.powered = ux.powered && bootGone;
     window.__city = cityState;
   };
+  // Modules registered resize handlers during init: sync them to the current size once.
+  resize();
   frame();
   await nextFrame();
 
@@ -183,6 +187,8 @@ async function boot(): Promise<void> {
   await loader.done();
 }
 
+// Any failure (no WebGL, setup errors) turns the loader red instead of hanging on it.
+// loader.fail is idempotent, so stages that already reported are not logged twice.
 boot().catch((err: unknown) => {
-  console.error('[boot] failed', err);
+  loader.fail('boot', err);
 });

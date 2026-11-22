@@ -184,9 +184,9 @@
       }
       .boot-log {
         list-style: none;
-        margin: 0 0 10px;
+        margin: 0 0 12px;
         padding: 0;
-        height: 6em;
+        height: 6em; /* exactly 4 lines of 1.5em */
         overflow: hidden;
         display: flex;
         flex-direction: column;
@@ -202,6 +202,10 @@
         }
       }
       .boot-log li {
+        /* No shrinking: with overflow hidden a flex item may shrink below its line and the
+           lines would overlap each other and the bar. */
+        flex: none;
+        line-height: 1.5em;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
