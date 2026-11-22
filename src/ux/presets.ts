@@ -1,9 +1,9 @@
 // Rig camera presets 1-8 (ART_DIRECTION 8.4) and the cinematic tour order (8.5).
 // Every pose goes through `fitPolar` (orbit polar limit) and `resolveCollision`, and is
 // unit tested in tests/ux-camera.test.ts. The `?cam=` presets are read only through
-// `camPose`, so a lazily computed CAMERA_PRESETS stays a one-line change.
+// `camPose` (via `cameraPreset()`, which computes the street pose lazily).
 import { LAYOUT, highwayCurve, type Layout, type Vec3 } from '../city/layout';
-import { CAMERA_LIMITS, CAMERA_PRESETS, type CameraPreset } from '../core/query';
+import { CAMERA_LIMITS, cameraPreset, type CameraPreset } from '../core/query';
 import { cameraFloor, resolveCollision, targetFloor } from './collision';
 import { fitPolar, type Pose } from './motion';
 
@@ -17,7 +17,7 @@ const v = (a: Tuple): Vec3 => ({ x: a[0], y: a[1], z: a[2] });
 
 /** `?cam=` preset as a Pose. */
 export function camPose(name: CameraPreset): Pose {
-  const p = CAMERA_PRESETS[name];
+  const p = cameraPreset(name);
   return { position: v(p.position), target: v(p.target) };
 }
 

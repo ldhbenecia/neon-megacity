@@ -3,7 +3,7 @@
 import { frameBuilding, type Pose } from './motion';
 import {
   RIVER,
-  allTiers,
+  buildingVolumes,
   buildingContaining,
   buildingTop,
   buildingsInAabb,
@@ -46,7 +46,8 @@ interface Box {
 }
 
 function boxesOf(b: BuildingSpec): Box[] {
-  return allTiers(b).map((t) => ({
+  // Tiers, cantilever, skybridge and spire: the same volumes picking uses.
+  return buildingVolumes(b).map((t) => ({
     x: t.x,
     z: t.z,
     hw: t.w / 2,
@@ -57,7 +58,7 @@ function boxesOf(b: BuildingSpec): Box[] {
   }));
 }
 
-/** Footprint box up to the very top: catches cantilevers, skybridges and spires. */
+/** Footprint box up to the very top: last-resort fallback if a volume is not described. */
 function hullOf(b: BuildingSpec): Box {
   return {
     x: b.x,
@@ -126,7 +127,7 @@ export function resolveCollision(L: Layout, p: Vec3, margin = WALL_MARGIN): Vec3
         if (e && (!fix || dist2(cur, e) < dist2(cur, fix))) fix = e;
       }
     }
-    // Volumes the tiers do not describe (cantilevers, skybridges, spires): use the hull.
+    // Anything buildingVolumes() does not describe: use the footprint hull.
     if (!fix) {
       const id = buildingContaining(L, cur.x, cur.y, cur.z);
       if (id !== null) {
