@@ -4,31 +4,47 @@
 // Unit tests: tests/terrain.test.ts.
 import {
   CITY,
+  EMBANK_SLOPE,
+  LAYOUT,
   RIVER,
+  TERRAIN,
   riverFrame,
   riverSignedDistance,
   riverZ,
   ridgeHeight,
+  terrainHeight,
   type Ridge,
 } from '../city/layout';
 import { createRng } from '../core/random';
 
-/** Width of the embankment / park-edge slopes (m). Same value `surfaceHeight` uses. */
-export const EMBANK_SLOPE = 4;
+export { EMBANK_SLOPE };
 
-/** Ground and channel extend past the map edge to just behind the near ridge ring. */
-export const OUTER_EXTENT = 2600;
+const NEAR_RIDGE: Ridge = (() => {
+  const r = LAYOUT.ridges.find((q) => q.id === 'ridge-near') ?? LAYOUT.ridges[0];
+  if (!r) throw new Error('terrain: layout has no ridges');
+  return r;
+})();
+
+/**
+ * Ground radius: just inside the near ridge ring, so the ground meets the ridge wall and never
+ * pokes out behind it. The grid / channel run out to ±OUTER_EXTENT and are clipped to this disc.
+ */
+export const GROUND_RADIUS = NEAR_RIDGE.radius - 10;
+export const OUTER_EXTENT = GROUND_RADIUS;
+
+/** x range covered by the layout's river centerline polyline. */
+const RIVER_X0 = Math.min(...RIVER.centerline.map((p) => p.x));
+const RIVER_X1 = Math.max(...RIVER.centerline.map((p) => p.x));
+/** z where the grid switches from the fine hill spacing to the coarse flat spacing. */
+const HILL_GRID_Z = TERRAIN.hillStartZ + 90;
 
 /**
  * Signed distance to the channel edge (embankment), < 0 inside. Inside the map it is exactly the
- * layout's `riverSignedDistance`; past the polyline ends (|x| > 1300) it continues the analytic
+ * layout's `riverSignedDistance`; past the polyline ends it continues the analytic
  * centerline so the river runs on to the horizon.
  */
 export function channelDistance(x: number, z: number): number {
-  const c = RIVER.centerline;
-  const x0 = (c[0]?.x ?? -1300) + 10;
-  const x1 = (c[c.length - 1]?.x ?? 1300) - 10;
-  if (x >= x0 && x <= x1) return riverSignedDistance(x, z);
+  if (x >= RIVER_X0 + 10 && x <= RIVER_X1 - 10) return riverSignedDistance(x, z);
   const f = riverFrame(x);
   return Math.abs((z - riverZ(x)) * f.along.x) - RIVER.width / 2;
 }
@@ -110,8 +126,8 @@ export function gridAxis(
 export function groundAxes(): { xs: number[]; zs: number[] } {
   const half = CITY.half + 40;
   const xs = gridAxis(-half, half, 12, OUTER_EXTENT);
-  const north = gridAxis(-half, -560, 12, OUTER_EXTENT).filter((z) => z <= -560);
-  const south = gridAxis(-560, half, 24, OUTER_EXTENT).filter((z) => z > -560);
+  const north = gridAxis(-half, HILL_GRID_Z, 12, OUTER_EXTENT).filter((z) => z <= HILL_GRID_Z);
+  const south = gridAxis(HILL_GRID_Z, half, 24, OUTER_EXTENT).filter((z) => z > HILL_GRID_Z);
   return { xs, zs: [...north, ...south] };
 }
 
@@ -184,4 +200,36 @@ export function ridgeProfile(ridge: Ridge, angle: number): number {
   const n1 = noise2(c * k1 + 17, s * k1 + 31) - 0.5;
   const n2 = noise2(c * k2 + 53, s * k2 + 7) - 0.5;
   return base * (1 + 0.16 * n1 + 0.07 * n2);
+}
+
+/**
+ * Ground vertex position after clipping to the ground disc: points past `GROUND_RADIUS` are pulled
+ * radially onto it, and toward the near ridge the height is eased below the ridge silhouette so
+ * the north plateau (70–110 m) never shows above a low stretch of the ridge.
+ */
+export function groundVertex(x: number, z: number): { x: number; y: number; z: number } {
+  const r = Math.hypot(x, z);
+  const k = r > GROUND_RADIUS ? GROUND_RADIUS / r : 1;
+  const px = x * k;
+  const pz = z * k;
+  const y = terrainHeight(px, pz);
+  const rr = r * k;
+  const t = Math.min(1, Math.max(0, (rr - (GROUND_RADIUS - 1300)) / 1250));
+  const fade = t * t * (3 - 2 * t);
+  const cap = ridgeHeight(NEAR_RIDGE, Math.atan2(pz, px)) * 0.6 - 15;
+  return { x: px, y: y + (Math.min(y, cap) - y) * fade, z: pz };
+}
+
+/**
+ * Slice positions along x for strips that follow the river: `fine` spacing inside the map,
+ * `coarse` outside, always ending exactly on ±OUTER_EXTENT (no gap at the east end).
+ */
+export function riverSliceXs(fine: number, coarse: number): number[] {
+  const xs: number[] = [];
+  for (let x = -OUTER_EXTENT; x < OUTER_EXTENT; x += Math.abs(x) < CITY.half + 40 ? fine : coarse) {
+    xs.push(x);
+  }
+  if (OUTER_EXTENT - (xs[xs.length - 1] ?? -Infinity) < 1) xs.pop();
+  xs.push(OUTER_EXTENT);
+  return xs;
 }

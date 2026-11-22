@@ -3,9 +3,9 @@
 // come for free from lighting's PMREM environment (teal dome + neon panel band), the moon / sun
 // specular, and later neon's reflection streak decals. One draw call, no render-to-texture.
 import * as THREE from 'three';
-import { CITY, RIVER, riverFrame } from '../city/layout';
+import { RIVER, riverFrame } from '../city/layout';
 import { TERRAIN_COLORS } from '../core/palette';
-import { OUTER_EXTENT, waterHalfWidth } from './shape';
+import { riverSliceXs, waterHalfWidth } from './shape';
 
 const WATER_PARS = /* glsl */ `
 uniform float uTime;
@@ -56,7 +56,7 @@ export function createWater(): Water {
   const pos: number[] = [];
   const idx: number[] = [];
   let n = 0;
-  for (let x = -OUTER_EXTENT; x <= OUTER_EXTENT;) {
+  for (const x of riverSliceXs(16, 40)) {
     const f = riverFrame(x);
     for (const s of [-1, 1]) {
       pos.push(f.p.x + f.south.x * hw * s, RIVER.waterY, f.p.z + f.south.z * hw * s);
@@ -67,7 +67,6 @@ export function createWater(): Water {
       idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
     }
     n++;
-    x += Math.abs(x) < CITY.half + 40 ? 16 : 40;
   }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));

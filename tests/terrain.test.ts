@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  EMBANK_SLOPE as LAYOUT_EMBANK_SLOPE,
   LAYOUT,
   RIVER,
   riverFrame,
@@ -8,6 +9,8 @@ import {
   surfaceHeight,
 } from '../src/city/layout';
 import {
+  EMBANK_SLOPE,
+  GROUND_RADIUS,
   OUTER_EXTENT,
   channelDistance,
   channelProfile,
@@ -16,6 +19,7 @@ import {
   noise2,
   ridgePeaks,
   ridgeProfile,
+  riverSliceXs,
   waterHalfWidth,
 } from '../src/terrain/shape';
 import { buildChannel, buildGround } from '../src/terrain/ground';
@@ -94,10 +98,40 @@ describe('ground grid', () => {
     expect(index.count / 3).toBeLessThan(120_000);
     const used = new Set<number>();
     for (let i = 0; i < index.count; i++) used.add(index.getX(i));
+    const near = LAYOUT.ridges.find((r) => r.id === 'ridge-near')!;
     for (const v of used) {
-      expect(nrm.getY(v)).toBeGreaterThan(0.5);
-      expect(channelDistance(pos.getX(v), pos.getZ(v))).toBeGreaterThanOrEqual(6);
+      const x = pos.getX(v);
+      const z = pos.getZ(v);
+      const r = Math.hypot(x, z);
+      expect(r).toBeLessThanOrEqual(GROUND_RADIUS + 1e-3);
+      expect(r).toBeLessThan(near.radius);
+      // Rim vertices sit in collapsed sliver cells; their normals are meaningless.
+      if (r < GROUND_RADIUS - 1) expect(nrm.getY(v)).toBeGreaterThan(0.5);
+      expect(channelDistance(x, z)).toBeGreaterThanOrEqual(6);
+      // On the rim the ground stays under the near ridge silhouette (no plateau poking out).
+      if (r > GROUND_RADIUS - 1) {
+        expect(pos.getY(v)).toBeLessThanOrEqual(ridgeHeight(near, Math.atan2(z, x)) + 1e-3);
+      }
     }
+  });
+
+  it('river strips end exactly on the outer extent', () => {
+    for (const [fine, coarse] of [
+      [8, 20],
+      [16, 40],
+    ] as const) {
+      const xs = riverSliceXs(fine, coarse);
+      expect(xs[0]).toBe(-OUTER_EXTENT);
+      expect(xs[xs.length - 1]).toBe(OUTER_EXTENT);
+      for (let i = 1; i < xs.length; i++) {
+        expect(xs[i]! - xs[i - 1]!).toBeGreaterThanOrEqual(1);
+        expect(xs[i]! - xs[i - 1]!).toBeLessThanOrEqual(coarse + 1e-9);
+      }
+    }
+  });
+
+  it('embankment slope comes from the layout', () => {
+    expect(EMBANK_SLOPE).toBe(LAYOUT_EMBANK_SLOPE);
   });
 
   it('channel strip faces up', () => {

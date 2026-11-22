@@ -4,14 +4,16 @@
 // and the channel is a separate strip that follows the centerline, so the 4 m embankment slope
 // stays crisp without a fine grid everywhere.
 import * as THREE from 'three';
-import { CITY, RIVER, riverFrame, terrainHeight } from '../city/layout';
+import { CITY, RIVER, riverFrame } from '../city/layout';
 import { TERRAIN_COLORS as TC } from '../core/palette';
 import {
-  OUTER_EXTENT,
+  GROUND_RADIUS,
   channelDistance,
   channelProfile,
   groundAxes,
+  groundVertex,
   noise2,
+  riverSliceXs,
   type ChannelPart,
 } from './shape';
 
@@ -41,6 +43,8 @@ export function buildGround(): THREE.BufferGeometry {
   const pos = new Float32Array(nx * nz * 3);
   const col = new Float32Array(nx * nz * 3);
   const dist = new Float32Array(nx * nz);
+  /** Vertex lies past the ground disc (pulled onto its rim). */
+  const rim = new Uint8Array(nx * nz);
   const tmp = new THREE.Color();
   const half = CITY.half;
   for (let j = 0; j < nz; j++) {
@@ -48,9 +52,11 @@ export function buildGround(): THREE.BufferGeometry {
     for (let i = 0; i < nx; i++) {
       const x = xs[i] ?? 0;
       const k = j * nx + i;
-      const y = terrainHeight(x, z);
-      pos.set([x, y, z], k * 3);
-      dist[k] = channelDistance(x, z);
+      const v = groundVertex(x, z);
+      rim[k] = Math.hypot(x, z) > GROUND_RADIUS ? 1 : 0;
+      const y = v.y;
+      pos.set([v.x, y, v.z], k * 3);
+      dist[k] = channelDistance(v.x, v.z);
       // Albedo: urban grey on the flats, scrub on the slopes, woods in noisy patches and
       // everywhere past the map edge.
       const hill = Math.min(1, y / 25);
@@ -71,6 +77,8 @@ export function buildGround(): THREE.BufferGeometry {
       const e = d + 1;
       const near = Math.min(dist[a] ?? 0, dist[b] ?? 0, dist[d] ?? 0, dist[e] ?? 0);
       if (near < KEEP_DISTANCE) continue;
+      // Fully outside the disc: all four corners collapsed onto the rim, nothing to draw.
+      if ((rim[a] ?? 0) + (rim[b] ?? 0) + (rim[d] ?? 0) + (rim[e] ?? 0) === 4) continue;
       idx.push(a, d, b, b, d, e);
     }
   }
@@ -93,11 +101,7 @@ function bankReach(x: number): number {
 export function buildChannel(): THREE.BufferGeometry {
   const pal = groundPalette();
   const halfW = RIVER.width / 2;
-  const xs: number[] = [];
-  for (let x = -OUTER_EXTENT; x <= OUTER_EXTENT;) {
-    xs.push(x);
-    x += Math.abs(x) < CITY.half + 40 ? 8 : 20;
-  }
+  const xs = riverSliceXs(8, 20);
   const pos: number[] = [];
   const col: number[] = [];
   const idx: number[] = [];
