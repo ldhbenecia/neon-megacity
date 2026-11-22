@@ -6,7 +6,16 @@ import prettier from 'eslint-config-prettier';
 import globals from 'globals';
 
 export default defineConfig(
-  { ignores: ['dist/', 'screenshots/', 'test-results/', 'playwright-report/', 'node_modules/'] },
+  {
+    ignores: [
+      'dist/',
+      'screenshots/',
+      'test-results/',
+      'playwright-report/',
+      'node_modules/',
+      '.claude/worktrees/',
+    ],
+  },
   js.configs.recommended,
   tseslint.configs.strictTypeChecked,
   {
