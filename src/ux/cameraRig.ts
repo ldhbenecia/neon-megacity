@@ -7,7 +7,9 @@ import { LAYOUT, surfaceHeight, type Vec3 } from '../city/layout';
 import type { Ctx } from '../core/types';
 import { cameraFloor, frameBuildingClear, pick, resolveCollision, targetFloor } from './collision';
 import type { Hud, RigMode } from './hud';
+import { reducedMotion } from './loader';
 import {
+  clamp,
   dampFactor,
   easeInOutCubic,
   fitPolar,
@@ -103,7 +105,7 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
   const { hud } = opts;
   const canvas = renderer.domElement;
   const app = canvas.parentElement;
-  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const reduceMotion = reducedMotion();
 
   // 8.1 orbit feel. Wheel zoom is ours (smooth, cursor anchored); pinch stays OrbitControls'.
   controls.enableDamping = true;
@@ -227,13 +229,19 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
     flyTo(p);
   };
 
+  /** Orbit pivot for a free pose: polar angle within the limit, target above the floor. */
+  const orbitAround = (raw: Pose): void => {
+    const { target } = fitPolar(raw, CAMERA_LIMITS.maxPolarAngle);
+    controls.target.set(target.x, Math.max(target.y, targetFloor(target.x, target.z)), target.z);
+  };
+
   // --- fly mode (F) ---
   const enterFly = (): void => {
     exitCinematic();
     cancelFlight();
     camera.getWorldDirection(_v);
     yaw = Math.atan2(-_v.x, -_v.z);
-    pitch = Math.asin(Math.max(-1, Math.min(1, _v.y)));
+    pitch = Math.asin(clamp(_v.y, -1, 1));
     vel.set(0, 0, 0);
     setMode('fly');
     hud.toast('비행 모드 · 마우스로 시선, W 전진, Esc 해제');
@@ -249,7 +257,7 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
     if (mode !== 'fly') return;
     camera.getWorldDirection(_v);
     const hit = pick(LAYOUT, toV3(camera.position), toV3(_v));
-    const dist = Math.min(400, Math.max(40, hit?.t ?? 120));
+    const dist = clamp(hit?.t ?? 120, 40, 400);
     const raw: Pose = {
       position: toV3(camera.position),
       target: {
@@ -258,9 +266,7 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
         z: camera.position.z + _v.z * dist,
       },
     };
-    const fitted = fitPolar(raw, CAMERA_LIMITS.maxPolarAngle);
-    fitted.target.y = Math.max(fitted.target.y, targetFloor(fitted.target.x, fitted.target.z));
-    controls.target.set(fitted.target.x, fitted.target.y, fitted.target.z);
+    orbitAround(raw);
     setMode('orbit');
     if (document.pointerLockElement === canvas) document.exitPointerLock();
     controls.update();
@@ -301,9 +307,7 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
   function exitCinematic(): void {
     if (mode !== 'cinematic') return;
     const raw: Pose = { position: toV3(camera.position), target: toV3(cineTarget) };
-    const fitted = fitPolar(raw, CAMERA_LIMITS.maxPolarAngle);
-    fitted.target.y = Math.max(fitted.target.y, targetFloor(fitted.target.x, fitted.target.z));
-    controls.target.set(fitted.target.x, fitted.target.y, fitted.target.z);
+    orbitAround(raw);
     fovTarget = BASE_FOV;
     setMode('orbit');
     controls.update();
@@ -408,7 +412,7 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
     cancelFlight();
     steered();
     const px = e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 400 : 1;
-    const amount = Math.max(-0.6, Math.min(0.6, -e.deltaY * px * 0.0022 * controls.zoomSpeed));
+    const amount = clamp(-e.deltaY * px * 0.0022 * controls.zoomSpeed, -0.6, 0.6);
     if (mode === 'fly') {
       camera.getWorldDirection(_v);
       vel.addScaledVector(_v, amount * 60);
@@ -433,7 +437,7 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
 
   const look = (dx: number, dy: number): void => {
     yaw -= dx * LOOK_SENSITIVITY;
-    pitch = Math.max(-1.45, Math.min(1.45, pitch - dy * LOOK_SENSITIVITY));
+    pitch = clamp(pitch - dy * LOOK_SENSITIVITY, -1.45, 1.45);
   };
   const onMouseMove = (e: MouseEvent): void => {
     if (mode === 'fly' && document.pointerLockElement === canvas) look(e.movementX, e.movementY);
@@ -647,7 +651,6 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
     flightTime += dt;
     flightPose(flight, Math.min(flightTime, flight.duration), flightOut);
     setPose(flightOut);
-    camera.lookAt(controls.target);
     if (flightTime >= flight.duration) {
       flight = null;
       setMode('orbit');

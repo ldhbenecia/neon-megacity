@@ -5,6 +5,7 @@ import type { Ctx } from '../core/types';
 import { createCameraRig, type CameraRig, type RigDebug } from './cameraRig';
 import { createControls } from './controls';
 import { createHud, type Hud } from './hud';
+import { reducedMotion } from './loader';
 import { createPerf, type FrameStats, type Perf } from './perf';
 import { camPose, DEFAULT_PRESET, rigPreset } from './presets';
 import { parseUxQuery } from './query';
@@ -42,12 +43,11 @@ const POWER_S = 1.2;
 
 export function initUx(ctx: Ctx, opts: UxOptions): Ux {
   const q = parseUxQuery(window.location.search);
-  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const reduceMotion = reducedMotion();
   const deterministic = opts.cam !== undefined || q.preset !== undefined;
-  let deselect = (): void => undefined;
   const hud = createHud({
     visible: q.hud,
-    onDeselect: () => deselect(),
+    onDeselect: () => rig.select(null),
   });
   // Deterministic starts (?cam / ?preset) skip the boot dolly-in.
   const initial = opts.cam ? camPose(opts.cam) : rigPreset(q.preset ?? DEFAULT_PRESET);
@@ -56,7 +56,6 @@ export function initUx(ctx: Ctx, opts: UxOptions): Ux {
     dollyIn: !deterministic,
     hud,
   });
-  deselect = () => rig.select(null);
   const controls = createControls(ctx, rig, hud);
   const perf = createPerf(ctx, { overlay: q.stats, resize: opts.resize });
 

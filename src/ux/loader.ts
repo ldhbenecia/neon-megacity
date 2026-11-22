@@ -40,7 +40,8 @@ const STAGE_TEXT: Record<string, [running: string, done: string]> = {
   'first-frame': ['첫 프레임 렌더 중…', '전력 투입'],
 };
 
-const reducedMotion = (): boolean =>
+/** `prefers-reduced-motion: reduce`, false where matchMedia is unavailable. */
+export const reducedMotion = (): boolean =>
   typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 export function createLoader(root: HTMLElement | null = document.getElementById('boot')): Loader {

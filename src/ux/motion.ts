@@ -2,7 +2,9 @@
 // unit tested in tests/ux-motion.test.ts. The rig copies results into three.js objects.
 import type { BuildingSpec, Vec3 } from '../city/layout';
 
-export const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
+import { clamp } from '../city/math';
+
+export { clamp };
 
 export function easeInOutCubic(t: number): number {
   const x = clamp(t, 0, 1);

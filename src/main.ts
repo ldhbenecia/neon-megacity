@@ -154,6 +154,7 @@ async function boot(): Promise<void> {
   const timer = new THREE.Timer();
   timer.connect(document);
   const cityState = { ready: true, frames: 0, powered: false };
+  let bootGone = false;
   const frame = (timestamp?: number): void => {
     timer.update(timestamp);
     const raw = timer.getDelta();
@@ -168,7 +169,9 @@ async function boot(): Promise<void> {
     ux.frameEnd(raw);
 
     cityState.frames++;
-    cityState.powered = ux.powered && !document.getElementById('boot');
+    // The boot overlay is removed once and never comes back: stop querying after that.
+    bootGone ||= !document.getElementById('boot');
+    cityState.powered = ux.powered && bootGone;
     window.__city = cityState;
   };
   frame();

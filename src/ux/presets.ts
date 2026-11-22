@@ -5,7 +5,7 @@
 import { LAYOUT, highwayCurve, type Layout, type Vec3 } from '../city/layout';
 import { CAMERA_LIMITS, cameraPreset, type CameraPreset } from '../core/query';
 import { cameraFloor, resolveCollision, targetFloor } from './collision';
-import { fitPolar, type Pose } from './motion';
+import { clamp, fitPolar, type Pose } from './motion';
 
 export interface RigPreset extends Pose {
   key: number;
@@ -88,7 +88,7 @@ export function rigPresets(): readonly RigPreset[] {
 
 export function rigPreset(key: number): RigPreset {
   const list = rigPresets();
-  return list[Math.min(list.length, Math.max(1, Math.round(key))) - 1] as RigPreset;
+  return list[clamp(Math.round(key), 1, list.length) - 1] as RigPreset;
 }
 
 /** 8.5 tour order (closed loop). */
