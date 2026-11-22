@@ -27,6 +27,7 @@ uniform float uSunVis;
 uniform vec3 uMoonDir;
 uniform vec3 uMoonColor;
 uniform float uMoonVis;
+uniform float uLinearOut;
 varying vec3 vDir;
 
 float hash12(vec2 p) {
@@ -86,8 +87,16 @@ void main() {
   gl_FragColor = vec4(col, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
-  // Dither: the night gradient spans only ~40 sRGB steps and bands badly without it.
-  gl_FragColor.rgb += (hash12(gl_FragCoord.xy) - 0.5) / 255.0;
+  // Dither: the night gradient spans only ~40 sRGB steps and bands badly without it. The noise
+  // is one 8-bit sRGB step; when rendering into a linear target (post-processing composer) it is
+  // applied in sRGB and converted back, so it stays one display step instead of sparkling.
+  float dither = (hash12(gl_FragCoord.xy) - 0.5) / 255.0;
+  if (uLinearOut > 0.5) {
+    vec3 s = pow(max(gl_FragColor.rgb, 0.0), vec3(1.0 / 2.2));
+    gl_FragColor.rgb = pow(max(s + dither, 0.0), vec3(2.2));
+  } else {
+    gl_FragColor.rgb += dither;
+  }
 }
 `;
 
@@ -103,6 +112,7 @@ export interface SkyUniforms {
   uMoonDir: THREE.IUniform<THREE.Vector3>;
   uMoonColor: THREE.IUniform<THREE.Color>;
   uMoonVis: THREE.IUniform<number>;
+  uLinearOut: THREE.IUniform<number>;
 }
 
 export interface Sky {
@@ -124,6 +134,7 @@ export function createSky(): Sky {
     uMoonDir: { value: new THREE.Vector3(0, 1, 0) },
     uMoonColor: { value: new THREE.Color() },
     uMoonVis: { value: 0 },
+    uLinearOut: { value: 0 },
   };
   const material = new THREE.ShaderMaterial({
     name: 'RamhaSky',
@@ -142,6 +153,12 @@ export function createSky(): Sky {
   // Last opaque object: early-z rejects every pixel the city already covers.
   mesh.renderOrder = 1e6;
   mesh.matrixAutoUpdate = false;
+  // Linear render target (EffectComposer) vs the sRGB canvas / OutputPass: pick the dither space.
+  mesh.onBeforeRender = (renderer) => {
+    const target = renderer.getRenderTarget();
+    uniforms.uLinearOut.value =
+      target && target.texture.colorSpace !== THREE.SRGBColorSpace ? 1 : 0;
+  };
   return {
     mesh,
     uniforms,
