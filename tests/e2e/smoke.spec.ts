@@ -20,7 +20,7 @@ test('?nogui hides the control panel', async ({ page }) => {
   const errors = collectErrors(page);
   await page.goto('./?nogui&cam=street&time=0.5&rain=0');
   await waitForCity(page);
-  await expect(page.locator('.lil-gui.root')).toBeHidden();
+  await expect(page.locator('.lil-gui.lil-root')).toBeHidden();
   await expect(page.locator('#clock')).toHaveText('12:00');
   expect(errors).toEqual([]);
 });

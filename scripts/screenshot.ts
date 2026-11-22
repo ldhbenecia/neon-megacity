@@ -67,9 +67,38 @@ async function bootProgress(browser: Browser, file: string): Promise<void> {
 }
 
 /** HUD with the help panel, the stats overlay and a selected building card. */
+/** Default HUD on first entry (intro hint), then the settings panel opened. */
+async function hudPanel(browser: Browser, file: string): Promise<void> {
+  const page = await browser.newPage({ viewport: VIEWPORT });
+  await page.goto(`${BASE}?time=0.0`);
+  await waitPowered(page);
+  await page.screenshot({ path: file.replace('.png', '-hint.png') });
+  await page.click('#panel-toggle');
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: file });
+  await page.close();
+}
+
+/** Narrow touch viewport with the panel open. */
+async function hudMobile(browser: Browser, file: string): Promise<void> {
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    hasTouch: true,
+    isMobile: true,
+  });
+  const page = await context.newPage();
+  await page.goto(`${BASE}?time=0.78&cam=overview`);
+  await waitPowered(page);
+  await page.screenshot({ path: file.replace('.png', '-closed.png') });
+  await page.click('#panel-toggle');
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: file });
+  await context.close();
+}
+
 async function hudSelected(browser: Browser, file: string): Promise<void> {
   const page = await browser.newPage({ viewport: VIEWPORT });
-  await page.goto(`${BASE}?nogui&stats&time=0.0&cam=overview`);
+  await page.goto(`${BASE}?stats&time=0.0&cam=overview`);
   await waitPowered(page);
   // Click the skyline peak (the overview target sits in the middle of the screen).
   await page.mouse.click(VIEWPORT.width / 2, VIEWPORT.height / 2);
@@ -109,6 +138,8 @@ async function main(): Promise<void> {
       ['ux-boot-skeleton', bootSkeleton],
       ['ux-boot-progress', bootProgress],
       ['ux-hud-selected', hudSelected],
+      ['ux-hud-panel', hudPanel],
+      ['ux-hud-mobile', hudMobile],
     ];
     for (const [name, run] of ux) {
       if (!want(name)) continue;

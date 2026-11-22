@@ -56,18 +56,96 @@ test('boot skeleton paints before JS and is removed after power-on', async ({ pa
   expect(errors).toEqual([]);
 });
 
-test('HUD shows the title, clock, help and an inline SVG favicon', async ({ page }) => {
+test('HUD: brand mark, clock, help sheet on ?, inline SVG favicon', async ({ page }) => {
   await page.goto('./?nogui&time=0.25');
   await waitForCity(page);
-  await expect(page.locator('.hud-title')).toHaveText(/RAMHA\s*\/\/\s*嵐河/);
+  await expect(page.locator('.brand-name')).toHaveText(/RAMHA\s*\/\/\s*嵐河/);
   await expect(page.locator('#clock')).toHaveText('06:00');
-  await expect(page.locator('#hud-help')).toContainText('비행 모드');
+  // Help is a sheet that opens with ? and closes with Esc.
+  await expect(page.locator('#help')).toBeHidden();
+  await page.keyboard.press('Shift+Slash');
+  await expect(page.locator('#help')).toBeVisible();
+  await expect(page.locator('#help')).toContainText('비행 모드');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#help')).toBeHidden();
   const href = await page.locator('link[rel="icon"]').getAttribute('href');
   expect(href).toMatch(/^data:image\/svg\+xml,/);
   await page.keyboard.press('h');
   await expect(page.locator('#hud')).toHaveClass(/is-hidden/);
   await page.keyboard.press('h');
   await expect(page.locator('#hud')).not.toHaveClass(/is-hidden/);
+});
+
+test('first entry shows a controls hint that fades out', async ({ page }) => {
+  await page.goto('./?nogui');
+  await waitForCity(page);
+  await expect(page.locator('#hud-hint')).toBeVisible();
+  await expect(page.locator('#hud-hint')).toBeHidden({ timeout: 15_000 });
+});
+
+test('lil-gui is a developer panel: hidden by default, shown with ?debug', async ({ page }) => {
+  await page.goto('./');
+  await waitForCity(page);
+  await expect(page.locator('.lil-gui.lil-root')).toBeHidden();
+  await page.goto('./?debug');
+  await waitForCity(page);
+  await expect(page.locator('.lil-gui.lil-root')).toBeVisible();
+});
+
+test.describe('city controls', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('./?stats&cam=overview&time=0.9');
+    await waitForCity(page);
+  });
+
+  test('panel opens from the top-right button and closes with Esc', async ({ page }) => {
+    const toggle = page.locator('#panel-toggle');
+    await expect(page.locator('#panel')).toBeHidden();
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.locator('#panel')).toBeVisible();
+    // Weather: one of three, the current rain (0.35) is "비".
+    await expect(page.locator('[data-rain="0.35"]')).toHaveAttribute('aria-checked', 'true');
+    await page.locator('[data-rain="1"]').click();
+    await expect(page.locator('[data-rain="1"]')).toHaveAttribute('aria-checked', 'true');
+    // Wheel over the panel never zooms the camera.
+    const before = await cam(page);
+    const box = await page.locator('#panel').boundingBox();
+    await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+    await page.mouse.wheel(0, -600);
+    await page.waitForTimeout(400);
+    expect(dist((await cam(page)).position, before.position)).toBeLessThan(0.01);
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#panel')).toBeHidden();
+    await expect(toggle).toBeFocused();
+  });
+
+  test('preset chips and the cinematic switch drive the camera', async ({ page }) => {
+    await page.locator('#panel-toggle').click();
+    await page.locator('[data-preset="8"]').click();
+    await waitMode(page, 'flight');
+    await waitMode(page, 'orbit');
+    await expect(page.locator('[data-preset="8"]')).toHaveAttribute('aria-current', 'true');
+    await page.locator('#sw-cinematic').click();
+    await waitMode(page, 'cinematic');
+    await expect(page.locator('#hud-mode')).toBeVisible();
+    await page.locator('#panel-toggle').click();
+    await expect(page.locator('#sw-cinematic')).toHaveAttribute('aria-checked', 'true');
+    await page.locator('#sw-cinematic').click();
+    await waitMode(page, 'orbit');
+  });
+
+  test('timeline scrubs the clock, tick marks jump, play toggles the cycle', async ({ page }) => {
+    const play = page.locator('#tl-play');
+    // ?time locks the cycle: the button offers "play".
+    await expect(play).toHaveAttribute('aria-pressed', 'false');
+    await page.locator('.tl-ticks [data-time="0.5"]').click();
+    await expect(page.locator('#clock')).toHaveText('12:00');
+    await page.locator('#tl-range').fill('1110');
+    await expect(page.locator('#clock')).toHaveText('18:30');
+    await play.click();
+    await expect(play).toHaveAttribute('aria-pressed', 'true');
+  });
 });
 
 test('?hud=0 starts hidden', async ({ page }) => {
@@ -140,10 +218,10 @@ test.describe('camera rig', () => {
     await waitMode(page, 'orbit');
     const c = await cam(page);
     expect(c.selected).not.toBeNull();
-    await expect(page.locator('#hud-card')).toHaveClass(/is-in/);
+    await expect(page.locator('#hud-card')).toBeVisible();
     await expect(page.locator('#hud-card [data-field="name"]')).not.toBeEmpty();
     await page.keyboard.press('Escape');
-    await expect(page.locator('#hud-card')).not.toHaveClass(/is-in/);
+    await expect(page.locator('#hud-card')).toBeHidden();
     expect((await cam(page)).selected).toBeNull();
   });
 
