@@ -2,12 +2,14 @@
 // lazily and cached in WeakMaps, so calling these never mutates the layout itself.
 import { fbm1 } from './noise';
 import {
+  closestSegmentT,
   footprintObb,
   obbBounds,
   obbOverlap,
   pointSegmentDistance,
   sideNormal,
   toLocal,
+  type Obb,
 } from './math';
 import { highwaySamples } from './highways';
 import { GridHash, boundsOverlap, segmentBounds, type Bounds } from './spatial';
@@ -15,15 +17,66 @@ import type { BuildingFace, BuildingSpec, Layout, Ridge, Side, Tier, Vec2, Vec3 
 
 export type Vec3Like = Readonly<Vec3>;
 
-const buildingHashes = new WeakMap<Layout, GridHash>();
-function buildingHash(L: Layout): GridHash {
-  let h = buildingHashes.get(L);
-  if (!h) {
-    h = new GridHash();
-    for (const b of L.buildings) h.insert(b.id, obbBounds(footprintObb(b)));
-    buildingHashes.set(L, h);
+interface BuildingIndex {
+  hash: GridHash;
+  /** Footprint OBB and its bounds per building id. */
+  obbs: Obb[];
+  bounds: Bounds[];
+  /** Padded 3D bounds of all tiers per building: minX, minY, minZ, maxX, maxY, maxZ. */
+  boxes: Float64Array;
+}
+
+const buildingIndices = new WeakMap<Layout, BuildingIndex>();
+function buildingIndex(L: Layout): BuildingIndex {
+  let idx = buildingIndices.get(L);
+  if (!idx) {
+    const hash = new GridHash();
+    const obbs = L.buildings.map(footprintObb);
+    const bounds = obbs.map(obbBounds);
+    const boxes = new Float64Array(L.buildings.length * 6);
+    const PAD = 1e-3;
+    for (const b of L.buildings) {
+      hash.insert(b.id, bounds[b.id] as Bounds);
+      const box = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
+      for (const t of allTiers(b)) {
+        const hd = t.shape === 'cylinder' ? t.w / 2 : t.d / 2;
+        const o = obbBounds({ x: t.x, z: t.z, hw: t.w / 2, hd, rotY: b.rotY });
+        box[0] = Math.min(box[0] as number, o.minX);
+        box[1] = Math.min(box[1] as number, t.y0);
+        box[2] = Math.min(box[2] as number, o.minZ);
+        box[3] = Math.max(box[3] as number, o.maxX);
+        box[4] = Math.max(box[4] as number, t.y1);
+        box[5] = Math.max(box[5] as number, o.maxZ);
+      }
+      for (let k = 0; k < 6; k++) boxes[b.id * 6 + k] = (box[k] as number) + (k < 3 ? -PAD : PAD);
+    }
+    idx = { hash, obbs, bounds, boxes };
+    buildingIndices.set(L, idx);
   }
-  return h;
+  return idx;
+}
+
+/** Conservative ray / padded box test: false only when the ray cannot hit building `id`. */
+function rayMayHitBox(boxes: Float64Array, id: number, o: Vec3Like, d: Vec3Like): boolean {
+  let t0 = 0;
+  let t1 = Infinity;
+  for (let k = 0; k < 3; k++) {
+    const pk = k === 0 ? o.x : k === 1 ? o.y : o.z;
+    const vk = k === 0 ? d.x : k === 1 ? d.y : d.z;
+    const min = boxes[id * 6 + k] as number;
+    const max = boxes[id * 6 + 3 + k] as number;
+    if (vk === 0) {
+      if (pk < min || pk > max) return false;
+      continue;
+    }
+    let a = (min - pk) / vk;
+    let c = (max - pk) / vk;
+    if (a > c) [a, c] = [c, a];
+    t0 = Math.max(t0, a);
+    t1 = Math.min(t1, c);
+    if (t0 > t1) return false;
+  }
+  return true;
 }
 
 /** Ids of buildings whose footprint overlaps the axis-aligned rectangle (64 m spatial hash). */
@@ -42,13 +95,12 @@ export function buildingsInAabb(
     hd: (maxZ - minZ) / 2,
     rotY: 0,
   };
-  return buildingHash(L)
+  const { hash, obbs, bounds } = buildingIndex(L);
+  return hash
     .query(q)
-    .filter((id) => {
-      const b = L.buildings[id] as BuildingSpec;
-      const o = footprintObb(b);
-      return boundsOverlap(obbBounds(o), q) && obbOverlap(o, box, -1e-9);
-    });
+    .filter(
+      (id) => boundsOverlap(bounds[id] as Bounds, q) && obbOverlap(obbs[id] as Obb, box, -1e-9),
+    );
 }
 
 /** All tiers of a building (both stacks for twin towers). */
@@ -70,7 +122,7 @@ function insideTier(b: BuildingSpec, t: Tier, x: number, y: number, z: number): 
 
 /** Id of the building whose tier volume contains the point, or null (camera collision). */
 export function buildingContaining(L: Layout, x: number, y: number, z: number): number | null {
-  for (const id of buildingHash(L).query({ minX: x, minZ: z, maxX: x, maxZ: z })) {
+  for (const id of buildingIndex(L).hash.query({ minX: x, minZ: z, maxX: x, maxZ: z })) {
     const b = L.buildings[id] as BuildingSpec;
     if (allTiers(b).some((t) => insideTier(b, t, x, y, z))) return id;
   }
@@ -138,8 +190,10 @@ export function raycastBuildings(
   origin: Vec3Like,
   dir: Vec3Like,
 ): { id: number; t: number } | null {
+  const { boxes } = buildingIndex(L);
   let best: { id: number; t: number } | null = null;
   for (const b of L.buildings) {
+    if (!rayMayHitBox(boxes, b.id, origin, dir)) continue;
     for (const t of allTiers(b)) {
       const k = rayTier(b, t, origin, dir);
       if (k < (best?.t ?? Infinity)) best = { id: b.id, t: k };
@@ -190,6 +244,7 @@ interface DeckSeg {
   a: Vec3;
   b: Vec3;
   half: number;
+  bounds: Bounds;
 }
 const deckCache = new WeakMap<Layout, DeckSeg[]>();
 function deckSegments(L: Layout): DeckSeg[] {
@@ -199,7 +254,10 @@ function deckSegments(L: Layout): DeckSeg[] {
     for (const hw of L.highways) {
       const s = highwaySamples(hw, 4);
       for (let i = 0; i < s.length - 1; i++) {
-        segs.push({ a: s[i] as Vec3, b: s[i + 1] as Vec3, half: hw.width / 2 });
+        const a = s[i] as Vec3;
+        const b = s[i + 1] as Vec3;
+        const half = hw.width / 2;
+        segs.push({ a, b, half, bounds: segmentBounds(a, b, half) });
       }
     }
     deckCache.set(L, segs);
@@ -218,15 +276,10 @@ export function deckHeightAt(L: Layout, x: number, z: number): number | null {
     if (best === null || y > best) best = y;
   };
   for (const s of deckSegments(L)) {
-    if (!boundsOverlap(segmentBounds(s.a, s.b, s.half), { minX: x, minZ: z, maxX: x, maxZ: z })) {
-      continue;
-    }
+    const sb = s.bounds;
+    if (x < sb.minX || x > sb.maxX || z < sb.minZ || z > sb.maxZ) continue;
     if (pointSegmentDistance(p, s.a, s.b) > s.half) continue;
-    const abx = s.b.x - s.a.x;
-    const abz = s.b.z - s.a.z;
-    const len2 = abx * abx + abz * abz || 1;
-    const t = Math.min(1, Math.max(0, ((x - s.a.x) * abx + (z - s.a.z) * abz) / len2));
-    take(s.a.y + (s.b.y - s.a.y) * t);
+    take(s.a.y + (s.b.y - s.a.y) * closestSegmentT(p, s.a, s.b));
   }
   for (const br of L.bridges) {
     if (pointSegmentDistance(p, br.landA, br.landB) > br.width / 2) continue;
