@@ -13,7 +13,6 @@ test.describe('performance budget', () => {
   for (const preset of PRESETS) {
     for (const time of TIMES) {
       test(`preset ${preset} @ time ${time}`, async ({ page }) => {
-        test.setTimeout(150_000);
         const errors = collectErrors(page);
         await page.goto(`./?nogui&stats&preset=${preset}&time=${time}&rain=0.35`);
         await waitForCity(page);

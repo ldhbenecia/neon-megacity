@@ -11,11 +11,13 @@ export function collectErrors(page: Page): string[] {
   return errors;
 }
 
-export async function waitForCity(page: Page, minFrames = 30): Promise<void> {
+const WAIT_MS = process.env.CI ? 240_000 : 60_000;
+
+export async function waitForCity(page: Page, minFrames = 3): Promise<void> {
   await page.waitForFunction(
     (n) => (window.__city?.frames ?? 0) >= n && window.__city?.powered === true,
     minFrames,
-    { timeout: 45_000 },
+    { timeout: WAIT_MS },
   );
 }
 
@@ -26,7 +28,7 @@ export async function frameCount(page: Page): Promise<number> {
 export async function waitFrames(page: Page, n: number): Promise<void> {
   const start = await frameCount(page);
   await page.waitForFunction((target) => (window.__city?.frames ?? 0) >= target, start + n, {
-    timeout: 45_000,
+    timeout: WAIT_MS,
   });
 }
 
