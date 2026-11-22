@@ -250,6 +250,28 @@ describe('archetype geometry', () => {
     }
   });
 
+  it('packs facade parameters losslessly into half floats', () => {
+    const spec = byArchetype.get('apartmentSlab')![0]!;
+    const T = targets();
+    emitBuilding(spec, T);
+    const g = T.l1.build()!;
+    const info = g.getAttribute('aInfo');
+    const win = g.getAttribute('aWin');
+    const types = new Set<number>();
+    for (let i = 0; i < info.count; i++) {
+      const v = info.getX(i);
+      expect(Number.isInteger(v)).toBe(true);
+      types.add(Math.floor(v / 2));
+      expect(info.getY(i)).toBeGreaterThanOrEqual(0);
+    }
+    // Plain roof, apartment south and corridor faces, plus the 동 number quad in LOD0 only.
+    expect([...types].sort()).toEqual(expect.arrayContaining([0, 3, 4]));
+    let maxCell = 0;
+    for (let i = 0; i < win.count; i++) maxCell = Math.max(maxCell, win.getX(i));
+    expect(maxCell).toBeGreaterThan(2);
+    expect(maxCell).toBeLessThan(10);
+  });
+
   it('stays inside its footprint (plus props) and under its top', () => {
     for (const specs of byArchetype.values()) {
       for (const spec of specs) {

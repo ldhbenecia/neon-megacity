@@ -284,14 +284,8 @@ export class GeoBuilder {
     g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3, true));
     g.setAttribute('color', new THREE.BufferAttribute(col, 3, true));
     g.setAttribute('aFace', new THREE.BufferAttribute(this.face.arr.slice(0, this.face.len), 2));
-    g.setAttribute(
-      'aWin',
-      new THREE.Float16BufferAttribute(this.win.arr.subarray(0, this.win.len), 4),
-    );
-    g.setAttribute(
-      'aInfo',
-      new THREE.Float16BufferAttribute(this.info.arr.subarray(0, this.info.len), 4),
-    );
+    g.setAttribute('aWin', half(this.win.arr.subarray(0, this.win.len), 4));
+    g.setAttribute('aInfo', half(this.info.arr.subarray(0, this.info.len), 4));
     const idx = this.idx.arr.slice(0, this.idx.len);
     g.setIndex(
       this.count < 65536
@@ -302,6 +296,13 @@ export class GeoBuilder {
     g.computeBoundingBox();
     return g;
   }
+}
+
+/** Half-float attribute from float data (the Float16BufferAttribute constructor expects raw bits). */
+function half(src: Float32Array, itemSize: number): THREE.Float16BufferAttribute {
+  const bits = new Uint16Array(src.length);
+  for (let i = 0; i < src.length; i++) bits[i] = THREE.DataUtils.toHalfFloat(src[i] ?? 0);
+  return new THREE.Float16BufferAttribute(bits, itemSize);
 }
 
 const UP = new THREE.Vector3(0, 1, 0);
