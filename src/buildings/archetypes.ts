@@ -25,7 +25,7 @@ import {
   faceRole,
   finOffsets,
   fitCells,
-  hash01,
+  seeded01,
   keepInLod2,
   mixHex,
   scaleHex,
@@ -146,7 +146,7 @@ function faceStyle(b: Bld, side: Side | null, len: number, tierIdx: number): Sty
     winW: ws.winW,
     winH: ws.winH,
     windowY: b.windowY,
-    seed: b.seed01 + tierIdx * 0.013 + (side ? 'pnxz'.indexOf(side[1] ?? 'x') * 0.1 : 0),
+    seed: b.seed01 + tierIdx * 0.013 + (side ? ALL_SIDES.indexOf(side) * 0.1 : 0),
     lit: b.lit,
     param: spec.archetype === 'hillHouse' ? 0.55 : 0,
     storefront: tierIdx === 0 && (b.tower || shop),
@@ -195,7 +195,7 @@ function shell(
 }
 
 function crownStyle(b: Bld): Style {
-  const pick = hash01(b.spec.seed + 7);
+  const pick = seeded01(b.spec.seed + 7);
   const hex =
     pick < 0.45 ? NEON.neonWhite.hex : pick < 0.8 ? NEON.neonCyan.hex : NEON.neonOrange.hex;
   return glow(hex, pick < 0.45 ? 1.6 : 2.4);
@@ -209,7 +209,7 @@ export function emitBuilding(spec: BuildingSpec, T: Targets, onStreet?: StreetTe
   const b: Bld = {
     spec,
     rng,
-    seed01: hash01(spec.seed),
+    seed01: seeded01(spec.seed),
     lit: districtLitFactor(spec.district),
     wall,
     roof: scaleHex(wall, spec.archetype === 'apartmentSlab' ? 0.7 : 0.9),
@@ -269,13 +269,13 @@ function detail(b: Bld, g: GeoBuilder): void {
   const bandStyle = plain(scaleHex(b.wall, 1.35), 0.7);
   for (const tiers of stacks) {
     tiers.forEach((t, i) => {
-      const o = tierOutline(t, spec.rotY, 32);
+      const o = tierOutline(t, spec.rotY, cylinderSegments(0));
       if (spec.archetype !== 'warehouse' && spec.archetype !== 'pavilion') {
         parapet(g, o, t.y1, parapetH, plain(scaleHex(b.wall, 1.15), 0.85));
       }
       // Horizontal bands every 4-8 floors on offices and towers.
       if (b.tower || spec.archetype === 'officeSlab') {
-        const every = 4 + Math.floor(hash01(spec.seed + i) * 5);
+        const every = 4 + Math.floor(seeded01(spec.seed + i) * 5);
         for (const y of bandLevels(t.y0, t.y1, b.windowY, spec.floorH, every)) {
           band(g, o, y - 0.25, 0.5, 0.4, bandStyle);
         }
@@ -351,8 +351,8 @@ function bracing(g: GeoBuilder, b: Bld, lv: 0 | 1): void {
   const { spec } = b;
   const steel = plain(MATERIAL.bracing, 0.45);
   const lit =
-    hash01(spec.seed + 3) < 0.3
-      ? glow(hash01(spec.seed + 5) < 0.5 ? NEON.neonCyan.hex : NEON.neonOrange.hex, 3)
+    seeded01(spec.seed + 3) < 0.3
+      ? glow(seeded01(spec.seed + 5) < 0.5 ? NEON.neonCyan.hex : NEON.neonOrange.hex, 3)
       : null;
   const size = 0.8;
   for (const t of spec.tiers) {
@@ -457,8 +457,8 @@ function fins(g: GeoBuilder, b: Bld): void {
   const { spec } = b;
   const t = spec.tiers[0];
   if (!t || t.shape === 'chamfer') return;
-  const spacing = 1.5 + hash01(spec.seed + 11) * 1.5;
-  const depth = 0.5 + hash01(spec.seed + 13) * 0.5;
+  const spacing = 1.5 + seeded01(spec.seed + 11) * 1.5;
+  const depth = 0.5 + seeded01(spec.seed + 13) * 0.5;
   const finStyle = plain(scaleHex(b.wall, 1.25), 0.6);
   const longX = t.w >= t.d;
   for (const sgn of [1, -1]) {
@@ -524,8 +524,13 @@ function roofMechanical(g: GeoBuilder, b: Bld, rng: Rng): void {
         g.beam([p.x, y, p.z], [p.x, y + h, p.z], 0.25, 0.25, [1, 0, 0], metal);
       }
     }
-    // Tower crane on 0.5 % of tall buildings (and the odd one in core for character).
-    if (r > 20 && (rng.chance(0.005) || hash01(spec.seed + 99) < 0.04)) crane(g, t, spec.rotY, rng);
+    // Tower crane on 0.5 % of tall buildings, plus a few extra in core (정점지구 under construction).
+    if (
+      r > 20 &&
+      (rng.chance(0.005) || (spec.district === 'core' && seeded01(spec.seed + 99) < 0.04))
+    ) {
+      crane(g, t, spec.rotY, rng);
+    }
   }
 }
 
@@ -647,8 +652,9 @@ function sanggaProps(g: GeoBuilder, b: Bld, rng: Rng): void {
       const a = rng.range(-0.42, 0.42) * ff.width;
       const x = ff.mid.x + ff.along.x * a + ff.out.x * 0.2;
       const z = ff.mid.z + ff.along.z * a + ff.out.z * 0.2;
-      const yaw = Math.atan2(ff.along.x, ff.along.z) - Math.PI / 2;
-      g.box(x, yy, z, 0.8, 0.6, 0.3, yaw + Math.PI / 2, ac);
+      // Local +Z faces out of the wall (same convention as fireEscape).
+      const yaw = Math.atan2(ff.out.x, ff.out.z);
+      g.box(x, yy, z, 0.8, 0.6, 0.3, yaw, ac);
     }
     if (rng.chance(0.5)) {
       const a = (rng.chance(0.5) ? 0.46 : -0.46) * ff.width;
@@ -724,7 +730,8 @@ function storefront(g: GeoBuilder, b: Bld, rng: Rng, side: Side): void {
     x: f.mid.x + f.along.x * (w / 2) + f.out.x * 0.06,
     z: f.mid.z + f.along.z * (w / 2) + f.out.z * 0.06,
   };
-  const shop = glow(rng.chance(0.75) ? NEON.windowWarm.hex : NEON.windowCool.hex, 1.15, true);
+  // Warm interiors only (cream / amber); HDR kept under the bloom threshold.
+  const shop = glow(rng.chance(0.55) ? NEON.windowWarm.hex : NEON.windowAmber.hex, 0.6, true);
   shop.seed = b.seed01;
   shop.windowY = t.y0 + 0.15;
   g.wall(a.x, a.z, c.x, c.z, t.y0 + 0.15, t.y0 + gh - 1.0, 0, shop);
@@ -917,9 +924,12 @@ function warehouseRoof(g: GeoBuilder, b: Bld): void {
 function gable(g: GeoBuilder, a: V3, c: V3, top: V3, s: Style): void {
   const n = edgeNormal({ x: a[0], z: a[2] }, { x: c[0], z: c[2] });
   const N: V3 = [n.x, 0, n.z];
+  // Real face coordinate u (m along a → c) so windowed styles work on the triangle too.
+  const len = Math.hypot(c[0] - a[0], c[2] - a[2]) || 1;
+  const uTop = ((top[0] - a[0]) * (c[0] - a[0]) + (top[2] - a[2]) * (c[2] - a[2])) / len;
   const i0 = g.vertex(a, N, 0, s);
-  const i1 = g.vertex(c, N, 0, s);
-  const i2 = g.vertex(top, N, 0, s);
+  const i1 = g.vertex(c, N, len, s);
+  const i2 = g.vertex(top, N, uTop, s);
   g.tri(i0, i1, i2);
 }
 
@@ -1062,7 +1072,7 @@ export function roofTopKind(
   const top = spec.tiers[spec.tiers.length - 1];
   if (!top || top.shape === 'cylinder' || spec.spireH > 0 || spec.h < 90) return 'flat';
   if (!ROOF_ARCHETYPES.has(spec.archetype)) return 'flat';
-  const r = hash01(spec.seed + 21);
+  const r = seeded01(spec.seed + 21);
   return r < 0.3 ? 'wedge' : r < 0.7 ? 'lattice' : 'flat';
 }
 
@@ -1118,7 +1128,7 @@ function latticeCrown(g: GeoBuilder, b: Bld, lv: 0 | 1 | 2): void {
   const { spec } = b;
   const t = spec.tiers[spec.tiers.length - 1];
   if (!t) return;
-  const h = 8 + hash01(spec.seed + 23) * 8;
+  const h = 8 + seeded01(spec.seed + 23) * 8;
   const steel = plain(MATERIAL.bracing, 0.5);
   const o = rectOutline(t.x, t.z, t.w - 0.6, t.d - 0.6, spec.rotY);
   const n = o.pts.length;

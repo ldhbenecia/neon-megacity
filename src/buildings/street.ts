@@ -5,7 +5,7 @@ import { MATERIAL } from '../core/palette';
 import { terrainHeight } from '../city/layout';
 import type { Road, StreetSlot } from '../city/types';
 import { UNIT_ICO, type GeoBuilder, type V3 } from './builder';
-import { hash01, scaleHex, stairSteps } from './params';
+import { seeded01, scaleHex, stairSteps } from './params';
 import { plain } from './shapes';
 
 /** Street tree: 0.3 m trunk, two low-poly crowns 4-6 m across (6.2). */
@@ -78,34 +78,41 @@ export function stair(g: GeoBuilder, r: Road): void {
       riserS,
     );
   }
-  // Side walls (low concrete parapets, the stair cut into the slope).
+  // Side walls (low concrete parapets, the stair cut into the slope): 0.2 m thick with a coping.
   const wallS = plain(MATERIAL.retainingWall, 0.9);
+  const capS = plain(scaleHex(MATERIAL.retainingWall, 1.25), 0.85);
   const segs = Math.max(1, Math.ceil(len / 4));
+  const thick = 0.2;
+  const top = 0.9;
   for (const side of [-1, 1]) {
+    const inner = hw + 0.05;
+    const outer = inner + thick;
+    const P = (s: number, off: number, dy: number): V3 => {
+      const y = ya + ((yb - ya) * s) / len;
+      return [a.x + dx * s + px * off * side, y + dy, a.z + dz * s + pz * off * side];
+    };
+    const nOut: V3 = [px * side, 0, pz * side];
+    const nIn: V3 = [-px * side, 0, -pz * side];
     for (let k = 0; k < segs; k++) {
       const s0 = (len * k) / segs;
       const s1 = (len * (k + 1)) / segs;
-      const off = hw + 0.15;
-      const x0 = a.x + dx * s0 + px * off * side;
-      const z0 = a.z + dz * s0 + pz * off * side;
-      const x1 = a.x + dx * s1 + px * off * side;
-      const z1 = a.z + dz * s1 + pz * off * side;
-      const y0 = ya + ((yb - ya) * s0) / len;
-      const y1 = ya + ((yb - ya) * s1) / len;
-      const n3: V3 = [px * side, 0, pz * side];
-      const nIn: V3 = [-px * side, 0, -pz * side];
-      const top = 0.9;
-      // Outer and inner faces, then the coping.
-      const A: V3 = [x0, y0 - 1, z0];
-      const B: V3 = [x1, y1 - 1, z1];
-      const C: V3 = [x1, y1 + top, z1];
-      const D: V3 = [x0, y0 + top, z0];
+      // Outer face (away from the stair), inner face (toward it), coping on top.
+      const o0 = P(s0, outer, -1);
+      const o1 = P(s1, outer, -1);
+      const o2 = P(s1, outer, top);
+      const o3 = P(s0, outer, top);
+      const i0 = P(s0, inner, -1);
+      const i1 = P(s1, inner, -1);
+      const i2 = P(s1, inner, top);
+      const i3 = P(s0, inner, top);
       if (side > 0) {
-        g.quad(A, B, C, D, n3, [0, 0, 0, 0], wallS);
-        g.quad(B, A, D, C, nIn, [0, 0, 0, 0], wallS);
+        g.quad(o0, o1, o2, o3, nOut, [0, 0, 0, 0], wallS);
+        g.quad(i1, i0, i3, i2, nIn, [0, 0, 0, 0], wallS);
+        g.quad(i3, o3, o2, i2, [0, 1, 0], [0, 0, 0, 0], capS);
       } else {
-        g.quad(B, A, D, C, n3, [0, 0, 0, 0], wallS);
-        g.quad(A, B, C, D, nIn, [0, 0, 0, 0], wallS);
+        g.quad(o1, o0, o3, o2, nOut, [0, 0, 0, 0], wallS);
+        g.quad(i0, i1, i2, i3, nIn, [0, 0, 0, 0], wallS);
+        g.quad(i2, o2, o3, i3, [0, 1, 0], [0, 0, 0, 0], capS);
       }
     }
   }
@@ -134,7 +141,7 @@ export function alleyRetaining(g: GeoBuilder, r: Road): void {
   const capS = plain(scaleHex(MATERIAL.retainingWall, 1.25), 0.85);
   const panels = Math.floor(len / 6);
   for (let k = 0; k < panels; k++) {
-    const h = hash01(r.id * 131 + k);
+    const h = seeded01(r.id * 131 + k);
     if (h < 0.25) continue; // gaps: house entrances, steps
     const s0 = k * 6 + 0.2;
     const s1 = s0 + 5.6;

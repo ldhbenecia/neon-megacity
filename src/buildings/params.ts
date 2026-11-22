@@ -1,6 +1,7 @@
 // Pure, side-effect-free parameters for the buildings module (ART_DIRECTION 3.4, 4.1-4.5).
 // Everything here is unit tested in tests/buildings.test.ts; geometry code only consumes it.
 import { WINDOW_LIT } from '../core/palette';
+import { createRng } from '../core/random';
 import type { Archetype, BuildingSpec, DistrictKind, Side } from '../city/types';
 
 // ---------------------------------------------------------------------------
@@ -246,13 +247,9 @@ export function cylinderSegments(level: 0 | 1 | 2): number {
 // ---------------------------------------------------------------------------
 // Small deterministic helpers.
 
-/** Integer hash → [0, 1). */
-export function hash01(n: number): number {
-  let h = Math.imul(n ^ 0x9e3779b9, 0x85ebca6b);
-  h ^= h >>> 13;
-  h = Math.imul(h, 0xc2b2ae35);
-  h ^= h >>> 16;
-  return (h >>> 0) / 4294967296;
+/** One deterministic draw in [0, 1) for a derived seed (`createRng(seed).next()`). */
+export function seeded01(seed: number): number {
+  return createRng(seed).next();
 }
 
 /** Linear interpolation of two sRGB hex colors, returned as a hex. */

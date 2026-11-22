@@ -6,7 +6,7 @@
 //   normal    vec3
 //   color     vec3  albedo (or light color for FACADE.emissive), linear
 //   aFace     vec2  (u along the face in m, y in m above the window start)
-//   aWin      vec4  (cellW, cellH, winW, winH) in m; for FACADE.dong: (number, digits, 0, 0)
+//   aWin      vec4  (cellW, cellH, winW, winH) in m; for FACADE.dong: (number, digits, height, 0)
 //   aInfo     vec4  (type * 2 + storefront, seed 0..1, lit factor, param)
 import * as THREE from 'three';
 import type { FacadeType } from './params';

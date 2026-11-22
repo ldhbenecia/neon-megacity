@@ -29,7 +29,8 @@ import {
   stairSteps,
   windowStyle,
 } from '../src/buildings/params';
-import { buildRoads, buildSidewalks, paveRect } from '../src/buildings/roads';
+import { buildRoads, buildSidewalks, paveRect, puddleData } from '../src/buildings/roads';
+import { alleyRetaining, stair } from '../src/buildings/street';
 import { rectOutline, shoelace, circleOutline } from '../src/buildings/shapes';
 import { WINDOW_LIT } from '../src/core/palette';
 
@@ -250,6 +251,28 @@ describe('archetype geometry', () => {
     }
   });
 
+  it('opposite faces get different window seeds', () => {
+    const spec = byArchetype.get('officeSlab')![0]!;
+    const T = targets();
+    emitBuilding(spec, T);
+    const g = T.l1.build()!;
+    const info = g.getAttribute('aInfo');
+    const N = g.getAttribute('normal');
+    const seedFor = (nx: number, nz: number): number | undefined => {
+      for (let i = 0; i < info.count; i++) {
+        if (Math.floor(info.getX(i) / 2) === 0) continue;
+        if (Math.abs(N.getX(i) - nx) < 0.05 && Math.abs(N.getZ(i) - nz) < 0.05) return info.getY(i);
+      }
+      return undefined;
+    };
+    const px = sideNormal('px', spec.rotY);
+    const a = seedFor(px.x, px.z);
+    const b = seedFor(-px.x, -px.z);
+    expect(a).toBeDefined();
+    expect(b).toBeDefined();
+    expect(a).not.toBe(b);
+  });
+
   it('packs facade parameters losslessly into half floats', () => {
     const spec = byArchetype.get('apartmentSlab')![0]!;
     const T = targets();
@@ -302,6 +325,36 @@ describe('archetype geometry', () => {
 });
 
 describe('roads and sidewalks', () => {
+  it('puddle / grain texture tiles without a seam', () => {
+    const N = 256;
+    const d = puddleData(2077, N);
+    for (const ch of [0, 1]) {
+      // Difference across the wrap (last column → first) vs. between neighbouring columns.
+      let wrap = 0;
+      let inner = 0;
+      for (let y = 0; y < N; y++) {
+        const at = (x: number): number => d[(y * N + x) * 4 + ch]!;
+        wrap += Math.abs(at(N - 1) - at(0));
+        inner += Math.abs(at(N / 2) - at(N / 2 + 1));
+      }
+      expect(wrap).toBeLessThan(inner * 3 + N * 2);
+    }
+    let puddle = 0;
+    for (let i = 0; i < N * N; i++) if (d[i * 4]! > 127) puddle++;
+    const cover = puddle / (N * N);
+    expect(cover).toBeGreaterThan(0.03);
+    expect(cover).toBeLessThan(0.35);
+  });
+
+  it('stairs and retaining walls are wound outward', () => {
+    const g = new GeoBuilder(0, 0);
+    for (const r of LAYOUT.roads.filter((x) => x.kind === 'stair').slice(0, 10)) stair(g, r);
+    for (const r of LAYOUT.roads.filter((x) => x.district === 'hillside').slice(0, 40)) {
+      alleyRetaining(g, r);
+    }
+    expect(windingAgreement(g.build()!)).toBeGreaterThan(0.99);
+  });
+
   it('road and sidewalk tops face up', () => {
     expect(windingAgreement(buildRoads(LAYOUT))).toBeGreaterThan(0.99);
     expect(windingAgreement(buildSidewalks(LAYOUT))).toBeGreaterThan(0.99);

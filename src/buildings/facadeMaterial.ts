@@ -137,20 +137,25 @@ const FRAG_MAIN = /* glsl */ `
         fAlbedo = vec3(0.09) * (0.75 + 0.25 * fpulse(f.y * 6.0, 0.0, 0.5, fwidth(f.y * 6.0)));
         g = 0.0;
       } else {
-        g *= (0.55 + 0.5 * hb) * mull;
-        // Display counter, shelves (some bays), and dark silhouettes of goods / people.
-        g *= mix(0.35, 1.0, smoothstep(0.85, 1.0, f.y));
+        g *= (0.6 + 0.4 * hb) * mull;
+        // Depth: a warm light pool in the middle of each bay, dark corners at the back.
+        float side = abs(bx - 0.5) * 2.0;
+        g *= 0.5 + 0.5 * (1.0 - side * side);
+        // Ceiling lights: bright at the top, falling off toward the floor; dark display counter.
+        g *= mix(0.22, 1.0, smoothstep(0.3, 2.6, f.y));
+        g *= mix(0.45, 1.0, smoothstep(0.85, 1.0, f.y));
+        // Shelves on some bays, dark silhouettes of goods / people on all.
         float shelves = step(0.55, hb) * step(1.0, f.y);
         g *= 1.0 - shelves * 0.45 * fpulse(f.y / 0.45, 0.0, 0.18, fwidth(f.y / 0.45));
         float sx = floor(f.x / 0.7);
         float sh = fhash(vec2(sx, fSeed * 41.0 + bay));
-        g *= 1.0 - 0.7 * step(0.72, sh) * step(f.y, 0.6 + 1.3 * fract(sh * 13.0));
-        g *= 0.8 + 0.2 * smoothstep(0.0, 2.6, f.y);
-        g *= 0.85 + 0.15 * step(0.12, abs(bx - 0.5));
-        fAlbedo = vec3(0.02);
+        g *= 1.0 - 0.75 * step(0.68, sh) * step(f.y, 0.6 + 1.3 * fract(sh * 13.0));
+        fAlbedo = vec3(0.015);
       }
       fRough = 0.15;
-      fEmit = diffuseColor.rgb * g * dayDim;
+      // Cream to amber per bay.
+      vec3 tint = vec3(1.0, 0.86 + 0.14 * hb, 0.68 + 0.3 * hb);
+      fEmit = diffuseColor.rgb * tint * g * dayDim;
     } else {
       // LED segments (crowns, skybridge mullions) instead of a flat strip.
       float seg = fpulse(f.x / 1.5, 0.12, 0.88, fwidth(f.x / 1.5));
@@ -264,7 +269,7 @@ const FRAG_MAIN = /* glsl */ `
       mask = 0.0;
       if (fShop > 0.5) {
         float b = fhash(vec2(floor(f.x / 3.2), fSeed * 7.0));
-        fEmit = uShop * (0.5 + 0.6 * b) * step(0.15, b) * dayDim * smoothstep(-0.6, -1.2, f.y);
+        fEmit = uShop * (0.3 + 0.35 * b) * step(0.15, b) * dayDim * (1.0 - smoothstep(-1.2, -0.6, f.y));
       }
     }
     vec3 glass = vec3(0.012, 0.016, 0.02);
@@ -296,7 +301,7 @@ export function createFacadeMaterial(): {
     },
     uWhite: { value: lin(NEON.neonWhite.hex) },
     uDong: { value: lin(MATERIAL.dongNumber) },
-    uShop: { value: lin(NEON.windowWarm.hex) },
+    uShop: { value: lin(NEON.windowAmber.hex) },
   };
   const material = new THREE.MeshStandardMaterial({
     vertexColors: true,
