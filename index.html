@@ -454,62 +454,172 @@
     </div>
     <div id="app"></div>
     <div id="hud">
-      <header class="hud-head">
-        <div class="hud-title">RAMHA <span>//</span> 嵐河</div>
-        <div class="hud-meta">
-          <span id="clock">--:--</span>
-          <span id="hud-mode" class="hud-mode">ORBIT</span>
+      <div class="hud-brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span class="brand-name">RAMHA <span class="brand-sep">//</span> 嵐河</span>
+        <span id="hud-mode" class="hud-mode" hidden></span>
+      </div>
+
+      <button
+        type="button"
+        id="panel-toggle"
+        class="panel-toggle"
+        aria-expanded="false"
+        aria-controls="panel"
+        aria-label="도시 설정 열기"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 7h10M18 7h2M4 17h4M12 17h8" />
+          <circle cx="16" cy="7" r="2" />
+          <circle cx="10" cy="17" r="2" />
+        </svg>
+      </button>
+
+      <section id="panel" class="panel" aria-label="도시 설정" hidden>
+        <div class="panel-group">
+          <h2 class="panel-label" id="weather-label">날씨</h2>
+          <div class="segmented" role="radiogroup" aria-labelledby="weather-label">
+            <button type="button" role="radio" data-rain="0" aria-checked="false">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M7 16a4 4 0 0 1 .5-7.97A5.5 5.5 0 0 1 18 9.5a3.5 3.5 0 0 1-.5 6.5Z" />
+              </svg>
+              맑음
+            </button>
+            <button type="button" role="radio" data-rain="0.35" aria-checked="false">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M7 13a4 4 0 0 1 .5-7.97A5.5 5.5 0 0 1 18 6.5a3.5 3.5 0 0 1-.5 6.5Z" />
+                <path d="M9 17l-1 2M14 17l-1 2" />
+              </svg>
+              비
+            </button>
+            <button type="button" role="radio" data-rain="1" aria-checked="false">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M7 12a4 4 0 0 1 .5-7.97A5.5 5.5 0 0 1 18 5.5a3.5 3.5 0 0 1-.5 6.5Z" />
+                <path d="M8 15l-1.5 3M12 15l-1.5 3M16 15l-1.5 3M10 19l-1 2M14 19l-1 2" />
+              </svg>
+              폭우
+            </button>
+          </div>
         </div>
-      </header>
-      <details class="hud-help" id="hud-help" open>
-        <summary>조작법</summary>
-        <dl class="help-mouse">
-          <dt>드래그</dt>
-          <dd>회전</dd>
-          <dt>우클릭 · <kbd>Shift</kbd>+드래그</dt>
-          <dd>이동</dd>
-          <dt>휠</dt>
-          <dd>커서 쪽으로 줌</dd>
-          <dt>클릭</dt>
-          <dd>건물로 날아가기</dd>
-          <dt>더블클릭</dt>
-          <dd>그 지점으로 이동</dd>
-        </dl>
-        <dl class="help-touch">
-          <dt>한 손가락</dt>
-          <dd>회전</dd>
-          <dt>두 손가락</dt>
-          <dd>줌 · 이동</dd>
-          <dt>탭</dt>
-          <dd>건물 정보</dd>
-          <dt>더블탭</dt>
-          <dd>건물로 날아가기</dd>
-        </dl>
-        <dl class="help-keys">
-          <dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt>
-          <dd>이동</dd>
-          <dt><kbd>Q</kbd><kbd>E</kbd></dt>
-          <dd>하강 · 상승</dd>
-          <dt><kbd>Shift</kbd></dt>
-          <dd>3배 빠르게</dd>
-          <dt><kbd>F</kbd></dt>
-          <dd>비행 모드 (마우스로 시선)</dd>
-          <dt><kbd>1</kbd>–<kbd>8</kbd></dt>
-          <dd>카메라 프리셋</dd>
-          <dt><kbd>C</kbd></dt>
-          <dd>시네마틱 카메라</dd>
-          <dt><kbd>R</kbd></dt>
-          <dd>처음 위치</dd>
-          <dt><kbd>H</kbd></dt>
-          <dd>HUD 숨기기</dd>
-          <dt><kbd>Esc</kbd></dt>
-          <dd>비행 모드 · 선택 해제</dd>
-        </dl>
-      </details>
-      <aside id="hud-card" class="hud-card" aria-live="polite" hidden>
+
+        <div class="panel-group">
+          <h2 class="panel-label" id="preset-label">카메라 위치</h2>
+          <div class="chips" role="group" aria-labelledby="preset-label" id="preset-chips"></div>
+        </div>
+
+        <div class="panel-group panel-switches">
+          <button type="button" class="switch" role="switch" aria-checked="false" id="sw-cinematic">
+            <span class="switch-text">시네마틱 카메라 <kbd>C</kbd></span>
+            <span class="switch-track" aria-hidden="true"></span>
+          </button>
+          <button type="button" class="switch" role="switch" aria-checked="false" id="sw-fly">
+            <span class="switch-text">비행 모드 <kbd>F</kbd></span>
+            <span class="switch-track" aria-hidden="true"></span>
+          </button>
+        </div>
+
+        <button type="button" class="panel-link" id="open-help">조작법 보기 <kbd>?</kbd></button>
+      </section>
+
+      <div class="timeline" id="timeline">
+        <button
+          type="button"
+          class="tl-play"
+          id="tl-play"
+          aria-label="시간 흐름 멈추기"
+          aria-pressed="true"
+        >
+          <svg class="i-pause" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M9 6v12M15 6v12" />
+          </svg>
+          <svg class="i-play" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M8.5 5.5v13l10-6.5Z" />
+          </svg>
+        </button>
+        <span id="clock" class="tl-clock">--:--</span>
+        <div class="tl-track">
+          <input
+            type="range"
+            id="tl-range"
+            min="0"
+            max="1440"
+            step="5"
+            value="0"
+            aria-label="시각"
+          />
+          <div class="tl-ticks">
+            <button type="button" data-time="0.0833" style="--at: 8.33%">밤</button>
+            <button type="button" data-time="0.5" style="--at: 50%">낮</button>
+            <button type="button" data-time="0.776" style="--at: 77.6%">노을</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="hud-hint" class="hint" role="note" hidden>
+        <span><b>드래그</b> 둘러보기</span>
+        <span><b>휠</b> 커서 쪽으로 줌</span>
+        <span><b>클릭</b> 건물로 날아가기</span>
+        <span class="hint-keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 이동</span>
+        <span><kbd>?</kbd> 조작법</span>
+      </div>
+
+      <div id="help" class="help" role="dialog" aria-labelledby="help-title" hidden>
+        <div class="help-head">
+          <h2 id="help-title">조작법</h2>
+          <button type="button" class="icon-btn" id="help-close" aria-label="조작법 닫기">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17" /></svg>
+          </button>
+        </div>
+        <div class="help-cols">
+          <dl class="help-mouse">
+            <dt>드래그</dt>
+            <dd>둘러보기</dd>
+            <dt>우클릭 드래그</dt>
+            <dd>지면을 따라 이동</dd>
+            <dt>휠</dt>
+            <dd>커서가 가리키는 곳으로 줌</dd>
+            <dt>클릭</dt>
+            <dd>건물로 날아가기</dd>
+            <dt>더블클릭</dt>
+            <dd>그 지점으로 이동</dd>
+          </dl>
+          <dl class="help-touch">
+            <dt>한 손가락</dt>
+            <dd>둘러보기</dd>
+            <dt>두 손가락</dt>
+            <dd>줌과 이동</dd>
+            <dt>탭</dt>
+            <dd>건물 정보</dd>
+            <dt>두 번 탭</dt>
+            <dd>건물로 날아가기</dd>
+          </dl>
+          <dl class="help-keys">
+            <dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt>
+            <dd>앞뒤좌우 이동</dd>
+            <dt><kbd>Q</kbd><kbd>E</kbd></dt>
+            <dd>내려가기, 올라가기</dd>
+            <dt><kbd>Shift</kbd></dt>
+            <dd>세 배 빠르게</dd>
+            <dt><kbd>F</kbd></dt>
+            <dd>비행 모드, 마우스로 시선</dd>
+            <dt><kbd>1</kbd>~<kbd>8</kbd></dt>
+            <dd>카메라 위치</dd>
+            <dt><kbd>C</kbd></dt>
+            <dd>시네마틱 카메라</dd>
+            <dt><kbd>R</kbd></dt>
+            <dd>처음 위치로</dd>
+            <dt><kbd>H</kbd></dt>
+            <dd>화면 정보 숨기기</dd>
+            <dt><kbd>Esc</kbd></dt>
+            <dd>비행 모드 끄기, 선택 해제</dd>
+          </dl>
+        </div>
+      </div>
+
+      <aside id="hud-card" class="card" aria-live="polite" hidden>
         <div class="card-zone" data-field="zone"></div>
-        <div class="card-name" data-field="name"></div>
-        <div class="card-sub" data-field="sub"></div>
+        <h2 class="card-name" data-field="name"></h2>
+        <p class="card-sub" data-field="sub"></p>
         <dl class="card-grid">
           <dt>높이</dt>
           <dd data-field="height"></dd>
@@ -518,13 +628,20 @@
           <dt>형태</dt>
           <dd data-field="archetype"></dd>
         </dl>
-        <div class="card-hint"><kbd>Esc</kbd> 선택 해제</div>
+        <button type="button" class="icon-btn card-close" id="card-close" aria-label="선택 해제">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17" /></svg>
+        </button>
       </aside>
-      <div id="hud-toast" class="hud-toast" aria-live="polite"></div>
-      <div class="hud-touch" aria-label="터치 비행 버튼">
-        <button type="button" data-hold="up" aria-label="상승">▲</button>
-        <button type="button" data-hold="down" aria-label="하강">▼</button>
-        <button type="button" data-action="preset" aria-label="다음 프리셋">◎</button>
+
+      <div id="hud-toast" class="toast" aria-live="polite"></div>
+
+      <div class="touch-pad" aria-label="높이 조절">
+        <button type="button" data-hold="up" aria-label="올라가기">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15l6-6 6 6" /></svg>
+        </button>
+        <button type="button" data-hold="down" aria-label="내려가기">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+        </button>
       </div>
     </div>
     <pre id="hud-stats" class="hud-stats" hidden></pre>

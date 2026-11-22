@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { LAYOUT } from '../src/city/layout';
+import { RAIN_STEPS, rainStep } from '../src/ux/controls';
 import { AdaptiveDpr } from '../src/ux/dpr';
 import { ARCHETYPE_KO, buildingCard } from '../src/ux/hud';
 import {
@@ -81,10 +82,15 @@ describe('adaptive DPR (11)', () => {
 
 describe('parseUxQuery', () => {
   it('defaults', () => {
-    expect(parseUxQuery('')).toEqual({ hud: true, stats: false });
+    expect(parseUxQuery('')).toEqual({ hud: true, stats: false, debug: false });
   });
   it('parses preset, hud and stats', () => {
-    expect(parseUxQuery('?preset=3&hud=0&stats=1')).toEqual({ preset: 3, hud: false, stats: true });
+    expect(parseUxQuery('?preset=3&hud=0&stats=1&debug')).toEqual({
+      preset: 3,
+      hud: false,
+      stats: true,
+      debug: true,
+    });
     expect(parseUxQuery('?stats').stats).toBe(true);
     expect(parseUxQuery('?stats=0').stats).toBe(false);
     expect(parseUxQuery('?preset=9').preset).toBeUndefined();
@@ -101,5 +107,15 @@ describe('building card (8.3)', () => {
     expect(card.floors).toBe(`${b.floors}층`);
     expect(card.archetype).toBe(ARCHETYPE_KO[b.archetype]);
     expect(card.zone.length).toBeGreaterThan(0);
+  });
+});
+
+describe('weather steps', () => {
+  it('maps any rain value to the nearest of clear / rain / storm', () => {
+    expect(RAIN_STEPS).toEqual([0, 0.35, 1]);
+    expect(rainStep(0)).toBe(0);
+    expect(rainStep(0.1)).toBe(0);
+    expect(rainStep(0.4)).toBe(1);
+    expect(rainStep(0.8)).toBe(2);
   });
 });

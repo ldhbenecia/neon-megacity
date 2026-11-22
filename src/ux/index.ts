@@ -3,12 +3,14 @@
 import type { CameraPreset } from '../core/query';
 import type { Ctx } from '../core/types';
 import { createCameraRig, type CameraRig, type RigDebug } from './cameraRig';
+import { createControls } from './controls';
 import { createHud, type Hud } from './hud';
 import { createPerf, type FrameStats, type Perf } from './perf';
 import { camPose, DEFAULT_PRESET, rigPreset } from './presets';
 import { parseUxQuery } from './query';
 
 export { createLoader, nextFrame, type Loader } from './loader';
+export { parseUxQuery } from './query';
 
 export interface Ux {
   rig: CameraRig;
@@ -31,8 +33,6 @@ export interface Ux {
 export interface UxOptions {
   /** `?cam=` preset (wins over `?preset=`). */
   cam?: CameraPreset;
-  /** Hide lil-gui when the HUD is hidden (false with ?nogui, which keeps it hidden). */
-  guiFollowsHud?: boolean;
   /** Re-run resize handlers (after an adaptive DPR change). */
   resize: () => void;
 }
@@ -43,22 +43,21 @@ const POWER_S = 1.2;
 export function initUx(ctx: Ctx, opts: UxOptions): Ux {
   const q = parseUxQuery(window.location.search);
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const deterministic = opts.cam !== undefined || q.preset !== undefined;
+  let deselect = (): void => undefined;
   const hud = createHud({
     visible: q.hud,
-    onToggle: (v) => {
-      if (opts.guiFollowsHud !== false) {
-        if (v) ctx.gui.show();
-        else ctx.gui.hide();
-      }
-    },
+    onDeselect: () => deselect(),
   });
   // Deterministic starts (?cam / ?preset) skip the boot dolly-in.
   const initial = opts.cam ? camPose(opts.cam) : rigPreset(q.preset ?? DEFAULT_PRESET);
   const rig = createCameraRig(ctx, {
     initial,
-    dollyIn: !opts.cam && q.preset === undefined,
+    dollyIn: !deterministic,
     hud,
   });
+  deselect = () => rig.select(null);
+  const controls = createControls(ctx, rig, hud);
   const perf = createPerf(ctx, { overlay: q.stats, resize: opts.resize });
 
   if (q.stats) {
@@ -80,6 +79,8 @@ export function initUx(ctx: Ctx, opts: UxOptions): Ux {
     powerOn() {
       ctx.env.powerOn = 0;
       power = { t: 0 };
+      // Screenshot / test URLs pin the camera; keep their frames free of the intro hint.
+      if (!deterministic) hud.showHint();
     },
     beforeUpdate(dt, t) {
       if (power) {
@@ -96,6 +97,7 @@ export function initUx(ctx: Ctx, opts: UxOptions): Ux {
     },
     afterUpdate() {
       hud.update(ctx.env.timeOfDay);
+      controls.update();
     },
     frameStart() {
       perf.frameStart();
@@ -104,6 +106,7 @@ export function initUx(ctx: Ctx, opts: UxOptions): Ux {
       perf.frameEnd(dt);
     },
     dispose() {
+      controls.dispose();
       rig.dispose();
       hud.dispose();
       perf.dispose();

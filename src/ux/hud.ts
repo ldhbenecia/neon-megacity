@@ -5,13 +5,6 @@ import { clockMinutes, formatClock } from '../core/clock';
 
 export type RigMode = 'orbit' | 'fly' | 'cinematic' | 'flight';
 
-const MODE_LABEL: Record<RigMode, string> = {
-  orbit: 'ORBIT',
-  fly: 'FLY · ESC',
-  cinematic: 'CINEMATIC',
-  flight: 'FLIGHT',
-};
-
 export const ARCHETYPE_KO: Record<Archetype, string> = {
   setbackTower: '셋백 타워',
   cylinderTower: '원통 타워',
@@ -64,61 +57,88 @@ export interface Hud {
   showCard(b: BuildingSpec | null): void;
   toast(text: string): void;
   toggle(force?: boolean): boolean;
+  /** Open / close the controls help sheet (`?`). */
+  toggleHelp(force?: boolean): boolean;
+  readonly helpOpen: boolean;
+  /** Show the first-entry controls hint for a few seconds (called at power-on). */
+  showHint(): void;
   readonly visible: boolean;
   update(timeOfDay: number): void;
   dispose(): void;
 }
 
+/** First-entry hint stays this long (ms), unless the user starts moving. */
+const HINT_MS = 7000;
+
 export function createHud(opts: {
   visible: boolean;
-  /** Called when H toggles the HUD (main hides lil-gui too unless ?nogui). */
-  onToggle?: (visible: boolean) => void;
+  /** Close button on the card. */
+  onDeselect?: () => void;
 }): Hud {
   const root = document.getElementById('hud');
   const clockEl = document.getElementById('clock');
   const modeEl = document.getElementById('hud-mode');
   const card = document.getElementById('hud-card');
   const toastEl = document.getElementById('hud-toast');
-  const help = document.getElementById('hud-help');
+  const hint = document.getElementById('hud-hint');
+  const help = document.getElementById('help');
+  const helpClose = document.getElementById('help-close');
+  const cardClose = document.getElementById('card-close');
   let clockMins = -1;
   let mode: RigMode | null = null;
   let toastTimer = 0;
-  let cardTimer = 0;
+  let hintTimer = 0;
   let visible = true;
-
-  // Small screens start with the help folded so the city stays visible.
-  if (help instanceof HTMLDetailsElement && window.matchMedia('(max-width: 640px)').matches) {
-    help.open = false;
-  }
+  let helpReturn: HTMLElement | null = null;
 
   const field = (name: string, text: string): void => {
     const el = card?.querySelector<HTMLElement>(`[data-field="${name}"]`);
     if (el) el.textContent = text;
   };
+  const hideHint = (): void => {
+    clearTimeout(hintTimer);
+    if (hint) hint.hidden = true;
+  };
+  const onCardClose = (): void => opts.onDeselect?.();
+  const onHelpClose = (): void => {
+    hud.toggleHelp(false);
+  };
+  cardClose?.addEventListener('click', onCardClose);
+  helpClose?.addEventListener('click', onHelpClose);
 
   const hud: Hud = {
     get visible() {
       return visible;
     },
+    showHint() {
+      if (!hint) return;
+      hint.hidden = false;
+      clearTimeout(hintTimer);
+      hintTimer = window.setTimeout(hideHint, HINT_MS);
+    },
+    get helpOpen() {
+      return help ? help.hidden === false : false;
+    },
     setMode(m) {
       if (m === mode) return;
       mode = m;
       if (root) root.dataset.mode = m;
-      if (modeEl) modeEl.textContent = MODE_LABEL[m];
+      if (!modeEl) return;
+      // Only the non-default modes get a pill, with how to leave them.
+      const label = m === 'fly' ? '비행 모드 · Esc로 끄기' : m === 'cinematic' ? '시네마틱' : '';
+      modeEl.textContent = label;
+      modeEl.hidden = label === '';
+      if (m !== 'orbit' && m !== 'flight') hideHint();
     },
     showCard(b) {
       if (!card) return;
-      clearTimeout(cardTimer);
       if (!b) {
-        card.classList.remove('is-in');
-        cardTimer = window.setTimeout(() => (card.hidden = true), 260);
+        card.hidden = true;
         return;
       }
       const info = buildingCard(b);
       for (const k of Object.keys(info) as (keyof CardInfo)[]) field(k, info[k]);
       card.hidden = false;
-      // Next frame so the 0.25 s fade-in transition runs.
-      requestAnimationFrame(() => card.classList.add('is-in'));
     },
     toast(text) {
       if (!toastEl) return;
@@ -130,8 +150,23 @@ export function createHud(opts: {
     toggle(force) {
       visible = force ?? !visible;
       root?.classList.toggle('is-hidden', !visible);
-      opts.onToggle?.(visible);
       return visible;
+    },
+    toggleHelp(force) {
+      if (!help) return false;
+      const isOpen = help.hidden === false;
+      const open = force ?? !isOpen;
+      if (open === isOpen) return open;
+      help.hidden = !open;
+      if (open) {
+        hideHint();
+        helpReturn = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        helpClose?.focus({ preventScroll: true });
+      } else {
+        helpReturn?.focus({ preventScroll: true });
+        helpReturn = null;
+      }
+      return open;
     },
     update(timeOfDay) {
       // The clock only changes once per in-game minute; skip redundant DOM writes.
@@ -143,7 +178,9 @@ export function createHud(opts: {
     },
     dispose() {
       clearTimeout(toastTimer);
-      clearTimeout(cardTimer);
+      clearTimeout(hintTimer);
+      cardClose?.removeEventListener('click', onCardClose);
+      helpClose?.removeEventListener('click', onHelpClose);
     },
   };
   hud.toggle(opts.visible);

@@ -35,6 +35,10 @@ export interface CameraRig {
   readonly mode: RigMode;
   /** Fly to preset 1..8. */
   goPreset(key: number): void;
+  /** Last preset flown to, cleared once the user moves the camera. */
+  readonly preset: number | null;
+  setCinematic(on: boolean): void;
+  setFly(on: boolean): void;
   select(id: number | null, fly?: boolean): void;
   debug(): RigDebug;
   dispose(): void;
@@ -82,6 +86,10 @@ const _euler = new THREE.Euler(0, 0, 0, 'YXZ');
 const UP = new THREE.Vector3(0, 1, 0);
 
 const toV3 = (v: THREE.Vector3): Vec3 => ({ x: v.x, y: v.y, z: v.z });
+
+function isHudButton(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && target.closest('#hud button') !== null;
+}
 
 function isTyping(target: EventTarget | null): boolean {
   return (
@@ -211,8 +219,10 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
     flyTo(frameBuildingClear(LAYOUT, b, toV3(camera.position)), () => hud.showCard(b));
   };
 
+  let presetKey: number | null = null;
   const goPreset = (key: number): void => {
     const p = rigPreset(key);
+    presetKey = p.key;
     hud.toast(`프리셋 ${p.key} · ${p.name}`);
     flyTo(p);
   };
@@ -304,6 +314,10 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
     lastInput = elapsed;
     exitCinematic();
   };
+  /** The user steered the camera themselves: no preset is "current" any more. */
+  const steered = (): void => {
+    presetKey = null;
+  };
 
   // --- picking (click / tap only, never per pointer move) ---
   const raycaster = new THREE.Raycaster();
@@ -322,6 +336,7 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
   const onPointerDown = (e: PointerEvent): void => {
     markInput();
     cancelFlight();
+    steered();
     down = {
       id: e.pointerId,
       x: e.clientX,
@@ -391,6 +406,7 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
     e.stopPropagation();
     markInput();
     cancelFlight();
+    steered();
     const px = e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 400 : 1;
     const amount = Math.max(-0.6, Math.min(0.6, -e.deltaY * px * 0.0022 * controls.zoomSpeed));
     if (mode === 'fly') {
@@ -431,17 +447,24 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
 
   const onKeyDown = (e: KeyboardEvent): void => {
     if (isTyping(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
+    // Space / Enter belong to the focused HUD button, not the camera.
+    if (isHudButton(e.target) && (e.code === 'Space' || e.code === 'Enter')) return;
     markInput();
     const code = e.code;
     if (MOVE_KEYS.has(code) || code === 'ShiftLeft' || code === 'ShiftRight') {
       pressed.add(code);
       if (MOVE_KEYS.has(code)) {
         cancelFlight();
+        steered();
         e.preventDefault();
       }
       return;
     }
     if (e.repeat) return;
+    if (e.key === '?' || (code === 'Slash' && e.shiftKey)) {
+      hud.toggleHelp();
+      return;
+    }
     const digit = /^(?:Digit|Numpad)([1-8])$/.exec(code);
     if (digit) {
       goPreset(Number(digit[1]));
@@ -463,7 +486,8 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
         hud.toggle();
         break;
       case 'Escape':
-        if (mode === 'fly') exitFly();
+        if (hud.helpOpen) hud.toggleHelp(false);
+        else if (mode === 'fly') exitFly();
         else select(null);
         break;
     }
@@ -478,9 +502,8 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
   };
   const onBlur = (): void => pressed.clear();
 
-  // Touch buttons (8.6): hold ▲/▼ to climb/descend, ◎ cycles presets.
-  let presetCursor = DEFAULT_PRESET;
-  const touchRoot = document.querySelector('.hud-touch');
+  // Touch buttons (8.6): hold up / down to climb or descend.
+  const touchRoot = document.querySelector('.touch-pad');
   const onTouchButton = (e: PointerEvent): void => {
     const el = (e.target as HTMLElement | null)?.closest<HTMLElement>('button');
     if (!el) return;
@@ -492,10 +515,8 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
       cancelFlight();
       if (code) {
         pressed.add(code);
+        steered();
         el.setPointerCapture(e.pointerId);
-      } else if (el.dataset.action === 'preset') {
-        presetCursor = (presetCursor % rigPresets().length) + 1;
-        goPreset(presetCursor);
       }
     } else if (code) {
       pressed.delete(code);
@@ -696,6 +717,19 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
       camState.fly = mode === 'fly';
     },
     goPreset,
+    get preset() {
+      return presetKey;
+    },
+    setCinematic(on) {
+      lastInput = elapsed;
+      if (on) enterCinematic();
+      else exitCinematic();
+    },
+    setFly(on) {
+      lastInput = elapsed;
+      if (on && mode !== 'fly') enterFly();
+      else if (!on) exitFly();
+    },
     select,
     debug() {
       return {

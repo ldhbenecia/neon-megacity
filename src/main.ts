@@ -15,7 +15,7 @@ import * as buildings from './buildings/index';
 import * as infra from './infra/index';
 import * as neon from './neon/index';
 import * as atmosphere from './atmosphere/index';
-import { createLoader, initUx, nextFrame } from './ux/index';
+import { createLoader, initUx, nextFrame, parseUxQuery } from './ux/index';
 
 /**
  * Boot progress weights (ART_DIRECTION 9.2); all stages sum to 100:
@@ -68,9 +68,11 @@ async function boot(): Promise<void> {
   controls.maxPolarAngle = CAMERA_LIMITS.maxPolarAngle; // never go below the horizon
   controls.screenSpacePanning = false; // right-drag pans along the ground plane
 
+  // lil-gui is the developer panel: only with ?debug (and never with ?nogui). Regular users get
+  // the ux controls (time scrubber, weather, camera) instead.
   const gui = new GUI({ title: 'City Controls' });
   gui.close();
-  if (query.nogui) gui.hide();
+  if (query.nogui || !parseUxQuery(window.location.search).debug) gui.hide();
 
   const resizeHandlers: ((w: number, h: number) => void)[] = [];
   const resize = (): void => {
@@ -119,7 +121,6 @@ async function boot(): Promise<void> {
 
   const ux = initUx(ctx, {
     ...(query.cam ? { cam: query.cam } : {}),
-    guiFollowsHud: !query.nogui,
     resize,
   });
   loader.detail('buildings', `건물 ${LAYOUT.buildings.length.toLocaleString('ko-KR')}동 조립 완료`);
