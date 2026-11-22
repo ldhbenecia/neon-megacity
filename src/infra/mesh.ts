@@ -36,7 +36,6 @@ export const norm = (a: V3): V3 => {
   const l = len(a) || 1;
   return [a[0] / l, a[1] / l, a[2] / l];
 };
-const UP: V3 = [0, 1, 0];
 
 /** Frame for a path point with tangent `t`: lat is horizontal, up ⟂ both. */
 export function frameAt(p: V3, t: V3): Frame {
@@ -170,14 +169,6 @@ export class MeshData {
     this.quad(A[0] as V3, A[1] as V3, A[2] as V3, A[3] as V3, color);
     this.quad(B[3] as V3, B[2] as V3, B[1] as V3, B[0] as V3, color);
   }
-
-  append(other: MeshData): void {
-    const base = this.vertexCount;
-    for (const v of other.positions) this.positions.push(v);
-    for (const v of other.normals) this.normals.push(v);
-    for (const v of other.colors) this.colors.push(v);
-    for (const i of other.indices) this.indices.push(i + base);
-  }
 }
 
 function at(f: Frame, l: number, y: number): V3 {
@@ -187,5 +178,3 @@ function at(f: Frame, l: number, y: number): V3 {
     f.p[2] + f.lat[2] * l + f.up[2] * y,
   ];
 }
-
-export { UP };

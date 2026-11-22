@@ -1,10 +1,11 @@
 // Elevated highway decks, ramps, barriers, sound walls, lane paint, median lamps and their
 // static glow lines (ART_DIRECTION 2.5). Pure: reads the layout, writes InfraParts.
 import type { CatmullRomCurve3 } from 'three';
-import { highwayCurve, type Highway, type Layout } from '../city/layout';
+import { CITY, highwayCurve, type Highway } from '../city/layout';
+import { clamp } from '../city/math';
 import type { InfraColors } from './colors';
 import { framesAlong, frameAt, type Frame, type V3 } from './mesh';
-import type { InfraParts } from './parts';
+import { rotYForLateral, type InfraParts } from './parts';
 import {
   BARRIER,
   DECK_THICKNESS,
@@ -23,7 +24,7 @@ export const RING_STEP = 6;
 /** At-grade road slab: surface y comes from the layout, slab goes this far down. */
 const AT_GRADE_THICKNESS = 0.6;
 /** Two decks closer than this in height count as the same level (ramp junctions). */
-const SAME_LEVEL = 4;
+export const SAME_LEVEL = 4;
 /** Ramps sink this far below the parent deck where they overlap, to avoid z-fighting. */
 const OVERLAP_SINK = 0.06;
 const DASH = 6;
@@ -35,6 +36,8 @@ export interface DeckRing {
   /** Deck surface point (y possibly sunk under a parent deck). */
   p: V3;
   t: V3;
+  /** Sweep frame at (p, t), computed once and shared by every sweep over this ring. */
+  f: Frame;
   /** Arc length from the curve start (m). */
   s: number;
   /** Ramp ring fully inside another deck: not drawn. */
@@ -80,7 +83,8 @@ export function nearestOnPath(path: HwPath, x: number, z: number): { d: number; 
   if (x < path.minX - pad || x > path.maxX + pad || z < path.minZ - pad || z > path.maxZ + pad) {
     return { d: Infinity, y: 0 };
   }
-  let best = Infinity;
+  // Compare squared distances; one sqrt for the winner.
+  let best2 = Infinity;
   let y = 0;
   const pts = path.pts;
   for (let i = 0; i < pts.length - 1; i++) {
@@ -89,14 +93,16 @@ export function nearestOnPath(path: HwPath, x: number, z: number): { d: number; 
     const abx = b[0] - a[0];
     const abz = b[2] - a[2];
     const l2 = abx * abx + abz * abz || 1;
-    const t = Math.min(1, Math.max(0, ((x - a[0]) * abx + (z - a[2]) * abz) / l2));
-    const d = Math.hypot(x - (a[0] + abx * t), z - (a[2] + abz * t));
-    if (d < best) {
-      best = d;
+    const t = clamp(((x - a[0]) * abx + (z - a[2]) * abz) / l2, 0, 1);
+    const dx = x - (a[0] + abx * t);
+    const dz = z - (a[2] + abz * t);
+    const d2 = dx * dx + dz * dz;
+    if (d2 < best2) {
+      best2 = d2;
       y = a[1] + (b[1] - a[1]) * t;
     }
   }
-  return { d: best, y };
+  return { d: Math.sqrt(best2), y };
 }
 
 const isRaised = (hw: Highway): boolean => hw.kind !== 'atGrade';
@@ -144,6 +150,7 @@ export function deckRings(path: HwPath, others: readonly HwPath[]): DeckRing[] {
     return {
       p,
       t,
+      f,
       s: u * length,
       hidden,
       overlap,
@@ -169,22 +176,26 @@ export function runs<T>(items: readonly T[], keep: (item: T, i: number) => boole
   return out;
 }
 
-const framesOf = (rings: readonly DeckRing[]): Frame[] => rings.map((r) => frameAt(r.p, r.t));
+const framesOf = (rings: readonly DeckRing[]): Frame[] => rings.map((r) => r.f);
+const barrierOk =
+  (sgn: -1 | 1) =>
+  (r: DeckRing): boolean =>
+    sgn === -1 ? r.barrierL : r.barrierR;
+const ringAt = (rings: readonly DeckRing[], s: number, length: number): DeckRing | undefined =>
+  rings[Math.round((s / length) * (rings.length - 1))];
 
 /** Which side gets a sound wall: the city side of hw-river-north, the park side of hw-south. */
-export function soundWallSide(hw: Highway): -1 | 1 | 0 {
+function soundWallSide(hw: Highway): -1 | 0 {
   // Both riverside highways run west → east, so their left (l < 0) is north.
-  if (hw.id === 'hw-river-north') return -1;
-  if (hw.id === 'hw-south') return -1;
-  return 0;
+  return hw.id === 'hw-river-north' || hw.id === 'hw-south' ? -1 : 0;
 }
 
-export function buildHighway(
+function buildHighway(
   path: HwPath,
   others: readonly HwPath[],
   parts: InfraParts,
   c: InfraColors,
-): DeckRing[] {
+): void {
   const { hw } = path;
   const rings = deckRings(path, others);
   const half = hw.width / 2;
@@ -205,8 +216,7 @@ export function buildHighway(
   // Edge barriers.
   for (const sgn of [-1, 1] as const) {
     const edges = barrierEdges(sgn * half, sgn, c.concrete);
-    const ok = (r: DeckRing): boolean => (sgn === -1 ? r.barrierL : r.barrierR);
-    for (const run of runs(rings, ok)) parts.concrete.sweep(framesOf(run), edges);
+    for (const run of runs(rings, barrierOk(sgn))) parts.concrete.sweep(framesOf(run), edges);
   }
   if (isDivided(hw)) {
     for (const run of runs(rings, (r) => !r.hidden)) {
@@ -220,8 +230,7 @@ export function buildHighway(
     const lo = wall * half;
     const li = wall * (half - SOUND_WALL.t);
     const [l0, l1] = lo < li ? [lo, li] : [li, lo];
-    const ok = (r: DeckRing): boolean => (wall === -1 ? r.barrierL : r.barrierR);
-    for (const run of runs(rings, ok)) {
+    for (const run of runs(rings, barrierOk(wall))) {
       const frames = framesOf(run);
       parts.concrete.sweep(frames, boxEdges(l0, l1, BARRIER.h - 0.05, SOUND_WALL.h, c.concrete));
       parts.glow.sweep(
@@ -235,8 +244,7 @@ export function buildHighway(
   if (hw.id === 'hw-ring') {
     for (const sgn of [-1, 1] as const) {
       const l0 = sgn === 1 ? half : -half - 0.06;
-      const ok = (r: DeckRing): boolean => (sgn === -1 ? r.barrierL : r.barrierR);
-      for (const run of runs(rings, ok)) {
+      for (const run of runs(rings, barrierOk(sgn))) {
         parts.glow.sweep(framesOf(run), boxEdges(l0, l0 + 0.06, -0.5, -0.36, c.ringLine));
       }
     }
@@ -244,7 +252,6 @@ export function buildHighway(
 
   buildMarkings(path, rings, parts, c);
   if (isDivided(hw) && isRaised(hw)) buildLamps(path, rings, parts, c);
-  return rings;
 }
 
 /** Lane paint: solid lines as strips over the kept rings, dashes every DASH + DASH_GAP m. */
@@ -252,6 +259,7 @@ function buildMarkings(path: HwPath, rings: DeckRing[], parts: InfraParts, c: In
   const { hw, curve } = path;
   const length = curve.getLength();
   const paintable = (r: DeckRing): boolean => !r.hidden && !r.overlap;
+  const paintRuns = runs(rings, paintable).map(framesOf);
   for (const line of markingLines(hw)) {
     const color = line.yellow ? c.paintYellow : c.paintWhite;
     const edge = [
@@ -262,11 +270,11 @@ function buildMarkings(path: HwPath, rings: DeckRing[], parts: InfraParts, c: In
       },
     ];
     if (!line.dashed) {
-      for (const run of runs(rings, paintable)) parts.markings.sweep(framesOf(run), edge);
+      for (const frames of paintRuns) parts.markings.sweep(frames, edge);
       continue;
     }
     for (let s = DASH_GAP / 2; s + DASH < length; s += DASH + DASH_GAP) {
-      const r = rings[Math.round((s / length) * (rings.length - 1))];
+      const r = ringAt(rings, s, length);
       if (!r || !paintable(r)) continue;
       const pts: V3[] = [s, s + DASH / 2, s + DASH].map((d) => {
         const v = curve.getPointAt(d / length);
@@ -285,11 +293,11 @@ function buildLamps(path: HwPath, rings: DeckRing[], parts: InfraParts, c: Infra
   const poleH = 11;
   const arm = 2.6;
   for (let s = spacing / 2; s < length; s += spacing) {
-    const r = rings[Math.round((s / length) * (rings.length - 1))];
+    const r = ringAt(rings, s, length);
     if (!r || r.hidden || r.overlap) continue;
     const v = curve.getPointAt(s / length);
     const tv = curve.getTangentAt(s / length);
-    if (Math.abs(v.x) > 1200 || Math.abs(v.z) > 1200) continue;
+    if (Math.abs(v.x) > CITY.half || Math.abs(v.z) > CITY.half) continue;
     const f = frameAt([v.x, v.y, v.z], [tv.x, tv.y, tv.z]);
     const base: V3 = [v.x, v.y + BARRIER.h, v.z];
     const top: V3 = [v.x, v.y + poleH, v.z];
@@ -300,20 +308,13 @@ function buildLamps(path: HwPath, rings: DeckRing[], parts: InfraParts, c: Infra
       parts.points.push({
         p: [end[0], end[1] - 0.25, end[2]],
         size: [0.55, 0.14, 0.32],
-        rotY: Math.atan2(-f.lat[2], f.lat[0]),
+        rotY: rotYForLateral(f.lat),
         color: c.lamp,
       });
     }
   }
 }
 
-export function buildHighways(
-  L: Layout,
-  parts: InfraParts,
-  c: InfraColors,
-): Map<string, DeckRing[]> {
-  const paths = L.highways.map((hw) => hwPath(hw));
-  const out = new Map<string, DeckRing[]>();
-  for (const p of paths) out.set(p.hw.id, buildHighway(p, paths, parts, c));
-  return out;
+export function buildHighways(paths: readonly HwPath[], parts: InfraParts, c: InfraColors): void {
+  for (const p of paths) buildHighway(p, paths, parts, c);
 }

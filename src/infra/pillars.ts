@@ -7,7 +7,7 @@ import { frameAt, norm, sub, type V3 } from './mesh';
 import type { BeamInstance, ColumnInstance } from './parts';
 import { rotYForLateral } from './parts';
 import { DECK_THICKNESS } from './profile';
-import { hwPath, nearestOnPath, type HwPath } from './highways';
+import { SAME_LEVEL, hwPath, nearestOnPath, type HwPath } from './highways';
 
 export type PillarKind = 'T' | 'Y';
 
@@ -68,8 +68,10 @@ const columnObb = (p: PillarSpec) => ({
  * the same level (the parent's own pillars carry the junction), any pillar whose column would
  * pierce a lower deck, and pillars whose column overlaps one already accepted.
  */
-export function pillarSpecs(L: Layout): PillarSpec[] {
-  const paths = L.highways.map((hw) => hwPath(hw));
+export function pillarSpecs(
+  L: Layout,
+  paths: readonly HwPath[] = L.highways.map((hw) => hwPath(hw)),
+): PillarSpec[] {
   const out: PillarSpec[] = [];
   for (const path of paths) {
     const hw = path.hw;
@@ -95,9 +97,9 @@ export function pillarSpecs(L: Layout): PillarSpec[] {
         if (o.hw.id === hw.id || o.hw.kind === 'atGrade') continue;
         const q = nearestOnPath(o, pl.x, pl.z);
         if (q.d > o.hw.width / 2 + Math.max(size.w, size.d)) continue;
-        const sameLevel = Math.abs(q.y - pl.y) <= 4;
+        const sameLevel = Math.abs(q.y - pl.y) <= SAME_LEVEL;
         // A ramp pillar inside its parent deck, or a column passing through a lower deck.
-        if ((sameLevel && hw.kind === 'ramp') || q.y < pl.y - 4) ok = false;
+        if ((sameLevel && hw.kind === 'ramp') || q.y < pl.y - SAME_LEVEL) ok = false;
       }
       if (ok && out.some((p) => obbOverlap(columnObb(p), columnObb(spec), 0.5))) ok = false;
       if (ok) out.push(spec);

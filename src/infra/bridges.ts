@@ -1,11 +1,14 @@
 // The three bridges over 흑린강 (ART_DIRECTION 2.3): two-span tied arch (A), Warren truss (B)
 // and a double-deck girder (C), with their static lights. Original designs, not copies of real
 // bridges. Pure: reads a Bridge from the layout and writes InfraParts.
-import { surfaceHeight, type Bridge } from '../city/layout';
+import { RIVER, surfaceHeight, type Bridge } from '../city/layout';
 import type { InfraColors } from './colors';
 import { framesAlong, len, sub, type Frame, type RGB, type V3 } from './mesh';
 import type { InfraParts } from './parts';
 import { DECK_THICKNESS, boxEdges, markingLines, slabEdges, slabLoop } from './profile';
+
+/** Lower road deck height of a double-deck bridge when the layout leaves it unset. */
+const LOWER_DECK_Y = 4;
 
 /** Bridge-local frame: s along a → b (south), l lateral (right of a → b), y world height. */
 export interface BridgeFrame {
@@ -324,7 +327,7 @@ function buildTruss(b: Bridge, f: BridgeFrame, parts: InfraParts, c: InfraColors
 
 /** C: upper road deck on posts over a lower deck, red band on the lower fascia, cyan uplights. */
 function buildDoubleDeck(b: Bridge, f: BridgeFrame, parts: InfraParts, c: InfraColors): void {
-  const lowY = b.lowerDeckY ?? 4;
+  const lowY = b.lowerDeckY ?? LOWER_DECK_Y;
   const h = f.spanHalf;
   const half = b.width / 2;
   // Lower deck runs between the abutments (into the portals).
@@ -356,7 +359,7 @@ function buildDoubleDeck(b: Bridge, f: BridgeFrame, parts: InfraParts, c: InfraC
   const pierW = b.width - 4;
   const pierD = 3.5;
   pushPiers(b, f, parts, () => lowY - DECK_THICKNESS, pierW, pierD);
-  const waterY = -4;
+  const waterY = RIVER.waterY;
   for (const s0 of pierStations(b, f)) {
     for (const sgn of [-1, 1] as const) {
       const s = s0 + sgn * (pierD / 2 + 0.06);
@@ -404,7 +407,13 @@ export function buildBridge(b: Bridge, parts: InfraParts, c: InfraColors): Bridg
     deckY,
     b.kind === 'arch' ? c.archSteel : c.steel,
   );
-  buildAbutments(b, f, parts, c, b.kind === 'doubleDeck' ? (b.lowerDeckY ?? 4) : undefined);
+  buildAbutments(
+    b,
+    f,
+    parts,
+    c,
+    b.kind === 'doubleDeck' ? (b.lowerDeckY ?? LOWER_DECK_Y) : undefined,
+  );
   if (b.kind === 'arch') buildArch(b, f, parts, c);
   else if (b.kind === 'truss') buildTruss(b, f, parts, c);
   else buildDoubleDeck(b, f, parts, c);
