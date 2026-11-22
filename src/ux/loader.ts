@@ -31,7 +31,7 @@ const LOG_LINES = 4;
 const STAGE_TEXT: Record<string, [running: string, done: string]> = {
   setup: ['도시 측량 중…', '지형 측량 완료'],
   lighting: ['하늘 보정 중…', '하늘 보정 완료'],
-  terrain: ['흑린강 수위 측정 중…', '흑린강 수위 안정'],
+  terrain: ['검은비늘강 수위 측정 중…', '검은비늘강 수위 안정'],
   buildings: ['건물 조립 중…', '건물 조립 완료'],
   infra: ['고가도로 연결 중…', '고가도로 연결 완료'],
   neon: ['네온 배선 중…', '네온 점등 대기'],

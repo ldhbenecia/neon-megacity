@@ -1,4 +1,4 @@
-// Frame stats, `?stats` overlay, window.__ramha and adaptive DPR (ART_DIRECTION 11).
+// Frame stats, `?stats` overlay, window.__garam and adaptive DPR (ART_DIRECTION 11).
 // renderer.info.autoReset is off, so info counts the whole frame including composer passes;
 // main calls frameStart() before the module updates and frameEnd() after ctx.render().
 import type { Ctx } from '../core/types';

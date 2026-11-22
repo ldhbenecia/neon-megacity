@@ -2,7 +2,7 @@
 export {};
 
 /** `?stats` frame counters (ART_DIRECTION 11), one whole frame including post passes. */
-interface RamhaStats {
+interface GaramStats {
   calls: number;
   triangles: number;
   programs: number;
@@ -13,7 +13,7 @@ interface RamhaStats {
 }
 
 /** Camera rig state for e2e control tests. */
-interface RamhaCamera {
+interface GaramCamera {
   mode: 'orbit' | 'fly' | 'cinematic' | 'flight';
   position: { x: number; y: number; z: number };
   target: { x: number; y: number; z: number };
@@ -29,6 +29,6 @@ declare global {
      */
     __city?: { ready: boolean; frames: number; powered: boolean };
     /** Only with `?stats`: frame counters and camera rig state (src/ux). */
-    __ramha?: { stats(): RamhaStats; camera(): RamhaCamera };
+    __garam?: { stats(): GaramStats; camera(): GaramCamera };
   }
 }

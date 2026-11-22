@@ -19,8 +19,8 @@ test.describe('performance budget', () => {
         await waitForCity(page);
         await waitFrames(page, 120);
         const s = await page.evaluate(() => {
-          const r = window.__ramha;
-          if (!r) throw new Error('__ramha missing');
+          const r = window.__garam;
+          if (!r) throw new Error('__garam missing');
           return r.stats();
         });
         test.info().annotations.push({ type: 'stats', description: JSON.stringify(s) });
