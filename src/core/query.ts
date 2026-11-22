@@ -1,0 +1,48 @@
+// URL query hooks for deterministic screenshots and debugging.
+//   ?time=0..1   fixed time of day (pauses the cycle)
+//   ?cam=<name>  preset camera pose
+//   ?rain=0..1   initial rain intensity
+//   ?nogui       hide the lil-gui panel
+
+export const CAMERA_PRESETS = {
+  overview: { position: [520, 300, 520], target: [0, 60, 0] },
+  street: { position: [41, 5, 260], target: [41, 22, 0] },
+  core: { position: [150, 110, 190], target: [0, 170, 0] },
+  topdown: { position: [0, 1150, 1], target: [0, 0, 0] },
+  skyline: { position: [-760, 55, 320], target: [0, 160, 0] },
+} as const satisfies Record<
+  string,
+  { position: readonly [number, number, number]; target: readonly [number, number, number] }
+>;
+
+export type CameraPreset = keyof typeof CAMERA_PRESETS;
+
+export interface QueryOptions {
+  time?: number;
+  cam?: CameraPreset;
+  rain?: number;
+  nogui: boolean;
+}
+
+function unit(value: string | null): number | undefined {
+  if (value === null || value.trim() === '') return undefined;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return undefined;
+  return Math.min(1, Math.max(0, n));
+}
+
+function isPreset(value: string | null): value is CameraPreset {
+  return value !== null && Object.hasOwn(CAMERA_PRESETS, value);
+}
+
+export function parseQuery(search: string): QueryOptions {
+  const params = new URLSearchParams(search);
+  const opts: QueryOptions = { nogui: params.has('nogui') };
+  const time = unit(params.get('time'));
+  if (time !== undefined) opts.time = time;
+  const rain = unit(params.get('rain'));
+  if (rain !== undefined) opts.rain = rain;
+  const cam = params.get('cam');
+  if (isPreset(cam)) opts.cam = cam;
+  return opts;
+}
