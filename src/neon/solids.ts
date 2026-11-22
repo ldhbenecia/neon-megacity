@@ -1,7 +1,14 @@
 // Building solids for sign clearance tests (pure). A sign may only touch the face it hangs on:
 // it must not cut into any tier, twin stack, cantilever mass or skybridge of any building.
-import { buildingsInAabb, toLocal, toWorld, type BuildingSpec, type Layout } from '../city/layout';
-import { sideNormal } from '../city/layout';
+import {
+  buildingVolumes,
+  buildingsInAabb,
+  sideNormal,
+  toLocal,
+  toWorld,
+  type BuildingSpec,
+  type Layout,
+} from '../city/layout';
 
 /** Oriented box (XZ rectangle rotated by rotY, plus a y range) or vertical cylinder. */
 export interface Solid {
@@ -88,6 +95,25 @@ export function buildingSolids(b: BuildingSpec): Solid[] {
       stack: 0,
     });
   }
+  // The layout's own extra volumes (cantilever, skybridge, spire) as well: conservative union.
+  const nTiers = b.tiers.length + (b.twin?.length ?? 0);
+  buildingVolumes(b)
+    .slice(nTiers)
+    .forEach((t, k) => {
+      out.push({
+        kind: t.shape === 'cylinder' ? 'cyl' : 'box',
+        x: t.x,
+        z: t.z,
+        hw: t.w / 2,
+        hd: t.d / 2,
+        rotY: b.rotY,
+        y0: t.y0,
+        y1: t.y1,
+        building: b.id,
+        tier: -3 - k,
+        stack: 0,
+      });
+    });
   solidCache.set(b, out);
   return out;
 }
