@@ -5,6 +5,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import GUI from 'lil-gui';
 import { CITY, LAYOUT } from './city/layout';
 import { clockMinutes, formatClock } from './core/clock';
+import { NIGHT } from './core/palette';
 import { CAMERA_LIMITS, CAMERA_PRESETS, parseQuery } from './core/query';
 import type { CityModule, CityModuleInstance, Ctx } from './core/types';
 import * as lighting from './lighting/index';
@@ -64,9 +65,16 @@ const ctx: Ctx = {
     sunElevation: -1,
     dayFactor: 0,
     nightFactor: 1,
-    horizonColor: new THREE.Color('#140a26'),
-    skyColor: new THREE.Color('#05040f'),
-    rain: query.rain ?? 0.6,
+    horizonColor: new THREE.Color(NIGHT.horizonColor),
+    skyColor: new THREE.Color(NIGHT.skyColor),
+    neonGain: NIGHT.neonGain,
+    windowLitRatio: NIGHT.windowLitRatio,
+    rain: query.rain ?? 0.35,
+    wetness: 0.55,
+    fogColor: new THREE.Color(NIGHT.fogColor),
+    fogDensity: NIGHT.fogDensity,
+    powerOn: 1,
+    selectedBuilding: null,
   },
   render: () => renderer.render(scene, camera),
   onResize: (fn) => {
