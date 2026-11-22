@@ -4,9 +4,14 @@
 //   ?rain=0..1   initial rain intensity
 //   ?nogui       hide the lil-gui panel
 
+import { CITY, roadCenter } from '../city/layout';
+
+/** The north-south avenue just east of the city center; the street preset looks down it. */
+const STREET_X = roadCenter(Math.ceil(CITY.gridN / 2));
+
 export const CAMERA_PRESETS = {
   overview: { position: [520, 300, 520], target: [0, 60, 0] },
-  street: { position: [41, 5, 260], target: [41, 22, 0] },
+  street: { position: [STREET_X, 5, 260], target: [STREET_X, 22, 0] },
   core: { position: [150, 110, 190], target: [0, 170, 0] },
   topdown: { position: [0, 1150, 1], target: [0, 0, 0] },
   skyline: { position: [-760, 55, 320], target: [0, 160, 0] },

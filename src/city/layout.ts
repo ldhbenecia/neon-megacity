@@ -104,6 +104,11 @@ export function districtFor(bx: number, bz: number): District {
   return 'outer';
 }
 
+/** Center line of road strip k (0..gridN) along either axis, in world space. */
+export function roadCenter(k: number): number {
+  return CITY.origin + CITY.cell * k + CITY.roadWidth / 2;
+}
+
 /** Block center in world space. */
 export function blockCenter(bx: number, bz: number): { x: number; z: number } {
   return {
@@ -163,7 +168,7 @@ export function generateLayout(seed = 2077): Layout {
   // Road strips. Roads run between blocks and around the border.
   const roads: Road[] = [];
   for (let k = 0; k <= CITY.gridN; k++) {
-    const p = CITY.origin + CITY.cell * k + CITY.roadWidth / 2;
+    const p = roadCenter(k);
     roads.push({ axis: 'x', x: 0, z: p, length: CITY.extent, width: CITY.roadWidth });
     roads.push({ axis: 'z', x: p, z: 0, length: CITY.extent, width: CITY.roadWidth });
   }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { parseQuery } from '../src/core/query';
+import { LAYOUT } from '../src/city/layout';
+import { CAMERA_PRESETS, parseQuery } from '../src/core/query';
 
 describe('parseQuery', () => {
   it('returns defaults for an empty query', () => {
@@ -18,5 +19,14 @@ describe('parseQuery', () => {
 
   it('accepts camera presets and the nogui flag', () => {
     expect(parseQuery('?cam=street&nogui')).toEqual({ cam: 'street', nogui: true });
+  });
+});
+
+describe('CAMERA_PRESETS', () => {
+  it('places the street camera on the center line of a north-south road', () => {
+    const [x] = CAMERA_PRESETS.street.position;
+    const road = LAYOUT.roads.find((r) => r.axis === 'z' && r.x === x);
+    expect(road).toBeDefined();
+    expect(CAMERA_PRESETS.street.target[0]).toBe(x);
   });
 });
