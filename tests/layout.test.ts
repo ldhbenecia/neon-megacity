@@ -68,10 +68,10 @@ describe('layout v2: determinism', () => {
       digest: digest(LAYOUT),
     }).toMatchInlineSnapshot(`
       {
-        "blocks": 1027,
-        "buildings": 2828,
-        "digest": "973ca52d",
-        "roads": 1214,
+        "blocks": 1026,
+        "buildings": 2822,
+        "digest": "65ddd15c",
+        "roads": 1216,
         "slots": 1854,
       }
     `);

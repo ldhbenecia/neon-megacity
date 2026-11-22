@@ -12,7 +12,15 @@ import {
   type Massing,
 } from './archetypes';
 import { ZONES, zoneAt, zoneById } from './districts';
-import { highwaySamples, makeBridges, makeHighways, onBridge } from './highways';
+import {
+  MAX_DECK_THICKNESS,
+  MIN_ROAD_CLEARANCE,
+  bridgeDeckY,
+  highwaySamples,
+  makeBridges,
+  makeHighways,
+  onBridge,
+} from './highways';
 import {
   clamp,
   closestSegmentT,
@@ -125,8 +133,10 @@ function clipLine(
   along: 'u' | 'v',
   t0: number,
   t1: number,
+  bridges: readonly Bridge[],
 ): { a: Vec2; b: Vec2 }[] {
   const runs: { a: Vec2; b: Vec2 }[] = [];
+  const half = zone.roadWidth / 2 + 1;
   let start: number | null = null;
   const at = (t: number): Vec2 =>
     along === 'v' ? gridToWorld(zone, fixed, t) : gridToWorld(zone, t, fixed);
@@ -134,7 +144,8 @@ function clipLine(
   for (let i = 0; i <= n + 1; i++) {
     const t = t0 + i * ROAD_STEP;
     const p = at(t);
-    const inside = i <= n && zoneAt(p.x, p.z).id === zone.id;
+    const inside =
+      i <= n && zoneAt(p.x, p.z).id === zone.id && !underLowDeck(bridges, p.x, p.z, half);
     if (inside && start === null) start = t;
     if (!inside && start !== null) {
       const end = t - ROAD_STEP;
@@ -143,6 +154,18 @@ function clipLine(
     }
   }
   return runs;
+}
+
+/**
+ * True where a road of half width `half` at (x, z) would pass under a bridge approach with less
+ * than MIN_ROAD_CLEARANCE (assuming the thickest allowed deck). Roads stop short of those spots.
+ */
+function underLowDeck(bridges: readonly Bridge[], x: number, z: number, half: number): boolean {
+  for (const br of bridges) {
+    const y = bridgeDeckY(br, x, z, half);
+    if (y !== null && y - MAX_DECK_THICKNESS < MIN_ROAD_CLEARANCE) return true;
+  }
+  return false;
 }
 
 function buildRoads(seed: number, bridges: readonly Bridge[]): Road[] {
@@ -159,7 +182,7 @@ function buildRoads(seed: number, bridges: readonly Bridge[]): Road[] {
     const hill = zone.kind === 'hillside';
     // Lines of constant u run along v (for hillside: uphill, roughly north-south).
     for (let i = Math.floor(u0 / P); i <= Math.ceil(u1 / P); i++) {
-      for (const { a, b } of clipLine(zone, i * P, 'v', v0, v1)) {
+      for (const { a, b } of clipLine(zone, i * P, 'v', v0, v1, bridges)) {
         if (!hill) {
           push(zone.roadKind, a, b, zone.roadWidth, zone);
           continue;
@@ -187,7 +210,7 @@ function buildRoads(seed: number, bridges: readonly Bridge[]): Road[] {
       }
     }
     for (let j = Math.floor(v0 / Q); j <= Math.ceil(v1 / Q); j++) {
-      for (const { a, b } of clipLine(zone, j * Q, 'u', u0, u1)) {
+      for (const { a, b } of clipLine(zone, j * Q, 'u', u0, u1, bridges)) {
         push(zone.roadKind, a, b, zone.roadWidth, zone);
       }
     }
