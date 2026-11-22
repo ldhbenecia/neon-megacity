@@ -81,4 +81,4 @@ lighting → buildings → neon → atmosphere 순서로 초기화되고 갱신�
 
 ## 라이선스
 
-MIT
+[MIT](LICENSE)
