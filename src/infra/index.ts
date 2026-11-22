@@ -102,12 +102,10 @@ export function init(ctx: Ctx): CityModuleInstance {
   steel.castShadow = true;
   steel.receiveShadow = true;
 
-  const paintEmissive = new THREE.Color(MATERIAL.dongNumber).multiplyScalar(0.012);
+  // Lane paint is never emissive (palette laneWhite / laneYellow); it reads under lights only.
   const paintMat = new THREE.MeshStandardMaterial({
     vertexColors: true,
     roughness: 0.7,
-    // Faint retroreflective read at night.
-    emissive: paintEmissive,
     polygonOffset: true,
     polygonOffsetFactor: -2,
     polygonOffsetUnits: -4,
@@ -136,7 +134,7 @@ export function init(ctx: Ctx): CityModuleInstance {
 
   // Pillars and bridge piers: one InstancedMesh of columns, one of beams (T caps, Y arms).
   const pillarMat = new THREE.MeshStandardMaterial({
-    color: MATERIAL.retainingWall,
+    color: MATERIAL.concrete,
     roughness: 0.9,
   });
   materials.push(pillarMat);
@@ -213,7 +211,6 @@ export function init(ctx: Ctx): CityModuleInstance {
     update() {
       const gain = ctx.env.neonGain * ctx.env.powerOn * settings.gain;
       for (const m of emissive) m.color.setScalar(gain);
-      paintMat.emissive.copy(paintEmissive).multiplyScalar(ctx.env.powerOn);
     },
     dispose() {
       ctx.scene.remove(group);

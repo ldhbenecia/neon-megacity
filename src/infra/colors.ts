@@ -34,13 +34,13 @@ export interface InfraColors {
 
 export function infraColors(): InfraColors {
   return {
-    asphalt: lin(MATERIAL.facadeDark),
-    concrete: lin(MATERIAL.retainingWall),
+    asphalt: lin(MATERIAL.asphalt),
+    concrete: lin(MATERIAL.concrete),
     underside: lin(MATERIAL.deckUnderside),
     steel: lin(MATERIAL.bracing),
-    archSteel: lin(MATERIAL.dongNumber, 0.8),
-    paintWhite: lin(MATERIAL.dongNumber, 0.55),
-    paintYellow: lin(NEON.neonAmber.hex, 0.45),
+    archSteel: lin(MATERIAL.archSteel),
+    paintWhite: lin(MATERIAL.laneWhite),
+    paintYellow: lin(MATERIAL.laneYellow),
     wallBand: lin(NEON.neonTeal.hex, 1.8),
     ringLine: lin(NEON.neonCyan.hex, 2),
     archPoint: lin(NEON.neonCyan.hex, 3),

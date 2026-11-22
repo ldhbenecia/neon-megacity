@@ -1,11 +1,14 @@
 // Deck cross-sections and lane geometry (pure). Profiles are lists of edges in the (l, y)
 // plane, l = lateral offset (+ = right of travel along the curve), y = height above the deck
 // surface. Loops run clockwise so MeshData.sweep gives outward normals.
-import type { Highway } from '../city/layout';
+import { MAX_DECK_THICKNESS, type Highway } from '../city/layout';
 import type { ProfileEdge, RGB } from './mesh';
 
-/** Deck slab thickness (m): the underside is at deck y − DECK_THICKNESS (InfraApi). */
-export const DECK_THICKNESS = 1.8;
+/**
+ * Deck slab thickness (m): the underside is at deck y − DECK_THICKNESS (InfraApi). Equal to the
+ * layout's MAX_DECK_THICKNESS, which its road clearance guarantee assumes.
+ */
+export const DECK_THICKNESS = MAX_DECK_THICKNESS;
 /** Jersey barrier: base width, top width, height. */
 export const BARRIER = { base: 0.5, top: 0.25, h: 0.95 } as const;
 /** Median barrier width for divided roads (lanes ≥ 4). */
