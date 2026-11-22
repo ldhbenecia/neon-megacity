@@ -1,6 +1,7 @@
 // Pure time-of-day math for the lighting module: sun / moon paths, day factor, time advance,
 // environment-map key selection and the shadow frustum bucket. No three.js, no side effects.
 // Unit tests: tests/lighting.test.ts.
+import { smoothstep } from '../city/math';
 
 export interface Vec3Out {
   x: number;
@@ -84,11 +85,6 @@ export function moonDirectionAt(timeOfDay: number, out: Vec3Out = { x: 0, y: 0, 
   return fromAngles(-maxElevation * Math.sin(Math.PI * p), angle, out);
 }
 
-export function smoothstep(e0: number, e1: number, x: number): number {
-  const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
-  return t * t * (3 - 2 * t);
-}
-
 /** 0..1 day blend from the sun elevation (sin). Civil twilight (−6°) → 0, sun at ~9° → 1. */
 export function dayFactorAt(sunElevation: number): number {
   return smoothstep(-0.1, 0.15, sunElevation);
@@ -124,7 +120,6 @@ export function advanceTime(
 }
 
 export type EnvKey = 'night' | 'dawn' | 'day' | 'sunset';
-export const ENV_KEYS: readonly EnvKey[] = ['night', 'dawn', 'day', 'sunset'];
 
 /**
  * Which of the 4 baked environment maps a time of day uses (ART_DIRECTION 6.1: the PMREM is only

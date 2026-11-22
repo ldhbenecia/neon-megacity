@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { DAWN, DAY, NEON, NIGHT, SUNSET, type NeonName, type PaletteKey } from '../core/palette';
+import { weighted } from '../city/archetypes';
 import { createRng } from '../core/random';
 import type { EnvKey } from './sun';
 
@@ -59,15 +60,6 @@ function srgb(hex: number, scale = 1): THREE.Color {
   return new THREE.Color().setHex(hex).multiplyScalar(scale);
 }
 
-function pickPanelColor(r: number): NeonName {
-  let acc = 0;
-  for (const [name, w] of PANEL_MIX) {
-    acc += w;
-    if (r < acc) return name;
-  }
-  return 'windowWarm';
-}
-
 /** Merged panel band geometry with per-vertex HDR colors for one palette key. */
 function buildPanels(key: PaletteKey): THREE.BufferGeometry {
   const rng = createRng(6061);
@@ -81,7 +73,7 @@ function buildPanels(key: PaletteKey): THREE.BufferGeometry {
     const tall = rng.chance(0.35);
     const w = tall ? rng.range(1, 2.6) : rng.range(3, 8);
     const h = tall ? rng.range(4, 11) : rng.range(0.8, 2.6);
-    const name = pickPanelColor(rng.next());
+    const name = weighted(rng, PANEL_MIX);
     const neon = NEON[name];
     const hdr = rng.range(neon.hdr[0], neon.hdr[1]);
     // Reflections read better a bit dimmer than the signs themselves.

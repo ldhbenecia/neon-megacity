@@ -27,6 +27,14 @@ const SHADOW_SUN_EPS = 0.003;
 /** Force a shadow refresh every N frames while the sun is up (animated geometry, late loads). */
 const SHADOW_REFRESH_FRAMES = 240;
 const LIGHT_DISTANCE = 2500;
+/** Key-light target while no shadow frame has been computed yet. */
+const ORIGIN_FRAME = { cx: 0, cz: 0 } as const;
+const TIME_PRESETS: readonly (readonly [label: string, timeOfDay: number])[] = [
+  ['Midnight 00:00', 0],
+  ['Dawn 06:00', 0.25],
+  ['Noon 12:00', 0.5],
+  ['Sunset 18:43', 0.78],
+];
 
 function setSrgb(color: THREE.Color, rgb: RGB, scale = 1): THREE.Color {
   return color.setRGB(rgb[0], rgb[1], rgb[2], THREE.SRGBColorSpace).multiplyScalar(scale);
@@ -70,7 +78,6 @@ export function init(ctx: Ctx): CityModuleInstance {
 
   // --- scratch (no per-frame allocation)
   const moonDir = new THREE.Vector3();
-  const tmpDir = { x: 0, y: 0, z: 0 };
   const lastShadowSun = new THREE.Vector3(0, -1, 0);
   let lastShadowFrame: ShadowFrame | null = null;
   let framesSinceShadow = 0;
@@ -116,11 +123,10 @@ export function init(ctx: Ctx): CityModuleInstance {
     }
 
     // Sun / moon geometry and the derived factors.
-    sunDirectionAt(t, tmpDir);
-    env.sunDirection.set(tmpDir.x, tmpDir.y, tmpDir.z);
-    env.sunElevation = tmpDir.y;
-    moonDirectionAt(t, tmpDir);
-    moonDir.set(tmpDir.x, tmpDir.y, tmpDir.z);
+    // THREE.Vector3 satisfies Vec3Out, so the pure helpers write into it directly.
+    sunDirectionAt(t, env.sunDirection);
+    env.sunElevation = env.sunDirection.y;
+    moonDirectionAt(t, moonDir);
     env.dayFactor = dayFactorAt(env.sunElevation);
     env.nightFactor = 1 - env.dayFactor;
 
@@ -133,7 +139,7 @@ export function init(ctx: Ctx): CityModuleInstance {
     // Key light: sun by day, moon by night, crossfaded through zero at the horizon.
     const kl = keyLightAt(env.sunElevation, moonDir.y);
     const dir = kl.body === 'sun' ? env.sunDirection : moonDir;
-    const center = lastShadowFrame ?? { cx: 0, cz: 0 };
+    const center = lastShadowFrame ?? ORIGIN_FRAME;
     key.target.position.set(center.cx, 0, center.cz);
     key.position.copy(dir).multiplyScalar(LIGHT_DISTANCE).add(key.target.position);
     key.target.updateMatrixWorld();
@@ -162,11 +168,11 @@ export function init(ctx: Ctx): CityModuleInstance {
     setSrgb(u.uGround.value, pal.fogColor);
     u.uSunDir.value.copy(env.sunDirection);
     setSrgb(u.uSunColor.value, pal.sunColor);
-    u.uSunVis.value = Math.min(1, Math.max(0, (env.sunElevation + 0.03) / 0.06));
+    u.uSunVis.value = THREE.MathUtils.clamp((env.sunElevation + 0.03) / 0.06, 0, 1);
     u.uMoonDir.value.copy(moonDir);
     // Moon disc / halo tint: the key-light color, which is the moon color whenever it shows.
     setSrgb(u.uMoonColor.value, pal.sunColor);
-    u.uMoonVis.value = env.nightFactor * Math.min(1, Math.max(0, moonDir.y / 0.05));
+    u.uMoonVis.value = env.nightFactor * THREE.MathUtils.clamp(moonDir.y / 0.05, 0, 1);
 
     // Environment map: swap the cached bake when the palette key changes.
     const k = envKeyAt(t);
@@ -184,16 +190,9 @@ export function init(ctx: Ctx): CityModuleInstance {
   folder.add(settings, 'paused').name('pause cycle');
   folder.add(settings, 'shadows').name('sun shadows');
   folder.add(settings, 'exposureTrim', 0.5, 1.5, 0.01).name('exposure trim');
-  const presets = {
-    midnight: () => (env.timeOfDay = 0.0),
-    dawn: () => (env.timeOfDay = 0.25),
-    noon: () => (env.timeOfDay = 0.5),
-    sunset: () => (env.timeOfDay = 0.78),
-  };
-  folder.add(presets, 'midnight').name('Midnight 00:00');
-  folder.add(presets, 'dawn').name('Dawn 06:00');
-  folder.add(presets, 'noon').name('Noon 12:00');
-  folder.add(presets, 'sunset').name('Sunset 18:43');
+  for (const [label, time] of TIME_PRESETS) {
+    folder.add({ go: () => (env.timeOfDay = time) }, 'go').name(label);
+  }
   folder.close();
 
   // Populate env before the other modules init and read it.
