@@ -19,7 +19,7 @@ import {
 } from '../src/infra/bridges';
 import { buildInfra } from '../src/infra/build';
 import { infraColors } from '../src/infra/colors';
-import { deckRings, hwPath, nearestOnPath, runs } from '../src/infra/highways';
+import { deckRings, hwPath, nearestOnPath, ringsCovering, runs } from '../src/infra/highways';
 import { MeshData, cross, dot, frameAt, framesAlong, norm, sub, type V3 } from '../src/infra/mesh';
 import type { ColumnInstance } from '../src/infra/parts';
 import { pillarInstances, pillarSpecs } from '../src/infra/pillars';
@@ -180,6 +180,16 @@ describe('infra: highway decks', () => {
     }
   });
 
+  it('ringsCovering returns every ring under an interval, ends included', () => {
+    const p = paths.find((q) => q.hw.kind === 'ramp')!;
+    const rings = deckRings(p, paths);
+    const length = rings.at(-1)!.s;
+    const under = ringsCovering(rings, 10, 16, length);
+    expect(under[0]!.s).toBeLessThanOrEqual(10);
+    expect(under.at(-1)!.s).toBeGreaterThanOrEqual(16);
+    expect(ringsCovering(rings, 0, length, length)).toHaveLength(rings.length);
+  });
+
   it('nearestOnPath returns 0 distance on the centerline', () => {
     const p = paths[0]!;
     const mid = p.pts[Math.floor(p.pts.length / 2)]!;
@@ -268,6 +278,20 @@ describe('infra: bridges', () => {
         expect(y!).toBeGreaterThanOrEqual(bridgeDeckY(b, f, s) - 1e-6);
       }
     }
+  });
+
+  it('resample skips repeated points instead of producing NaN', () => {
+    const r = resample(
+      [
+        [0, 0, 0],
+        [0, 0, 0],
+        [12, 0, 0],
+        [12, 0, 0],
+      ],
+      6,
+    );
+    expect(r).toHaveLength(3);
+    for (const p of r) for (const v of p) expect(Number.isFinite(v)).toBe(true);
   });
 
   it('arch A crowns at y 48 and gets cyan points every 6 m', () => {

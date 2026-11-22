@@ -67,6 +67,7 @@ export function resample(pts: readonly V3[], step: number): V3[] {
     const a = pts[i] as V3;
     const b = pts[i + 1] as V3;
     const seg = len(sub(b, a));
+    if (seg < 1e-9) continue; // repeated point: nothing to walk
     let t = carry;
     while (t <= seg) {
       const k = t / seg;

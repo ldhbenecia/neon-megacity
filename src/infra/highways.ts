@@ -184,6 +184,19 @@ const barrierOk =
 const ringAt = (rings: readonly DeckRing[], s: number, length: number): DeckRing | undefined =>
   rings[Math.round((s / length) * (rings.length - 1))];
 
+/** Every ring touched by the arc-length interval [s0, s1] (both neighbours of each end included). */
+export function ringsCovering(
+  rings: readonly DeckRing[],
+  s0: number,
+  s1: number,
+  length: number,
+): DeckRing[] {
+  const n = rings.length - 1;
+  const i0 = Math.max(0, Math.floor((s0 / length) * n));
+  const i1 = Math.min(n, Math.ceil((s1 / length) * n));
+  return rings.slice(i0, i1 + 1);
+}
+
 /** Which side gets a sound wall: the city side of hw-river-north, the park side of hw-south. */
 function soundWallSide(hw: Highway): -1 | 0 {
   // Both riverside highways run west → east, so their left (l < 0) is north.
@@ -274,8 +287,9 @@ function buildMarkings(path: HwPath, rings: DeckRing[], parts: InfraParts, c: In
       continue;
     }
     for (let s = DASH_GAP / 2; s + DASH < length; s += DASH + DASH_GAP) {
-      const r = ringAt(rings, s, length);
-      if (!r || !paintable(r)) continue;
+      // Every ring under the dash must be paintable, or it pokes out over a parent deck.
+      const under = ringsCovering(rings, s, s + DASH, length);
+      if (under.length === 0 || !under.every(paintable)) continue;
       const pts: V3[] = [s, s + DASH / 2, s + DASH].map((d) => {
         const v = curve.getPointAt(d / length);
         return [v.x, v.y, v.z];

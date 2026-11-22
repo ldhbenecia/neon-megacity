@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { deckHeightAt, highwayCurve } from '../city/layout';
 import { MATERIAL } from '../core/palette';
-import { applyEmissiveFog } from '../core/shaders/emissiveFog';
+import { EMISSIVE_FOG_DENSITY_SCALE, applyEmissiveFog } from '../core/shaders/emissiveFog';
 import type { CityModuleInstance, Ctx, InfraApi } from '../core/types';
 import { buildInfra } from './build';
 import { infraColors } from './colors';
@@ -18,8 +18,11 @@ function toGeometry(m: MeshData): THREE.BufferGeometry {
   g.setAttribute('position', new THREE.Float32BufferAttribute(m.positions, 3));
   g.setAttribute('normal', new THREE.Float32BufferAttribute(m.normals, 3));
   g.setAttribute('color', new THREE.Float32BufferAttribute(m.colors, 3));
+  // Same rule as three's arrayNeedsUint32: index 65535 is the Uint16 primitive-restart value.
+  let maxIndex = 0;
+  for (const i of m.indices) if (i > maxIndex) maxIndex = i;
   g.setIndex(
-    m.vertexCount > 65535
+    maxIndex >= 65535
       ? new THREE.Uint32BufferAttribute(m.indices, 1)
       : new THREE.Uint16BufferAttribute(m.indices, 1),
   );
@@ -45,6 +48,18 @@ function columnGeometry(): THREE.BufferGeometry {
   g.rotateX(-Math.PI / 2); // extrude along +Y
   return g;
 }
+
+/** Fog for additive materials: same thinned density as emissive fog, but fades to black. */
+const WASH_FOG_FRAGMENT = /* glsl */ `
+#ifdef USE_FOG
+  #ifdef FOG_EXP2
+    float washFog = 1.0 - exp( - pow( fogDensity * ${EMISSIVE_FOG_DENSITY_SCALE.toFixed(4)} * vFogDepth, 2.0 ) );
+  #else
+    float washFog = smoothstep( fogNear, fogFar, vFogDepth );
+  #endif
+  gl_FragColor.rgb *= 1.0 - washFog;
+#endif
+`;
 
 function emissiveBasic(params: THREE.MeshBasicMaterialParameters): THREE.MeshBasicMaterial {
   const m = new THREE.MeshBasicMaterial({ vertexColors: true, ...params });
@@ -87,29 +102,35 @@ export function init(ctx: Ctx): CityModuleInstance {
   steel.castShadow = true;
   steel.receiveShadow = true;
 
-  const paint = mesh(
-    parts.markings,
-    new THREE.MeshStandardMaterial({
-      vertexColors: true,
-      roughness: 0.7,
-      // Faint retroreflective read at night.
-      emissive: new THREE.Color(MATERIAL.dongNumber).multiplyScalar(0.012),
-      polygonOffset: true,
-      polygonOffsetFactor: -2,
-      polygonOffsetUnits: -4,
-    }),
-    'infra-paint',
-  );
+  const paintEmissive = new THREE.Color(MATERIAL.dongNumber).multiplyScalar(0.012);
+  const paintMat = new THREE.MeshStandardMaterial({
+    vertexColors: true,
+    roughness: 0.7,
+    // Faint retroreflective read at night.
+    emissive: paintEmissive,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -4,
+  });
+  const paint = mesh(parts.markings, paintMat, 'infra-paint');
   paint.receiveShadow = true;
 
   const glowMat = emissiveBasic({});
   const glow = mesh(parts.glow, glowMat, 'infra-glow');
 
-  const washMat = emissiveBasic({
+  // Additive: fogging toward fogColor would add a grey slab, so fade toward black instead.
+  const washMat = new THREE.MeshBasicMaterial({
+    vertexColors: true,
     transparent: true,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
   });
+  washMat.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <fog_fragment>',
+      WASH_FOG_FRAGMENT,
+    );
+  };
   const wash = mesh(parts.wash, washMat, 'infra-wash');
   wash.renderOrder = 2;
 
@@ -192,6 +213,7 @@ export function init(ctx: Ctx): CityModuleInstance {
     update() {
       const gain = ctx.env.neonGain * ctx.env.powerOn * settings.gain;
       for (const m of emissive) m.color.setScalar(gain);
+      paintMat.emissive.copy(paintEmissive).multiplyScalar(ctx.env.powerOn);
     },
     dispose() {
       ctx.scene.remove(group);
