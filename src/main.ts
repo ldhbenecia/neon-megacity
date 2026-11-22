@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import GUI from 'lil-gui';
 import { CITY, LAYOUT } from './city/layout';
-import { CAMERA_PRESETS, parseQuery } from './core/query';
+import { CAMERA_LIMITS, CAMERA_PRESETS, parseQuery } from './core/query';
 import type { CityModule, CityModuleInstance, Ctx } from './core/types';
 import * as lighting from './lighting/index';
 import * as buildings from './buildings/index';
@@ -38,9 +38,9 @@ const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerH
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.06;
-controls.minDistance = 20;
-controls.maxDistance = 1800;
-controls.maxPolarAngle = Math.PI * 0.495; // never go below the horizon
+controls.minDistance = CAMERA_LIMITS.minDistance;
+controls.maxDistance = CAMERA_LIMITS.maxDistance;
+controls.maxPolarAngle = CAMERA_LIMITS.maxPolarAngle; // never go below the horizon
 controls.screenSpacePanning = false; // right-drag pans along the ground plane
 
 const preset = CAMERA_PRESETS[query.cam ?? 'overview'];

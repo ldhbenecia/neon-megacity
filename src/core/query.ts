@@ -6,15 +6,27 @@
 
 import { CITY, roadCenter } from '../city/layout';
 
+/**
+ * OrbitControls limits applied by main.ts. Every camera preset must satisfy them,
+ * otherwise controls.update() silently moves the camera on the first frame.
+ * The camera always looks down at (or level with) its target: polar angle is
+ * measured from +Y, so maxPolarAngle just under PI/2 keeps it above the horizon.
+ */
+export const CAMERA_LIMITS = {
+  minDistance: 20,
+  maxDistance: 1800,
+  maxPolarAngle: Math.PI * 0.495,
+} as const;
+
 /** The north-south avenue just east of the city center; the street preset looks down it. */
 const STREET_X = roadCenter(Math.ceil(CITY.gridN / 2));
 
 export const CAMERA_PRESETS = {
   overview: { position: [520, 300, 520], target: [0, 60, 0] },
-  street: { position: [STREET_X, 5, 260], target: [STREET_X, 22, 0] },
-  core: { position: [150, 110, 190], target: [0, 170, 0] },
+  street: { position: [STREET_X, 5, 260], target: [STREET_X, 1, 120] },
+  core: { position: [150, 110, 190], target: [0, 100, 0] },
   topdown: { position: [0, 1150, 1], target: [0, 0, 0] },
-  skyline: { position: [-760, 55, 320], target: [0, 160, 0] },
+  skyline: { position: [-760, 55, 320], target: [0, 30, 0] },
 } as const satisfies Record<
   string,
   { position: readonly [number, number, number]; target: readonly [number, number, number] }

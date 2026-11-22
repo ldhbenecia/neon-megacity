@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { LAYOUT } from '../src/city/layout';
-import { CAMERA_PRESETS, parseQuery } from '../src/core/query';
+import { PerspectiveCamera, Vector3 } from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { CAMERA_LIMITS, CAMERA_PRESETS, type CameraPreset, parseQuery } from '../src/core/query';
 
 describe('parseQuery', () => {
   it('returns defaults for an empty query', () => {
@@ -28,5 +30,27 @@ describe('CAMERA_PRESETS', () => {
     const road = LAYOUT.roads.find((r) => r.axis === 'z' && r.x === x);
     expect(road).toBeDefined();
     expect(CAMERA_PRESETS.street.target[0]).toBe(x);
+  });
+
+  const names = Object.keys(CAMERA_PRESETS) as CameraPreset[];
+
+  it.each(names)('%s stays within the orbit limits', (name) => {
+    const { position, target } = CAMERA_PRESETS[name];
+    const offset = new Vector3(...position).sub(new Vector3(...target));
+    const polar = Math.acos(offset.y / offset.length());
+    expect(polar).toBeLessThanOrEqual(CAMERA_LIMITS.maxPolarAngle);
+    expect(offset.length()).toBeGreaterThanOrEqual(CAMERA_LIMITS.minDistance);
+    expect(offset.length()).toBeLessThanOrEqual(CAMERA_LIMITS.maxDistance);
+  });
+
+  it.each(names)('%s is not moved by OrbitControls.update()', (name) => {
+    const { position, target } = CAMERA_PRESETS[name];
+    const camera = new PerspectiveCamera();
+    const controls = new OrbitControls(camera);
+    Object.assign(controls, CAMERA_LIMITS);
+    camera.position.fromArray(position);
+    controls.target.fromArray(target);
+    controls.update();
+    expect(camera.position.distanceTo(new Vector3(...position))).toBeLessThan(1e-6);
   });
 });
