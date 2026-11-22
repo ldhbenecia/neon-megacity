@@ -1,18 +1,40 @@
 // Entry point. Owns renderer / camera / controls / loop and wires modules.
 // Module contract: see docs/ARCHITECTURE.md and src/core/types.ts.
+// Boot UX (loader, camera rig, HUD) lives in src/ux/; feature work never edits this file.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import GUI from 'lil-gui';
 import { CITY, LAYOUT } from './city/layout';
-import { clockMinutes, formatClock } from './core/clock';
-import { CAMERA_LIMITS, CAMERA_PRESETS, parseQuery } from './core/query';
+import { NIGHT } from './core/palette';
+import { CAMERA_LIMITS, parseQuery } from './core/query';
 import type { CityModule, CityModuleInstance, Ctx } from './core/types';
 import * as lighting from './lighting/index';
+import * as terrain from './terrain/index';
 import * as buildings from './buildings/index';
+import * as infra from './infra/index';
 import * as neon from './neon/index';
 import * as atmosphere from './atmosphere/index';
+import { createLoader, initUx } from './ux/index';
+
+/**
+ * Boot progress weights (ART_DIRECTION 9.2); all stages sum to 100:
+ * setup (renderer, camera, layout) 5 + modules 77 + shader warm-up 15 + first frame 3.
+ */
+const BOOT_WEIGHTS = { setup: 5, compile: 15, firstFrame: 3 } as const;
+
+/** Init and update order (ART_DIRECTION 13.1) with boot progress weights (9.2). */
+const MODULES: readonly (readonly [name: string, weight: number, module: CityModule])[] = [
+  ['lighting', 8, lighting],
+  ['terrain', 8, terrain],
+  ['buildings', 30, buildings],
+  ['infra', 7, infra],
+  ['neon', 17, neon],
+  ['atmosphere', 7, atmosphere],
+];
 
 const query = parseQuery(window.location.search);
+const loader = createLoader();
+loader.stage('setup', BOOT_WEIGHTS.setup);
 
 const container = document.getElementById('app');
 if (!container) throw new Error('#app container missing');
@@ -21,13 +43,14 @@ const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'hi
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.0;
+// Exposure is owned by lighting (palette toneMappingExposure × env.powerOn).
+renderer.toneMappingExposure = NIGHT.toneMappingExposure;
 // Shadow map type/update policy is owned by the lighting module.
 renderer.shadowMap.enabled = true;
 container.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.5, 6000);
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.5, 8000);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
@@ -37,17 +60,12 @@ controls.maxDistance = CAMERA_LIMITS.maxDistance;
 controls.maxPolarAngle = CAMERA_LIMITS.maxPolarAngle; // never go below the horizon
 controls.screenSpacePanning = false; // right-drag pans along the ground plane
 
-const preset = CAMERA_PRESETS[query.cam ?? 'overview'];
-camera.position.fromArray(preset.position);
-controls.target.fromArray(preset.target);
-controls.update();
-
 const gui = new GUI({ title: 'City Controls' });
 gui.close();
 if (query.nogui) gui.hide();
 
 const resizeHandlers: ((w: number, h: number) => void)[] = [];
-/** Shared context handed to every module. */
+/** Shared context handed to every module. Initial env values are night palette defaults. */
 const ctx: Ctx = {
   THREE,
   scene,
@@ -64,9 +82,16 @@ const ctx: Ctx = {
     sunElevation: -1,
     dayFactor: 0,
     nightFactor: 1,
-    horizonColor: new THREE.Color('#140a26'),
-    skyColor: new THREE.Color('#05040f'),
-    rain: query.rain ?? 0.6,
+    horizonColor: new THREE.Color(NIGHT.horizonColor),
+    skyColor: new THREE.Color(NIGHT.skyColor),
+    neonGain: NIGHT.neonGain,
+    windowLitRatio: NIGHT.windowLitRatio,
+    rain: query.rain ?? 0.35,
+    wetness: 0.55,
+    fogColor: new THREE.Color(NIGHT.fogColor),
+    fogDensity: NIGHT.fogDensity,
+    powerOn: 1,
+    selectedBuilding: null,
   },
   render: () => renderer.render(scene, camera),
   onResize: (fn) => {
@@ -74,20 +99,22 @@ const ctx: Ctx = {
   },
 };
 
-// Order matters: lighting computes env first, others consume it in the same frame.
-const moduleList: CityModule[] = [lighting, buildings, neon, atmosphere];
-const modules: CityModuleInstance[] = moduleList.map((m) => m.init(ctx));
+const ux = initUx(ctx, query.cam ? { preset: query.cam } : {});
 
-// Cinematic auto-orbit camera (toggle with C).
-const cine = { enabled: false, angle: Math.atan2(camera.position.z, camera.position.x) };
-const setCinematic = (v: boolean): void => {
-  cine.enabled = v;
-  controls.enabled = !v;
-};
-window.addEventListener('keydown', (e) => {
-  if (e.key === 'c' || e.key === 'C') setCinematic(!cine.enabled);
-});
-gui.add(cine, 'enabled').name('Cinematic camera [C]').onChange(setCinematic).listen();
+// Order matters: lighting computes env first, others consume it in the same frame.
+const modules: CityModuleInstance[] = [];
+for (const [name, weight, mod] of MODULES) {
+  loader.stage(name, weight);
+  try {
+    modules.push(mod.init(ctx));
+  } catch (err) {
+    loader.fail(name, err);
+    throw err;
+  }
+}
+loader.stage('compile', BOOT_WEIGHTS.compile);
+renderer.compile(scene, camera);
+loader.stage('first-frame', BOOT_WEIGHTS.firstFrame);
 
 window.addEventListener('resize', () => {
   const w = window.innerWidth;
@@ -98,43 +125,20 @@ window.addEventListener('resize', () => {
   for (const fn of resizeHandlers) fn(w, h);
 });
 
-const MIN_CAMERA_Y = 2;
-const clockEl = document.getElementById('clock');
 const timer = new THREE.Timer();
 timer.connect(document);
-let clockMins = -1;
 let frames = 0;
 renderer.setAnimationLoop((timestamp) => {
   timer.update(timestamp);
   const dt = Math.min(timer.getDelta(), 0.1);
   const t = timer.getElapsed();
 
-  if (cine.enabled) {
-    cine.angle += dt * 0.05;
-    const r = 480 + Math.sin(t * 0.07) * 160;
-    camera.position.set(
-      Math.cos(cine.angle) * r,
-      140 + Math.sin(t * 0.11) * 90,
-      Math.sin(cine.angle) * r,
-    );
-    camera.lookAt(0, 90, 0);
-  } else {
-    // Keep the orbit pivot and the camera above ground even while panning.
-    controls.target.y = Math.max(controls.target.y, 0);
-    controls.update();
-    if (camera.position.y < MIN_CAMERA_Y) camera.position.y = MIN_CAMERA_Y;
-  }
-
+  ux.beforeUpdate(dt, t);
   for (const m of modules) m.update?.(dt, t);
-
-  // The clock only changes once per in-game minute; skip redundant DOM writes.
-  const mins = clockMinutes(ctx.env.timeOfDay);
-  if (clockEl && mins !== clockMins) {
-    clockMins = mins;
-    clockEl.textContent = formatClock(mins);
-  }
+  ux.afterUpdate(dt, t);
 
   ctx.render();
   frames++;
+  if (frames === 1) loader.done();
   window.__city = { ready: true, frames };
 });

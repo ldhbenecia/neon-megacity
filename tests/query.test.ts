@@ -1,8 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { LAYOUT } from '../src/city/layout';
+import { LAYOUT, SKYLINE_PEAK, buildingContaining, surfaceHeight } from '../src/city/layout';
+import { pointSegmentDistance } from '../src/city/math';
 import { PerspectiveCamera, Vector3 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { CAMERA_LIMITS, CAMERA_PRESETS, type CameraPreset, parseQuery } from '../src/core/query';
+import {
+  CAMERA_LIMITS,
+  CAMERA_PRESETS,
+  STREET_FALLBACK,
+  type CameraPreset,
+  cameraPreset,
+  parseQuery,
+  streetPose,
+} from '../src/core/query';
 
 describe('parseQuery', () => {
   it('returns defaults for an empty query', () => {
@@ -25,11 +34,45 @@ describe('parseQuery', () => {
 });
 
 describe('CAMERA_PRESETS', () => {
-  it('places the street camera on the center line of a north-south road', () => {
-    const [x] = CAMERA_PRESETS.street.position;
-    const road = LAYOUT.roads.find((r) => r.axis === 'z' && r.x === x);
+  it('places the street camera on the center line of a sangga street, looking along it', () => {
+    const { position, target } = CAMERA_PRESETS.street;
+    const p = { x: position[0], z: position[2] };
+    const road = LAYOUT.roads.find(
+      (r) =>
+        r.kind === 'street' && r.zoneId === 'sangga-n' && pointSegmentDistance(p, r.a, r.b) < 1e-6,
+    );
     expect(road).toBeDefined();
-    expect(CAMERA_PRESETS.street.target[0]).toBe(x);
+    const dx = road!.b.x - road!.a.x;
+    const dz = road!.b.z - road!.a.z;
+    const tx = target[0] - position[0];
+    const tz = target[2] - position[2];
+    // Target lies on the same line (cross product ~ 0).
+    expect(Math.abs(dx * tz - dz * tx) / Math.hypot(dx, dz) / Math.hypot(tx, tz)).toBeLessThan(
+      1e-9,
+    );
+  });
+
+  it('keeps every preset camera outside buildings and above the ground', () => {
+    for (const name of Object.keys(CAMERA_PRESETS) as CameraPreset[]) {
+      const [x, y, z] = CAMERA_PRESETS[name].position;
+      expect(buildingContaining(LAYOUT, x, y, z), name).toBeNull();
+      expect(y, name).toBeGreaterThan(surfaceHeight(x, z) + 2);
+    }
+  });
+
+  it('frames the skyline peak from the core and overview presets', () => {
+    for (const name of ['core', 'overview', 'skyline'] as const) {
+      const [tx, , tz] = CAMERA_PRESETS[name].target;
+      expect(Math.hypot(tx - SKYLINE_PEAK.x, tz - SKYLINE_PEAK.z), name).toBeLessThan(120);
+    }
+  });
+
+  it('exposes every preset through cameraPreset() and falls back without a street', () => {
+    for (const name of Object.keys(CAMERA_PRESETS) as CameraPreset[]) {
+      expect(cameraPreset(name)).toEqual(CAMERA_PRESETS[name]);
+    }
+    expect(streetPose([])).toBeNull();
+    expect(cameraPreset('street')).not.toEqual(STREET_FALLBACK);
   });
 
   const names = Object.keys(CAMERA_PRESETS) as CameraPreset[];
