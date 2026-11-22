@@ -1,19 +1,23 @@
 // Lighting module (ART_DIRECTION 3, 13.1): time of day, sun / moon key light, hemisphere,
-// shadows, exposure and the sky dome.
+// shadows, exposure, sky dome and the PMREM environment map.
 // Runs first every frame and writes the env fields it owns: timeOfDay, sunDirection,
 // sunElevation, dayFactor, nightFactor, horizonColor, skyColor, neonGain, windowLitRatio.
-// Also owns renderer.toneMappingExposure and the renderer.shadowMap policy.
+// Also owns renderer.toneMappingExposure, renderer.shadowMap policy, scene.environment and
+// scene.environmentIntensity.
 import * as THREE from 'three';
 import { paletteAt, type PaletteSample, type RGB } from '../core/palette';
 import type { Ctx, CityModuleInstance } from '../core/types';
+import { createEnvMaps } from './envMap';
 import { createSky } from './sky';
 import {
   advanceTime,
   dayFactorAt,
+  envKeyAt,
   keyLightAt,
   moonDirectionAt,
   shadowFrameFor,
   sunDirectionAt,
+  type EnvKey,
   type ShadowFrame,
 } from './sun';
 
@@ -58,9 +62,11 @@ export function init(ctx: Ctx): CityModuleInstance {
   hemi.name = 'hemiLight';
   scene.add(hemi);
 
-  // --- sky
+  // --- sky + environment
   const sky = createSky();
   scene.add(sky.mesh);
+  const envMaps = createEnvMaps(renderer);
+  let envKey: EnvKey | null = null;
 
   // --- scratch (no per-frame allocation)
   const moonDir = new THREE.Vector3();
@@ -156,6 +162,14 @@ export function init(ctx: Ctx): CityModuleInstance {
     // Moon disc / halo tint: the key-light color, which is the moon color whenever it shows.
     setSrgb(u.uMoonColor.value, pal.sunColor);
     u.uMoonVis.value = env.nightFactor * Math.min(1, Math.max(0, moonDir.y / 0.05));
+
+    // Environment map: swap the cached bake when the palette key changes.
+    const k = envKeyAt(t);
+    if (k !== envKey) {
+      envKey = k;
+      scene.environment = envMaps.get(k);
+    }
+    scene.environmentIntensity = pal.envMapIntensity;
   }
 
   // --- GUI
@@ -197,6 +211,8 @@ export function init(ctx: Ctx): CityModuleInstance {
       key.dispose();
       hemi.dispose();
       sky.dispose();
+      scene.environment = null;
+      envMaps.dispose();
       renderer.shadowMap.autoUpdate = true;
     },
   };
