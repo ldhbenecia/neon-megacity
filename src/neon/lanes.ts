@@ -4,6 +4,7 @@
 // so no vehicle is ever moved on the CPU.
 import type { Bridge, Highway, Road, Vec3 } from '../city/layout';
 import { createRng } from '../core/random';
+import { isDivided, laneOffsets } from '../infra/profile';
 
 /** Arc-length parameterized polyline (evenly spaced samples). */
 export interface Path {
@@ -141,18 +142,28 @@ export interface StreamOptions {
 }
 
 /** Lanes per direction for a path. */
-function lanesFor(p: Path, hw: ReadonlyMap<string, Highway>): number {
-  if (p.kind === 'ground') return p.length > 300 ? 2 : 1;
-  if (p.kind === 'bridge') return 2;
-  if (p.kind === 'flying') return 1;
+/**
+ * Lane slots of a path. Highways use infra's real lane centers (`laneOffsets`, + = right of the
+ * curve direction): divided roads drive on the right half in both directions (the reverse
+ * direction's frame is mirrored, so it reuses the positive offsets); ramps are one-way.
+ */
+export function laneSlots(
+  p: Path,
+  hw: ReadonlyMap<string, Highway>,
+): { dir: 1 | -1; lane: number }[] {
+  const both = (offs: number[]): { dir: 1 | -1; lane: number }[] =>
+    ([1, -1] as const).flatMap((dir) => offs.map((lane) => ({ dir, lane })));
+  if (p.kind === 'flying') return both([0]);
+  if (p.kind === 'ground')
+    return both(p.length > 300 ? [LANE_W * 0.5, LANE_W * 1.5] : [LANE_W * 0.5]);
+  if (p.kind === 'bridge') return both([LANE_W * 0.5 + 0.6, LANE_W * 1.5 + 0.6]);
   const h = hw.get(p.id);
-  return Math.max(1, Math.floor((h?.lanes ?? 2) / 2));
+  if (!h) return both([LANE_W * 0.5]);
+  const offs = laneOffsets(h);
+  if (!isDivided(h)) return offs.map((lane) => ({ dir: 1 as const, lane }));
+  return both(offs.filter((o) => o > 0));
 }
 
-/**
- * Vehicle streams: per lane, evenly spaced vehicles with jitter, all at the lane speed
- * (so they never overlap). Right-hand traffic: both directions use positive (right) offsets.
- */
 export function vehicleStreams(
   paths: readonly Path[],
   highways: readonly Highway[],
@@ -163,35 +174,30 @@ export function vehicleStreams(
   const density = { ground: 2.2, bridge: 26, highway: 34, flying: 6, ...opts.density };
   const out: Vehicle[] = [];
   paths.forEach((p, pi) => {
-    const lanes = lanesFor(p, hw);
-    for (const dir of [1, -1] as const) {
-      for (let l = 0; l < lanes; l++) {
-        const count = Math.max(1, Math.round((density[p.kind] * p.length) / 1000));
-        const kmh =
-          p.kind === 'ground'
-            ? rng.range(30, 50)
-            : p.kind === 'flying'
-              ? rng.range(110, 160)
-              : rng.range(65, 100);
-        const speed = kmh / 3.6 / p.length;
-        const base = rng.next();
-        const [amin, amax] = p.altitude ?? [80, 260];
-        const lift = p.kind === 'flying' ? rng.range(amin, amax) - (p.points[0]?.y ?? 0) : 0;
-        const lane =
-          p.kind === 'flying'
-            ? rng.range(-6, 6)
-            : LANE_W * (l + 0.5) + (p.kind === 'ground' ? 0 : 0.6);
-        for (let k = 0; k < count; k++) {
-          out.push({
-            path: pi,
-            u0: (base + (k + rng.range(-0.3, 0.3)) / count + 1) % 1,
-            speed,
-            dir,
-            lane,
-            lift: p.kind === 'flying' ? lift + rng.range(-3, 3) : 0,
-            seed: rng.int(0, 1e6),
-          });
-        }
+    for (const slot of laneSlots(p, hw)) {
+      const dir = slot.dir;
+      const count = Math.max(1, Math.round((density[p.kind] * p.length) / 1000));
+      const kmh =
+        p.kind === 'ground'
+          ? rng.range(30, 50)
+          : p.kind === 'flying'
+            ? rng.range(110, 160)
+            : rng.range(65, 100);
+      const speed = kmh / 3.6 / p.length;
+      const base = rng.next();
+      const [amin, amax] = p.altitude ?? [80, 260];
+      const lift = p.kind === 'flying' ? rng.range(amin, amax) - (p.points[0]?.y ?? 0) : 0;
+      const lane = p.kind === 'flying' ? rng.range(-6, 6) : slot.lane;
+      for (let k = 0; k < count; k++) {
+        out.push({
+          path: pi,
+          u0: (base + (k + rng.range(-0.3, 0.3)) / count + 1) % 1,
+          speed,
+          dir,
+          lane,
+          lift: p.kind === 'flying' ? lift + rng.range(-3, 3) : 0,
+          seed: rng.int(0, 1e6),
+        });
       }
     }
   });
