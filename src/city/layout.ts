@@ -101,12 +101,24 @@ export function generateLayout(seed = 2077): Layout {
     for (let bz = 0; bz < CITY.gridN; bz++) {
       const district = districtFor(bx, bz);
       const { x: cx, z: cz } = blockCenter(bx, bz);
-      const block: Block = { bx, bz, x: cx, z: cz, size: CITY.blockSize, district, buildingIds: [] };
+      const block: Block = {
+        bx,
+        bz,
+        x: cx,
+        z: cz,
+        size: CITY.blockSize,
+        district,
+        buildingIds: [],
+      };
       blocks.push(block);
       const inner = CITY.blockSize - CITY.sidewalk * 2;
       // Lots per side: core = 1-2 (huge), midtown = 2-3, outer = 3-4
       const n =
-        district === 'core' ? rng.int(1, 2) : district === 'midtown' ? rng.int(2, 3) : rng.int(3, 4);
+        district === 'core'
+          ? rng.int(1, 2)
+          : district === 'midtown'
+            ? rng.int(2, 3)
+            : rng.int(3, 4);
       const lot = inner / n;
       for (let i = 0; i < n; i++) {
         for (let j = 0; j < n; j++) {

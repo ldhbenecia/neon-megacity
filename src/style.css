@@ -1,10 +1,39 @@
-html, body { margin: 0; height: 100%; overflow: hidden; background: #05030a; }
-#app { position: fixed; inset: 0; }
-#hud {
-  position: fixed; left: 16px; bottom: 16px; pointer-events: none;
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace; color: #f3e600;
-  text-shadow: 0 0 6px rgba(243, 230, 0, .6), 0 0 18px rgba(255, 0, 110, .4);
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #05030a;
 }
-#hud .title { font-size: 20px; letter-spacing: .3em; font-weight: 700; }
-#hud #clock { font-size: 32px; margin: 4px 0; color: #00f0ff; text-shadow: 0 0 8px rgba(0,240,255,.7); }
-#hud .hint { font-size: 12px; color: #c7c2d6; text-shadow: none; opacity: .8; }
+#app {
+  position: fixed;
+  inset: 0;
+}
+#hud {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  pointer-events: none;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  color: #f3e600;
+  text-shadow:
+    0 0 6px rgba(243, 230, 0, 0.6),
+    0 0 18px rgba(255, 0, 110, 0.4);
+}
+#hud .title {
+  font-size: 20px;
+  letter-spacing: 0.3em;
+  font-weight: 700;
+}
+#hud #clock {
+  font-size: 32px;
+  margin: 4px 0;
+  color: #00f0ff;
+  text-shadow: 0 0 8px rgba(0, 240, 255, 0.7);
+}
+#hud .hint {
+  font-size: 12px;
+  color: #c7c2d6;
+  text-shadow: none;
+  opacity: 0.8;
+}
