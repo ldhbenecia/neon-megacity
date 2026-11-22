@@ -1,10 +1,26 @@
 // Pure atmosphere logic (no three objects, no side effects). Unit tested in tests/atmosphere.test.ts.
 // Numbers come from ART_DIRECTION 3.3, 7 and 11.
+import { allTiers, buildingTop } from '../city/queries';
+import type { BuildingSpec, Tier } from '../city/types';
 import { DAWN, DAY, NIGHT, PALETTE_KEYS, SUNSET, type PaletteKey, type RGB } from '../core/palette';
 
 const clamp01 = (x: number): number => Math.min(1, Math.max(0, x));
 const smooth = (x: number): number => x * x * (3 - 2 * x);
 const smoothstep = (a: number, b: number, x: number): number => smooth(clamp01((x - a) / (b - a)));
+
+/** Cloud deck heights (7.3); rain and searchlights key off the low deck. */
+export const CLOUD_LAYERS = { lowY: 650, highY: 1400 } as const;
+
+/**
+ * Wrap periods (s) for shader time uniforms, so float32 precision never degrades over long
+ * sessions. Chosen so the wrap is invisible: rain and lens drops are statistically identical
+ * after a jump; cloud drift rates × 1e5 s are whole texture tiles, so the wrap is seamless.
+ */
+export const TIME_WRAP = { rain: 1000, lens: 1000, stars: 1000, clouds: 100000 } as const;
+
+export function wrapTime(t: number, period: number): number {
+  return ((t % period) + period) % period;
+}
 
 // ---------------------------------------------------------------- fog (7.1)
 
@@ -96,7 +112,7 @@ export const RAIN = {
   /** Share of streaks tinted by neon colors. */
   neonShare: 0.1,
   /** Camera altitude band (m) over which rain and lens drops fade out (cloud base is 650 m). */
-  fadeAltitude: [480, 760],
+  fadeAltitude: [CLOUD_LAYERS.lowY - 170, CLOUD_LAYERS.lowY + 110],
 } as const;
 
 /** Number of streaks drawn for a rain intensity. 0 when not raining. */
@@ -153,6 +169,30 @@ export interface BeamParams {
   amplitude: number;
   /** Constant lean from vertical (rad) so beams do not all meet at the zenith. */
   lean: number;
+}
+
+export interface Mount {
+  x: number;
+  y: number;
+  z: number;
+}
+
+/** Height (m) of the lamp above the roof it stands on. */
+const MOUNT_LIFT = 4;
+
+/**
+ * Searchlight mounts: the `count` tallest buildings (spires and twin stacks included, via
+ * `buildingTop`), each lamp on the roof center of its highest tier (setback / twin aware).
+ */
+export function searchlightMounts(specs: readonly BuildingSpec[], count = 2): Mount[] {
+  return [...specs]
+    .sort((a, b) => buildingTop(b) - buildingTop(a))
+    .slice(0, count)
+    .flatMap((b) => {
+      let top: Tier | null = null;
+      for (const t of allTiers(b)) if (!top || t.y1 > top.y1) top = t;
+      return top ? [{ x: top.x, y: top.y1 + MOUNT_LIFT, z: top.z }] : [];
+    });
 }
 
 /** Unit direction of a searchlight beam at time t (s). Writes into `out` and returns it. */

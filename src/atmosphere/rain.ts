@@ -16,7 +16,15 @@ import {
 import { NEON } from '../core/palette';
 import { createRng } from '../core/random';
 import type { Ctx } from '../core/types';
-import { RAIN, rainAlpha, rainDropCount, rainPoolFor, rainSlantRadians } from './logic';
+import {
+  RAIN,
+  rainAlpha,
+  rainDropCount,
+  rainPoolFor,
+  rainSlantRadians,
+  TIME_WRAP,
+  wrapTime,
+} from './logic';
 
 /** Linear brightness of the hue lift added to the rain color. */
 const RAIN_HUE_LIFT = 0.16;
@@ -164,7 +172,7 @@ export function createRain(ctx: Ctx): Rain {
       renderer.getDrawingBufferSize(size);
       uRes.value.copy(size);
       uWidth.value = 1.4 * renderer.getPixelRatio();
-      uTime.value = elapsed;
+      uTime.value = wrapTime(elapsed, TIME_WRAP.rain);
       const slant = Math.tan(rainSlantRadians(rain));
       uWind.value.set(windDir.x * slant, windDir.z * slant);
       // fogColor × 2.5 (7.2) plus a lift in the fog's own hue: drops catch the city light,

@@ -43,9 +43,12 @@ export const SUN_SCATTER_POWER = 8;
  * All zeros (a material without these uniforms) means "plain FogExp2".
  */
 export const FOG_UNIFORMS = {
-  /** x = heightTop (m), y = factor at the top, z = factor under water, w = 1 enables. */
+  /**
+   * x = heightTop (m), y = factor at the top, z = factor under water, w = 1 enables (the
+   * atmosphere 'Height fog' toggle). The CPU mirrors below read w too.
+   */
   ramhaFogHeight: {
-    value: new Float32Array([HEIGHT_FOG.heightTop, HEIGHT_FOG.top, HEIGHT_FOG.water, 0]),
+    value: new Float32Array([HEIGHT_FOG.heightTop, HEIGHT_FOG.top, HEIGHT_FOG.water, 1]),
   },
   /** xyz = unit vector toward the sun, w = scattering strength 0..1. */
   ramhaFogSun: { value: new Float32Array([0, 1, 0, 0]) },
@@ -92,6 +95,7 @@ export function applyEmissiveFog(shader: ShaderSource): boolean {
  * as the shader does, so looking down from high up is not fogged like looking along the ground.
  */
 export function heightFogScale(worldY: number, cameraY = worldY): number {
+  if ((FOG_UNIFORMS.ramhaFogHeight.value[3] ?? 0) < 0.5) return 1; // toggle off, like the shader
   const H = HEIGHT_FOG.heightTop;
   const t = Math.min(1, Math.max(0, worldY / H));
   const s = t * t * (3 - 2 * t);

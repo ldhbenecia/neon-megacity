@@ -18,8 +18,8 @@ import {
 } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { MATERIAL } from '../core/palette';
-import type { BuildingSpec, Ctx } from '../core/types';
-import { type BeamParams, beamLength, searchlightDirection } from './logic';
+import type { Ctx } from '../core/types';
+import { type BeamParams, beamLength, searchlightDirection, searchlightMounts } from './logic';
 
 export const BEAMS = {
   /** Beam length (m). Beams run up into the cloud deck; the clouds (drawn after) swallow them. */
@@ -115,23 +115,17 @@ export interface Searchlights {
   /** Cloud spots: xyz = beam end on the cloud deck, w = intensity (0 = none). */
   readonly spots: readonly Vector4[];
   readonly colors: readonly Color[];
-  update(elapsed: number, level: number, cloudY: number): void;
+  /**
+   * `level` 0..1 (time of day), `fogK` the fog density factor: beam alpha is
+   * 0.06 × level × fogK, cloud spots use `level` only (no fog boost on a lit surface).
+   */
+  update(elapsed: number, level: number, fogK: number, cloudY: number): void;
   dispose(): void;
-}
-
-function towerTop(spec: BuildingSpec): number {
-  const last = spec.tiers[spec.tiers.length - 1];
-  return last ? last.y1 : spec.baseY + spec.h;
-}
-
-/** The two tallest buildings by roof y (the core megatowers). */
-function pickTowers(specs: readonly BuildingSpec[]): BuildingSpec[] {
-  return [...specs].sort((a, b) => towerTop(b) - towerTop(a)).slice(0, 2);
 }
 
 export function createSearchlights(ctx: Ctx): Searchlights {
   const { scene, LAYOUT } = ctx;
-  const towers = pickTowers(LAYOUT.buildings);
+  const mounts = searchlightMounts(LAYOUT.buildings, 2);
 
   const cones: BufferGeometry[] = DEFS.map((_, i) => {
     const g = new CylinderGeometry(BEAMS.halfAngle, 0.002, 1, 18, 1, true);
@@ -170,25 +164,31 @@ export function createSearchlights(ctx: Ctx): Searchlights {
   mesh.renderOrder = 15; // before the clouds so dense cloud hides the beam above the deck
   scene.add(mesh);
 
+  // Beams whose tower does not exist (tiny test layouts) stay off: no made-up coordinates.
   const origin = DEFS.map((d) => {
-    const t = towers[d.tower] ?? towers[0];
-    return t ? new Vector3(t.x, towerTop(t) + 4, t.z) : new Vector3(0, 300, 0);
+    const m = mounts[d.tower] ?? mounts[0];
+    return m ? new Vector3(m.x, m.y, m.z) : null;
   });
   const dir: [number, number, number] = [0, 1, 0];
 
   return {
     spots,
     colors,
-    update(elapsed, level, cloudY) {
-      mesh.visible = level > 0.002 && towers.length > 0;
+    update(elapsed, level, fogK, cloudY) {
+      mesh.visible = level > 0.002 && mounts.length > 0;
       for (let i = 0; i < DEFS.length; i++) {
         const def = DEFS[i] as BeamDef;
-        const o = origin[i] as Vector3;
+        const o = origin[i];
         const od = origins[i] as Vector4;
         const dd = dirs[i] as Vector4;
         const sp = spots[i] as Vector4;
+        if (!o) {
+          od.w = 0;
+          sp.w = 0;
+          continue;
+        }
         searchlightDirection(elapsed, def, dir);
-        od.set(o.x, o.y, o.z, BEAMS.alpha * level);
+        od.set(o.x, o.y, o.z, BEAMS.alpha * level * fogK);
         dd.set(dir[0], dir[1], dir[2], BEAMS.length);
         // Spot where the beam crosses the cloud base, dimmer the farther the light traveled.
         const hit = beamLength(o.y, dir[1], cloudY, BEAMS.length);

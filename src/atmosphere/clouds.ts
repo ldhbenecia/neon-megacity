@@ -1,5 +1,5 @@
 // Two cloud layers (ART_DIRECTION 7.3) in one draw call: a low fbm deck at y 650, underlit by
-// the city at night (#163a38 → #2a3a36, brighter toward the center with exp(-r/1200): the
+// the city at night (#163a38 → #2a3a36, brighter toward the core (SKYLINE_PEAK) with exp(-r/1200): the
 // "city light dome"), and thin high cirrus at y 1400 that catches the sunset.
 // Noise comes from a 256² tileable texture baked once (3 taps per pixel instead of ALU fbm).
 // Searchlight beams that reach the low deck leave a soft spot on its underside.
@@ -15,16 +15,19 @@ import {
   RedFormat,
   RepeatWrapping,
   ShaderMaterial,
+  Vector2,
   Vector3,
   type Vector4,
 } from 'three';
+import { SKYLINE_PEAK } from '../city/layout';
 import { MATERIAL } from '../core/palette';
 import type { Ctx } from '../core/types';
+import { CLOUD_LAYERS, TIME_WRAP, wrapTime } from './logic';
 import { tileableFbm } from './noise';
 
 export const CLOUDS = {
-  lowY: 650,
-  highY: 1400,
+  lowY: CLOUD_LAYERS.lowY,
+  highY: CLOUD_LAYERS.highY,
   /** Plane edge (m); the planes follow the camera on XZ, noise stays in world space. */
   size: 16000,
   /** City glow falloff radius exp(-r / 1200). */
@@ -47,6 +50,7 @@ void main() {
 const FRAGMENT = /* glsl */ `
 uniform sampler2D tNoise;
 uniform float uTime;
+uniform vec2 uCityCenter;
 uniform float uRain;
 uniform float uNight;
 uniform vec3 uLow;
@@ -86,7 +90,7 @@ void main() {
   }
 
   // Night: underlit by the city, brighter near the center.
-  float glow = exp( - length( p ) / ${CLOUDS.glowRadius.toFixed(1)} );
+  float glow = exp( - length( p - uCityCenter ) / ${CLOUDS.glowRadius.toFixed(1)} );
   vec3 night = high
     ? uLow * 0.35
     : mix( uLow, uLowLit, glow ) * ( 0.55 + 0.75 * glow ) * ( 0.75 + 0.35 * density );
@@ -182,6 +186,8 @@ export function createClouds(
   const uniforms = {
     tNoise: { value: noise },
     uTime: { value: 0 },
+    // Light dome centered on the core skyline (layout), not the map origin.
+    uCityCenter: { value: new Vector2(SKYLINE_PEAK.x, SKYLINE_PEAK.z) },
     uRain: { value: 0 },
     uNight: { value: 1 },
     uLow: { value: new Color(MATERIAL.cloudLow) },
@@ -225,7 +231,7 @@ export function createClouds(
   return {
     update(elapsed, i) {
       mesh.position.set(camera.position.x, 0, camera.position.z);
-      uTime.value = elapsed;
+      uTime.value = wrapTime(elapsed, TIME_WRAP.clouds);
       uRain.value = i.rain;
       uNight.value = i.night;
       uDayLow.value.copy(i.dayLow);

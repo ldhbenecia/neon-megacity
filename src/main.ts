@@ -113,7 +113,11 @@ for (const [name, weight, mod] of MODULES) {
   }
 }
 loader.stage('compile', BOOT_WEIGHTS.compile);
-renderer.compile(scene, camera);
+// The post chain (atmosphere) renders into an HDR target, a different program variant than the
+// canvas: when it publishes `scene.userData.compile`, that warms up exactly what will be drawn.
+const compileScene = (scene.userData as { compile?: () => void }).compile;
+if (compileScene) compileScene();
+else renderer.compile(scene, camera);
 loader.stage('first-frame', BOOT_WEIGHTS.firstFrame);
 
 window.addEventListener('resize', () => {

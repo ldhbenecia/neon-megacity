@@ -9,9 +9,10 @@ import { Color, FogExp2, SRGBColorSpace, Vector3 } from 'three';
 import { NIGHT, paletteAt, type PaletteSample, type RGB } from '../core/palette';
 import { FOG_UNIFORMS } from '../core/shaders/emissiveFog';
 import type { CityModuleInstance, Ctx } from '../core/types';
-import { CLOUDS, createClouds } from './clouds';
+import { createClouds } from './clouds';
 import { installFogChunks } from './fogChunks';
 import {
+  CLOUD_LAYERS,
   computeFog,
   fogBrightness,
   createQualityState,
@@ -60,12 +61,14 @@ export function init(ctx: Ctx): CityModuleInstance {
   const stars = createStars(ctx);
   const clouds = createClouds(ctx, searchlights.spots, searchlights.colors);
   const rain = createRain(ctx);
-  const post = createPost(ctx);
+  const post = createPost(ctx); // null without half-float render targets
   const previousRender = ctx.render;
-  ctx.render = () => post.render();
-  // Every other module has built its scene by now (atmosphere inits last): pre-compile the
-  // programs that the HDR target and the post chain will actually use.
-  post.warmup();
+  if (post) ctx.render = () => post.render();
+  // main's boot 'compile' stage calls this instead of renderer.compile(scene, camera), so the
+  // programs for the HDR target and the post chain are compiled once, in the right variant.
+  const userData = scene.userData as { compile?: () => void };
+  const warmup = (): void => post?.warmup();
+  if (post) userData.compile = warmup;
 
   const quality = createQualityState();
 
@@ -83,7 +86,16 @@ export function init(ctx: Ctx): CityModuleInstance {
     .onChange((v: boolean) => clouds.setVisible(v));
   folder.add(settings, 'searchlights').name('Searchlights');
   folder.add(settings, 'stars').name('Stars');
-  folder.add(settings, 'autoQuality').name('Auto quality');
+  folder
+    .add(settings, 'autoQuality')
+    .name('Auto quality')
+    .onChange((on: boolean) => {
+      if (on) return;
+      // Turning it off restores full quality instead of freezing a lowered tier.
+      Object.assign(quality, createQualityState());
+      post?.setTier(0);
+      rain.setTier(0);
+    });
   folder.add(quality, 'tier', 0, 2, 1).name('Quality tier (0 = full)').listen().disable();
   folder.close();
 
@@ -136,6 +148,7 @@ export function init(ctx: Ctx): CityModuleInstance {
       fog.density = f.density;
 
       // Shared fog chunk uniforms.
+      // Also read by the CPU mirrors (heightFogScale, fogFactor) so they match the shader.
       height[3] = settings.heightFog ? 1 : 0;
       const ds = env.sunDirection.lengthSq();
       if (ds > 1e-6) sunDir.copy(env.sunDirection).multiplyScalar(1 / Math.sqrt(ds));
@@ -160,8 +173,9 @@ export function init(ctx: Ctx): CityModuleInstance {
       const fogK = Math.min(2, Math.max(0.5, f.density / NIGHT.fogDensity));
       searchlights.update(
         elapsed,
-        settings.searchlights ? searchlightLevelAt(env.timeOfDay) * fogK : 0,
-        CLOUDS.lowY,
+        settings.searchlights ? searchlightLevelAt(env.timeOfDay) : 0,
+        fogK,
+        CLOUD_LAYERS.lowY,
       );
 
       cloudInputs.rain = r;
@@ -175,16 +189,18 @@ export function init(ctx: Ctx): CityModuleInstance {
       postSettings.threshold = palette.bloomThreshold;
       postSettings.lens = settings.lens;
       postSettings.drops = settings.lensDrops ? Math.min(1, r * 1.2) * below : 0;
-      post.update(elapsed, postSettings);
+      post?.update(elapsed, postSettings);
 
       if (settings.autoQuality && stepQuality(quality, dt)) {
-        post.setTier(quality.tier);
+        post?.setTier(quality.tier);
         rain.setTier(quality.tier);
       }
     },
     dispose() {
+      if (userData.compile === warmup) delete userData.compile;
+      height[3] = 1;
       ctx.render = previousRender;
-      post.dispose();
+      post?.dispose();
       rain.dispose();
       clouds.dispose();
       stars.dispose();

@@ -12,6 +12,7 @@ import {
 import { NEON } from '../core/palette';
 import { createRng } from '../core/random';
 import type { Ctx } from '../core/types';
+import { TIME_WRAP, wrapTime } from './logic';
 
 export const STARS = {
   count: 1500,
@@ -101,7 +102,7 @@ export function createStars(ctx: Ctx): Stars {
     update(elapsed, visibility) {
       points.visible = visibility > 0.01;
       uVis.value = visibility;
-      uTime.value = elapsed;
+      uTime.value = wrapTime(elapsed, TIME_WRAP.stars);
       uPr.value = renderer.getPixelRatio();
     },
     dispose() {

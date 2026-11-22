@@ -12,6 +12,9 @@
 //   - OutputPass and the lens pass are merged: a single full-screen pass at device resolution
 //   - bloom input never exceeds CSS resolution (blur gains nothing from DPR) and halves on tier 1
 // Draw calls: bright pass 1 + blur 10 + composite 1 + final 1 = 13.
+// renderer.info: never reset here. Every renderer.render() call resets it only when
+// info.autoReset is true; ux sets autoReset = false and resets once per frame, so stats
+// cover the scene and all post passes.
 import {
   ACESFilmicToneMapping,
   AgXToneMapping,
@@ -37,7 +40,7 @@ import {
 import { FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import type { Ctx } from '../core/types';
-import { LENS, bloomScaleFor, msaaSamplesFor } from './logic';
+import { LENS, TIME_WRAP, bloomScaleFor, msaaSamplesFor, wrapTime } from './logic';
 import { HASH_GLSL } from './noise';
 
 // UnrealBloomPass.BlurDirectionX / Y (static in JS, missing from the type definitions).
@@ -190,7 +193,21 @@ const uniform = (uniforms: Record<string, IUniform>, name: string): IUniform => 
   return u;
 };
 
-export function createPost(ctx: Ctx): Post {
+/**
+ * Whether the GPU can render into half-float targets (the HDR scene target and bloom's own
+ * mips are RGBA16F). WebGL2 needs EXT_color_buffer_float or EXT_color_buffer_half_float.
+ */
+export function supportsHalfFloatTargets(ctx: Ctx): boolean {
+  const ext = ctx.renderer.extensions;
+  return ext.has('EXT_color_buffer_float') || ext.has('EXT_color_buffer_half_float');
+}
+
+/**
+ * Creates the post chain, or returns null when half-float targets are unsupported: the caller
+ * then keeps the default `renderer.render` (tone mapping and sRGB on the canvas, no bloom/lens).
+ */
+export function createPost(ctx: Ctx): Post | null {
+  if (!supportsHalfFloatTargets(ctx)) return null;
   const { renderer, scene, camera } = ctx;
   const cssSize = renderer.getSize(new Vector2());
   let pixelRatio = renderer.getPixelRatio();
@@ -269,7 +286,10 @@ export function createPost(ctx: Ctx): Post {
   }
 
   resize();
+  // ctx.onResize has no unsubscribe: the handler goes inert after dispose.
+  let disposed = false;
   ctx.onResize((w, h) => {
+    if (disposed) return;
     cssSize.set(w, h);
     pixelRatio = -1; // force a re-sync (the renderer may have changed DPR as well)
     syncPixelRatio();
@@ -376,7 +396,7 @@ export function createPost(ctx: Ctx): Post {
       bloom.threshold = s.threshold;
       bloomOn = s.strength > 0.005;
       bloomOnU.value = bloomOn ? 1 : 0;
-      time.value = elapsed;
+      time.value = wrapTime(elapsed, TIME_WRAP.lens);
       aberration.value = s.lens ? LENS.aberration : 0;
       vignette.value = s.lens ? LENS.vignette : 0;
       grain.value = s.lens ? LENS.grain : 0;
@@ -388,6 +408,7 @@ export function createPost(ctx: Ctx): Post {
       resize();
     },
     dispose() {
+      disposed = true;
       sceneTarget.dispose();
       bloom.dispose();
       bloomQuad.dispose();
