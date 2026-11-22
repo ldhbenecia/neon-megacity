@@ -15,6 +15,16 @@ import {
 const SEEDS = [1, 42, 2077, 9999];
 const near = (a: Vec2, b: Vec2) => Math.hypot(a.x - b.x, a.z - b.z) < 1;
 
+/** Centre and both edges (±half, perpendicular to the direction a→b) of a strip at p. */
+function stripPoints(p: Vec2, a: Vec2, b: Vec2, half: number): Vec2[] {
+  const dx = b.x - a.x;
+  const dz = b.z - a.z;
+  const len = Math.hypot(dx, dz) || 1;
+  const nx = -dz / len;
+  const nz = dx / len;
+  return [-1, -0.5, 0, 0.5, 1].map((k) => ({ x: p.x + nx * half * k, z: p.z + nz * half * k }));
+}
+
 describe.each(SEEDS)('seed %i', (seed) => {
   const L = generateLayout(seed);
 
@@ -26,13 +36,14 @@ describe.each(SEEDS)('seed %i', (seed) => {
         const len = Math.hypot(r.b.x - r.a.x, r.b.z - r.a.z);
         for (let s = 0; s <= len; s += 1) {
           const t = s / len;
-          const x = r.a.x + (r.b.x - r.a.x) * t;
-          const z = r.a.z + (r.b.z - r.a.z) * t;
-          const deck = bridgeDeckY(br, x, z, r.width / 2);
-          if (deck === null) continue;
-          expect(deck - MAX_DECK_THICKNESS, `road ${r.id} under ${br.id}`).toBeGreaterThanOrEqual(
-            MIN_ROAD_CLEARANCE,
-          );
+          const c = { x: r.a.x + (r.b.x - r.a.x) * t, z: r.a.z + (r.b.z - r.a.z) * t };
+          for (const q of stripPoints(c, r.a, r.b, r.width / 2)) {
+            const deck = bridgeDeckY(br, q.x, q.z);
+            if (deck === null) continue;
+            expect(deck - MAX_DECK_THICKNESS, `road ${r.id} under ${br.id}`).toBeGreaterThanOrEqual(
+              MIN_ROAD_CLEARANCE,
+            );
+          }
         }
       }
     }
@@ -42,14 +53,20 @@ describe.each(SEEDS)('seed %i', (seed) => {
     const crossings = new Set<string>();
     for (const br of L.bridges) {
       for (const hw of L.highways) {
-        for (const p of highwaySamples(hw, 2)) {
-          const deck = bridgeDeckY(br, p.x, p.z, hw.width / 2);
-          if (deck === null) continue;
-          crossings.add(`${hw.id}/${br.id}`);
-          const gap =
-            p.y > deck ? p.y - MAX_DECK_THICKNESS - deck : deck - MAX_DECK_THICKNESS - p.y;
-          expect(gap, `${hw.id} at ${br.id}`).toBeGreaterThanOrEqual(MIN_ROAD_CLEARANCE);
-        }
+        const s = highwaySamples(hw, 2);
+        s.forEach((p, i) => {
+          // Sample both deck edges perpendicular to the direction of travel.
+          const a = s[Math.max(0, i - 1)]!;
+          const b = s[Math.min(s.length - 1, i + 1)]!;
+          for (const q of stripPoints(p, a, b, hw.width / 2)) {
+            const deck = bridgeDeckY(br, q.x, q.z);
+            if (deck === null) continue;
+            crossings.add(`${hw.id}/${br.id}`);
+            const gap =
+              p.y > deck ? p.y - MAX_DECK_THICKNESS - deck : deck - MAX_DECK_THICKNESS - p.y;
+            expect(gap, `${hw.id} at ${br.id}`).toBeGreaterThanOrEqual(MIN_ROAD_CLEARANCE);
+          }
+        });
       }
     }
     // Both riverside highways cross all three bridges.

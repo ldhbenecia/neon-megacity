@@ -162,8 +162,15 @@ function clipLine(
  */
 function underLowDeck(bridges: readonly Bridge[], x: number, z: number, half: number): boolean {
   for (const br of bridges) {
-    const y = bridgeDeckY(br, x, z, half);
-    if (y !== null && y - MAX_DECK_THICKNESS < MIN_ROAD_CLEARANCE) return true;
+    // The road strip spans ±half around (x, z); check its centre and both edges along the
+    // bridge axis, where the approach deck is lowest on the landing side.
+    const ax = br.landB.x - br.landA.x;
+    const az = br.landB.z - br.landA.z;
+    const len = Math.hypot(ax, az);
+    for (const k of [0, -half, half]) {
+      const y = bridgeDeckY(br, x + (ax / len) * k, z + (az / len) * k, half);
+      if (y !== null && y - MAX_DECK_THICKNESS < MIN_ROAD_CLEARANCE) return true;
+    }
   }
   return false;
 }
