@@ -57,6 +57,8 @@ export interface RigOptions {
   initial: Pose;
   /** Start 15% further out and dolly in over 2.5 s (9.3 step 5). */
   dollyIn: boolean;
+  /** Off for pinned URLs (?cam, ?preset): screenshots and tests must not drift into it. */
+  idleCinematic: boolean;
   hud: Hud;
 }
 
@@ -134,7 +136,7 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
 
   let mode: RigMode = 'orbit';
   let elapsed = 0;
-  let lastInput = 0;
+  let idleFor = 0;
   const pressed = new Set<string>();
   const vel = new THREE.Vector3();
   let zoomPending = 0;
@@ -331,12 +333,12 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
 
   /** Any user input: resets the idle timer and stops the cinematic. */
   const markInput = (): void => {
-    lastInput = elapsed;
+    idleFor = 0;
     exitCinematic();
   };
   /** HUD interaction: counts as activity for the idle timer, but leaves the camera alone. */
   const touchIdle = (): void => {
-    lastInput = elapsed;
+    idleFor = 0;
   };
   /** The user steered the camera themselves: no preset is "current" any more. */
   const steered = (): void => {
@@ -768,10 +770,13 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
     },
     update(dt, t) {
       elapsed = t;
+      // Clamped frame time, not wall time: a slow first load must not count as idling.
+      idleFor += dt;
       if (
+        opts.idleCinematic &&
         mode === 'orbit' &&
         !reduceMotion &&
-        elapsed - lastInput > IDLE_CINEMATIC_S &&
+        idleFor > IDLE_CINEMATIC_S &&
         !document.hidden
       ) {
         enterCinematic();
@@ -807,12 +812,12 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
       return presetKey;
     },
     setCinematic(on) {
-      lastInput = elapsed;
+      idleFor = 0;
       if (on) enterCinematic();
       else exitCinematic();
     },
     setFly(on) {
-      lastInput = elapsed;
+      idleFor = 0;
       if (on && mode !== 'fly') enterFly();
       else if (!on) exitFly();
     },

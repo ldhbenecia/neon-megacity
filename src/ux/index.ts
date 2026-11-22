@@ -54,6 +54,7 @@ export function initUx(ctx: Ctx, opts: UxOptions): Ux {
   const rig = createCameraRig(ctx, {
     initial,
     dollyIn: !deterministic,
+    idleCinematic: !deterministic,
     hud,
   });
   const controls = createControls(ctx, rig, hud);
