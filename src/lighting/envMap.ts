@@ -1,9 +1,4 @@
-// PMREM environment map for wet roads, water and glossy facades (ART_DIRECTION 6.1 #2).
-// A tiny offscreen scene (dark teal dome + 40 emissive panels in a band around the horizon, in
-// the orange / teal / red neon mix) is baked with PMREMGenerator.fromScene once per palette key
-// and cached: at most 4 bakes for the whole session, never per frame.
-// Contract: lighting assigns the result to `scene.environment` and drives
-// `scene.environmentIntensity` from the palette (`envMapIntensity`, night 0.6 → day 1.0).
+// Bakes happen at init only (4 keys), never per frame; lighting owns scene.environment.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { DAWN, DAY, NEON, NIGHT, SUNSET, type NeonName, type PaletteKey } from '../core/palette';
@@ -18,7 +13,6 @@ const KEY_PALETTE: Record<EnvKey, PaletteKey> = {
   sunset: SUNSET,
 };
 
-/** Panel hue mix: red/orange heavy, teal second, warm white windows (principle 2). */
 const PANEL_MIX: readonly (readonly [NeonName, number])[] = [
   ['neonRed', 0.2],
   ['neonOrange', 0.18],
@@ -61,7 +55,6 @@ function srgb(hex: number, scale = 1): THREE.Color {
   return new THREE.Color().setHex(hex).multiplyScalar(scale);
 }
 
-/** Merged panel band geometry with per-vertex HDR colors for one palette key. */
 function buildPanels(key: PaletteKey): THREE.BufferGeometry {
   const rng = createRng(6061);
   const parts: THREE.BufferGeometry[] = [];
@@ -77,7 +70,6 @@ function buildPanels(key: PaletteKey): THREE.BufferGeometry {
     const name = weighted(rng, PANEL_MIX);
     const neon = NEON[name];
     const hdr = rng.range(neon.hdr[0], neon.hdr[1]);
-    // Reflections read better a bit dimmer than the signs themselves.
     const c = srgb(neon.hex, hdr * key.neonGain * 0.35);
     const g = new THREE.PlaneGeometry(w, h);
     const n = g.attributes.position?.count ?? 0;
@@ -98,9 +90,8 @@ function buildPanels(key: PaletteKey): THREE.BufferGeometry {
 }
 
 export interface EnvMaps {
-  /** Baked (cached) PMREM texture for a palette key. */
   get(key: EnvKey): THREE.Texture;
-  /** Bake every key up front (called from lighting init, before the boot compile stage). */
+  // Must run in lighting init, before the boot compile stage.
   bakeAll(): void;
   dispose(): void;
 }
