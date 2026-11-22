@@ -1,10 +1,9 @@
 import { expect, test } from '@playwright/test';
 import { canvasStats, collectErrors, waitForCity } from './helpers';
 
-// The feature modules are still placeholder stubs that add nothing to the scene,
-// so the frame is uniformly black. These visual checks are switched on by the
-// lighting module PR, which is the first one that renders anything.
-const MODULES_RENDER = false;
+// Lighting draws the sky dome, so even with the other modules still stubbed the frame has a
+// time-of-day gradient. Flip back to false only if nothing renders at all.
+const MODULES_RENDER = true;
 
 test('loads with zero console errors and renders frames', async ({ page }) => {
   const errors = collectErrors(page);
