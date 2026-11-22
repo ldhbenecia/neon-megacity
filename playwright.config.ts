@@ -24,7 +24,8 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `npx vite build && npx vite preview --port ${PORT} --strictPort`,
+    // CI runs `npm run build` in an earlier step, so only serve the existing dist/ there.
+    command: `${process.env.CI ? '' : 'npx vite build && '}npx vite preview --port ${PORT} --strictPort`,
     port: PORT,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
