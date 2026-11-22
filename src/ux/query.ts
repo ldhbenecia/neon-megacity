@@ -1,7 +1,7 @@
 // ux-only URL hooks (ART_DIRECTION 8.4, 11). Pure, unit tested in tests/ux-query.test.ts.
 //   ?preset=1..8  rig preset (8.4); `?cam=<name>` from src/core/query.ts wins when both are given
 //   ?hud=0        start with the HUD hidden (screenshots)
-//   ?stats[=1]    stats overlay + window.__garam; `?stats=0` keeps it off
+//   ?stats[=1]    stats overlay + window.__hangang; `?stats=0` keeps it off
 //   ?debug        show the lil-gui developer panel (hidden for regular users)
 
 export interface UxQuery {

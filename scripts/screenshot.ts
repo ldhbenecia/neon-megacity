@@ -102,7 +102,7 @@ async function hudSelected(browser: Browser, file: string): Promise<void> {
   await waitPowered(page);
   // Click the skyline peak (the overview target sits in the middle of the screen).
   await page.mouse.click(VIEWPORT.width / 2, VIEWPORT.height / 2);
-  await page.waitForFunction(() => window.__garam?.camera().mode === 'orbit', undefined, {
+  await page.waitForFunction(() => window.__hangang?.camera().mode === 'orbit', undefined, {
     timeout: 10_000,
   });
   await page.waitForTimeout(600);

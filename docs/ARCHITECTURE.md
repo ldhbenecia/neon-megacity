@@ -85,7 +85,7 @@ Y up, ground at `y = 0`, 1 unit = 1 m, north = -Z, east = +X. The map spans `[-1
 | data               | what                                                                                             |
 | ------------------ | ------------------------------------------------------------------------------------------------ |
 | `LAYOUT.districts` | zone polygons partitioning the map (`zoneAt`, `districtAt`), each with its own rotated road grid |
-| `LAYOUT.river`     | 검은비늘강 centerline (33 points), channel 240 m incl. 40 m parks, water y -4                    |
+| `LAYOUT.river`     | 한강 centerline (33 points), channel 240 m incl. 40 m parks, water y -4                          |
 | `LAYOUT.bridges`   | 3 bridges: abutments `a/b`, approach landings `landA/landB`, deck heights                        |
 | `LAYOUT.highways`  | Catmull-Rom control points (`highwayCurve`), pillars, no-build corridor                          |
 | `LAYOUT.ridges`    | 3 far ridge rings (`ridgeHeight`, `ridgePoint`)                                                  |

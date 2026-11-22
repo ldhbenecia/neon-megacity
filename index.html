@@ -3,18 +3,18 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>가람 GARAM · Neon Megacity</title>
+    <title>한강 HANGANG · Neon Megacity</title>
     <meta
       name="description"
-      content="가상의 사이버펑크 도시 가람을 마우스와 키보드로 날아다니며 둘러보는 3D 장면"
+      content="미래의 서울, 한강 도시를 마우스와 키보드로 날아다니며 둘러보는 3D 장면"
     />
     <meta name="theme-color" content="#020a0b" />
     <meta name="color-scheme" content="dark" />
-    <!-- Favicon (ART_DIRECTION 10): teal neon tower, red rooftop cross, river wave. Inline, no files. -->
+    <!-- Favicon (ART_DIRECTION 10): teal neon tower, red rooftop cross, Hangang river waves. Inline, no files. -->
     <link
       rel="icon"
       type="image/svg+xml"
-      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2303161a'/%3E%3Cpath d='M0 42 L13 34 L23 39 L35 30 L50 38 L64 32 V64 H0 Z' fill='%230a2e33'/%3E%3Crect x='27' y='7' width='12' height='42' rx='2' fill='%23021013' stroke='%2319f2e6' stroke-width='3'/%3E%3Crect x='31.5' y='13' width='3' height='30' rx='1.5' fill='%2319f2e6' opacity='.45'/%3E%3Crect x='10' y='31' width='13' height='18' fill='%23021013'/%3E%3Cpath d='M16.5 14 V28 M11.5 19.5 H21.5' stroke='%23ff2a3a' stroke-width='3.4' stroke-linecap='round'/%3E%3Crect x='43' y='23' width='10' height='26' fill='%23021013'/%3E%3Crect x='47' y='26' width='3' height='17' rx='1.5' fill='%23ff7a1a'/%3E%3Cpath d='M5 55 Q18.5 50.5 32 55 T59 55' fill='none' stroke='%2319f2e6' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2303161a'/%3E%3Cpath d='M0 38 L13 31 L23 36 L35 27 L50 35 L64 29 V64 H0 Z' fill='%230a2e33'/%3E%3Crect x='27' y='6' width='12' height='38' rx='2' fill='%23021013' stroke='%2319f2e6' stroke-width='3'/%3E%3Crect x='31.5' y='12' width='3' height='26' rx='1.5' fill='%2319f2e6' opacity='.45'/%3E%3Crect x='10' y='28' width='13' height='16' fill='%23021013'/%3E%3Cpath d='M16.5 12 V25 M11.5 17.5 H21.5' stroke='%23ff2a3a' stroke-width='3.4' stroke-linecap='round'/%3E%3Crect x='43' y='21' width='10' height='23' fill='%23021013'/%3E%3Crect x='47' y='24' width='3' height='15' rx='1.5' fill='%23ff7a1a'/%3E%3Cpath d='M4 50 Q11 46 18 50 T32 50 T46 50 T60 50' fill='none' stroke='%2319f2e6' stroke-width='3' stroke-linecap='round'/%3E%3Cpath d='M8 57.5 Q15 53.5 22 57.5 T36 57.5 T50 57.5' fill='none' stroke='%2319f2e6' stroke-width='2.4' stroke-linecap='round' opacity='.55'/%3E%3C/svg%3E"
     />
     <!-- Boot skeleton styles (ART_DIRECTION 9.1): inline so #boot paints before any JS or CSS file.
          Every animation is transform/opacity only, so it keeps running while module init blocks JS. -->
@@ -338,11 +338,11 @@
   <body>
     <div id="boot">
       <div class="boot-logo">
-        <div class="boot-neon" aria-hidden="true">가람</div>
-        <div class="boot-sub"><b>가람</b> / GARAM</div>
+        <div class="boot-neon" aria-hidden="true">한강</div>
+        <div class="boot-sub"><b>한강</b> / HANGANG</div>
       </div>
       <div class="boot-tag" aria-hidden="true">
-        검은비늘강 · 강변 전력망<br />구역 00 · 새벽 02:00<br />전력 대기
+        서울 · 한강 전력망<br />SEOUL RIVER GRID<br />전력 대기 · 02:00
       </div>
       <div class="boot-skyline" aria-hidden="true">
         <span style="--w: 4; --h: 16.5vh; --s: 0s"></span>
@@ -452,7 +452,7 @@
           </div>
           <span class="boot-pct">000%</span>
         </div>
-        <div class="boot-hint">가람 전력망에 접속하는 중 · 그래픽 카드에서 도시를 조립합니다</div>
+        <div class="boot-hint">한강 전력망에 접속하는 중 · 그래픽 카드에서 도시를 조립합니다</div>
       </div>
       <div class="boot-scan" aria-hidden="true"></div>
     </div>
@@ -460,7 +460,7 @@
     <div id="hud">
       <div class="hud-brand">
         <span class="brand-mark" aria-hidden="true"></span>
-        <span class="brand-name">GARAM <span class="brand-sep">//</span> 가람</span>
+        <span class="brand-name">한강 <span class="brand-sep">//</span> HANGANG</span>
         <span id="hud-mode" class="hud-mode" hidden></span>
       </div>
 

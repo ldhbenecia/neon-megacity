@@ -2,20 +2,20 @@ import { expect, test, type Page } from '@playwright/test';
 import { collectErrors, waitForCity, waitFrames } from './helpers';
 
 // Boot skeleton, HUD and camera rig controls (ART_DIRECTION 8, 9, 10).
-// Camera state is read through window.__garam.camera(), available with ?stats.
+// Camera state is read through window.__hangang.camera(), available with ?stats.
 
-type Cam = NonNullable<Window['__garam']>;
+type Cam = NonNullable<Window['__hangang']>;
 
 async function cam(page: Page): Promise<ReturnType<Cam['camera']>> {
   return page.evaluate(() => {
-    const r = window.__garam;
-    if (!r) throw new Error('__garam missing (needs ?stats)');
+    const r = window.__hangang;
+    if (!r) throw new Error('__hangang missing (needs ?stats)');
     return r.camera();
   });
 }
 
 async function waitMode(page: Page, mode: string): Promise<void> {
-  await page.waitForFunction((m) => window.__garam?.camera().mode === m, mode, {
+  await page.waitForFunction((m) => window.__hangang?.camera().mode === m, mode, {
     timeout: 15_000,
   });
 }
@@ -30,7 +30,7 @@ test('boot skeleton paints before JS and is removed after power-on', async ({ pa
     const noJs = await ctx.newPage();
     await noJs.route('**/*.js', (r) => r.abort());
     await noJs.goto('./');
-    await expect(noJs.locator('#boot .boot-neon')).toHaveText('가람');
+    await expect(noJs.locator('#boot .boot-neon')).toHaveText('한강');
     await expect(noJs.locator('#boot .boot-skyline > span')).toHaveCount(28);
     await expect(noJs.locator('#boot .boot-pct')).toHaveText('000%');
     await ctx.close();
@@ -59,7 +59,7 @@ test('boot skeleton paints before JS and is removed after power-on', async ({ pa
 test('HUD: brand mark, clock, help sheet on ?, inline SVG favicon', async ({ page }) => {
   await page.goto('./?nogui&time=0.25');
   await waitForCity(page);
-  await expect(page.locator('.brand-name')).toHaveText(/GARAM\s*\/\/\s*가람/);
+  await expect(page.locator('.brand-name')).toHaveText(/한강\s*\/\/\s*HANGANG/);
   await expect(page.locator('#clock')).toHaveText('06:00');
   // Help is a sheet that opens with ? and closes with Esc.
   await expect(page.locator('#help')).toBeHidden();

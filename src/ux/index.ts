@@ -60,7 +60,7 @@ export function initUx(ctx: Ctx, opts: UxOptions): Ux {
   const perf = createPerf(ctx, { overlay: q.stats, resize: opts.resize });
 
   if (q.stats) {
-    window.__garam = {
+    window.__hangang = {
       stats: (): FrameStats => perf.stats(),
       camera: (): RigDebug => rig.debug(),
     };
@@ -109,7 +109,7 @@ export function initUx(ctx: Ctx, opts: UxOptions): Ux {
       rig.dispose();
       hud.dispose();
       perf.dispose();
-      delete window.__garam;
+      delete window.__hangang;
     },
   };
 }
