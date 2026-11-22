@@ -1,8 +1,4 @@
-// Captures a fixed list of deterministic screenshots for visual review.
 // Usage: npm run shots -- [label] [--swiftshader] [--no-build] [--only=<substring>]
-// Output: screenshots/<label>/<shot>.png (gitignored). Prints absolute paths.
-// Scene shots are taken only after the loader is gone and the power-on ramp has finished
-// (window.__city.powered). The ux shots also capture the boot skeleton itself.
 import { execSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -37,17 +33,15 @@ async function waitPowered(page: Page): Promise<void> {
   });
 }
 
-/** Boot skeleton exactly as the HTML paints it, before any JS runs. */
 async function bootSkeleton(browser: Browser, file: string): Promise<void> {
   const page = await browser.newPage({ viewport: VIEWPORT });
   await page.route('**/*.js', (route) => route.abort());
   await page.goto(BASE);
-  await page.waitForTimeout(3200); // shimmer sweep + window dots lit
+  await page.waitForTimeout(3200);
   await page.screenshot({ path: file });
   await page.close();
 }
 
-/** Boot in progress: CPU throttled so the real loader is caught mid-way. */
 async function bootProgress(browser: Browser, file: string): Promise<void> {
   const page = await browser.newPage({ viewport: VIEWPORT });
   const cdp = await page.context().newCDPSession(page);
@@ -66,7 +60,6 @@ async function bootProgress(browser: Browser, file: string): Promise<void> {
   await page.close();
 }
 
-/** Default HUD on first entry (intro hint), then the settings panel opened. */
 async function hudPanel(browser: Browser, file: string): Promise<void> {
   const page = await browser.newPage({ viewport: VIEWPORT });
   await page.goto(`${BASE}?time=0.0`);
@@ -78,7 +71,6 @@ async function hudPanel(browser: Browser, file: string): Promise<void> {
   await page.close();
 }
 
-/** Narrow touch viewport with the panel open. */
 async function hudMobile(browser: Browser, file: string): Promise<void> {
   const context = await browser.newContext({
     viewport: { width: 390, height: 844 },
@@ -95,12 +87,10 @@ async function hudMobile(browser: Browser, file: string): Promise<void> {
   await context.close();
 }
 
-/** Selected building card (slides in on the right) with the `?stats` overlay. */
 async function hudSelected(browser: Browser, file: string): Promise<void> {
   const page = await browser.newPage({ viewport: VIEWPORT });
   await page.goto(`${BASE}?stats&time=0.0&cam=overview`);
   await waitPowered(page);
-  // Click the skyline peak (the overview target sits in the middle of the screen).
   await page.mouse.click(VIEWPORT.width / 2, VIEWPORT.height / 2);
   await page.waitForFunction(() => window.__hangang?.camera().mode === 'orbit', undefined, {
     timeout: 10_000,

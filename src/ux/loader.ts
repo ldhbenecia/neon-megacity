@@ -1,6 +1,3 @@
-// Boot loader (ART_DIRECTION 9). The #boot skeleton is plain HTML/CSS in index.html so it paints
-// before any JS; this module only drives it: weighted progress (progress.ts), the stage log,
-// the error state and the "power on" exit (blink twice, fade 700 ms, remove).
 import {
   activeSegment,
   createProgress,
@@ -12,22 +9,16 @@ import {
 } from './progress';
 
 export interface Loader {
-  /** A boot stage starts. `weight` is its share of the progress bar (normalized by the sum). */
   stage(name: string, weight: number): void;
-  /** Extra detail for the running stage's completion line (e.g. a building count). */
   detail(name: string, text: string): void;
-  /** Every stage finished: run the exit animation. Resolves once #boot is gone. */
   done(): Promise<void>;
-  /** A stage threw; show it, keep the stack in the console. */
   fail(stage: string, err: unknown): void;
 }
 
-/** Planned weight sum (9.2). Progress is normalized by max(this, declared sum). */
 const TOTAL_WEIGHT = 100;
 const SEGMENTS = 20;
 const LOG_LINES = 4;
 
-/** Running / finished log text per stage (9.2). Unknown stages fall back to their name. */
 const STAGE_TEXT: Record<string, [running: string, done: string]> = {
   setup: ['도시 측량 중…', '지형 측량 완료'],
   lighting: ['하늘 보정 중…', '하늘 보정 완료'],
@@ -40,7 +31,6 @@ const STAGE_TEXT: Record<string, [running: string, done: string]> = {
   'first-frame': ['첫 프레임 렌더 중…', '전력 투입'],
 };
 
-/** `prefers-reduced-motion: reduce`, false where matchMedia is unavailable. */
 export const reducedMotion = (): boolean =>
   typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -74,7 +64,6 @@ export function createLoader(root: HTMLElement | null = document.getElementById(
     li.append(b, ` ${text}`);
     log.append(li);
     while (log.children.length > LOG_LINES) log.firstElementChild?.remove();
-    // Restart the push-up animation.
     log.classList.remove('push');
     log.getBoundingClientRect(); // force a reflow so the animation restarts
     log.classList.add('push');
@@ -113,7 +102,6 @@ export function createLoader(root: HTMLElement | null = document.getElementById(
       render();
       if (!root) return;
       const reduce = reducedMotion();
-      // 9.3: blink twice (120 ms each), then fade 700 ms and remove.
       root.classList.add('is-done');
       await wait(reduce ? 0 : 260);
       root.classList.add('is-leaving');

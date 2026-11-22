@@ -1,7 +1,3 @@
-// Entry point. Owns renderer / camera / controls / loop and wires modules.
-// Module contract: see docs/ARCHITECTURE.md and src/core/types.ts.
-// Boot UX (loader, camera rig, HUD, stats) lives in src/ux/; feature work never edits this file.
-// Boot is async (ART_DIRECTION 9.2): each stage yields two frames so the #boot skeleton repaints.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import GUI from 'lil-gui';
@@ -17,14 +13,8 @@ import * as neon from './neon/index';
 import * as atmosphere from './atmosphere/index';
 import { createLoader, initUx, nextFrame, parseUxQuery } from './ux/index';
 
-/**
- * Boot progress weights (ART_DIRECTION 9.2); all stages sum to 100:
- * setup (renderer, camera, layout) 5 + modules 77 + shader warm-up 15 + first frame 3.
- * The loader normalizes by the declared sum anyway.
- */
 const BOOT_WEIGHTS = { setup: 5, compile: 15, firstFrame: 3 } as const;
 
-/** Init and update order (ART_DIRECTION 13.1) with boot progress weights (9.2). */
 const MODULES: readonly (readonly [name: string, weight: number, module: CityModule])[] = [
   ['lighting', 8, lighting],
   ['terrain', 8, terrain],
@@ -60,13 +50,12 @@ async function boot(): Promise<void> {
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.5, 8000);
 
-  // Limits and feel are tuned by the camera rig (src/ux/cameraRig.ts, ART_DIRECTION 8.1).
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.minDistance = CAMERA_LIMITS.minDistance;
   controls.maxDistance = CAMERA_LIMITS.maxDistance;
-  controls.maxPolarAngle = CAMERA_LIMITS.maxPolarAngle; // never go below the horizon
-  controls.screenSpacePanning = false; // right-drag pans along the ground plane
+  controls.maxPolarAngle = CAMERA_LIMITS.maxPolarAngle;
+  controls.screenSpacePanning = false;
 
   // lil-gui is the developer panel: only with ?debug (and never with ?nogui). Regular users get
   // the ux controls (time scrubber, weather, camera) instead.
@@ -86,7 +75,6 @@ async function boot(): Promise<void> {
   // Registered right away: boot is async, the window may resize or rotate during compile.
   window.addEventListener('resize', resize);
 
-  /** Shared context handed to every module. Initial env values are night palette defaults. */
   const ctx: Ctx = {
     THREE,
     scene,
@@ -97,7 +85,7 @@ async function boot(): Promise<void> {
     CITY,
     LAYOUT,
     env: {
-      timeOfDay: query.time ?? 0.9, // 0 = midnight, 0.25 = 6am, 0.5 = noon, 0.75 = 6pm
+      timeOfDay: query.time ?? 0.9,
       timeLocked: query.time !== undefined,
       sunDirection: new THREE.Vector3(0, -1, 0),
       sunElevation: -1,
@@ -141,7 +129,6 @@ async function boot(): Promise<void> {
     }
   }
 
-  // Compile every program up front so the first seconds of flight do not hitch.
   loader.stage('compile', BOOT_WEIGHTS.compile);
   await nextFrame();
   try {
@@ -181,7 +168,6 @@ async function boot(): Promise<void> {
   frame();
   await nextFrame();
 
-  // 9.3 power on: the loop runs while the loader blinks and fades out over the city.
   ux.powerOn();
   renderer.setAnimationLoop(frame);
   await loader.done();

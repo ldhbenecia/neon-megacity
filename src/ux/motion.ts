@@ -1,5 +1,3 @@
-// Camera interpolation math (ART_DIRECTION 8.2, 8.3). Pure functions over plain vectors,
-// unit tested in tests/ux-motion.test.ts. The rig copies results into three.js objects.
 import type { BuildingSpec, Vec3 } from '../city/layout';
 
 import { clamp } from '../city/math';
@@ -11,17 +9,14 @@ export function easeInOutCubic(t: number): number {
   return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
 }
 
-/** Frame-rate independent exponential approach factor: `1 - exp(-dt / tau)`. */
 export function dampFactor(dt: number, tau: number): number {
   return tau <= 0 ? 1 : 1 - Math.exp(-dt / tau);
 }
 
-/** 8.2: keyboard flight speed from the camera height above the surface (m/s), ×3 with Shift. */
 export function moveSpeed(heightAboveSurface: number, boost: boolean): number {
   return clamp(heightAboveSurface * 0.9, 12, 420) * (boost ? 3 : 1);
 }
 
-/** 8.1: right-drag pan speed grows with camera height (capped so it stays controllable). */
 export function panSpeedFor(height: number): number {
   return clamp(0.8 + height / 300, 0.8, 2.4);
 }
@@ -33,7 +28,6 @@ export interface Pose {
 
 const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
 
-/** Cubic Bézier point for scalar control values. */
 function bez(a: number, b: number, c: number, d: number, t: number): number {
   const u = 1 - t;
   return u * u * u * a + 3 * u * u * t * b + 3 * u * t * t * c + t * t * t * d;
@@ -42,27 +36,20 @@ function bez(a: number, b: number, c: number, d: number, t: number): number {
 export interface Flight {
   from: Pose;
   to: Pose;
-  /** Inner Bézier control points of the camera path. */
   c1: Vec3;
   c2: Vec3;
   duration: number;
 }
 
-/** 8.3: duration from the travelled distance, clamp(0.9 + d / 1500, 0.9, 2.2) s. */
 export function flightDuration(distance: number): number {
   return clamp(0.9 + distance / 1500, 0.9, 2.2);
 }
 
-/**
- * Plans an arcing flight. Inner control points sit at 1/3 and 2/3 of the way, lifted to
- * max(start y, end y) + `lift` so the path clears the rooftops in between.
- */
 export function planFlight(from: Pose, to: Pose, lift = 60, minDuration = 0): Flight {
   const a = from.position;
   const b = to.position;
   const top = Math.max(a.y, b.y) + lift;
   const dist = Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
-  // Short hops barely need an arc; scale the lift with the horizontal distance.
   const hop = Math.hypot(b.x - a.x, b.z - a.z);
   const k = clamp(hop / 200, 0, 1);
   return {
@@ -82,7 +69,6 @@ export function planFlight(from: Pose, to: Pose, lift = 60, minDuration = 0): Fl
   };
 }
 
-/** Pose along a flight at time `time` (s). Writes into `out` and returns it. */
 export function flightPose(f: Flight, time: number, out: Pose): Pose {
   const e = easeInOutCubic(time / f.duration);
   const a = f.from.position;
@@ -98,14 +84,9 @@ export function flightPose(f: Flight, time: number, out: Pose): Pose {
 
 const DEG = Math.PI / 180;
 
-/**
- * 8.3 framing for a building: target (x, baseY + h × 0.55, z), distance
- * max(w, d) × 2.2 + h × 0.45, keeping the current camera bearing, elevation clamped to 20..35°.
- */
 export function frameBuilding(
   b: Pick<BuildingSpec, 'x' | 'z' | 'w' | 'd' | 'h' | 'baseY'>,
   camera: Vec3,
-  /** Fallback framings (occlusion): rotate the bearing / force an elevation (radians). */
   opts: { bearingOffset?: number; elevation?: number } = {},
 ): Pose {
   const target = { x: b.x, y: b.baseY + b.h * 0.55, z: b.z };
@@ -138,10 +119,7 @@ export function frameBuilding(
   };
 }
 
-/**
- * Lowers the target until the orbit polar angle (from +Y) is at most `maxPolar - margin`,
- * so OrbitControls.update() never moves the camera on the first frame (PR0 finding, 8.4).
- */
+// Past maxPolarAngle, OrbitControls.update() silently moves the camera on the first frame.
 export function fitPolar(pose: Pose, maxPolar: number, margin = 0.01): Pose {
   const { position: p, target: t } = pose;
   const horiz = Math.hypot(p.x - t.x, p.z - t.z);
@@ -150,7 +128,6 @@ export function fitPolar(pose: Pose, maxPolar: number, margin = 0.01): Pose {
   return { position: { ...p }, target: { x: t.x, y: p.y - minDrop, z: t.z } };
 }
 
-/** Polar angle of the camera around the target, measured from +Y. */
 export function polarAngle(pose: Pose): number {
   const { position: p, target: t } = pose;
   const dx = p.x - t.x;

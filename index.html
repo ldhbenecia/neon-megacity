@@ -10,14 +10,13 @@
     />
     <meta name="theme-color" content="#020a0b" />
     <meta name="color-scheme" content="dark" />
-    <!-- Favicon (ART_DIRECTION 10): teal neon tower, red rooftop cross, Hangang river waves. Inline, no files. -->
     <link
       rel="icon"
       type="image/svg+xml"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2303161a'/%3E%3Cpath d='M0 38 L13 31 L23 36 L35 27 L50 35 L64 29 V64 H0 Z' fill='%230a2e33'/%3E%3Crect x='27' y='6' width='12' height='38' rx='2' fill='%23021013' stroke='%2319f2e6' stroke-width='3'/%3E%3Crect x='31.5' y='12' width='3' height='26' rx='1.5' fill='%2319f2e6' opacity='.45'/%3E%3Crect x='10' y='28' width='13' height='16' fill='%23021013'/%3E%3Cpath d='M16.5 12 V25 M11.5 17.5 H21.5' stroke='%23ff2a3a' stroke-width='3.4' stroke-linecap='round'/%3E%3Crect x='43' y='21' width='10' height='23' fill='%23021013'/%3E%3Crect x='47' y='24' width='3' height='15' rx='1.5' fill='%23ff7a1a'/%3E%3Cpath d='M4 50 Q11 46 18 50 T32 50 T46 50 T60 50' fill='none' stroke='%2319f2e6' stroke-width='3' stroke-linecap='round'/%3E%3Cpath d='M8 57.5 Q15 53.5 22 57.5 T36 57.5 T50 57.5' fill='none' stroke='%2319f2e6' stroke-width='2.4' stroke-linecap='round' opacity='.55'/%3E%3C/svg%3E"
     />
-    <!-- Boot skeleton styles (ART_DIRECTION 9.1): inline so #boot paints before any JS or CSS file.
-         Every animation is transform/opacity only, so it keeps running while module init blocks JS. -->
+    <!-- Inline so #boot paints before any JS or CSS file. Animate only transform and opacity:
+         those keep running on the compositor while module init blocks the main thread. -->
     <style>
       html,
       body {
@@ -186,7 +185,7 @@
         list-style: none;
         margin: 0 0 12px;
         padding: 0;
-        height: 6em; /* exactly 4 lines of 1.5em */
+        height: 6em;
         overflow: hidden;
         display: flex;
         flex-direction: column;
@@ -261,7 +260,6 @@
           opacity: 0;
         }
       }
-      /* 20 segments: background-colored 2px gaps drawn over the fill. */
       .boot-bar::after {
         content: '';
         position: absolute;

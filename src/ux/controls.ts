@@ -1,7 +1,3 @@
-// City controls (replaces lil-gui for regular users; lil-gui only shows with ?debug).
-// Bottom-center time scrubber with play/pause, and a collapsed top-right panel for weather,
-// camera presets, cinematic and fly mode. DOM lives in index.html.
-//
 // Ownership (ARCHITECTURE env table): `timeLocked` and `rainTarget` are ux-owned. A user scrub
 // writes `timeOfDay` only while `timeLocked` is true (the documented exception: lighting does
 // not advance it while locked). Weather buttons set `rainTarget`; atmosphere eases `rain` to it.
@@ -16,10 +12,8 @@ export interface Controls {
   dispose(): void;
 }
 
-/** Weather steps: clear, rain, storm. */
 export const RAIN_STEPS = [0, 0.35, 1] as const;
 
-/** Index of the weather step closest to a rain value (pure, unit tested). */
 export function rainStep(rain: number): number {
   let best = 0;
   RAIN_STEPS.forEach((v, i) => {
@@ -52,7 +46,6 @@ export function createControls(ctx: Ctx, rig: CameraRig, hud: Hud): Controls {
     cleanup.push(() => el.removeEventListener(type, fn as EventListener, opts));
   };
 
-  // --- panel open / close ---
   const setPanel = (open: boolean, focus = false): void => {
     if (!panel || !toggle) return;
     panel.hidden = !open;
@@ -73,14 +66,12 @@ export function createControls(ctx: Ctx, rig: CameraRig, hud: Hud): Controls {
     },
     { capture: true },
   );
-  // Clicking the city closes the panel, like any popover.
   on(ctx.renderer.domElement, 'pointerdown', () => setPanel(false));
   on(openHelp, 'click', () => {
     setPanel(false);
     hud.toggleHelp(true);
   });
 
-  // --- weather ---
   const renderWeather = (): void => {
     const step = rainStep(env.rainTarget);
     weatherButtons.forEach((b, i) => b.setAttribute('aria-checked', String(i === step)));
@@ -91,7 +82,6 @@ export function createControls(ctx: Ctx, rig: CameraRig, hud: Hud): Controls {
       renderWeather();
     });
   }
-  // Radio group: arrow keys move the choice.
   on(panel?.querySelector('.segmented') ?? null, 'keydown', (e) => {
     if (e.code !== 'ArrowLeft' && e.code !== 'ArrowRight') return;
     e.preventDefault();
@@ -104,7 +94,6 @@ export function createControls(ctx: Ctx, rig: CameraRig, hud: Hud): Controls {
     weatherButtons[next]?.focus();
   });
 
-  // --- camera presets ---
   const chips: HTMLButtonElement[] = [];
   if (chipsRoot) {
     for (const p of rigPresets()) {
@@ -123,7 +112,6 @@ export function createControls(ctx: Ctx, rig: CameraRig, hud: Hud): Controls {
     }
   }
 
-  // --- switches ---
   on(swCine, 'click', () => {
     rig.setCinematic(rig.mode !== 'cinematic');
     if (rig.mode === 'cinematic') setPanel(false);
@@ -133,7 +121,6 @@ export function createControls(ctx: Ctx, rig: CameraRig, hud: Hud): Controls {
     if (rig.mode === 'fly') setPanel(false);
   });
 
-  // --- timeline ---
   const input = range instanceof HTMLInputElement ? range : null;
   let scrubbing = false;
   const setTime = (t: number): void => {
@@ -155,7 +142,6 @@ export function createControls(ctx: Ctx, rig: CameraRig, hud: Hud): Controls {
     if (b) setTime(Number(b.dataset.time));
   });
 
-  // --- per-frame sync (only DOM writes when something changed) ---
   let lastMins = -1;
   let lastLocked: boolean | null = null;
   let lastMode = '';

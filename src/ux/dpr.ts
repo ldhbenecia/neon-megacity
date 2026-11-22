@@ -1,8 +1,4 @@
-// Adaptive device pixel ratio (ART_DIRECTION 11, "적응형 품질"). Pure state machine:
-// 2 s moving average frame time > 20 ms → DPR −0.25 (min 1.0); < 14 ms held for 5 s → +0.25 (cap).
-
 export interface DprOptions {
-  /** Upper bound, normally min(devicePixelRatio, 1.5). */
   max: number;
   min?: number;
   step?: number;
@@ -20,7 +16,6 @@ export class AdaptiveDpr {
   private readonly fastMs: number;
   private readonly windowS: number;
   private readonly recoverS: number;
-  /** Ring of (dt) samples covering the last `windowS` seconds. */
   private samples: number[] = [];
   private sum = 0;
   private fastFor = 0;
@@ -37,12 +32,10 @@ export class AdaptiveDpr {
     this.dpr = this.max;
   }
 
-  /** Moving average frame time in ms (0 with no samples). */
   get averageMs(): number {
     return this.samples.length ? (this.sum / this.samples.length) * 1000 : 0;
   }
 
-  /** Feed one frame's real delta (seconds). Returns the new DPR when it changed, else null. */
   sample(dt: number): number | null {
     // Hitches (tab switch, GC, shader compile) say nothing about steady-state cost.
     if (!(dt > 0) || dt > 0.25) return null;
@@ -51,7 +44,7 @@ export class AdaptiveDpr {
     while (this.sum - (this.samples[0] ?? 0) >= this.windowS && this.samples.length > 1) {
       this.sum -= this.samples.shift() ?? 0;
     }
-    if (this.sum < this.windowS * 0.95) return null; // window not full yet
+    if (this.sum < this.windowS * 0.95) return null;
     const avg = this.averageMs;
     if (avg > this.slowMs) {
       this.fastFor = 0;
@@ -70,7 +63,6 @@ export class AdaptiveDpr {
     return null;
   }
 
-  /** Back to the cap with a fresh window (adaptive mode switched off, or on again). */
   reset(): number {
     this.fastFor = 0;
     return this.set(this.max);

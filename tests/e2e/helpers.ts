@@ -1,9 +1,7 @@
 import type { Page } from '@playwright/test';
 
-/** Chromium flags for software WebGL (GPU-less CI runners, `npm run shots -- --swiftshader`). */
 export const SWIFTSHADER_ARGS = ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'];
 
-/** Collects console errors and uncaught page errors for the lifetime of the page. */
 export function collectErrors(page: Page): string[] {
   const errors: string[] = [];
   page.on('console', (msg) => {
@@ -13,7 +11,6 @@ export function collectErrors(page: Page): string[] {
   return errors;
 }
 
-/** Waits until boot finished, the loader is gone, the power-on ramp ended and `minFrames` ran. */
 export async function waitForCity(page: Page, minFrames = 30): Promise<void> {
   await page.waitForFunction(
     (n) => (window.__city?.frames ?? 0) >= n && window.__city?.powered === true,
@@ -22,7 +19,6 @@ export async function waitForCity(page: Page, minFrames = 30): Promise<void> {
   );
 }
 
-/** Frame counter right now (for "wait N more frames"). */
 export async function frameCount(page: Page): Promise<number> {
   return page.evaluate(() => window.__city?.frames ?? 0);
 }
@@ -44,7 +40,6 @@ export interface PixelStats {
  * (decoding the PNG with a 2D canvas avoids preserveDrawingBuffer and extra deps).
  */
 export async function canvasStats(page: Page): Promise<PixelStats> {
-  // Hide HTML overlays so only WebGL output is measured.
   const png = await page
     .locator('canvas')
     .first()

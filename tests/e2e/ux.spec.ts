@@ -1,9 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { collectErrors, waitForCity, waitFrames } from './helpers';
 
-// Boot skeleton, HUD and camera rig controls (ART_DIRECTION 8, 9, 10).
-// Camera state is read through window.__hangang.camera(), available with ?stats.
-
 type Cam = NonNullable<Window['__hangang']>;
 
 async function cam(page: Page): Promise<ReturnType<Cam['camera']>> {
@@ -24,7 +21,6 @@ const dist = (a: { x: number; y: number; z: number }, b: { x: number; y: number;
   Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 
 test('boot skeleton paints before JS and is removed after power-on', async ({ page }) => {
-  // Without JS the static skeleton is all there is: logo, 28 skyline bars, 20-cell bar.
   const ctx = await page.context().browser()?.newContext();
   if (ctx) {
     const noJs = await ctx.newPage();
@@ -49,7 +45,6 @@ test('boot skeleton paints before JS and is removed after power-on', async ({ pa
   await page.goto('./?nogui');
   await waitForCity(page);
   await expect(page.locator('#boot')).toHaveCount(0);
-  // Real, monotonic progress that ends at 100.
   expect(seen.length).toBeGreaterThan(3);
   expect(seen.at(-1)).toBe(100);
   expect(seen).toEqual([...seen].sort((a, b) => a - b));
@@ -61,7 +56,6 @@ test('HUD: brand mark, clock, help sheet on ?, inline SVG favicon', async ({ pag
   await waitForCity(page);
   await expect(page.locator('.brand-name')).toHaveText(/한강\s*\/\/\s*HANGANG/);
   await expect(page.locator('#clock')).toHaveText('06:00');
-  // Help is a sheet that opens with ? and closes with Esc.
   await expect(page.locator('#help')).toBeHidden();
   await page.keyboard.press('Shift+Slash');
   await expect(page.locator('#help')).toBeVisible();
@@ -104,11 +98,9 @@ test.describe('city controls', () => {
     await toggle.click();
     await expect(toggle).toHaveAttribute('aria-expanded', 'true');
     await expect(page.locator('#panel')).toBeVisible();
-    // Weather: one of three, the current rain (0.35) is "비".
     await expect(page.locator('[data-rain="0.35"]')).toHaveAttribute('aria-checked', 'true');
     await page.locator('[data-rain="1"]').click();
     await expect(page.locator('[data-rain="1"]')).toHaveAttribute('aria-checked', 'true');
-    // Wheel over the panel never zooms the camera.
     const before = await cam(page);
     const box = await page.locator('#panel').boundingBox();
     await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
@@ -173,7 +165,6 @@ test.describe('camera rig', () => {
     const mz = b.position.z - a.position.z;
     expect(Math.hypot(mx, mz)).toBeGreaterThan(20);
     expect((fx * mx + fz * mz) / Math.hypot(fx, fz) / Math.hypot(mx, mz)).toBeGreaterThan(0.95);
-    // The orbit offset is preserved while translating.
     expect(dist(b.position, b.target)).toBeCloseTo(dist(a.position, a.target), -1);
 
     await page.keyboard.down('e');
@@ -193,7 +184,6 @@ test.describe('camera rig', () => {
     await page.waitForTimeout(800);
     const b = await cam(page);
     expect(dist(b.position, b.target)).toBeLessThan(dist(a.position, a.target) * 0.8);
-    // Damped: still moving a few frames after the event.
     expect(dist(b.position, mid.position)).toBeGreaterThan(1);
     expect(b.mode).toBe('orbit');
   });
@@ -208,7 +198,6 @@ test.describe('camera rig', () => {
     const b = await cam(page);
     expect(dist(b.target, a.target)).toBeLessThan(1);
     expect(dist(b.position, a.position)).toBeGreaterThan(50);
-    // A drag is not a click: nothing selected.
     expect(b.selected).toBeNull();
   });
 

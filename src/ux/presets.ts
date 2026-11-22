@@ -1,7 +1,3 @@
-// Rig camera presets 1-8 (ART_DIRECTION 8.4) and the cinematic tour order (8.5).
-// Every pose goes through `fitPolar` (orbit polar limit) and `resolveCollision`, and is
-// unit tested in tests/ux-camera.test.ts. The `?cam=` presets are read only through
-// `camPose` (via `cameraPreset()`, which computes the street pose lazily).
 import { LAYOUT, highwayCurve, type Layout, type Vec3 } from '../city/layout';
 import { CAMERA_LIMITS, cameraPreset, type CameraPreset } from '../core/query';
 import { cameraFloor, resolveCollision, targetFloor } from './collision';
@@ -15,13 +11,11 @@ export interface RigPreset extends Pose {
 type Tuple = readonly [number, number, number];
 const v = (a: Tuple): Vec3 => ({ x: a[0], y: a[1], z: a[2] });
 
-/** `?cam=` preset as a Pose. */
 export function camPose(name: CameraPreset): Pose {
   const p = cameraPreset(name);
   return { position: v(p.position), target: v(p.target) };
 }
 
-/** Polar fit + wall / ground clearance, the invariants every preset must hold. */
 export function safePose(L: Layout, pose: Pose): Pose {
   const p = { ...pose.position };
   p.y = Math.max(p.y, cameraFloor(p.x, p.z));
@@ -40,7 +34,6 @@ export function safePose(L: Layout, pose: Pose): Pose {
   return { position, target: { x: position.x + dx * k, y: floor, z: position.z + dz * k } };
 }
 
-/** 8.4 preset 4: hw-ring at t = 0.1, 8 m over the deck, looking 120 m ahead. */
 function highwayPose(L: Layout): Pose {
   const hw = L.highways.find((h) => h.id === 'hw-ring') ?? L.highways[0];
   if (!hw) return camPose('overview');
@@ -53,7 +46,6 @@ function highwayPose(L: Layout): Pose {
   return { position: { x: a.x, y: a.y + 8, z: a.z }, target: { x: b.x, y: b.y + 1, z: b.z } };
 }
 
-/** 8.4 preset 7: middle of bridge-b, looking north at the core. */
 function bridgePose(L: Layout): Pose {
   const br = L.bridges.find((b) => b.id === 'bridge-b') ?? L.bridges[0];
   if (!br) return camPose('overview');
@@ -80,7 +72,6 @@ function build(L: Layout): RigPreset[] {
 }
 
 let cache: RigPreset[] | null = null;
-/** The 8 presets, built on first use from the shared layout. */
 export function rigPresets(): readonly RigPreset[] {
   cache ??= build(LAYOUT);
   return cache;
@@ -91,10 +82,8 @@ export function rigPreset(key: number): RigPreset {
   return list[clamp(Math.round(key), 1, list.length) - 1] as RigPreset;
 }
 
-/** 8.5 tour order (closed loop). */
 export const CINEMATIC_ORDER = [1, 5, 2, 7, 4, 3, 6] as const;
 
-/** Default preset (R key, boot). */
 export const DEFAULT_PRESET = 1;
 
 /**

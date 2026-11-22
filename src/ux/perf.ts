@@ -1,6 +1,3 @@
-// Frame stats, `?stats` overlay, window.__hangang and adaptive DPR (ART_DIRECTION 11).
-// renderer.info.autoReset is off, so info counts the whole frame including composer passes;
-// main calls frameStart() before the module updates and frameEnd() after ctx.render().
 import type { Ctx } from '../core/types';
 import { AdaptiveDpr } from './dpr';
 
@@ -16,13 +13,11 @@ export interface FrameStats {
 
 export interface Perf {
   frameStart(): void;
-  /** `dt` = real frame delta (s). */
   frameEnd(dt: number): void;
   stats(): FrameStats;
   dispose(): void;
 }
 
-/** DPR cap (11): min(devicePixelRatio, 1.5). */
 export const DPR_CAP = 1.5;
 
 export function createPerf(ctx: Ctx, opts: { overlay: boolean; resize: () => void }): Perf {
@@ -40,7 +35,6 @@ export function createPerf(ctx: Ctx, opts: { overlay: boolean; resize: () => voi
     fps: 0,
     dpr: adaptive.dpr,
   };
-  // fps over a 0.5 s window.
   let acc = 0;
   let count = 0;
 
@@ -65,6 +59,7 @@ export function createPerf(ctx: Ctx, opts: { overlay: boolean; resize: () => voi
   if (overlay) overlay.hidden = false;
 
   const perf: Perf = {
+    // renderer.info.autoReset is off: info then counts the whole frame, post passes included.
     frameStart() {
       renderer.info.reset();
     },

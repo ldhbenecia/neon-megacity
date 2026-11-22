@@ -1,5 +1,3 @@
-// HUD (ART_DIRECTION 1, 8.3): title, clock, mode badge, controls help, selected building card,
-// preset toast. DOM lives in index.html; this module only writes text when something changed.
 import { zoneById, type Archetype, type BuildingSpec } from '../city/layout';
 import { clockMinutes, formatClock } from '../core/clock';
 
@@ -28,13 +26,12 @@ export interface CardInfo {
   archetype: string;
 }
 
-/** Korean card text for a building (pure, unit tested). */
 export function buildingCard(b: BuildingSpec): CardInfo {
   let zone: string = b.district;
   try {
     zone = zoneById(b.zoneId).name;
   } catch {
-    // Unknown zone id: fall back to the district kind.
+    // zoneById throws for ids outside ZONES; the district kind is the fallback label.
   }
   const sub: string[] = [];
   if (b.tags.corp) sub.push(b.tags.corp);
@@ -53,28 +50,20 @@ export function buildingCard(b: BuildingSpec): CardInfo {
 
 export interface Hud {
   setMode(mode: RigMode): void;
-  /** Show the card for a building, or hide it with null. */
   showCard(b: BuildingSpec | null): void;
   toast(text: string): void;
   toggle(force?: boolean): boolean;
-  /** Open / close the controls help sheet (`?`). */
   toggleHelp(force?: boolean): boolean;
   readonly helpOpen: boolean;
-  /** Show the first-entry controls hint for a few seconds (called at power-on). */
   showHint(): void;
   readonly visible: boolean;
   update(timeOfDay: number): void;
   dispose(): void;
 }
 
-/** First-entry hint stays this long (ms), unless the user starts moving. */
 const HINT_MS = 7000;
 
-export function createHud(opts: {
-  visible: boolean;
-  /** Close button on the card. */
-  onDeselect?: () => void;
-}): Hud {
+export function createHud(opts: { visible: boolean; onDeselect?: () => void }): Hud {
   const root = document.getElementById('hud');
   const clockEl = document.getElementById('clock');
   const modeEl = document.getElementById('hud-mode');
@@ -124,7 +113,6 @@ export function createHud(opts: {
       mode = m;
       if (root) root.dataset.mode = m;
       if (!modeEl) return;
-      // Only the non-default modes get a pill, with how to leave them.
       const label = m === 'fly' ? '비행 모드 · Esc로 끄기' : m === 'cinematic' ? '시네마틱' : '';
       modeEl.textContent = label;
       modeEl.hidden = label === '';
@@ -169,7 +157,6 @@ export function createHud(opts: {
       return open;
     },
     update(timeOfDay) {
-      // The clock only changes once per in-game minute; skip redundant DOM writes.
       const mins = clockMinutes(timeOfDay);
       if (clockEl && mins !== clockMins) {
         clockMins = mins;

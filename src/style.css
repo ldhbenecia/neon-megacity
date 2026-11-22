@@ -1,6 +1,3 @@
-/* App + HUD styles. The #boot skeleton lives inline in index.html (paints before this file).
-   HUD language: dark teal glass, a hairline glow edge, Korean labels, one accent (cyan) for
-   anything you can press, red only for the brand mark and the selected building. */
 :root {
   --c-bg: #020a0b;
   --c-glass: rgba(3, 20, 22, 0.66);
@@ -18,7 +15,6 @@
   --gutter: max(16px, env(safe-area-inset-left));
   --gutter-r: max(16px, env(safe-area-inset-right));
   --bottom: max(16px, env(safe-area-inset-bottom));
-  /* Glass surface: the glow edge is an inset hairline, elevation is a soft outer shadow. */
   --glass-shadow:
     inset 0 0 0 1px var(--c-edge), inset 0 1px 0 rgba(255, 255, 255, 0.04),
     0 8px 28px rgba(0, 0, 0, 0.45);
@@ -43,7 +39,6 @@ body {
   cursor: crosshair;
 }
 
-/* ---------- HUD root ---------- */
 #hud {
   position: fixed;
   inset: 0;
@@ -102,7 +97,6 @@ body {
   -webkit-backdrop-filter: blur(10px) saturate(1.2);
 }
 
-/* ---------- brand mark (top left) ---------- */
 .hud-brand {
   position: absolute;
   left: var(--gutter);
@@ -143,7 +137,6 @@ body {
   display: none;
 }
 
-/* ---------- settings toggle + panel (top right) ---------- */
 .panel-toggle {
   position: absolute;
   right: var(--gutter-r);
@@ -355,7 +348,6 @@ body {
   color: var(--c-text);
 }
 
-/* ---------- timeline (bottom center): the one memorable piece ---------- */
 .timeline {
   position: absolute;
   left: 50%;
@@ -415,7 +407,6 @@ body {
   flex: 1;
   height: 36px;
 }
-/* Sky across 24 h: night teal, dawn and dusk orange, smoggy day blue-grey (palette 3.1). */
 .tl-track::before {
   content: '';
   position: absolute;
@@ -507,7 +498,6 @@ body {
   color: var(--c-text);
 }
 
-/* ---------- first-entry hint + help sheet ---------- */
 .hint {
   position: absolute;
   left: 50%;
@@ -633,7 +623,6 @@ body {
   color: var(--c-text);
 }
 
-/* ---------- selected building card (right, slides in) ---------- */
 .card {
   position: absolute;
   right: var(--gutter-r);
@@ -713,7 +702,6 @@ body {
   top: 8px;
 }
 
-/* ---------- toast (top center) ---------- */
 .toast {
   position: absolute;
   left: 50%;
@@ -734,7 +722,6 @@ body {
   translate: -50% 0;
 }
 
-/* ---------- touch height pad ---------- */
 .touch-pad {
   display: none;
   position: absolute;
@@ -761,7 +748,6 @@ body {
   background: rgba(25, 242, 230, 0.2);
 }
 
-/* ---------- stats overlay (?stats) ---------- */
 .hud-stats {
   position: fixed;
   left: var(--gutter);
@@ -781,7 +767,6 @@ body {
   z-index: 10;
 }
 
-/* ---------- touch devices ---------- */
 @media (pointer: coarse) {
   .touch-pad {
     display: flex;
@@ -802,7 +787,6 @@ body {
   .panel-link {
     min-height: 44px;
   }
-  /* No keyboard on touch: drop the shortcut keycaps. */
   .switch kbd,
   .panel-link kbd,
   .chip-key {
@@ -813,7 +797,6 @@ body {
   }
 }
 
-/* ---------- narrow screens ---------- */
 @media (max-width: 640px) {
   .timeline {
     padding-right: 14px;

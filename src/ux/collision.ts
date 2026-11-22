@@ -1,5 +1,3 @@
-// Camera collision and picking against the layout (ART_DIRECTION 8.1). Pure functions over the
-// layout queries, unit tested in tests/ux-collision.test.ts.
 import { frameBuilding, type Pose } from './motion';
 import {
   RIVER,
@@ -17,25 +15,20 @@ import {
   type Vec3,
 } from '../city/layout';
 
-/** Camera clearance over ground (m), and over the water surface. */
 export const GROUND_CLEARANCE = 2;
 export const WATER_CLEARANCE = 3;
-/** Distance kept from building walls (m). */
 export const WALL_MARGIN = 1.5;
 
-/** Lowest allowed camera y at (x, z): surface + 2, or water + 3 over the river. */
 export function cameraFloor(x: number, z: number): number {
   const s = surfaceHeight(x, z);
   return s <= RIVER.waterY + 1e-3 ? RIVER.waterY + WATER_CLEARANCE : s + GROUND_CLEARANCE;
 }
 
-/** Lowest allowed orbit target y: terrain + 1. */
 export function targetFloor(x: number, z: number): number {
   return terrainHeight(x, z) + 1;
 }
 
 interface Box {
-  /** Center and half extents in the building frame (rotY), world y range. */
   x: number;
   z: number;
   hw: number;
@@ -46,7 +39,6 @@ interface Box {
 }
 
 function boxesOf(b: BuildingSpec): Box[] {
-  // Tiers, cantilever, skybridge and spire: the same volumes picking uses.
   return buildingVolumes(b).map((t) => ({
     x: t.x,
     z: t.z,
@@ -58,7 +50,6 @@ function boxesOf(b: BuildingSpec): Box[] {
   }));
 }
 
-/** Footprint box up to the very top: last-resort fallback if a volume is not described. */
 function hullOf(b: BuildingSpec): Box {
   return {
     x: b.x,
@@ -71,7 +62,6 @@ function hullOf(b: BuildingSpec): Box {
   };
 }
 
-/** Shortest exit from `box` inflated by `m`, or null when p is outside it. */
 function exitFrom(b: BuildingSpec, box: Box, p: Vec3, m: number): Vec3 | null {
   if (p.y < box.y0 - m || p.y > box.y1 + m) return null;
   const up = box.y1 + m - p.y;
@@ -105,10 +95,6 @@ function exitFrom(b: BuildingSpec, box: Box, p: Vec3, m: number): Vec3 | null {
   return { x: box.x + w.x, y: p.y, z: box.z + w.z };
 }
 
-/**
- * Pushes a point out of every building volume it is inside (or within `margin` of), to the
- * nearest face + margin. Returns the corrected point, or null when nothing needed fixing.
- */
 export function resolveCollision(L: Layout, p: Vec3, margin = WALL_MARGIN): Vec3 | null {
   let cur: Vec3 = { x: p.x, y: p.y, z: p.z };
   let moved = false;
@@ -127,7 +113,6 @@ export function resolveCollision(L: Layout, p: Vec3, margin = WALL_MARGIN): Vec3
         if (e && (!fix || dist2(cur, e) < dist2(cur, fix))) fix = e;
       }
     }
-    // Anything buildingVolumes() does not describe: use the footprint hull.
     if (!fix) {
       const id = buildingContaining(L, cur.x, cur.y, cur.z);
       if (id !== null) {
@@ -144,10 +129,7 @@ export function resolveCollision(L: Layout, p: Vec3, margin = WALL_MARGIN): Vec3
 
 const dist2 = (a: Vec3, b: Vec3): number => (a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2;
 
-/**
- * First hit of a ray with the walkable surface (terrain, park, water), or null within `maxT`.
- * Marches in coarse steps, then bisects. `dir` must be normalized (t in metres).
- */
+// `dir` must be normalized: the returned t is in metres.
 export function raycastSurface(o: Vec3, dir: Vec3, maxT = 6000): number | null {
   const above = (t: number): number =>
     o.y + dir.y * t - surfaceHeight(o.x + dir.x * t, o.z + dir.z * t);
@@ -174,10 +156,6 @@ export function raycastSurface(o: Vec3, dir: Vec3, maxT = 6000): number | null {
   return null;
 }
 
-/**
- * 8.3 framing with an unobstructed view: the default framing first, then rotated bearings and
- * steeper elevations until the line of sight to the target hits the picked building first.
- */
 export function frameBuildingClear(L: Layout, b: BuildingSpec, camera: Vec3): Pose {
   const first = frameBuilding(b, camera);
   const DEG = Math.PI / 180;
@@ -204,7 +182,6 @@ export type Pick =
   | { kind: 'building'; id: number; point: Vec3; t: number }
   | { kind: 'ground'; point: Vec3; t: number };
 
-/** What the cursor ray hits first: a building, the ground, or nothing (sky). */
 export function pick(L: Layout, o: Vec3, dir: Vec3): Pick | null {
   const ground = raycastSurface(o, dir);
   const hit = raycastBuildings(L, o, dir);
