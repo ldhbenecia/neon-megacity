@@ -16,6 +16,6 @@ export function buildInfra(L: Layout, c: InfraColors): InfraParts {
     parts.columns.push(column);
     parts.beams.push(...beams);
   }
-  for (const b of L.bridges) buildBridge(b, parts, c);
+  for (const b of L.bridges) buildBridge(b, parts, c, L.roads);
   return parts;
 }

@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  BRIDGE_LAND,
+  BRIDGE_LAND_SOUTH,
   LAYOUT,
+  MIN_ROAD_CLEARANCE,
+  bridgeDeckY as layoutBridgeDeckY,
   buildingsInAabb,
   deckHeightAt,
   highwayCurve,
@@ -9,9 +13,10 @@ import {
 } from '../src/city/layout';
 import { obbOverlap, pointSegmentDistance } from '../src/city/math';
 import {
+  approachPierBlocksRoad,
   approachStations,
   archY,
-  bridgeDeckY,
+  deckYAt,
   bridgeFrame,
   bridgePoint,
   pierStations,
@@ -266,16 +271,41 @@ describe('infra: pillars', () => {
 });
 
 describe('infra: bridges', () => {
-  it('deck profile matches the layout deckHeightAt along the bridge axis', () => {
+  it('deck profile matches the layout bridgeDeckY within 1 cm, landings included', () => {
     for (const b of LAYOUT.bridges) {
       const f = bridgeFrame(b);
       expect(f.spanHalf).toBeCloseTo(120, 6);
-      for (let s = -f.landHalf + 1; s < f.landHalf; s += 7) {
+      // Asymmetric approaches: north lands at BRIDGE_LAND, south at BRIDGE_LAND_SOUTH.
+      expect(-f.landA).toBeCloseTo(BRIDGE_LAND, 3);
+      expect(f.landB).toBeCloseTo(BRIDGE_LAND_SOUTH, 3);
+      for (let s = f.landA + 1; s < f.landB; s += 7) {
         const p = bridgePoint(f, s, 0, 0);
-        const y = deckHeightAt(LAYOUT, p[0], p[2]);
+        const y = layoutBridgeDeckY(b, p[0], p[2]);
         expect(y).not.toBeNull();
-        // The layout reports the highest deck (river-north passes over the approaches).
-        expect(y!).toBeGreaterThanOrEqual(bridgeDeckY(b, f, s) - 1e-6);
+        expect(Math.abs(deckYAt(b, f, s) - y!)).toBeLessThan(0.01);
+        // deckHeightAt reports the highest deck (river-north passes over the approaches).
+        expect(deckHeightAt(LAYOUT, p[0], p[2])!).toBeGreaterThanOrEqual(y! - 0.01);
+      }
+    }
+  });
+
+  it('every deck underside clears the roads and decks it crosses by MIN_ROAD_CLEARANCE', () => {
+    // River-north (16 m) over the north approaches, south approach over hw-south.
+    for (const b of LAYOUT.bridges) {
+      const f = bridgeFrame(b);
+      for (const hw of LAYOUT.highways) {
+        const path = hwPath(hw);
+        for (let s = f.landA; s <= f.landB; s += 1) {
+          const p = bridgePoint(f, s, 0, 0);
+          const q = nearestOnPath(path, p[0], p[2]);
+          if (q.d > hw.width / 2) continue;
+          const bridgeY = deckYAt(b, f, s);
+          const [upper, lower] = q.y > bridgeY ? [q.y, bridgeY] : [bridgeY, q.y];
+          expect(
+            upper - DECK_THICKNESS - lower,
+            `${b.id} × ${hw.id} at s ${s}`,
+          ).toBeGreaterThanOrEqual(MIN_ROAD_CLEARANCE - 0.01);
+        }
       }
     }
   });
@@ -324,6 +354,8 @@ describe('infra: bridges', () => {
     }
     const parts = buildInfra(LAYOUT, C);
     const bridgeColumns = parts.columns.filter((c) => c.owner.startsWith('bridge'));
+    // Approach piers never stand on a ground road (roads may cross under the long south ramp).
+    for (const c of bridgeColumns) expect(approachPierBlocksRoad(c, LAYOUT.roads)).toBe(false);
     expect(bridgeColumns.length).toBeGreaterThanOrEqual(8);
     for (const c of bridgeColumns) {
       const r = Math.hypot(c.w, c.d);
