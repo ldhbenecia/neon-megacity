@@ -1,5 +1,5 @@
 // Small pure 2D geometry helpers used by layout generation and its queries.
-import type { Side, Vec2 } from './types';
+import type { BuildingSpec, Side, Vec2 } from './types';
 
 export const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 
@@ -31,6 +31,11 @@ export interface Obb {
   hw: number;
   hd: number;
   rotY: number;
+}
+
+/** A building's ground footprint as an OBB. */
+export function footprintObb(b: BuildingSpec): Obb {
+  return { x: b.x, z: b.z, hw: b.w / 2, hd: b.d / 2, rotY: b.rotY };
 }
 
 export function obbCorners(o: Obb): Vec2[] {

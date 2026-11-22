@@ -11,10 +11,11 @@ import {
   weighted,
   type Massing,
 } from './archetypes';
-import { ZONES, zoneAt } from './districts';
+import { ZONES, zoneAt, zoneById } from './districts';
 import { highwaySamples, makeBridges, makeHighways, onBridge } from './highways';
 import {
   clamp,
+  footprintObb,
   hashString,
   obbBounds,
   obbCorners,
@@ -30,6 +31,7 @@ import { GridHash, segmentBounds } from './spatial';
 import type {
   Archetype,
   Block,
+  Bridge,
   BuildingSpec,
   DistrictZone,
   Layout,
@@ -136,7 +138,7 @@ function clipLine(
   return runs;
 }
 
-function buildRoads(seed: number, bridges: ReturnType<typeof makeBridges>): Road[] {
+function buildRoads(seed: number, bridges: readonly Bridge[]): Road[] {
   const roads: Road[] = [];
   const push = (kind: RoadKind, a: Vec2, b: Vec2, width: number, zone: DistrictZone): void => {
     roads.push({ id: roads.length, kind, a, b, width, district: zone.kind, zoneId: zone.id });
@@ -207,8 +209,6 @@ interface Lot {
   obb: Obb;
   zone: DistrictZone;
   blockId: number;
-  /** Row/column inside the block (for neighbour rules). */
-  slot: number;
 }
 
 const SIDEWALK: Record<string, number> = {
@@ -242,8 +242,6 @@ function lotGrid(
     return out;
   };
   switch (kind) {
-    case 'core':
-      return cells(2, 2);
     case 'coreDense':
       return cells(3, 3);
     case 'midtown':
@@ -252,12 +250,8 @@ function lotGrid(
       return cells(3, 2, SANGGA_ALLEY);
     case 'apartment':
       return cells(Math.max(1, Math.floor(bw / 85)), 3);
-    case 'industrial':
+    default: // core (megatower lots), industrial, hillside
       return cells(2, 2);
-    case 'hillside':
-      return cells(2, 2);
-    default:
-      return [];
   }
 }
 
@@ -267,7 +261,7 @@ interface LotsResult {
   alleys: { a: Vec2; b: Vec2; zone: DistrictZone }[];
 }
 
-function buildLots(seed: number, obstacles: Obstacles): LotsResult {
+function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[]): LotsResult {
   const lots: Lot[] = [];
   const blocks: Block[] = [];
   const alleys: LotsResult['alleys'] = [];
@@ -314,7 +308,7 @@ function buildLots(seed: number, obstacles: Obstacles): LotsResult {
           zone.kind === 'core' &&
           Math.hypot(c.x - SKYLINE_PEAK.x, c.z - SKYLINE_PEAK.z) > CORE_MEGA_RADIUS;
         const grid = lotGrid(dense ? 'coreDense' : zone.kind, bw - 2 * walk, bd - 2 * walk, rng);
-        grid.forEach((g, slot) => {
+        for (const g of grid) {
           const off = toWorld(g.u, g.v, zone.gridAngle);
           const obb: Obb = {
             x: c.x + off.x,
@@ -323,10 +317,10 @@ function buildLots(seed: number, obstacles: Obstacles): LotsResult {
             hd: g.d / 2,
             rotY: zone.gridAngle,
           };
-          if (!accept(obb, zone)) return;
+          if (!accept(obb, zone)) continue;
           lotHash.insert(lots.length, obbBounds(obb));
-          lots.push({ obb, zone, blockId: block.id, slot });
-        });
+          lots.push({ obb, zone, blockId: block.id });
+        }
         if (lots.length > before) {
           blocks.push(block);
           if (zone.kind === 'sangga') {
@@ -344,8 +338,7 @@ function buildLots(seed: number, obstacles: Obstacles): LotsResult {
 
   // Riverside pavilions (매점, 펌프장): a thin row between the embankment and the highway corridor.
   const rng = zoneRng(seed, 'lots:riverside');
-  const riverside = ZONES[0] as DistrictZone;
-  const bridges = makeBridges();
+  const riverside = zoneById('riverside');
   let blockId = -1;
   for (const side of [-1, 1] as const) {
     for (let x = -1150; x <= 1150; x += 90) {
@@ -372,7 +365,7 @@ function buildLots(seed: number, obstacles: Obstacles): LotsResult {
         });
       }
       lotHash.insert(lots.length, obbBounds(obb));
-      lots.push({ obb, zone: riverside, blockId, slot: lots.length });
+      lots.push({ obb, zone: riverside, blockId });
     }
   }
   return { lots, blocks, alleys };
@@ -392,8 +385,8 @@ interface Draft {
   oz: number;
   /** Extra rotation (sangga / hillside jitter). */
   jitter: number;
+  /** Set only on megatowers. */
   corp?: string;
-  mega?: boolean;
 }
 
 const CORE_MEGA_BAG: Archetype[] = [
@@ -497,7 +490,6 @@ function draftsFor(zone: DistrictZone, lots: Lot[], rng: Rng): Draft[] {
       big.forEach((lot, i) => {
         drafts.push(
           make(lot, bag[i % bag.length] as Archetype, heights[i] as number, {
-            mega: true,
             corp: CORPS[i % CORPS.length] as string,
           }),
         );
@@ -599,7 +591,7 @@ function applyBlockHeightRules(drafts: Draft[], rng: Rng): void {
     for (let i = 1; i < list.length; i++) {
       const prev = list[i - 1] as Draft;
       const cur = list[i] as Draft;
-      if (cur.mega) continue;
+      if (cur.corp) continue;
       const cap = HEIGHT_CAP[cur.lot.zone.kind] ?? Infinity;
       for (let k = 0; k < 4 && Math.abs(cur.h - prev.h) <= 0.1 * Math.max(cur.h, prev.h); k++) {
         cur.h *= rng.chance(0.5) ? rng.range(1.15, 1.4) : rng.range(0.6, 0.85);
@@ -608,7 +600,7 @@ function applyBlockHeightRules(drafts: Draft[], rng: Rng): void {
     }
     if (list.length < 2) continue;
     const top = list.reduce((x, y) => (y.h > x.h ? y : x));
-    const low = list.filter((d) => !d.mega && d !== top);
+    const low = list.filter((d) => !d.corp && d !== top);
     if (low.length === 0) continue;
     // A single-storey shop (4.2 m) is the floor, so the tallest must reach at least 12.6 m.
     if (top.h < 3 * MIN_STOREY) top.h = 3 * MIN_STOREY + 1.5;
@@ -748,22 +740,18 @@ function buildSlots(
   seed: number,
   roads: readonly Road[],
   buildings: readonly BuildingSpec[],
-  bridges: ReturnType<typeof makeBridges>,
+  bridges: readonly Bridge[],
   alleys: LotsResult['alleys'],
 ): StreetSlot[] {
   const rng = zoneRng(seed, 'slots');
   const hash = new GridHash();
-  buildings.forEach((b) =>
-    hash.insert(b.id, obbBounds({ x: b.x, z: b.z, hw: b.w / 2, hd: b.d / 2, rotY: b.rotY })),
-  );
+  const footprints = buildings.map(footprintObb);
+  footprints.forEach((o, id) => hash.insert(id, obbBounds(o)));
   const slots: StreetSlot[] = [];
   const free = (p: Vec2): boolean => {
     const probe: Obb = { x: p.x, z: p.z, hw: 0.8, hd: 0.8, rotY: 0 };
     for (const id of hash.query(obbBounds(probe))) {
-      const b = buildings[id] as BuildingSpec;
-      if (obbOverlap({ x: b.x, z: b.z, hw: b.w / 2, hd: b.d / 2, rotY: b.rotY }, probe)) {
-        return false;
-      }
+      if (obbOverlap(footprints[id] as Obb, probe)) return false;
     }
     return Math.abs(p.x) < EXTENT / 2 && Math.abs(p.z) < EXTENT / 2;
   };
@@ -899,7 +887,7 @@ export function generateLayout(seed = 2077): Layout {
     obstacles.add(c[i] as Vec2, c[i + 1] as Vec2, RIVER.width / 2 + RIVER_CLEARANCE);
   }
 
-  const { lots, blocks, alleys } = buildLots(seed, obstacles);
+  const { lots, blocks, alleys } = buildLots(seed, obstacles, bridges);
   for (const a of alleys) {
     roads.push({
       id: roads.length,

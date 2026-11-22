@@ -2,15 +2,7 @@
 // ART_DIRECTION 4.1, 4.2. Tiers live in the layout so buildings and neon share one truth.
 import type { Rng } from '../core/random';
 import { toWorld } from './math';
-import type {
-  Archetype,
-  BuildingSpec,
-  Cantilever,
-  Side,
-  Skybridge,
-  Tier,
-  TierShape,
-} from './types';
+import type { Archetype, Cantilever, Side, Skybridge, Tier, TierShape } from './types';
 
 /** Floor heights per archetype: [typical floor, ground floor]. */
 export const FLOOR_H: Record<Archetype, [number, number]> = {
@@ -242,6 +234,3 @@ export function fictionalName(rng: Rng, archetype: Archetype): string {
       return `${stem}${rng.pick(OFFICE_SUFFIX)}`;
   }
 }
-
-/** Tags/fields of a spec that depend only on the massing (used by the generator). */
-export type SpecCore = Omit<BuildingSpec, 'tiers' | 'twin' | 'skybridge' | 'cantilever' | 'spireH'>;

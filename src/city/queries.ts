@@ -1,20 +1,19 @@
 // Pure queries over a generated Layout (ART_DIRECTION 2.6). Per-layout indices are built
 // lazily and cached in WeakMaps, so calling these never mutates the layout itself.
 import { fbm1 } from './noise';
-import { obbBounds, obbOverlap, pointSegmentDistance, sideNormal, toLocal } from './math';
+import {
+  footprintObb,
+  obbBounds,
+  obbOverlap,
+  pointSegmentDistance,
+  sideNormal,
+  toLocal,
+} from './math';
 import { highwaySamples } from './highways';
 import { GridHash, boundsOverlap, segmentBounds, type Bounds } from './spatial';
 import type { BuildingFace, BuildingSpec, Layout, Ridge, Side, Tier, Vec2, Vec3 } from './types';
 
 export type Vec3Like = Readonly<Vec3>;
-
-const footprintObb = (b: BuildingSpec) => ({
-  x: b.x,
-  z: b.z,
-  hw: b.w / 2,
-  hd: b.d / 2,
-  rotY: b.rotY,
-});
 
 const buildingHashes = new WeakMap<Layout, GridHash>();
 function buildingHash(L: Layout): GridHash {
