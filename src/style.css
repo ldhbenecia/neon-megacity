@@ -1,39 +1,304 @@
+/* App + HUD styles. The #boot skeleton lives inline in index.html (paints before this file). */
+:root {
+  --c-bg: #020a0b;
+  --c-panel: rgba(2, 10, 11, 0.62);
+  --c-line: rgba(25, 242, 230, 0.2);
+  --c-cyan: #19f2e6;
+  --c-red: #ff2a3a;
+  --c-orange: #ff7a1a;
+  --c-text: #cfe9e6;
+  --c-dim: #6fa9a4;
+  --f-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --f-sans: 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', system-ui, sans-serif;
+  --gutter: max(16px, env(safe-area-inset-left));
+}
 html,
 body {
   margin: 0;
   height: 100%;
   overflow: hidden;
-  background: #05030a;
+  background: var(--c-bg);
 }
 #app {
   position: fixed;
   inset: 0;
+  touch-action: none;
 }
+#app canvas {
+  display: block;
+  outline: none;
+}
+#app.is-fly canvas {
+  cursor: crosshair;
+}
+
+/* ---------- HUD ---------- */
 #hud {
   position: fixed;
-  left: 16px;
-  bottom: 16px;
+  inset: 0;
   pointer-events: none;
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
-  color: #f3e600;
+  font: 12px/1.45 var(--f-sans);
+  color: var(--c-text);
+  -webkit-font-smoothing: antialiased;
+  transition: opacity 200ms ease;
+}
+#hud.is-hidden {
+  opacity: 0;
+  visibility: hidden;
+}
+#hud kbd {
+  display: inline-block;
+  min-width: 1.5em;
+  margin: 0 1px;
+  padding: 0 4px;
+  border: 1px solid rgba(25, 242, 230, 0.35);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  font: 600 10.5px/1.5 var(--f-mono);
+  color: var(--c-cyan);
+  text-align: center;
+  background: rgba(25, 242, 230, 0.06);
+}
+
+.hud-head {
+  position: absolute;
+  left: var(--gutter);
+  top: 14px;
+}
+.hud-title {
+  font: 700 17px/1.2 var(--f-mono);
+  letter-spacing: 0.22em;
+  color: #ffd9dc;
   text-shadow:
-    0 0 6px rgba(243, 230, 0, 0.6),
-    0 0 18px rgba(255, 0, 110, 0.4);
+    0 0 6px rgba(255, 42, 58, 0.9),
+    0 0 18px rgba(255, 42, 58, 0.45);
 }
-#hud .title {
-  font-size: 20px;
-  letter-spacing: 0.3em;
-  font-weight: 700;
+.hud-title span {
+  color: var(--c-cyan);
+  text-shadow: 0 0 8px rgba(25, 242, 230, 0.7);
 }
-#hud #clock {
-  font-size: 32px;
-  margin: 4px 0;
-  color: #00f0ff;
-  text-shadow: 0 0 8px rgba(0, 240, 255, 0.7);
+.hud-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 4px;
 }
-#hud .hint {
-  font-size: 12px;
-  color: #c7c2d6;
-  text-shadow: none;
-  opacity: 0.8;
+#clock {
+  font: 600 26px/1 var(--f-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--c-cyan);
+  text-shadow: 0 0 10px rgba(25, 242, 230, 0.55);
+}
+.hud-mode {
+  padding: 1px 6px;
+  border: 1px solid var(--c-line);
+  font: 600 10px/1.6 var(--f-mono);
+  letter-spacing: 0.18em;
+  color: var(--c-dim);
+}
+#hud[data-mode='fly'] .hud-mode,
+#hud[data-mode='cinematic'] .hud-mode {
+  color: var(--c-orange);
+  border-color: rgba(255, 122, 26, 0.5);
+}
+
+.hud-help {
+  position: absolute;
+  left: var(--gutter);
+  bottom: max(16px, env(safe-area-inset-bottom));
+  max-width: min(560px, calc(100vw - 32px));
+  padding: 8px 12px;
+  background: var(--c-panel);
+  border: 1px solid var(--c-line);
+  border-left: 2px solid var(--c-cyan);
+  backdrop-filter: blur(6px);
+  pointer-events: auto;
+}
+.hud-help summary {
+  cursor: pointer;
+  font: 600 11px/1.6 var(--f-mono);
+  letter-spacing: 0.16em;
+  color: var(--c-cyan);
+  list-style: none;
+}
+.hud-help summary::before {
+  content: '▸ ';
+}
+.hud-help[open] summary::before {
+  content: '▾ ';
+}
+.hud-help summary::-webkit-details-marker {
+  display: none;
+}
+.hud-help dl {
+  display: grid;
+  grid-template-columns: repeat(2, auto 1fr);
+  gap: 3px 10px;
+  margin: 6px 0 0;
+  align-items: center;
+}
+.hud-help dl + dl {
+  padding-top: 6px;
+  border-top: 1px dashed rgba(25, 242, 230, 0.14);
+}
+.hud-help dt {
+  color: var(--c-text);
+  white-space: nowrap;
+  text-align: right;
+}
+.help-mouse dt,
+.help-touch dt {
+  text-align: left;
+}
+.hud-help dd {
+  margin: 0;
+  color: var(--c-dim);
+  white-space: nowrap;
+}
+.help-touch {
+  display: none !important;
+}
+@media (pointer: coarse) {
+  .help-touch {
+    display: grid !important;
+  }
+  .help-mouse,
+  .help-keys {
+    display: none !important;
+  }
+}
+
+.hud-card {
+  position: absolute;
+  right: var(--gutter);
+  bottom: max(16px, env(safe-area-inset-bottom));
+  width: 248px;
+  padding: 12px 14px;
+  background: var(--c-panel);
+  border: 1px solid var(--c-line);
+  border-top: 2px solid var(--c-red);
+  backdrop-filter: blur(6px);
+  opacity: 0;
+  transform: translateY(6px);
+  transition:
+    opacity 250ms ease,
+    transform 250ms ease;
+}
+.hud-card.is-in {
+  opacity: 1;
+  transform: none;
+}
+.hud-card[hidden] {
+  display: block;
+  visibility: hidden;
+}
+.card-zone {
+  font: 600 10px/1.6 var(--f-mono);
+  letter-spacing: 0.2em;
+  color: var(--c-red);
+}
+.card-name {
+  margin: 2px 0;
+  font: 700 18px/1.25 var(--f-sans);
+  color: #fff;
+}
+.card-sub {
+  min-height: 1em;
+  color: var(--c-dim);
+}
+.card-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 12px;
+  margin: 8px 0 6px;
+}
+.card-grid dt {
+  color: var(--c-dim);
+}
+.card-grid dd {
+  margin: 0;
+  font-family: var(--f-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.card-hint {
+  color: var(--c-dim);
+  font-size: 11px;
+}
+
+.hud-toast {
+  position: absolute;
+  left: 50%;
+  top: 18px;
+  transform: translateX(-50%);
+  padding: 4px 12px;
+  background: var(--c-panel);
+  border: 1px solid var(--c-line);
+  font: 600 12px/1.6 var(--f-mono);
+  letter-spacing: 0.08em;
+  color: var(--c-cyan);
+  opacity: 0;
+  transition: opacity 300ms ease;
+  white-space: nowrap;
+}
+.hud-toast.is-in {
+  opacity: 1;
+}
+
+.hud-touch {
+  display: none;
+  position: absolute;
+  right: var(--gutter);
+  bottom: 50%;
+  flex-direction: column;
+  gap: 10px;
+}
+@media (pointer: coarse) {
+  .hud-touch {
+    display: flex;
+  }
+}
+.hud-touch button {
+  width: 52px;
+  height: 52px;
+  border: 1px solid rgba(25, 242, 230, 0.4);
+  border-radius: 50%;
+  background: rgba(2, 10, 11, 0.45);
+  color: var(--c-cyan);
+  font-size: 18px;
+  pointer-events: auto;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.hud-touch button:active {
+  background: rgba(25, 242, 230, 0.2);
+}
+
+.hud-stats {
+  position: fixed;
+  left: var(--gutter);
+  top: 78px;
+  margin: 0;
+  padding: 6px 8px;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid var(--c-line);
+  font: 11px/1.45 var(--f-mono);
+  font-variant-numeric: tabular-nums;
+  color: #9fffe0;
+  pointer-events: none;
+  z-index: 10;
+}
+
+@media (max-width: 640px) {
+  .hud-card {
+    left: var(--gutter);
+    width: auto;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  #hud,
+  .hud-card,
+  .hud-toast {
+    transition: none;
+  }
 }
