@@ -3,6 +3,7 @@
 // evaluate exactly the same path from the same control points.
 import { CatmullRomCurve3, Vector3 } from 'three';
 import { pointSegmentDistance } from './math';
+import { MAP_HALF, RIVERSIDE_HALF } from './districts';
 import { RIVER, riverFrame } from './river';
 import type { Bridge, BridgeKind, Highway, HighwayKind, Vec2, Vec3 } from './types';
 
@@ -45,7 +46,7 @@ const BRIDGE_DEFS: {
 ];
 
 /** Distance from the centerline to the approach landing (outer edge of the riverside band). */
-export const BRIDGE_LAND = RIVER.width / 2 + RIVER.bandWidth;
+export const BRIDGE_LAND = RIVERSIDE_HALF;
 
 export function makeBridges(): Bridge[] {
   return BRIDGE_DEFS.map((d) => {
@@ -215,8 +216,6 @@ export function highwaySamples(hw: Pick<Highway, 'points' | 'closed'>, step = 8)
 export function onBridge(bridges: readonly Bridge[], p: Vec2, margin = 0): boolean {
   return bridges.some((b) => pointSegmentDistance(p, b.landA, b.landB) < b.width / 2 + margin);
 }
-
-const MAP_HALF = 1200;
 
 export function makeHighways(bridges: readonly Bridge[]): Highway[] {
   return hwDefs().map((d) => {

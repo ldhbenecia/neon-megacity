@@ -2,17 +2,19 @@
 // terrain, buildings, infra, neon and the camera all agree. Units: 1 = 1 m.
 // Coordinates: Y up, ground y = 0, north = -Z, east = +X, map centered at the origin.
 // Data types: ./types.ts. Generation: ./generate.ts. Pure queries: ./queries.ts.
-import { generateLayout } from './generate';
+import { MAP_HALF } from './districts';
+import { EXTENT, generateLayout } from './generate';
+import { HASH_CELL } from './spatial';
 import type { Layout } from './types';
 
 export const CITY = {
   /** Play area edge length (m); the map spans [-half, half] on X and Z. */
-  extent: 2400,
-  half: 1200,
+  extent: EXTENT,
+  half: MAP_HALF,
   /** Default layout seed. */
   seed: 2077,
   /** Spatial hash cell used by layout queries (m). */
-  hashCell: 64,
+  hashCell: HASH_CELL,
   /** Suggested chunk size for merged geometry / LOD (ART_DIRECTION 4.4). */
   chunkSize: 256,
 } as const;

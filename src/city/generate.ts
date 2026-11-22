@@ -26,7 +26,14 @@ import {
   toWorld,
   type Obb,
 } from './math';
-import { RIVER, riverFrame, riverSignedDistance, surfaceHeight, terrainHeight } from './river';
+import {
+  RIVER,
+  TERRAIN,
+  riverFrame,
+  riverSignedDistance,
+  surfaceHeight,
+  terrainHeight,
+} from './river';
 import { GridHash, segmentBounds } from './spatial';
 import type {
   Archetype,
@@ -560,7 +567,11 @@ function draftsFor(zone: DistrictZone, lots: Lot[], rng: Rng): Draft[] {
     case 'hillside':
       for (const lot of lots) {
         // Denser near the bottom of the slope, thinning toward the ridge.
-        const up = clamp((-650 - lot.obb.z) / 550, 0, 1);
+        const up = clamp(
+          (TERRAIN.hillStartZ - lot.obb.z) / (TERRAIN.hillStartZ - TERRAIN.hillEndZ),
+          0,
+          1,
+        );
         if (!rng.chance(0.55 * (1 - 0.45 * up))) continue;
         drafts.push(make(lot, 'hillHouse', 2.7 * rng.int(2, 4)));
       }
