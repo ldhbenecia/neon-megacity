@@ -317,4 +317,15 @@ export const MATERIAL = {
   searchlightWhite: 0xe8fbff,
   searchlightCyan: 0x19f2e6,
   bootBackground: 0x020a0b,
+  // Infra (highways, bridges): dark, slightly teal-cool so they sink into the night fog (3.5).
+  /** Road / deck surface, dry. Wet look comes from roughness, not color. */
+  asphalt: 0x101416,
+  /** Pillars, parapets, sound walls, deck edges. */
+  concrete: 0x3a4142,
+  /** Lane markings: dimmed off-white, never emissive. */
+  laneWhite: 0xb9c4c2,
+  /** Center line / ramp gore: muted amber. */
+  laneYellow: 0xb08a3a,
+  /** Arch ribs, truss members, hangers. */
+  archSteel: 0x2a3538,
 } as const;
