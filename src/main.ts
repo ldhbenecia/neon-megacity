@@ -12,13 +12,6 @@ import * as buildings from './buildings/index';
 import * as neon from './neon/index';
 import * as atmosphere from './atmosphere/index';
 
-declare global {
-  interface Window {
-    /** Readiness flag polled by e2e tests and the screenshot script. */
-    __city?: { ready: boolean; frames: number };
-  }
-}
-
 const query = parseQuery(window.location.search);
 
 const container = document.getElementById('app');

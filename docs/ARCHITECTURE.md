@@ -47,7 +47,7 @@ Numbers are clamped to 0..1; invalid values are ignored.
 
 ## Test hook: `window.__city`
 
-`src/main.ts` sets `window.__city = { ready: true, frames }` at the end of every frame.
+`src/main.ts` sets `window.__city = { ready: true, frames }` at the end of every frame (the type lives in `src/global.d.ts`, which both tsconfigs include).
 The Playwright e2e tests (`tests/e2e/`) and the screenshot script (`scripts/screenshot.ts`, `npm run shots`)
 wait on it before asserting or capturing. Keep it in place.
 

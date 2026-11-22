@@ -20,8 +20,10 @@ export default defineConfig(
   tseslint.configs.strictTypeChecked,
   {
     languageOptions: {
-      globals: { ...globals.browser, ...globals.node },
-      parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
+      parserOptions: {
+        project: ['./tsconfig.json', './tsconfig.node.json'],
+        tsconfigRootDir: import.meta.dirname,
+      },
     },
     rules: {
       '@typescript-eslint/no-unused-vars': [
@@ -35,6 +37,17 @@ export default defineConfig(
         { 'ts-expect-error': 'allow-with-description', 'ts-ignore': true },
       ],
     },
+  },
+  // The app runs in the browser only; Node globals are for tests, scripts and configs.
+  { files: ['src/**/*.ts'], languageOptions: { globals: globals.browser } },
+  {
+    files: ['tests/**/*.ts', 'scripts/**/*.ts', '*.{js,ts}'],
+    languageOptions: { globals: globals.node },
+  },
+  // Playwright page callbacks run in the browser.
+  {
+    files: ['tests/e2e/**/*.ts', 'scripts/**/*.ts'],
+    languageOptions: { globals: globals.browser },
   },
   {
     // Tests index into fixtures whose shape is asserted by the test itself.

@@ -6,7 +6,7 @@ The city is an ORIGINAL design inspired by cyberpunk anime aesthetics.
 ## Commands
 
 - `npm run dev` — dev server (Vite)
-- `npm run typecheck` — `tsc --noEmit`; must pass
+- `npm run typecheck` — `tsc --noEmit` for `tsconfig.json` (src/: DOM + `vite/client`, no Node types) and `tsconfig.node.json` (tests, scripts, configs: Node types); must pass
 - `npm run lint` / `npm test` — ESLint, Vitest unit tests; must pass
 - `npm run build` — typecheck + production build; must pass before any commit
 - `npm run format:check` / `npm run format` — Prettier check / write; must pass

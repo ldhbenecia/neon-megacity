@@ -1,0 +1,9 @@
+{
+  // Node-side code: tests, scripts and tool configs. The app in src/ is checked by
+  // tsconfig.json without Node types. DOM stays in lib for Playwright page callbacks.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": ["tests", "scripts", "*.ts", "src/global.d.ts"]
+}
