@@ -24,7 +24,6 @@ import {
 } from '../src/terrain/shape';
 import { buildChannel, buildGround } from '../src/terrain/ground';
 
-/** Height of the channel profile at signed distance d (linear between points). */
 function profileY(d: number): number {
   const p = channelProfile(40);
   for (let i = 0; i < p.length - 1; i++) {
@@ -105,10 +104,9 @@ describe('ground grid', () => {
       const r = Math.hypot(x, z);
       expect(r).toBeLessThanOrEqual(GROUND_RADIUS + 1e-3);
       expect(r).toBeLessThan(near.radius);
-      // Rim vertices sit in collapsed sliver cells; their normals are meaningless.
+      // Rim vertices sit in collapsed sliver cells, so their normals are meaningless.
       if (r < GROUND_RADIUS - 1) expect(nrm.getY(v)).toBeGreaterThan(0.5);
       expect(channelDistance(x, z)).toBeGreaterThanOrEqual(6);
-      // On the rim the ground stays under the near ridge silhouette (no plateau poking out).
       if (r > GROUND_RADIUS - 1) {
         expect(pos.getY(v)).toBeLessThanOrEqual(ridgeHeight(near, Math.atan2(z, x)) + 1e-3);
       }

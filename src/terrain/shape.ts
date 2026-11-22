@@ -1,7 +1,3 @@
-// Pure geometry helpers for the terrain module (ART_DIRECTION 2.3, 2.4). No three.js.
-// Everything derives from the layout's river / terrain / ridge data and queries, so the ground,
-// the 흑린강 channel and the far ridges line up with what buildings, infra and the camera use.
-// Unit tests: tests/terrain.test.ts.
 import {
   CITY,
   EMBANK_SLOPE,
@@ -25,46 +21,31 @@ const NEAR_RIDGE: Ridge = (() => {
   return r;
 })();
 
-/**
- * Ground radius: just inside the near ridge ring, so the ground meets the ridge wall and never
- * pokes out behind it. The grid / channel run out to ±OUTER_EXTENT and are clipped to this disc.
- */
+// The ground must stay inside the near ridge wall or the plateau shows behind it.
 export const GROUND_RADIUS = NEAR_RIDGE.radius - 10;
 export const OUTER_EXTENT = GROUND_RADIUS;
 
-/** x range covered by the layout's river centerline polyline. */
 const RIVER_X0 = Math.min(...RIVER.centerline.map((p) => p.x));
 const RIVER_X1 = Math.max(...RIVER.centerline.map((p) => p.x));
-/** z where the grid switches from the fine hill spacing to the coarse flat spacing. */
 const HILL_GRID_Z = TERRAIN.hillStartZ + 90;
 
-/**
- * Signed distance to the channel edge (embankment), < 0 inside. Inside the map it is exactly the
- * layout's `riverSignedDistance`; past the polyline ends it continues the analytic
- * centerline so the river runs on to the horizon.
- */
+// Past the polyline ends, continues the analytic centerline so the river runs to the horizon.
 export function channelDistance(x: number, z: number): number {
   if (x >= RIVER_X0 + 10 && x <= RIVER_X1 - 10) return riverSignedDistance(x, z);
   const f = riverFrame(x);
   return Math.abs((z - riverZ(x)) * f.along.x) - RIVER.width / 2;
 }
 
-/** Surface kinds across the channel cross-section, from the bank top toward the water. */
 export type ChannelPart = 'bank' | 'embankment' | 'park' | 'parkEdge';
 
 export interface ProfilePoint {
-  /** Signed distance to the embankment line (m), > 0 outside the channel. */
+  /** > 0 outside the channel. */
   d: number;
   y: number;
   part: ChannelPart;
 }
 
-/**
- * Half cross-section of the channel as flat-shaded segments (pairs of points with the same part).
- * Matches `surfaceHeight`: bank y = bankY, embankment slope down to the park (parkY), the park
- * flat for `parkWidth`, then the stone edge sinks below the water line so the water plane
- * intersects it cleanly. `outer` is how far the bank strip reaches over the ground (m).
- */
+// Must match surfaceHeight; the stone edge sinks below waterY so the water plane cuts it cleanly.
 export function channelProfile(outer: number): ProfilePoint[] {
   const { bankY, parkY, parkWidth, waterY } = RIVER;
   const below = waterY - 0.8;
@@ -81,15 +62,10 @@ export function channelProfile(outer: number): ProfilePoint[] {
   ];
 }
 
-/** Half width of the water plane (from the centerline), tucked under the park edge. */
 export function waterHalfWidth(): number {
   return RIVER.width / 2 - RIVER.parkWidth - EMBANK_SLOPE * 0.5;
 }
 
-/**
- * Grid line coordinates on one axis: `step` spacing between `lo` and `hi`, then spacing growing
- * by `growth` per line out to ±`outer` (coarse far ground). Sorted, unique, includes ±outer.
- */
 export function gridAxis(
   lo: number,
   hi: number,
@@ -119,10 +95,6 @@ export function gridAxis(
   return [...left.reverse(), ...inner, ...right];
 }
 
-/**
- * Z axis: fine where the hills rise (north of `hillZ`), coarser over the flat districts, coarse
- * outside the map. Merges two `gridAxis`-style runs.
- */
 export function groundAxes(): { xs: number[]; zs: number[] } {
   const half = CITY.half + 40;
   const xs = gridAxis(-half, half, 12, OUTER_EXTENT);
@@ -131,10 +103,6 @@ export function groundAxes(): { xs: number[]; zs: number[] } {
   return { xs, zs: [...north, ...south] };
 }
 
-/**
- * Bearings (atan2(z, x)) of the ridge's highest peaks, at least `minSep` radians apart.
- * Used for the aviation obstruction lights (5–7 of them, ART_DIRECTION 2.4).
- */
 export function ridgePeaks(ridge: Ridge, count: number, minSep = 0.35): number[] {
   const N = 4096;
   const h = new Float64Array(N);
@@ -162,9 +130,6 @@ export function ridgePeaks(ridge: Ridge, count: number, minSep = 0.35): number[]
   return out;
 }
 
-/**
- * Deterministic 2D value noise in [0, 1) for ground albedo variation (createRng lattice).
- */
 const LATTICE = 128;
 const lattice = (() => {
   const rng = createRng(4409);
@@ -186,11 +151,7 @@ export function noise2(x: number, z: number): number {
   return a + (b - a) * sz;
 }
 
-/**
- * Rendered ridge silhouette height: the layout's `ridgeHeight` plus a small (±8 %) crag detail
- * at ~120 m and ~40 m along the ring, so the far ranges read as rocky crests instead of soft
- * blobs. Seamless around the ring (sampled on a circle of the 2D noise).
- */
+// Up to ±12% off the layout ridgeHeight; sampled on a circle of the noise so it stays seamless.
 export function ridgeProfile(ridge: Ridge, angle: number): number {
   const base = ridgeHeight(ridge, angle);
   const c = Math.cos(angle);
@@ -202,11 +163,7 @@ export function ridgeProfile(ridge: Ridge, angle: number): number {
   return base * (1 + 0.16 * n1 + 0.07 * n2);
 }
 
-/**
- * Ground vertex position after clipping to the ground disc: points past `GROUND_RADIUS` are pulled
- * radially onto it, and toward the near ridge the height is eased below the ridge silhouette so
- * the north plateau (70–110 m) never shows above a low stretch of the ridge.
- */
+// Capped below the near ridge so the north plateau never shows above a low stretch of it.
 export function groundVertex(x: number, z: number): { x: number; y: number; z: number } {
   const r = Math.hypot(x, z);
   const k = r > GROUND_RADIUS ? GROUND_RADIUS / r : 1;
@@ -220,10 +177,7 @@ export function groundVertex(x: number, z: number): { x: number; y: number; z: n
   return { x: px, y: y + (Math.min(y, cap) - y) * fade, z: pz };
 }
 
-/**
- * Slice positions along x for strips that follow the river: `fine` spacing inside the map,
- * `coarse` outside, always ending exactly on ±OUTER_EXTENT (no gap at the east end).
- */
+// Must end exactly on ±OUTER_EXTENT or a gap opens at the strip ends.
 export function riverSliceXs(fine: number, coarse: number): number[] {
   const xs: number[] = [];
   for (let x = -OUTER_EXTENT; x < OUTER_EXTENT; x += Math.abs(x) < CITY.half + 40 ? fine : coarse) {

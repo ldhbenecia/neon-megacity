@@ -1,7 +1,3 @@
-// 흑린강 water surface (ART_DIRECTION 6.1 #4): a dark, glossy MeshStandardMaterial strip whose
-// normals ripple with three octaves of scrolling procedural noise (no textures). The reflections
-// come for free from lighting's PMREM environment (teal dome + neon panel band), the moon / sun
-// specular, and later neon's reflection streak decals. One draw call, no render-to-texture.
 import * as THREE from 'three';
 import { RIVER, riverFrame } from '../city/layout';
 import { TERRAIN_COLORS } from '../core/palette';
@@ -32,7 +28,6 @@ vec2 wGrad(vec2 p) {
 const WATER_NORMAL = /* glsl */ `
 #include <normal_fragment_maps>
 {
-  // Ripples elongated across the flow so reflections smear into vertical streaks.
   vec2 p = vWaterXZ * vec2(0.6, 1.0);
   float t = uTime;
   vec2 g = wGrad(p * 0.045 + vec2(t * 0.020, t * 0.006))
@@ -63,7 +58,6 @@ export function createWater(): Water {
     }
     if (n > 0) {
       const a = (n - 1) * 2;
-      // a = north, a+1 = south of the previous slice.
       idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
     }
     n++;

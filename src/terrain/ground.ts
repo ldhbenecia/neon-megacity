@@ -1,8 +1,3 @@
-// Ground heightfield and the 흑린강 channel (bank strip, embankment, park, stone edge).
-// The ground is one rectilinear grid (12 m in the hills, 24 m over flat districts, growing to
-// ~200 m past the map edge) sampled from `terrainHeight`; cells touching the channel are dropped
-// and the channel is a separate strip that follows the centerline, so the 4 m embankment slope
-// stays crisp without a fine grid everywhere.
 import * as THREE from 'three';
 import { CITY, RIVER, riverFrame } from '../city/layout';
 import { TERRAIN_COLORS as TC } from '../core/palette';
@@ -17,12 +12,11 @@ import {
   type ChannelPart,
 } from './shape';
 
-/** Cells with any corner closer than this to the embankment (m) are left to the channel strip. */
+// Cells dropped here must stay within bankReach(), or gaps open along the banks.
 const KEEP_DISTANCE = 6;
 
 const c = (hex: number): THREE.Color => new THREE.Color().setHex(hex);
 
-/** Ground albedos (palette TERRAIN_COLORS) by surface kind. */
 export function groundPalette(): Record<'urban' | 'hill' | 'wood' | ChannelPart, THREE.Color> {
   return {
     urban: c(TC.groundUrban),
@@ -43,7 +37,6 @@ export function buildGround(): THREE.BufferGeometry {
   const pos = new Float32Array(nx * nz * 3);
   const col = new Float32Array(nx * nz * 3);
   const dist = new Float32Array(nx * nz);
-  /** Vertex lies past the ground disc (pulled onto its rim). */
   const rim = new Uint8Array(nx * nz);
   const tmp = new THREE.Color();
   const half = CITY.half;
@@ -57,8 +50,6 @@ export function buildGround(): THREE.BufferGeometry {
       const y = v.y;
       pos.set([v.x, y, v.z], k * 3);
       dist[k] = channelDistance(v.x, v.z);
-      // Albedo: urban grey on the flats, scrub on the slopes, woods in noisy patches and
-      // everywhere past the map edge.
       const hill = Math.min(1, y / 25);
       const outside = Math.min(1, Math.max(0, (Math.max(Math.abs(x), Math.abs(z)) - half) / 200));
       const n = noise2(x / 90, z / 90) * 0.65 + noise2(x / 23, z / 23) * 0.35;
@@ -77,7 +68,6 @@ export function buildGround(): THREE.BufferGeometry {
       const e = d + 1;
       const near = Math.min(dist[a] ?? 0, dist[b] ?? 0, dist[d] ?? 0, dist[e] ?? 0);
       if (near < KEEP_DISTANCE) continue;
-      // Fully outside the disc: all four corners collapsed onto the rim, nothing to draw.
       if ((rim[a] ?? 0) + (rim[b] ?? 0) + (rim[d] ?? 0) + (rim[e] ?? 0) === 4) continue;
       idx.push(a, d, b, b, d, e);
     }
@@ -91,13 +81,12 @@ export function buildGround(): THREE.BufferGeometry {
   return g;
 }
 
-/** How far the bank strip reaches over the ground: wider where the ground cells are coarse. */
+// Must cover the cells dropped by KEEP_DISTANCE, which grow past the map edge.
 function bankReach(x: number): number {
   const t = Math.min(1, Math.max(0, (Math.abs(x) - (CITY.half + 40)) / 300));
   return 40 + 40 * t * t * (3 - 2 * t);
 }
 
-/** Channel strip along the river: both banks, embankments, parks and the stone edges. */
 export function buildChannel(): THREE.BufferGeometry {
   const pal = groundPalette();
   const halfW = RIVER.width / 2;
@@ -126,7 +115,7 @@ export function buildChannel(): THREE.BufferGeometry {
         const b = a + 1;
         const a2 = a + perSlice;
         const b2 = b + perSlice;
-        // North side (side 0) runs outward→inward toward +Z; flip so both sides face up.
+        // The north side runs toward +Z, so its winding is flipped to face up.
         if (side === 0) idx.push(a, b, a2, b, b2, a2);
         else idx.push(a, a2, b, b, a2, b2);
       }

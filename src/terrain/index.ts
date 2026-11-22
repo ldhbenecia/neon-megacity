@@ -1,8 +1,3 @@
-// Terrain module (ART_DIRECTION 2.3, 2.4, 13.1): ground heightfield with the 별계단동 slopes,
-// the 흑린강 channel (bank strip, embankments, 둔치 parks, water) and the 삼첩령 far ridges with
-// their aviation lights. Reads the layout's pure queries only (terrainHeight, riverFrame,
-// riverSignedDistance, ridgeHeight, ridgePoint) and env colors written by lighting.
-// Draw calls: ground 1, channel 1, water 1, ridge rings 1, beacons 1 (budget 8).
 import * as THREE from 'three';
 import type { Ctx, CityModuleInstance } from '../core/types';
 import { buildChannel, buildGround } from './ground';
@@ -14,7 +9,7 @@ export function init(ctx: Ctx): CityModuleInstance {
   const group = new THREE.Group();
   group.name = 'terrain';
 
-  // Ground: pushed back in depth so roads, sidewalks and plazas laid at the same height win.
+  // Roads, sidewalks and plazas laid at the same height must win over the ground.
   const groundGeo = buildGround();
   const groundMat = new THREE.MeshStandardMaterial({
     name: 'TerrainGround',
@@ -37,7 +32,7 @@ export function init(ctx: Ctx): CityModuleInstance {
     vertexColors: true,
     roughness: 0.85,
     metalness: 0,
-    // Behind roads / sidewalks at y = 0 (offset 0), ahead of the ground it overlaps (1, 4).
+    // Ahead of the ground it overlaps (1, 4), behind roads and sidewalks at y = 0 (0).
     polygonOffset: true,
     polygonOffsetFactor: 1,
     polygonOffsetUnits: 2,
@@ -57,8 +52,6 @@ export function init(ctx: Ctx): CityModuleInstance {
 
   scene.add(group);
 
-  // Ridge colors follow lighting's horizon colors (env.horizonColor / horizonAntiColor), shared
-  // by reference: no per-frame palette lookups here.
   const ridgeEnv: RidgeEnv = {
     horizon: env.horizonColor,
     horizonAnti: env.horizonAntiColor ?? env.horizonColor,
