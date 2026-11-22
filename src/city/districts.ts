@@ -126,8 +126,8 @@ const DEFS: ZoneDef[] = [
     area: 'hill',
     gridAngle: -6 * DEG,
     origin: { x: -800, z: HILL_Z },
-    pitch: [44, 44],
-    roadWidth: 4,
+    pitch: [48, 48],
+    roadWidth: 3,
     roadKind: 'alley',
   },
   {
@@ -139,8 +139,8 @@ const DEFS: ZoneDef[] = [
     area: 'hill',
     gridAngle: 2 * DEG,
     origin: { x: 0, z: HILL_Z },
-    pitch: [44, 44],
-    roadWidth: 4,
+    pitch: [48, 48],
+    roadWidth: 3,
     roadKind: 'alley',
   },
   {
@@ -152,8 +152,8 @@ const DEFS: ZoneDef[] = [
     area: 'hill',
     gridAngle: 7 * DEG,
     origin: { x: 800, z: HILL_Z },
-    pitch: [44, 44],
-    roadWidth: 4,
+    pitch: [48, 48],
+    roadWidth: 3,
     roadKind: 'alley',
   },
 ];
