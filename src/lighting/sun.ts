@@ -1,7 +1,8 @@
 // Pure time-of-day math for the lighting module: sun / moon paths, day factor, time advance,
-// environment-map key selection and the shadow frustum bucket. No three.js, no side effects.
+// environment-map key selection, the shadow frustum bucket and shadow refresh policy. No three.js, no side effects.
 // Unit tests: tests/lighting.test.ts.
 import { smoothstep } from '../city/math';
+import { DAWN, DAY, NIGHT, PALETTE_KEYS, SUNSET, type PaletteKey } from '../core/palette';
 
 export interface Vec3Out {
   x: number;
@@ -121,16 +122,27 @@ export function advanceTime(
 
 export type EnvKey = 'night' | 'dawn' | 'day' | 'sunset';
 
+const KEY_NAMES = new Map<PaletteKey, EnvKey>([
+  [NIGHT, 'night'],
+  [DAWN, 'dawn'],
+  [DAY, 'day'],
+  [SUNSET, 'sunset'],
+]);
+
 /**
- * Which of the 4 baked environment maps a time of day uses (ART_DIRECTION 6.1: the PMREM is only
- * rebuilt when the key changes, at most 4 times). Boundaries sit halfway between palette keys.
+ * Which of the 4 baked environment maps a time of day uses (ART_DIRECTION 6.1: baked once per
+ * palette key). Derived from `PALETTE_KEYS`: the key that dominates the palette blend, so the
+ * switch happens exactly at the midpoint of each transition (05:00, 08:00, 16:37, 20:36), where
+ * `paletteAt`'s smoothstep weight crosses 0.5.
  */
 export function envKeyAt(timeOfDay: number): EnvKey {
-  const h = wrap01(timeOfDay) * 24;
-  if (h >= 4.5 && h < 8) return 'dawn';
-  if (h >= 8 && h < 16.8) return 'day';
-  if (h >= 16.8 && h < 20.5) return 'sunset';
-  return 'night';
+  const t = wrap01(timeOfDay);
+  let i = 0;
+  while (i < PALETTE_KEYS.length - 2 && t >= (PALETTE_KEYS[i + 1] as { t: number }).t) i++;
+  const a = PALETTE_KEYS[i] as { t: number; key: PaletteKey };
+  const b = PALETTE_KEYS[i + 1] as { t: number; key: PaletteKey };
+  const w = b.t > a.t ? (t - a.t) / (b.t - a.t) : 0;
+  return KEY_NAMES.get(w < 0.5 ? a.key : b.key) ?? 'night';
 }
 
 export interface ShadowFrame {
@@ -160,4 +172,32 @@ export function shadowFrameFor(
     cz: Math.round(targetZ / grid) * grid + 0,
     half: Math.min(maxHalf, minHalf * Math.pow(ratio, k)),
   };
+}
+
+/** Shadow map refresh policy (2048² re-renders are the most expensive thing lighting does). */
+export const SHADOW_REFRESH = {
+  /** Sun movement (radians) that warrants a re-render: 0.5°. */
+  sunEps: 0.5 * DEG,
+  /** Never re-render for sun movement more often than this (s). */
+  minInterval: 1,
+  /** Safety refresh while the sun is up (late-loaded or animated casters), seconds. */
+  maxInterval: 4,
+} as const;
+
+/**
+ * Whether the shadow map must be re-rendered this frame. A moved / resized frustum always
+ * refreshes immediately (the light target follows it, so a stale map would clip shadows);
+ * sun motion refreshes at most once per `minInterval` and only past `sunEps`.
+ */
+export function shouldRefreshShadow(
+  frameChanged: boolean,
+  sunAngleSinceLast: number,
+  secondsSinceLast: number,
+  warmup: boolean,
+): boolean {
+  if (frameChanged || warmup) return true;
+  if (secondsSinceLast >= SHADOW_REFRESH.maxInterval) return true;
+  return (
+    sunAngleSinceLast >= SHADOW_REFRESH.sunEps && secondsSinceLast >= SHADOW_REFRESH.minInterval
+  );
 }

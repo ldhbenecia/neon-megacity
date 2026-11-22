@@ -16,16 +16,13 @@ import {
   keyLightAt,
   moonDirectionAt,
   shadowFrameFor,
+  shouldRefreshShadow,
   sunDirectionAt,
   type EnvKey,
   type ShadowFrame,
 } from './sun';
 
 const SHADOW_MAP_SIZE = 2048;
-/** Re-render the shadow map when the sun has moved this much (radians). */
-const SHADOW_SUN_EPS = 0.003;
-/** Force a shadow refresh every N frames while the sun is up (animated geometry, late loads). */
-const SHADOW_REFRESH_FRAMES = 240;
 const LIGHT_DISTANCE = 2500;
 /** Key-light target while no shadow frame has been computed yet. */
 const ORIGIN_FRAME = { cx: 0, cz: 0 } as const;
@@ -80,12 +77,13 @@ export function init(ctx: Ctx): CityModuleInstance {
   const moonDir = new THREE.Vector3();
   const lastShadowSun = new THREE.Vector3(0, -1, 0);
   let lastShadowFrame: ShadowFrame | null = null;
-  let framesSinceShadow = 0;
+  let secondsSinceShadow = 0;
   let frame = 0;
   let pal: PaletteSample = paletteAt(env.timeOfDay);
   let palTime = env.timeOfDay;
 
-  function updateShadowCamera(): void {
+  /** Moves the shadow frustum (and so the light target) and decides whether to re-render. */
+  function updateShadowCamera(dt: number): void {
     const dist = camera.position.distanceTo(controls.target);
     const f = shadowFrameFor(controls.target.x, controls.target.z, dist);
     const changed =
@@ -93,7 +91,6 @@ export function init(ctx: Ctx): CityModuleInstance {
       f.cx !== lastShadowFrame.cx ||
       f.cz !== lastShadowFrame.cz ||
       f.half !== lastShadowFrame.half;
-    const sunMoved = lastShadowSun.angleTo(env.sunDirection) > SHADOW_SUN_EPS;
     if (changed) {
       const sc = key.shadow.camera;
       sc.left = -f.half;
@@ -105,16 +102,16 @@ export function init(ctx: Ctx): CityModuleInstance {
       key.shadow.normalBias = ((2 * f.half) / SHADOW_MAP_SIZE) * 0.7;
       lastShadowFrame = f;
     }
-    if (changed || sunMoved || framesSinceShadow >= SHADOW_REFRESH_FRAMES || frame < 3) {
+    secondsSinceShadow += dt;
+    const sunAngle = lastShadowSun.angleTo(env.sunDirection);
+    if (shouldRefreshShadow(changed, sunAngle, secondsSinceShadow, frame < 3)) {
       renderer.shadowMap.needsUpdate = true;
       lastShadowSun.copy(env.sunDirection);
-      framesSinceShadow = 0;
-    } else {
-      framesSinceShadow++;
+      secondsSinceShadow = 0;
     }
   }
 
-  function apply(): void {
+  function apply(dt: number): void {
     const t = env.timeOfDay;
     // paletteAt allocates; only resample when the time actually moved (never while locked).
     if (t !== palTime) {
@@ -138,6 +135,14 @@ export function init(ctx: Ctx): CityModuleInstance {
 
     // Key light: sun by day, moon by night, crossfaded through zero at the horizon.
     const kl = keyLightAt(env.sunElevation, moonDir.y);
+    const castShadow =
+      settings.shadows && kl.body === 'sun' && pal.shadows > 0.5 && env.sunElevation > 0.02;
+    if (castShadow !== key.castShadow) {
+      key.castShadow = castShadow;
+      renderer.shadowMap.needsUpdate = true;
+    }
+    // Shadow frustum first, so the light target below already sits on this frame's frustum.
+    if (castShadow) updateShadowCamera(dt);
     const dir = kl.body === 'sun' ? env.sunDirection : moonDir;
     const center = lastShadowFrame ?? ORIGIN_FRAME;
     key.target.position.set(center.cx, 0, center.cz);
@@ -145,13 +150,6 @@ export function init(ctx: Ctx): CityModuleInstance {
     key.target.updateMatrixWorld();
     setSrgb(key.color, pal.sunColor);
     key.intensity = pal.sunIntensity * kl.weight;
-    const castShadow =
-      settings.shadows && kl.body === 'sun' && pal.shadows > 0.5 && env.sunElevation > 0.02;
-    if (castShadow !== key.castShadow) {
-      key.castShadow = castShadow;
-      renderer.shadowMap.needsUpdate = true;
-    }
-    if (castShadow) updateShadowCamera();
 
     setSrgb(hemi.color, pal.hemiSky);
     setSrgb(hemi.groundColor, pal.hemiGround);
@@ -195,8 +193,10 @@ export function init(ctx: Ctx): CityModuleInstance {
   }
   folder.close();
 
+  // Bake all four environment maps now (boot), never mid-session.
+  envMaps.bakeAll();
   // Populate env before the other modules init and read it.
-  apply();
+  apply(0);
 
   return {
     update(dt) {
@@ -206,7 +206,7 @@ export function init(ctx: Ctx): CityModuleInstance {
         settings.dayMinutes * 60,
         env.timeLocked || settings.paused,
       );
-      apply();
+      apply(dt);
       frame++;
     },
     dispose() {

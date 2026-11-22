@@ -30,6 +30,7 @@ const PANEL_MIX: readonly (readonly [NeonName, number])[] = [
 ];
 
 const PANEL_COUNT = 40;
+const ENV_KEY_LIST: readonly EnvKey[] = ['night', 'dawn', 'day', 'sunset'];
 const DOME_RADIUS = 100;
 const PANEL_RADIUS = 60;
 
@@ -99,6 +100,8 @@ function buildPanels(key: PaletteKey): THREE.BufferGeometry {
 export interface EnvMaps {
   /** Baked (cached) PMREM texture for a palette key. */
   get(key: EnvKey): THREE.Texture;
+  /** Bake every key up front (called from lighting init, before the boot compile stage). */
+  bakeAll(): void;
   dispose(): void;
 }
 
@@ -141,6 +144,9 @@ export function createEnvMaps(renderer: THREE.WebGLRenderer): EnvMaps {
         cache.set(key, t);
       }
       return t.texture;
+    },
+    bakeAll() {
+      for (const k of ENV_KEY_LIST) this.get(k);
     },
     dispose() {
       for (const t of cache.values()) t.dispose();

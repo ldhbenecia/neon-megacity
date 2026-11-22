@@ -6,6 +6,8 @@ import {
   keyLightAt,
   moonDirectionAt,
   shadowFrameFor,
+  shouldRefreshShadow,
+  SHADOW_REFRESH,
   sunDirectionAt,
   SHADOW_SNAP,
   SUN_PATH,
@@ -104,6 +106,14 @@ describe('envKeyAt', () => {
     expect(envKeyAt(0.95)).toBe('night');
   });
 
+  it('switches at the midpoints of the palette transitions', () => {
+    const at = (h: number) => envKeyAt(h / 24);
+    expect([at(4.99), at(5.01)]).toEqual(['night', 'dawn']);
+    expect([at(7.99), at(8.01)]).toEqual(['dawn', 'day']);
+    expect([at(16.62), at(16.63)]).toEqual(['day', 'sunset']);
+    expect([at(20.59), at(20.61)]).toEqual(['sunset', 'night']);
+  });
+
   it('changes at most 4 times over a day', () => {
     let changes = 0;
     let prev = envKeyAt(0);
@@ -131,5 +141,41 @@ describe('shadowFrameFor', () => {
       expect(f.half).toBeGreaterThanOrEqual(SHADOW_SNAP.minHalf);
       expect(f.half).toBeLessThanOrEqual(SHADOW_SNAP.maxHalf);
     }
+  });
+});
+
+describe('shouldRefreshShadow', () => {
+  it('refreshes immediately when the frustum moves (no stale clipped shadows)', () => {
+    expect(shouldRefreshShadow(true, 0, 0, false)).toBe(true);
+    expect(shouldRefreshShadow(false, 0, 0, true)).toBe(true);
+  });
+
+  it('throttles sun-motion refreshes to at most once per second and 0.5°', () => {
+    const eps = SHADOW_REFRESH.sunEps;
+    expect(shouldRefreshShadow(false, eps * 2, 0.2, false)).toBe(false);
+    expect(shouldRefreshShadow(false, eps * 0.5, 2, false)).toBe(false);
+    expect(shouldRefreshShadow(false, eps, SHADOW_REFRESH.minInterval, false)).toBe(true);
+    expect(shouldRefreshShadow(false, 0, SHADOW_REFRESH.maxInterval, false)).toBe(true);
+  });
+
+  it('re-renders about once per second or less over a default 8 minute day', () => {
+    let last = sunDirectionAt(0.3);
+    let since = 0;
+    let renders = 0;
+    const dt = 1 / 60;
+    let t = 0.3;
+    for (let i = 0; i < 60 * 60; i++) {
+      t += dt / 480;
+      since += dt;
+      const d = sunDirectionAt(t);
+      const ang = Math.acos(Math.min(1, last.x * d.x + last.y * d.y + last.z * d.z));
+      if (shouldRefreshShadow(false, ang, since, false)) {
+        renders++;
+        since = 0;
+        last = d;
+      }
+    }
+    expect(renders).toBeLessThanOrEqual(61);
+    expect(renders).toBeGreaterThan(10);
   });
 });
