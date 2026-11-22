@@ -52,7 +52,7 @@ npm run shots          # 고정된 장면 스크린샷 촬영 (screenshots/<labe
 ```
 src/
   main.ts          렌더러, 카메라, OrbitControls, 메인 루프, GUI 루트
-  core/            공유 타입(types.ts), 시드 난수(random.ts), URL 쿼리 파싱(query.ts)
+  core/            공유 타입(types.ts), 시드 난수(random.ts), URL 쿼리 파싱(query.ts), HUD 시계 포맷(clock.ts)
   city/layout.ts   블록 / 도로 / 건물 배치의 단일 기준
   lighting/        시간대, 해/달, 하늘, 그림자, 노출
   buildings/       지면, 도로, 건물 지오메트리, 창문

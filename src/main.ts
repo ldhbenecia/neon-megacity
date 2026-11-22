@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import GUI from 'lil-gui';
 import { CITY, LAYOUT } from './city/layout';
+import { clockMinutes, formatClock } from './core/clock';
 import { CAMERA_LIMITS, CAMERA_PRESETS, parseQuery } from './core/query';
 import type { CityModule, CityModuleInstance, Ctx } from './core/types';
 import * as lighting from './lighting/index';
@@ -108,7 +109,6 @@ const MIN_CAMERA_Y = 2;
 const clockEl = document.getElementById('clock');
 const timer = new THREE.Timer();
 timer.connect(document);
-const pad2 = (n: number): string => String(n).padStart(2, '0');
 let clockMins = -1;
 let frames = 0;
 renderer.setAnimationLoop((timestamp) => {
@@ -135,10 +135,10 @@ renderer.setAnimationLoop((timestamp) => {
   for (const m of modules) m.update?.(dt, t);
 
   // The clock only changes once per in-game minute; skip redundant DOM writes.
-  const mins = Math.floor(ctx.env.timeOfDay * 24 * 60);
+  const mins = clockMinutes(ctx.env.timeOfDay);
   if (clockEl && mins !== clockMins) {
     clockMins = mins;
-    clockEl.textContent = `${pad2(Math.floor(mins / 60))}:${pad2(mins % 60)}`;
+    clockEl.textContent = formatClock(mins);
   }
 
   ctx.render();
