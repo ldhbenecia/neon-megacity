@@ -27,6 +27,11 @@ export default defineConfig(
       ],
     },
   },
+  {
+    // Tests index into fixtures whose shape is asserted by the test itself.
+    files: ['tests/**/*.ts'],
+    rules: { '@typescript-eslint/no-non-null-assertion': 'off' },
+  },
   { files: ['**/*.js'], ...tseslint.configs.disableTypeChecked },
   prettier,
 );
