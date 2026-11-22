@@ -601,6 +601,9 @@ function waterTank(
   g.place(UNIT_CONE8, x, y + 0.5 + h, z, r * 1.02, r * 0.35, r * 1.02, 0, plain(hex, 0.55));
 }
 
+/** 동 numbers travel in a half-float attribute: integers are exact only below 2048. */
+export const MAX_HALF_INT = 2048;
+
 const TANK_COLORS = [0x2c6f7a, 0x2a5a8c, 0x3a7a6a, 0x8a8f8c, 0x2f6a8a];
 
 function sanggaProps(g: GeoBuilder, b: Bld, rng: Rng): void {
@@ -815,7 +818,7 @@ function apartment(g: GeoBuilder, b: Bld, rng: Rng): void {
           g.box(p.x, t.y0, p.z, 0.7, spec.groundFloorH, 0.7, yaw, slab);
         }
       }
-    } else if (spec.tags.dong !== undefined) {
+    } else if (spec.tags.dong !== undefined && spec.tags.dong < MAX_HALF_INT) {
       // 동 number: 6 m glyphs near the top of the gable.
       const digits = String(spec.tags.dong).length;
       const gh = Math.min(6, (t.y1 - t.y0) * 0.12);

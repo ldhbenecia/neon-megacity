@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { createRng } from '../core/random';
 import { terrainHeight } from '../city/layout';
+import { SIDEWALK } from '../city/generate';
 import { toLocal } from '../city/math';
 import { GridHash, segmentBounds, type Bounds } from '../city/spatial';
 import type { Block, BuildingSpec, Layout, Road } from '../city/types';
@@ -12,15 +13,6 @@ import { mergeIntervals } from './params';
 
 export const ROAD_Y = 0.03;
 export const SIDEWALK_H = 0.15;
-
-/** Sidewalk width per district (matches the layout lot inset). */
-const WALK: Partial<Record<string, number>> = {
-  core: 4,
-  midtown: 4,
-  sangga: 2,
-  apartment: 6,
-  industrial: 4,
-};
 
 const ASPHALT = 0x16181a;
 const ALLEY = 0x24262a;
@@ -186,7 +178,9 @@ export function buildRoads(L: Layout): THREE.BufferGeometry {
 export function buildSidewalks(L: Layout): THREE.BufferGeometry {
   const B = new FlatBuilder();
   for (const block of L.blocks) {
-    const walk = WALK[block.district];
+    // Hillside paths follow the terrain (no flat slabs); riverside pavilions sit in the park.
+    if (block.district === 'hillside' || block.district === 'riverside') continue;
+    const walk = SIDEWALK[block.district];
     if (walk === undefined || block.buildingIds.length === 0) continue;
     const rect = paveRect(
       block,

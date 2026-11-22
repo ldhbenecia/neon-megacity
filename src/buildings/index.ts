@@ -147,7 +147,6 @@ export function init(ctx: Ctx): CityModuleInstance {
   const walks = new THREE.Mesh(walkGeo, walkMat);
   walks.name = 'sidewalks';
   walks.receiveShadow = true;
-  walks.castShadow = true;
   group.add(roads, walks);
 
   // --- API ------------------------------------------------------------------

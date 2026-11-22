@@ -248,7 +248,7 @@ interface Lot {
   blockId: number;
 }
 
-const SIDEWALK: Record<string, number> = {
+export const SIDEWALK: Record<string, number> = {
   core: 4,
   midtown: 4,
   sangga: 2,

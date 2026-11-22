@@ -3,6 +3,7 @@ import type * as THREE from 'three';
 import { LAYOUT, sideNormal, type Archetype, type BuildingSpec } from '../src/city/layout';
 import { GeoBuilder } from '../src/buildings/builder';
 import {
+  MAX_HALF_INT,
   emitBuilding,
   industrialStacks,
   roofTopKind,
@@ -271,6 +272,12 @@ describe('archetype geometry', () => {
     expect(a).toBeDefined();
     expect(b).toBeDefined();
     expect(a).not.toBe(b);
+  });
+
+  it('동 numbers fit the half-float attribute exactly', () => {
+    for (const b of LAYOUT.buildings) {
+      if (b.tags.dong !== undefined) expect(b.tags.dong).toBeLessThan(MAX_HALF_INT);
+    }
   });
 
   it('packs facade parameters losslessly into half floats', () => {
