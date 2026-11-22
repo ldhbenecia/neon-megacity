@@ -1,8 +1,3 @@
-// One MeshStandardMaterial for every building surface (walls, roofs, props, shop glass, trees),
-// so each chunk LOD level is a single draw call (ART_DIRECTION 4.4, 11). Windows are drawn in
-// the shader from world-meter face coordinates (4.1): real-size cells, hash-based lighting with
-// row correlation (3.4), warm-dominant colors (3.2), HDR ≤ 1.1 so windows do not bloom (3.3),
-// and a distance filter that fades the per-cell pattern to its average (no moiré).
 import * as THREE from 'three';
 import { MATERIAL, NEON, WINDOW_MIX } from '../core/palette';
 
@@ -20,7 +15,6 @@ export interface FacadeUniforms {
 
 const lin = (hex: number): THREE.Color => new THREE.Color().setHex(hex);
 
-/** Canvas atlas of the digits 0-9 for 동 numbers (10 glyphs in a row). */
 function digitAtlas(): THREE.CanvasTexture {
   const cw = 64;
   const ch = 96;
@@ -72,14 +66,12 @@ float fhash(vec2 p) {
   p3 += dot(p3, p3.yzx + 33.33);
   return fract((p3.x + p3.y) * p3.z);
 }
-// Integral of a [a, b] pulse repeated every 1.0, for box-filtered masks.
 float pulseI(float x, float a, float b) { return floor(x) * (b - a) + clamp(fract(x), a, b) - a; }
 float fpulse(float x, float a, float b, float w) {
   w = max(w, 1e-4);
   return (pulseI(x + 0.5 * w, a, b) - pulseI(x - 0.5 * w, a, b)) / w;
 }
 
-// Lit window color (linear HDR) for one unit key; cool-biased for offices.
 vec3 windowLight(vec2 key, float office, float fx, float fy, float vy) {
   float hC = fhash(key + 5.7);
   float h2 = fhash(key + 11.3);
@@ -95,13 +87,10 @@ vec3 windowLight(vec2 key, float office, float fx, float fy, float vy) {
     c = uWinColors[3];
     hdr = ${NEON.windowTV.hdr[0].toFixed(2)} + 0.12 * (1.0 + sin(uTime * 6.2832 * (0.3 + 0.7 * h2)));
   }
-  // 10% of lit windows behind blinds: 40-70% brightness with slats.
   if (fhash(key + 9.1) < 0.1) {
-    // Half-drawn blind: dim upper part (no slats, they alias at distance).
     float level = 0.35 + 0.5 * fhash(key + 3.3);
     hdr *= (0.4 + 0.3 * h2) * mix(1.0, 0.45, smoothstep(level - 0.04, level + 0.04, fy));
   }
-  // Ceiling light falloff inside the room, curtains / furniture as soft vertical sections.
   hdr *= 0.68 + 0.42 * fy;
   hdr *= 0.7 + 0.3 * fhash(key + floor(fx * 3.0) * 7.31);
   return c * hdr;
@@ -111,7 +100,7 @@ vec3 windowLight(vec2 key, float office, float fx, float fy, float vy) {
 const FRAG_MAIN = /* glsl */ `
   float fType = floor(vInfo.x * 0.5 + 0.01);
   float fShop = vInfo.x - fType * 2.0;
-  // Quantize: interpolated constants jitter in the last bits and would re-roll the hashes.
+  // Interpolated constants jitter in the last bits and would re-roll every hash per pixel.
   float fSeed = floor(vInfo.y * 1024.0 + 0.5) / 1024.0;
   float fLit = vInfo.z;
   float fParam = vInfo.w;
@@ -125,7 +114,6 @@ const FRAG_MAIN = /* glsl */ `
   if (fType < 0.5) {
     fRough = fParam > 0.0 ? fParam : 0.82;
   } else if (fType > 4.5 && fType < 5.5) {
-    // Constant emissive: shop glass, soffits, crowns, skybridges.
     float g = fParam;
     if (fShop > 0.5) {
       float bay = floor(f.x / 3.2);
@@ -133,18 +121,14 @@ const FRAG_MAIN = /* glsl */ `
       float bx = fract(f.x / 3.2);
       float mull = fpulse(f.x / 3.2, 0.03, 0.97, fwidth(f.x / 3.2));
       if (hb < 0.14) {
-        // Rolling shutter (closed shop): light grey slats, no light.
         fAlbedo = vec3(0.09) * (0.75 + 0.25 * fpulse(f.y * 6.0, 0.0, 0.5, fwidth(f.y * 6.0)));
         g = 0.0;
       } else {
         g *= (0.6 + 0.4 * hb) * mull;
-        // Depth: a warm light pool in the middle of each bay, dark corners at the back.
         float side = abs(bx - 0.5) * 2.0;
         g *= 0.5 + 0.5 * (1.0 - side * side);
-        // Ceiling lights: bright at the top, falling off toward the floor; dark display counter.
         g *= mix(0.22, 1.0, smoothstep(0.3, 2.6, f.y));
         g *= mix(0.45, 1.0, smoothstep(0.85, 1.0, f.y));
-        // Shelves on some bays, dark silhouettes of goods / people on all.
         float shelves = step(0.55, hb) * step(1.0, f.y);
         g *= 1.0 - shelves * 0.45 * fpulse(f.y / 0.45, 0.0, 0.18, fwidth(f.y / 0.45));
         float sx = floor(f.x / 0.7);
@@ -153,18 +137,15 @@ const FRAG_MAIN = /* glsl */ `
         fAlbedo = vec3(0.015);
       }
       fRough = 0.15;
-      // Cream to amber per bay.
       vec3 tint = vec3(1.0, 0.86 + 0.14 * hb, 0.68 + 0.3 * hb);
       fEmit = diffuseColor.rgb * tint * g * dayDim;
     } else {
-      // LED segments (crowns, skybridge mullions) instead of a flat strip.
       float seg = fpulse(f.x / 1.5, 0.12, 0.88, fwidth(f.x / 1.5));
       fEmit = diffuseColor.rgb * g * dayDim * mix(0.35, 1.0, seg);
       fAlbedo = diffuseColor.rgb * 0.2;
       fRough = 0.3;
     }
   } else if (fType > 5.5 && fType < 6.5) {
-    // 동 number glyphs (vWin = number, digits, height).
     float digits = max(vWin.y, 1.0);
     float charW = vWin.z * 0.62;
     float total = charW * digits;
@@ -177,12 +158,10 @@ const FRAG_MAIN = /* glsl */ `
     fAlbedo = mix(fAlbedo, uDong, glyph);
     fEmit = uDong * 0.9 * uNight * glyph;
   } else if (fType > 7.5) {
-    // Striped awning.
     float s = fpulse(f.x / 0.9, 0.0, 0.5, fwidth(f.x / 0.9));
     fAlbedo = mix(fAlbedo, vec3(0.42, 0.40, 0.36), s * 0.7);
     fRough = 0.7;
   } else {
-    // Windows: 1 curtain, 2 punched, 3 apartment south, 4 corridor, 7 corrugated.
     float cw = vWin.x;
     float chh = vWin.y;
     vec2 c = vec2(f.x / cw, f.y / chh);
@@ -207,7 +186,6 @@ const FRAG_MAIN = /* glsl */ `
       cover = (1.0 - 2.0 * ax) * (by - ay);
       unit = vec2(floor(id.x / 4.0), id.y);
       fy = clamp((fr.y - ay) / (by - ay), 0.0, 1.0);
-      // Spandrel panels read slightly lighter than glass at night.
       fAlbedo *= 1.0 + 0.25 * (1.0 - mask);
     } else if (fType < 2.5 || fType > 6.5) {
       float sill = fType > 6.5 ? chh - vWin.w - 0.8 : 0.9;
@@ -222,25 +200,21 @@ const FRAG_MAIN = /* glsl */ `
         cover *= fParam;
       }
       fy = clamp((fr.y - ay) / (by - ay), 0.0, 1.0);
-      // Sash mullion and transom (sliding windows), faded out with distance.
       float mw = 0.035 / cw;
       float mull = fpulse(c.x, 0.5 - mw, 0.5 + mw, fw.x);
       float tr = fpulse(c.y, ay + (by - ay) * 0.72, ay + (by - ay) * 0.72 + 0.05 / chh, fw.y);
       mask *= 1.0 - 0.85 * max(mull, tr) * (1.0 - far);
       if (fType > 6.5) {
-        // Corrugated metal sheet.
         float rib = fpulse(f.x / 0.3, 0.0, 0.5, fwidth(f.x / 0.3));
         fAlbedo *= 0.8 + 0.25 * rib;
       }
     } else if (fType < 3.5) {
-      // Household: living room 2.6 × 2.0 + bedroom 1.4 × 1.5 per 6 m bay.
       float m1 = fpulse(c.x, 0.3 / 6.0, 2.9 / 6.0, fw.x) * fpulse(c.y, 0.25 / chh, 2.25 / chh, fw.y);
       float m2 = fpulse(c.x, 3.7 / 6.0, 5.1 / 6.0, fw.x) * fpulse(c.y, 0.8 / chh, 2.3 / chh, fw.y);
       mask = m1 + m2;
       cover = (2.6 / 6.0) * (2.0 / chh) + (1.4 / 6.0) * (1.5 / chh);
       fy = clamp((fr.y - 0.1) / 0.8, 0.0, 1.0);
     } else {
-      // Corridor side: small kitchen windows + a continuous ceiling light strip per floor.
       float ax = 0.5 * (1.0 - vWin.z / cw);
       mask = fpulse(c.x, ax, 1.0 - ax, fw.x) * fpulse(c.y, 1.1 / chh, 2.0 / chh, fw.y);
       cover = (1.0 - 2.0 * ax) * (0.9 / chh);
@@ -263,7 +237,6 @@ const FRAG_MAIN = /* glsl */ `
     fEmit = mix(nearE, farE, far);
     fEmit += uWhite * 1.2 * corridor * uNight;
 
-    // Below the first window row: lobby or shop band.
     if (f.y < 0.0) {
       fEmit = vec3(0.0);
       mask = 0.0;

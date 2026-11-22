@@ -1,9 +1,3 @@
-// Buildings module (ART_DIRECTION 4, 6.1, 6.2, 13.1): roads, sidewalks, stairs, building
-// geometry per archetype, window shader, rooftop / facade props, shop fronts, trees, and
-// 256 m chunk merge with a 3-level THREE.LOD per chunk. Publishes `ctx.buildings`.
-//
-// Draw calls: one facade material for every building surface, so each visible chunk costs one
-// call at whichever LOD it shows, plus 2 for roads and sidewalks.
 import * as THREE from 'three';
 import { buildingFaces, buildingTop } from '../city/layout';
 import { pointSegmentDistance } from '../city/math';
@@ -23,7 +17,6 @@ import {
 } from './roads';
 import { alleyRetaining, stair, tree } from './street';
 
-/** True when (x, z) lies on (or within 2 m of) a street, arterial or alley surface. */
 function streetTest(roads: readonly Road[]): (x: number, z: number) => boolean {
   const surfaces = roads.filter((r) => r.kind !== 'stair');
   const grid = new GridHash(32);
@@ -38,16 +31,10 @@ function streetTest(roads: readonly Road[]): (x: number, z: number) => boolean {
 interface Chunk {
   i: number;
   j: number;
-  /** World center; the chunk's builders and LOD are positioned relative to it. */
   o: { x: number; z: number };
   T: Targets;
 }
 
-/**
- * Emits every building, tree, stair and hillside retaining wall into per-chunk builders.
- * Kept out of `init` so the builders' staging arrays are not retained by the closures
- * `init` returns.
- */
 function collectChunks(LAYOUT: Ctx['LAYOUT'], half: number): Chunk[] {
   const chunks = new Map<string, Chunk>();
   const chunkAt = (x: number, z: number): Chunk => {
@@ -97,7 +84,6 @@ export function init(ctx: Ctx): CityModuleInstance {
   group.name = 'buildings';
   scene.add(group);
 
-  // --- chunks -------------------------------------------------------------
   const chunks = collectChunks(LAYOUT, half);
 
   const { material: facade, uniforms } = createFacadeMaterial();
@@ -133,7 +119,6 @@ export function init(ctx: Ctx): CityModuleInstance {
     lods.push(lod);
   }
 
-  // --- roads and sidewalks ------------------------------------------------
   const puddle = puddleTexture(LAYOUT.seed);
   const wet = { value: 0.55 };
   const roadMat = createWetMaterial('road', puddle, wet, 0.6);
@@ -149,7 +134,6 @@ export function init(ctx: Ctx): CityModuleInstance {
   walks.receiveShadow = true;
   group.add(roads, walks);
 
-  // --- API ------------------------------------------------------------------
   const specs = LAYOUT.buildings;
   const api: BuildingsApi = {
     group,
@@ -162,7 +146,6 @@ export function init(ctx: Ctx): CityModuleInstance {
   };
   ctx.buildings = api;
 
-  // --- GUI ------------------------------------------------------------------
   const params = { litScale: 1 };
   const folder = gui.addFolder('Buildings');
   folder.add(params, 'litScale', 0, 3, 0.05).name('Lit windows ×');

@@ -1,31 +1,21 @@
-// Growable vertex buffer that every building part is written into, then turned into one
-// BufferGeometry per chunk and LOD level (ART_DIRECTION 4.4 chunk merge).
-//
-// Attributes (consumed by facadeMaterial.ts):
-//   position  vec3  relative to the chunk origin
-//   normal    vec3
-//   color     vec3  albedo (or light color for FACADE.emissive), linear
-//   aFace     vec2  (u along the face in m, y in m above the window start)
-//   aWin      vec4  (cellW, cellH, winW, winH) in m; for FACADE.dong: (number, digits, height, 0)
-//   aInfo     vec4  (type * 2 + storefront, seed 0..1, lit factor, param)
+// Vertex layout read by facadeMaterial.ts (keep in sync):
+//   aFace (u along the face, y above windowY) in m, float32: values reach ~600 m.
+//   aWin  (cellW, cellH, winW, winH); FACADE.dong: (number, digits, height, 0). Half float.
+//   aInfo (type * 2 + storefront, seed, lit factor, param). Half float.
 import * as THREE from 'three';
 import type { FacadeType } from './params';
 
 export interface Style {
   type: FacadeType;
-  /** Linear RGB albedo or light color. */
   color: THREE.Color;
   cellW: number;
   cellH: number;
   winW: number;
   winH: number;
-  /** World y where window rows start (aFace.y = y - windowY). */
   windowY: number;
   seed: number;
   lit: number;
-  /** Type specific: roughness for plain, HDR gain for emissive, presence for punched. */
   param: number;
-  /** Ground band glows like a shop (LOD1 stand-in for storefront geometry). */
   storefront: boolean;
 }
 
@@ -72,7 +62,6 @@ export class GeoBuilder {
   private info = new Growable(4 * 1024);
   private idx = new GrowableIdx(1536);
   private count = 0;
-  /** Origin subtracted from every world position (chunk center). */
   constructor(
     readonly ox: number,
     readonly oz: number,
@@ -82,7 +71,6 @@ export class GeoBuilder {
     return this.count;
   }
 
-  /** One vertex; returns its index. `u` is the face coordinate (m), y is taken from p. */
   vertex(p: V3, n: V3, u: number, s: Style): number {
     this.pos.reserve(3);
     this.nrm.reserve(3);
@@ -117,7 +105,7 @@ export class GeoBuilder {
     this.win.len += 4;
     k = this.info.len;
     this.info.arr[k] = s.type * 2 + (s.storefront ? 1 : 0);
-    // Seeds are quantized to 1/1024 so they survive half-float storage exactly.
+    // Half floats keep 1/1024 steps exactly below 2; the shader re-quantizes to the same grid.
     this.info.arr[k + 1] = Math.round(s.seed * 1024) / 1024;
     this.info.arr[k + 2] = s.lit;
     this.info.arr[k + 3] = s.param;
@@ -134,7 +122,6 @@ export class GeoBuilder {
     this.idx.len += 3;
   }
 
-  /** Quad a,b,c,d counter-clockwise seen from the front, flat normal, per-vertex u. */
   quad(
     a: V3,
     b: V3,
@@ -152,11 +139,7 @@ export class GeoBuilder {
     this.tri(i0, i2, i3);
   }
 
-  /**
-   * Vertical wall from (ax, az) to (bx, bz), y0..y1. Outward normal is (-tz, tx) for
-   * t = normalized(b - a), i.e. walk polygons with negative shoelace area (see `orient`).
-   * `u0` is the face coordinate at a. Optional smooth normals na/nb (cylinders).
-   */
+  // Outward normal is (-tz, tx) for t = b - a: outlines must have negative shoelace area.
   wall(
     ax: number,
     az: number,
@@ -182,7 +165,6 @@ export class GeoBuilder {
     this.tri(i0, i2, i3);
   }
 
-  /** Horizontal convex polygon at y (fan), facing up (or down when `down`). */
   cap(pts: readonly { x: number; z: number }[], y: number, s: Style, down = false): void {
     if (pts.length < 3) return;
     const n: V3 = down ? [0, -1, 0] : [0, 1, 0];
@@ -194,7 +176,6 @@ export class GeoBuilder {
     }
   }
 
-  /** Append an indexed or non-indexed prototype transformed by `m` (normals via normal matrix). */
   geometry(g: THREE.BufferGeometry, m: THREE.Matrix4, s: Style): void {
     const P = g.getAttribute('position');
     const N = g.getAttribute('normal');
@@ -215,10 +196,6 @@ export class GeoBuilder {
     }
   }
 
-  /**
-   * Oriented box between two points with a square-ish cross-section (beams, braces, posts).
-   * `side` is a horizontal hint for the cross-section orientation.
-   */
   beam(p: V3, q: V3, sx: number, sy: number, side: V3, s: Style): void {
     ta.set(q[0] - p[0], q[1] - p[1], q[2] - p[2]);
     const len = ta.length();
@@ -235,7 +212,6 @@ export class GeoBuilder {
     this.geometry(UNIT_BOX, tm, s);
   }
 
-  /** Axis-aligned-in-yaw box: center (x, z), bottom y, size, yaw rotY. */
   box(
     x: number,
     y: number,
@@ -252,7 +228,6 @@ export class GeoBuilder {
     this.geometry(bottom ? UNIT_BOX : BOX_NO_BOTTOM, tm, s);
   }
 
-  /** Prototype placed at (x, y, z) with yaw and scale. */
   place(
     g: THREE.BufferGeometry,
     x: number,
@@ -273,8 +248,6 @@ export class GeoBuilder {
     if (this.count === 0) return null;
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(this.pos.arr.slice(0, this.pos.len), 3));
-    // Compact attributes (~42 B / vertex instead of 76): normals as snorm8, colors as unorm8,
-    // window / info parameters as half floats. Face coordinates stay float32 (meters up to ~600).
     const n = this.count;
     const nrm = new Int8Array(n * 3);
     for (let i = 0; i < n * 3; i++) nrm[i] = Math.round((this.nrm.arr[i] ?? 0) * 127);
@@ -298,7 +271,7 @@ export class GeoBuilder {
   }
 }
 
-/** Half-float attribute from float data (the Float16BufferAttribute constructor expects raw bits). */
+// Float16BufferAttribute's constructor takes raw half bits; passing floats truncates them.
 function half(src: Float32Array, itemSize: number): THREE.Float16BufferAttribute {
   const bits = new Uint16Array(src.length);
   for (let i = 0; i < src.length; i++) bits[i] = THREE.DataUtils.toHalfFloat(src[i] ?? 0);
@@ -316,10 +289,8 @@ const tq = new THREE.Quaternion();
 const tm = new THREE.Matrix4();
 const nm = new THREE.Matrix3();
 
-/** Unit box centered at the origin (the `box` helper shifts it to sit on y). */
 export const UNIT_BOX = new THREE.BoxGeometry(1, 1, 1);
 
-/** Same box without its bottom face (20 vertices): props sitting on something. */
 const BOX_NO_BOTTOM = ((): THREE.BufferGeometry => {
   const src = UNIT_BOX;
   const P = src.getAttribute('position');
@@ -354,14 +325,10 @@ const BOX_NO_BOTTOM = ((): THREE.BufferGeometry => {
   g.setIndex(idx);
   return g;
 })();
-/** Unit cylinder (radius 1, height 1) with its base at y = 0. */
 export const UNIT_CYL8 = new THREE.CylinderGeometry(1, 1, 1, 8, 1).translate(0, 0.5, 0);
 export const UNIT_CYL12 = new THREE.CylinderGeometry(1, 1, 1, 12, 1).translate(0, 0.5, 0);
-/** Tree crown: low-poly icosahedron (radius 1). */
 export const UNIT_ICO = new THREE.IcosahedronGeometry(1, 0);
-/** Tapered spire (4 sides) with its base at y = 0, height 1. */
 export const UNIT_SPIRE = new THREE.CylinderGeometry(0.08, 1, 1, 4, 1)
   .rotateY(Math.PI / 4)
   .translate(0, 0.5, 0);
-/** Shallow cone for tank lids. */
 export const UNIT_CONE8 = new THREE.ConeGeometry(1, 1, 8, 1).translate(0, 0.5, 0);

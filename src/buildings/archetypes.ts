@@ -1,7 +1,3 @@
-// Building geometry per archetype (ART_DIRECTION 4.2, 4.3) written into chunk builders per LOD.
-// LOD0: everything (parapets, bands, fins, balconies, props, shop fronts).
-// LOD1: tier shells + window shader, bracing, crowns, spires (bands become nothing; the shader
-//       keeps the floor rhythm). LOD2: shells of buildings ≥ 40 m only, coarse cylinders.
 import { createRng, type Rng } from '../core/random';
 import { MATERIAL, NEON } from '../core/palette';
 import { terrainHeight } from '../city/layout';
@@ -63,7 +59,6 @@ const TOWERS = new Set([
   'twinTower',
 ]);
 
-/** Per-building shared values. */
 interface Bld {
   spec: BuildingSpec;
   rng: Rng;
@@ -75,17 +70,14 @@ interface Bld {
   inL2: boolean;
   tower: boolean;
   mega: boolean;
-  /** Sides with a lit shop front at street level (front + other street-facing sides). */
   shopSides: Set<Side>;
 }
 
-/** Returns true when a point (a face's outer edge at ground level) is on a street. */
 export type StreetTest = (x: number, z: number) => boolean;
 
 const SHOP_ARCHETYPES = new Set(['sangga', 'officeSlab', 'pavilion']);
 const ALL_SIDES: readonly Side[] = ['px', 'nx', 'pz', 'nz'];
 
-/** The tier stack, plus the second tower's stack for twin towers. */
 const tierStacks = (spec: BuildingSpec): Tier[][] =>
   spec.twin ? [spec.tiers, spec.twin] : [spec.tiers];
 
@@ -110,7 +102,6 @@ function facadeHex(spec: BuildingSpec, rng: Rng): number {
   const t = rng.next();
   switch (spec.archetype) {
     case 'apartmentSlab':
-      // Painted concrete slabs read lighter than the office glass (still dark at night).
       return mixHex(MATERIAL.facadeLight, 0x6b6e6c, 0.35 + 0.3 * t);
     case 'hillHouse':
       return mixHex(
@@ -131,7 +122,6 @@ function facadeHex(spec: BuildingSpec, rng: Rng): number {
   }
 }
 
-/** Style of one tier face. */
 function faceStyle(b: Bld, side: Side | null, len: number, tierIdx: number): Style {
   const { spec } = b;
   const baseRole = side ? faceRole(spec, side) : 'side';
@@ -158,7 +148,6 @@ function faceStyle(b: Bld, side: Side | null, len: number, tierIdx: number): Sty
   });
 }
 
-/** Cylinder faces: one continuous u, cell width fitted to the circumference. */
 function cylStyle(b: Bld, o: Outline, tierIdx: number): Style {
   const fit = fitCells(perimeter(o), 1.5);
   return style(FACADE.curtain, b.wall, {
@@ -173,7 +162,6 @@ function cylStyle(b: Bld, o: Outline, tierIdx: number): Style {
   });
 }
 
-/** Walls + roof of one tier (and the plinth band on slopes). */
 function shell(
   g: GeoBuilder,
   b: Bld,
@@ -205,8 +193,6 @@ function crownStyle(b: Bld): Style {
     pick < 0.45 ? NEON.neonWhite.hex : pick < 0.8 ? NEON.neonCyan.hex : NEON.neonOrange.hex;
   return glow(hex, pick < 0.45 ? 1.6 : 2.4);
 }
-
-// ---------------------------------------------------------------------------
 
 export function emitBuilding(spec: BuildingSpec, T: Targets, onStreet?: StreetTest): void {
   const rng = createRng(spec.seed);
@@ -245,7 +231,6 @@ export function emitBuilding(spec: BuildingSpec, T: Targets, onStreet?: StreetTe
       });
       const topTier = tiers[tiers.length - 1];
       if (topTier && b.mega) {
-        // Megatower crown: always visible (skyline identification, 4.5).
         const o = tierOutline(topTier, spec.rotY, lv === 0 ? 48 : 16);
         band(g, o, topTier.y1 - 3.2, 2.4, 0.35, crownStyle(b));
       }
@@ -263,9 +248,6 @@ export function emitBuilding(spec: BuildingSpec, T: Targets, onStreet?: StreetTe
   detail(b, T.l0);
 }
 
-// ---------------------------------------------------------------------------
-// LOD0 detail per archetype
-
 function detail(b: Bld, g: GeoBuilder): void {
   const { spec, rng } = b;
   const stacks = tierStacks(spec);
@@ -278,14 +260,12 @@ function detail(b: Bld, g: GeoBuilder): void {
       if (spec.archetype !== 'warehouse' && spec.archetype !== 'pavilion') {
         parapet(g, o, t.y1, parapetH, plain(scaleHex(b.wall, 1.15), 0.85));
       }
-      // Horizontal bands every 4-8 floors on offices and towers.
       if (b.tower || spec.archetype === 'officeSlab') {
         const every = 4 + Math.floor(seeded01(spec.seed + i) * 5);
         for (const y of bandLevels(t.y0, t.y1, b.windowY, spec.floorH, every)) {
           band(g, o, y - 0.25, 0.5, 0.4, bandStyle);
         }
       }
-      // Lobby / plinth band of towers: a lighter stone base 0.5 m proud.
       if (i === 0 && b.tower && t.shape !== 'cylinder') {
         band(g, o, t.y0 + spec.groundFloorH - 0.6, 0.6, 0.6, bandStyle);
       }
@@ -320,8 +300,6 @@ function detail(b: Bld, g: GeoBuilder): void {
   for (const side of b.shopSides) storefront(g, b, rng, side);
 }
 
-// ---------------------------------------------------------------------------
-
 function spire(g: GeoBuilder, b: Bld): void {
   const { spec } = b;
   const top = spec.tiers[spec.tiers.length - 1];
@@ -338,7 +316,6 @@ function spire(g: GeoBuilder, b: Bld): void {
     spec.rotY,
     plain(scaleHex(b.wall, 1.2), 0.4),
   );
-  // Aviation light housing at the tip (neon owns blinking lights; this is the dim fixture).
   g.box(
     top.x,
     top.y1 + spec.spireH - 1.2,
@@ -351,7 +328,6 @@ function spire(g: GeoBuilder, b: Bld): void {
   );
 }
 
-/** 4.2 bracedTower: exoskeleton 0.8 m off the wall, X braces every 16 m, 30% lit edges. */
 function bracing(g: GeoBuilder, b: Bld, lv: 0 | 1): void {
   const { spec } = b;
   const steel = plain(MATERIAL.bracing, 0.45);
@@ -404,7 +380,6 @@ function bracing(g: GeoBuilder, b: Bld, lv: 0 | 1): void {
         }
       }
       if (lit && lv === 1) {
-        // Far away the lit edges read as the corner lines only.
         for (const c of [cols[0] ?? 0, cols[cols.length - 1] ?? 0]) {
           const p = pt(c, 0);
           g.beam(
@@ -439,7 +414,6 @@ function cantilever(g: GeoBuilder, b: Bld): void {
   const o = rectOutline(ctr.x, ctr.z, w, d, spec.rotY);
   const t: Tier = { x: ctr.x, z: ctr.z, w, d, y0: c.y0, y1: c.y1, shape: 'box', chamfer: 0 };
   shell(g, b, t, o, 1);
-  // Glowing soffit (4.2: HDR ×1.5 warm white).
   g.cap(offsetOutline(o, -0.3).pts, c.y0 - 0.02, glow(NEON.windowWarm.hex, 1.5), true);
 }
 
@@ -457,7 +431,6 @@ function skybridge(g: GeoBuilder, b: Bld): void {
   g.cap(o.pts, sb.y0, plain(b.roof), true);
 }
 
-/** Vertical fins on the long faces of office slabs (4.3 #2). */
 function fins(g: GeoBuilder, b: Bld): void {
   const { spec } = b;
   const t = spec.tiers[0];
@@ -486,7 +459,6 @@ function fins(g: GeoBuilder, b: Bld): void {
   }
 }
 
-/** Roof mechanical floors, condensers, antennas, rare tower crane (4.3 #1). */
 function roofMechanical(g: GeoBuilder, b: Bld, rng: Rng): void {
   const { spec } = b;
   const stacks = tierStacks(spec);
@@ -498,11 +470,9 @@ function roofMechanical(g: GeoBuilder, b: Bld, rng: Rng): void {
     const y = t.y1;
     const r = Math.min(t.w, t.d);
     if (t.shape === 'cylinder') continue;
-    // Mechanical penthouse.
     const pw = t.w * rng.range(0.35, 0.6);
     const pd = t.d * rng.range(0.35, 0.6);
     g.box(t.x, y, t.z, pw, rng.range(3, 6), pd, spec.rotY, dark);
-    // Condenser grid.
     const n = rng.int(2, 6);
     for (let i = 0; i < n; i++) {
       const p = toWorldP(
@@ -514,7 +484,6 @@ function roofMechanical(g: GeoBuilder, b: Bld, rng: Rng): void {
       );
       g.box(p.x, y, p.z, 2.2, 1.4, 1.6, spec.rotY, metal);
     }
-    // Antennas 4-20 m.
     if (spec.spireH === 0 && rng.chance(0.6)) {
       const k = rng.int(1, 3);
       for (let i = 0; i < k; i++) {
@@ -529,7 +498,6 @@ function roofMechanical(g: GeoBuilder, b: Bld, rng: Rng): void {
         g.beam([p.x, y, p.z], [p.x, y + h, p.z], 0.25, 0.25, [1, 0, 0], metal);
       }
     }
-    // Tower crane on 0.5 % of tall buildings, plus a few extra in core (정점지구 under construction).
     if (
       r > 20 &&
       (rng.chance(0.005) || (spec.district === 'core' && seeded01(spec.seed + 99) < 0.04))
@@ -563,13 +531,9 @@ function helipad(g: GeoBuilder, b: Bld): void {
   if (!t) return;
   const r = t.w / 2 - 1.5;
   g.place(UNIT_CYL12, t.x, t.y1, t.z, r, 0.6, r, 0, plain(0x1c2022, 0.6));
-  // Perimeter lights as a thin glowing ring (dim; bloom-safe).
   const o = tierOutline({ ...t, w: 2 * r, d: 2 * r }, 0, 24);
   band(g, o, t.y1 + 0.6, 0.15, 0.05, glow(NEON.neonTeal.hex, 1.2));
 }
-
-// ---------------------------------------------------------------------------
-// Sangga: rooftop water tank, condensers, steel ad frame, side AC units, pipes, fire stairs.
 
 function frontFrame(
   spec: BuildingSpec,
@@ -581,7 +545,6 @@ function frontFrame(
   const half = alongX ? t.d / 2 : t.w / 2;
   const width = alongX ? t.w : t.d;
   const out = toWorldP(0, 0, spec.rotY, alongX ? 0 : sgn, alongX ? sgn : 0);
-  // Face tangent, same convention as BuildingFace.tangent: (n.z, -n.x).
   const tangent = { x: out.z, z: -out.x };
   const mid = { x: t.x + out.x * half, z: t.z + out.z * half };
   return { along: tangent, out, half, width, mid };
@@ -601,7 +564,7 @@ function waterTank(
   g.place(UNIT_CONE8, x, y + 0.5 + h, z, r * 1.02, r * 0.35, r * 1.02, 0, plain(hex, 0.55));
 }
 
-/** 동 numbers travel in a half-float attribute: integers are exact only below 2048. */
+// 동 numbers travel in a half-float attribute: integers are exact only below 2048.
 export const MAX_HALF_INT = 2048;
 
 const TANK_COLORS = [0x2c6f7a, 0x2a5a8c, 0x3a7a6a, 0x8a8f8c, 0x2f6a8a];
@@ -612,23 +575,19 @@ function sanggaProps(g: GeoBuilder, b: Bld, rng: Rng): void {
   if (!t) return;
   const y = t.y1;
   const metal = plain(0x2a2d30, 0.5);
-  // Rooftop stair house (옥탑).
   if (rng.chance(0.65)) {
     const p = toWorldP(t.x, t.z, spec.rotY, rng.range(-0.25, 0.25) * t.w, -0.2 * t.d);
     g.box(p.x, y, p.z, 3.4, 2.8, 4.2, spec.rotY, plain(scaleHex(b.wall, 1.1)));
   }
-  // Water tank.
   if (rng.chance(0.8)) {
     const p = toWorldP(t.x, t.z, spec.rotY, rng.range(-0.3, 0.3) * t.w, rng.range(-0.3, 0.1) * t.d);
     waterTank(g, p.x, y, p.z, rng.range(0.8, 1.2), rng.range(1.4, 2.2), rng.pick(TANK_COLORS));
   }
-  // Condensers.
   const n = rng.int(2, 5);
   for (let i = 0; i < n; i++) {
     const p = toWorldP(t.x, t.z, spec.rotY, rng.range(-0.4, 0.4) * t.w, rng.range(-0.4, 0.4) * t.d);
     g.box(p.x, y, p.z, 1.0, 0.8, 0.5, spec.rotY + (rng.chance(0.5) ? Math.PI / 2 : 0), metal);
   }
-  // Steel rooftop ad frame on the street edge (neon may hang signs; the lattice reads alone too).
   const f = frontFrame(spec, t, spec.front);
   if (rng.chance(0.45)) {
     const w = f.width * rng.range(0.5, 0.8);
@@ -646,7 +605,6 @@ function sanggaProps(g: GeoBuilder, b: Bld, rng: Rng): void {
     g.beam([pa[0], y + h * 0.35, pa[2]], [pb[0], y + h, pb[2]], 0.12, 0.12, n3, metal);
     g.beam([pb[0], y + h * 0.35, pb[2]], [pa[0], y + h, pa[2]], 0.12, 0.12, n3, metal);
   }
-  // Side walls: AC units hanging under windows-less walls, vertical drain pipes.
   const ac = plain(0x8a8e8e, 0.6);
   for (const side of ALL_SIDES) {
     if (side === spec.front) continue;
@@ -660,7 +618,6 @@ function sanggaProps(g: GeoBuilder, b: Bld, rng: Rng): void {
       const a = rng.range(-0.42, 0.42) * ff.width;
       const x = ff.mid.x + ff.along.x * a + ff.out.x * 0.2;
       const z = ff.mid.z + ff.along.z * a + ff.out.z * 0.2;
-      // Local +Z faces out of the wall (same convention as fireEscape).
       const yaw = Math.atan2(ff.out.x, ff.out.z);
       g.box(x, yy, z, 0.8, 0.6, 0.3, yaw, ac);
     }
@@ -671,7 +628,6 @@ function sanggaProps(g: GeoBuilder, b: Bld, rng: Rng): void {
       g.beam([x, t.y0, z], [x, t.y1, z], 0.15, 0.15, [ff.out.x, 0, ff.out.z], plain(0x3a3e40, 0.5));
     }
   }
-  // Fire escape on the back of 15 % of low buildings.
   if (spec.h < 35 && rng.chance(0.15)) fireEscape(g, b, t);
 }
 
@@ -700,7 +656,6 @@ function fireEscape(g: GeoBuilder, b: Bld, t: Tier): void {
       n3,
       steel,
     );
-    // Railing.
     g.beam(
       [cx + f.out.x * dep * 0.5, y + 1, cz + f.out.z * dep * 0.5],
       [
@@ -715,9 +670,6 @@ function fireEscape(g: GeoBuilder, b: Bld, t: Tier): void {
     );
   }
 }
-
-// ---------------------------------------------------------------------------
-// Storefront: glowing shop glass + canopy (4.3 #4, 6.2).
 
 function storefront(g: GeoBuilder, b: Bld, rng: Rng, side: Side): void {
   const { spec } = b;
@@ -736,12 +688,10 @@ function storefront(g: GeoBuilder, b: Bld, rng: Rng, side: Side): void {
     x: f.mid.x + f.along.x * (w / 2) + f.out.x * 0.06,
     z: f.mid.z + f.along.z * (w / 2) + f.out.z * 0.06,
   };
-  // Warm interiors only (cream / amber); HDR kept under the bloom threshold.
   const shop = glow(rng.chance(0.55) ? NEON.windowWarm.hex : NEON.windowAmber.hex, 0.6, true);
   shop.seed = b.seed01;
   shop.windowY = t.y0 + 0.15;
   g.wall(a.x, a.z, c.x, c.z, t.y0 + 0.15, t.y0 + gh - 1.0, 0, shop);
-  // Canopy (깊이 1.5-3 m), 30 % striped awnings.
   const depth = rng.range(1.5, 3);
   const y = t.y0 + gh - 0.85;
   const striped = rng.chance(0.3);
@@ -753,7 +703,6 @@ function storefront(g: GeoBuilder, b: Bld, rng: Rng, side: Side): void {
   const q0 = { x: a.x + f.out.x * depth, z: a.z + f.out.z * depth };
   const q1 = { x: c.x + f.out.x * depth, z: c.z + f.out.z * depth };
   const drop = striped ? 0.5 : 0.2;
-  // Sloped top (fabric awning falls toward the street).
   const n: V3 = [f.out.x * 0.2, 1, f.out.z * 0.2];
   g.quad(
     [q0.x, y - drop, q0.z],
@@ -765,7 +714,6 @@ function storefront(g: GeoBuilder, b: Bld, rng: Rng, side: Side): void {
     top,
   );
   g.wall(q0.x, q0.z, q1.x, q1.z, y - drop - 0.35, y - drop, 0, top);
-  // Lit underside (shop lights under the canopy wash the sidewalk).
   g.quad(
     [p0.x, y - 0.05, p0.z],
     [p1.x, y - 0.05, p1.z],
@@ -776,9 +724,6 @@ function storefront(g: GeoBuilder, b: Bld, rng: Rng, side: Side): void {
     glow(NEON.windowWarm.hex, 0.55),
   );
 }
-
-// ---------------------------------------------------------------------------
-// Apartment slab (판상형 복도식): balconies south, corridors north, 동 number on gables.
 
 function apartment(g: GeoBuilder, b: Bld, rng: Rng): void {
   const { spec } = b;
@@ -799,7 +744,6 @@ function apartment(g: GeoBuilder, b: Bld, rng: Rng): void {
         const y = b.windowY + (k - 1) * spec.floorH;
         if (y > t.y1 - 1) break;
         g.box(cx, y - 0.15, cz, f.width, 0.15, dep, yaw, slab, true);
-        // Parapet / railing: solid on corridors, lower glassy rail on balconies.
         const ex = f.mid.x + f.out.x * dep;
         const ez = f.mid.z + f.out.z * dep;
         const ax = ex - f.along.x * f.width * 0.5;
@@ -808,7 +752,6 @@ function apartment(g: GeoBuilder, b: Bld, rng: Rng): void {
         const bz = ez + f.along.z * f.width * 0.5;
         g.wall(ax, az, bx, bz, y, y + (role === 'south' ? railH * 0.85 : railH), 0, rail);
       }
-      // Ground floor pilotis columns for 30 % of slabs.
       if (spec.groundFloorH > 4 && role === 'south') {
         for (const off of finOffsets(f.width, 6)) {
           const p = {
@@ -819,7 +762,6 @@ function apartment(g: GeoBuilder, b: Bld, rng: Rng): void {
         }
       }
     } else if (spec.tags.dong !== undefined && spec.tags.dong < MAX_HALF_INT) {
-      // 동 number: 6 m glyphs near the top of the gable.
       const digits = String(spec.tags.dong).length;
       const gh = Math.min(6, (t.y1 - t.y0) * 0.12);
       const total = gh * 0.62 * digits;
@@ -838,7 +780,6 @@ function apartment(g: GeoBuilder, b: Bld, rng: Rng): void {
       g.wall(ax, az, bx, bz, y0, y0 + gh, 0, s);
     }
   }
-  // Rooftop: elevator / stair houses (옥탑) and a water tank.
   const longX = t.w >= t.d;
   const len = longX ? t.w : t.d;
   const houses = Math.max(1, Math.round(len / 30));
@@ -859,9 +800,6 @@ function apartment(g: GeoBuilder, b: Bld, rng: Rng): void {
   const p = toWorldP(t.x, t.z, spec.rotY, longX ? len * 0.3 : 0, longX ? 0 : len * 0.3);
   waterTank(g, p.x, t.y1, p.z, 1.6, 2.4, 0x8a8f8c);
 }
-
-// ---------------------------------------------------------------------------
-// Warehouse: shallow gable roof, roof vents, chimneys (industrial).
 
 function warehouseRoof(g: GeoBuilder, b: Bld): void {
   const { spec } = b;
@@ -930,7 +868,6 @@ function warehouseRoof(g: GeoBuilder, b: Bld): void {
 function gable(g: GeoBuilder, a: V3, c: V3, top: V3, s: Style): void {
   const n = edgeNormal({ x: a[0], z: a[2] }, { x: c[0], z: c[2] });
   const N: V3 = [n.x, 0, n.z];
-  // Real face coordinate u (m along a → c) so windowed styles work on the triangle too.
   const len = Math.hypot(c[0] - a[0], c[2] - a[2]) || 1;
   const uTop = ((top[0] - a[0]) * (c[0] - a[0]) + (top[2] - a[2]) * (c[2] - a[2])) / len;
   const i0 = g.vertex(a, N, 0, s);
@@ -951,7 +888,6 @@ function warehouseProps(g: GeoBuilder, b: Bld, rng: Rng): void {
   }
 }
 
-/** Chimneys and tanks are tall silhouettes: emitted in LOD0 and LOD1. */
 export function industrialStacks(spec: BuildingSpec, T: Targets): void {
   if (spec.archetype !== 'warehouse') return;
   const rng = createRng(spec.seed ^ 0x5a5a);
@@ -963,20 +899,15 @@ export function industrialStacks(spec: BuildingSpec, T: Targets): void {
   const body = plain(0x4a4c4a, 0.8);
   for (const g of [T.l0, T.l1]) {
     g.place(UNIT_CYL8, p.x, t.y0, p.z, r, h, r, 0, body);
-    // Red / white warning bands near the top.
     g.place(UNIT_CYL8, p.x, t.y0 + h - 5, p.z, r * 1.02, 2, r * 1.02, 0, plain(0x6a1a1a, 0.7));
     g.box(p.x, t.y0 + h, p.z, 0.6, 0.6, 0.6, 0, glow(NEON.neonRed.hex, 2.5));
   }
 }
 
-// ---------------------------------------------------------------------------
-// Hill house (별계단동): small box, concrete plinth on slopes, cyan tank, 옥탑.
-
 function hillHouse(b: Bld, T: Targets): void {
   const { spec, rng } = b;
   const t = spec.tiers[0];
   if (!t) return;
-  // Highest terrain under the footprint: the plinth (옹벽) covers baseY → there.
   let maxT = spec.baseY;
   for (const [sx, sz] of [
     [-0.5, -0.5],
@@ -994,7 +925,6 @@ function hillHouse(b: Bld, T: Targets): void {
   shell(T.l1, b, t, o, 0, plinth);
   const g = T.l0;
   parapet(g, o, t.y1, 0.6, plain(scaleHex(b.wall, 1.1)));
-  // Rooftop water tank (청록·파랑, 지름 1.6 m).
   if (rng.chance(0.75)) {
     const p = toWorldP(
       t.x,
@@ -1017,7 +947,6 @@ function hillHouse(b: Bld, T: Targets): void {
     const p = toWorldP(t.x, t.z, spec.rotY, -0.25 * t.w, 0.2 * t.d);
     g.box(p.x, t.y1, p.z, 2.6, 2.3, 2.6, spec.rotY, plain(scaleHex(b.wall, 1.05)));
   }
-  // Pots / clutter.
   const k = rng.int(0, 3);
   for (let i = 0; i < k; i++) {
     const p = toWorldP(t.x, t.z, spec.rotY, rng.range(-0.4, 0.4) * t.w, rng.range(-0.4, 0.4) * t.d);
@@ -1032,7 +961,6 @@ function hillHouse(b: Bld, T: Targets): void {
       plain(rng.chance(0.5) ? 0x1c2a1c : 0x3a2a22),
     );
   }
-  // Laundry line between two posts.
   if (rng.chance(0.3)) {
     const a = toWorldP(t.x, t.z, spec.rotY, -0.35 * t.w, 0.35 * t.d);
     const c = toWorldP(t.x, t.z, spec.rotY, 0.35 * t.w, 0.35 * t.d);
@@ -1041,7 +969,6 @@ function hillHouse(b: Bld, T: Targets): void {
     g.beam([c.x, t.y1, c.z], [c.x, t.y1 + 1.8, c.z], 0.06, 0.06, [1, 0, 0], pole);
     g.beam([a.x, t.y1 + 1.7, a.z], [c.x, t.y1 + 1.7, c.z], 0.03, 0.03, [0, 1, 0], pole);
   }
-  // Exterior stair to the upper floor on 30 % (다세대주택).
   if (rng.chance(0.3) && spec.floors >= 2) {
     const side: Side = rng.chance(0.5) ? 'px' : 'nx';
     const f = frontFrame(spec, t, side);
@@ -1064,14 +991,10 @@ function hillHouse(b: Bld, T: Targets): void {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Skyline tops (4.2 setbackTower crown: "발광 링 또는 사선 지붕") and the LOD2 stand-in.
-
 export type RoofKind = 'flat' | 'wedge' | 'lattice';
 
 const ROOF_ARCHETYPES = new Set(['setbackTower', 'officeSlab', 'bracedTower', 'cantileverTower']);
 
-/** Roof silhouette for tall offices and towers without a spire (deterministic per seed). */
 export function roofTopKind(
   spec: Pick<BuildingSpec, 'archetype' | 'h' | 'spireH' | 'seed' | 'tiers'>,
 ): RoofKind {
@@ -1082,7 +1005,6 @@ export function roofTopKind(
   return r < 0.3 ? 'wedge' : r < 0.7 ? 'lattice' : 'flat';
 }
 
-/** Slanted roof rising toward the tier's -X side. */
 function wedgeRoof(g: GeoBuilder, b: Bld): void {
   const { spec } = b;
   const t = spec.tiers[spec.tiers.length - 1];
@@ -1129,7 +1051,6 @@ function wedgeRoof(g: GeoBuilder, b: Bld): void {
   gable(g, P(hw, y, -hd), P(-hw, y, -hd), P(-hw, y + rise, -hd), glass);
 }
 
-/** Open steel crown frame above the roof (screen for the mechanical floor). */
 function latticeCrown(g: GeoBuilder, b: Bld, lv: 0 | 1 | 2): void {
   const { spec } = b;
   const t = spec.tiers[spec.tiers.length - 1];
@@ -1161,7 +1082,6 @@ function latticeCrown(g: GeoBuilder, b: Bld, lv: 0 | 1 | 2): void {
   if (b.mega) band(g, o, t.y1 + h - 0.3, 0.3, 0.1, glow(NEON.neonRed.hex, 1.6));
 }
 
-/** LOD2 stand-in for buildings under 40 m: one box per building, still window-shaded. */
 function lowBox(b: Bld, g: GeoBuilder): void {
   const { spec } = b;
   const t = spec.tiers[0];

@@ -1,5 +1,3 @@
-// Polygon and shell helpers shared by archetypes and props. World XZ polygons are walked with
-// negative shoelace area so that GeoBuilder.wall puts the outward normal on the outside.
 import * as THREE from 'three';
 import type { Side, Tier } from '../city/types';
 import type { GeoBuilder, Style } from './builder';
@@ -16,7 +14,7 @@ export function toWorldP(cx: number, cz: number, rotY: number, lx: number, lz: n
   return { x: cx + c * lx + s * lz, z: cz - s * lx + c * lz };
 }
 
-/** Shoelace sum (x_i z_{i+1} - x_{i+1} z_i); negative for our wall winding. */
+// Wall outlines must be negative here (see GeoBuilder.wall).
 export function shoelace(pts: readonly P2[]): number {
   let s = 0;
   for (let i = 0; i < pts.length; i++) {
@@ -29,14 +27,12 @@ export function shoelace(pts: readonly P2[]): number {
 
 export interface Outline {
   pts: P2[];
-  /** Building side per edge (edge i = pts[i] → pts[i+1]); null for chamfer / curved edges. */
   sides: (Side | null)[];
   curved: boolean;
   cx: number;
   cz: number;
 }
 
-/** Local rectangle (optionally chamfered) outline centered at (cx, cz). */
 export function rectOutline(
   cx: number,
   cz: number,
@@ -91,7 +87,6 @@ export function tierOutline(t: Tier, rotY: number, segs: number): Outline {
   return rectOutline(t.x, t.z, t.w, t.d, rotY, t.shape === 'chamfer' ? t.chamfer : 0);
 }
 
-/** Convex polygon offset by `d` (positive = outward). */
 export function offsetOutline(o: Outline, d: number): Outline {
   const n = o.pts.length;
   const pts: P2[] = [];
@@ -124,10 +119,6 @@ export function perimeter(o: Outline): number {
   return s;
 }
 
-/**
- * Walls of an outline from y0 to y1. `styleFor(i, len)` returns the style of edge i;
- * curved outlines share one continuous u and get smooth radial normals.
- */
 export function walls(
   g: GeoBuilder,
   o: Outline,
@@ -164,7 +155,6 @@ export function walls(
   }
 }
 
-/** Flat ring between two outlines with the same vertex count, facing up or down. */
 export function ring(
   g: GeoBuilder,
   inner: Outline,
@@ -188,7 +178,6 @@ export function ring(
   }
 }
 
-/** Protruding horizontal band (4.3 #2): offset ring walls + top and bottom. */
 export function band(g: GeoBuilder, o: Outline, y: number, h: number, out: number, s: Style): void {
   const outer = offsetOutline(o, out);
   walls(g, outer, y, y + h, () => s);
@@ -196,18 +185,13 @@ export function band(g: GeoBuilder, o: Outline, y: number, h: number, out: numbe
   ring(g, o, outer, y, s, true);
 }
 
-/** Parapet: outer wall above the roof, inner wall, and a coping cap. */
 export function parapet(g: GeoBuilder, o: Outline, y: number, h: number, s: Style): void {
   const inner = offsetOutline(o, -0.25);
   walls(g, o, y, y + h, () => s);
-  // Inner face: walk the inner outline backwards so normals point inward.
   const rev: Outline = { ...inner, curved: false, pts: [...inner.pts].reverse() };
   walls(g, rev, y, y + h, () => s);
   ring(g, inner, o, y + h, s);
 }
-
-// ---------------------------------------------------------------------------
-// Styles
 
 const tmpColor = new THREE.Color();
 
@@ -223,7 +207,6 @@ export interface StyleOpts {
   storefront?: boolean;
 }
 
-/** Style from an sRGB hex color (converted to linear). */
 export function style(type: FacadeType, hex: number, o: StyleOpts = {}): Style {
   tmpColor.setHex(hex);
   return {

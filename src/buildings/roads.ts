@@ -1,7 +1,3 @@
-// Roads, lane markings, crosswalks and sidewalks (ART_DIRECTION 6.1): two global meshes with a
-// wet-asphalt MeshStandardMaterial. A procedural puddle mask (canvas, 1024², 32 m tile) drives
-// roughness: puddles 0.05, dry 0.6, blended by wetness = max(env.wetness, night 0.55); puddle
-// albedo ×0.6. Reflections come from scene.environment (lighting's PMREM).
 import * as THREE from 'three';
 import { createRng } from '../core/random';
 import { terrainHeight } from '../city/layout';
@@ -54,12 +50,10 @@ class FlatBuilder {
 
 const isHill = (r: Road): boolean => r.district === 'hillside';
 
-/** Surface height of a road at a point (flat districts: ROAD_Y, hillside: on the terrain). */
 function roadHeight(r: Road, x: number, z: number): number {
   return isHill(r) ? terrainHeight(x, z) + 0.08 : ROAD_Y;
 }
 
-/** Parameter t on a→b where segment c→d crosses it, or null. */
 function crossT(a: Road['a'], b: Road['a'], c: Road['a'], d: Road['a']): number | null {
   const rx = b.x - a.x;
   const rz = b.z - a.z;
@@ -73,7 +67,6 @@ function crossT(a: Road['a'], b: Road['a'], c: Road['a'], d: Road['a']): number 
   return t;
 }
 
-/** Strip quad from s0 to s1 (m along the road) between lateral offsets l0..l1, at height + lift. */
 function strip(
   B: FlatBuilder,
   r: Road,
@@ -94,15 +87,12 @@ function strip(
     const z = r.a.z + dz * s + pz * l;
     return [x, roadHeight(r, x, z) + lift, z];
   };
-  // Counter-clockwise from above: (s0,l1) → (s1,l1) → (s1,l0) → (s0,l0) for p = left normal.
   B.quad([P(s0, l1), P(s1, l1), P(s1, l0), P(s0, l0)], hex);
 }
 
 export function buildRoads(L: Layout): THREE.BufferGeometry {
   const B = new FlatBuilder();
   const roads = L.roads.filter((r) => r.kind !== 'stair');
-  // Candidate crossings only (ids ascend, so the crossing order matches a full scan). The pad
-  // covers crossT's 2 % overshoot past either end of both segments.
   const crossBounds = (r: Road): Bounds =>
     segmentBounds(r.a, r.b, 0.03 * Math.hypot(r.b.x - r.a.x, r.b.z - r.a.z) + 1);
   const grid = new GridHash();
@@ -117,7 +107,6 @@ export function buildRoads(L: Layout): THREE.BufferGeometry {
       strip(B, r, s, Math.min(len, s + step), -hw, hw, 0, color);
     if (r.kind === 'alley' || isHill(r)) continue;
 
-    // Intersections on this road → keep markings out, add crosswalks just outside.
     const crossings: { t: number; half: number }[] = [];
     for (const id of grid.query(crossBounds(r))) {
       const o = roads[id];
@@ -137,7 +126,6 @@ export function buildRoads(L: Layout): THREE.BufferGeometry {
     for (const [f0, f1] of free) {
       const span = f1 - f0;
       if (span < 6) continue;
-      // Crosswalk stripes at both ends of each free run that touches an intersection.
       const zebra = r.kind === 'arterial' || r.kind === 'street';
       for (const [edge, dir] of [
         [f0, 1],
@@ -170,15 +158,9 @@ export function buildRoads(L: Layout): THREE.BufferGeometry {
   return B.build();
 }
 
-/**
- * Sidewalk slabs per block. A layout Block covers exactly its remaining lots (river, highway
- * corridors and trimmed edges already excluded), and the sidewalk ring lies outside it, so the
- * slab is the block (∪ its building footprints) grown by the district sidewalk width.
- */
 export function buildSidewalks(L: Layout): THREE.BufferGeometry {
   const B = new FlatBuilder();
   for (const block of L.blocks) {
-    // Hillside paths follow the terrain (no flat slabs); riverside pavilions sit in the park.
     if (block.district === 'hillside' || block.district === 'riverside') continue;
     const walk = SIDEWALK[block.district];
     if (walk === undefined || block.buildingIds.length === 0) continue;
@@ -193,7 +175,6 @@ export function buildSidewalks(L: Layout): THREE.BufferGeometry {
   return B.build();
 }
 
-/** Local (block frame) paved rectangle: block ∪ building bounds, grown by `walk`. */
 export function paveRect(
   block: Pick<Block, 'x' | 'z' | 'w' | 'd' | 'rotY'>,
   buildings: readonly Pick<BuildingSpec, 'x' | 'z' | 'w' | 'd' | 'rotY'>[],
@@ -242,7 +223,6 @@ function slab(
   ];
   const y = SIDEWALK_H;
   B.quad([W(r.x0, r.z1, y), W(r.x1, r.z1, y), W(r.x1, r.z0, y), W(r.x0, r.z0, y)], PAVEMENT);
-  // Curbs (outward faces).
   const edges: [number, number, number, number][] = [
     [r.x0, r.z1, r.x1, r.z1],
     [r.x1, r.z1, r.x1, r.z0],
@@ -258,19 +238,13 @@ function slab(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Wet asphalt material
-
-/**
- * Periodic value noise: lattice indices wrap with `period`, so a field sampled over
- * [0, period) tiles seamlessly. `grid` holds 256 × 256 lattice values.
- */
+// Lattice indices wrap with `period`; each octave must span a whole number of periods per tile
+// or the 32 m / 3 m texture repeat shows seams.
 function periodicNoise(grid: Float32Array, x: number, y: number, period: number): number {
   const xi = Math.floor(x);
   const yi = Math.floor(y);
   const fx = x - xi;
   const fy = y - yi;
-  // Wrapped lattice row offsets / columns, computed once per sample (hot: ~6M calls at boot).
   const wrap = (i: number): number => (((i % period) + period) % period) & 255;
   const x0 = wrap(xi);
   const x1 = wrap(xi + 1);
@@ -287,11 +261,6 @@ function periodicNoise(grid: Float32Array, x: number, y: number, period: number)
   return a + (b - a) * sy;
 }
 
-/**
- * RGBA bytes of the road texture, N × N, tiling seamlessly (every octave completes a whole
- * number of lattice periods across the tile). R: puddle mask — small irregular puddles,
- * roughly 2-4 m across on the 32 m tile, sharp-ish edges. G: asphalt grain (3 m tile in use).
- */
 export function puddleData(seed: number, N: number): Uint8Array {
   const rng = createRng(seed);
   const grid = Float32Array.from({ length: 256 * 256 }, () => rng.next());
@@ -320,7 +289,6 @@ export function puddleData(seed: number, N: number): Uint8Array {
   return data;
 }
 
-/** Puddle mask (R) + fine grain (G) texture; puddles tile every 32 m, grain every 3 m. */
 export function puddleTexture(seed = 2077): THREE.DataTexture {
   const N = 1024;
   const data = puddleData(seed, N);

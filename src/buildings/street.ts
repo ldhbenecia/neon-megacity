@@ -1,5 +1,3 @@
-// Street-level LOD0 geometry written into chunk builders: trees (6.2), hillside stairs with
-// side walls and alley retaining walls (4.2 hillHouse, 별계단동).
 import { createRng } from '../core/random';
 import { MATERIAL } from '../core/palette';
 import { terrainHeight } from '../city/layout';
@@ -8,7 +6,6 @@ import { UNIT_ICO, type GeoBuilder, type V3 } from './builder';
 import { seeded01, scaleHex, stairSteps } from './params';
 import { plain } from './shapes';
 
-/** Street tree: 0.3 m trunk, two low-poly crowns 4-6 m across (6.2). */
 export function tree(g: GeoBuilder, s: StreetSlot): void {
   const rng = createRng(s.seed);
   const trunk = plain(0x1a1612, 0.9);
@@ -30,7 +27,6 @@ export function tree(g: GeoBuilder, s: StreetSlot): void {
   );
 }
 
-/** Concrete stair (0.3 m treads) along a hillside stair road, with low side walls. */
 export function stair(g: GeoBuilder, r: Road): void {
   let a = r.a;
   let b = r.b;
@@ -66,7 +62,6 @@ export function stair(g: GeoBuilder, r: Road): void {
     const [x0r, z0r] = L(s0, 1);
     const [x1l, z1l] = L(s1, -1);
     const [x1r, z1r] = L(s1, 1);
-    // Tread (faces up) and riser (faces downhill).
     g.quad([x0r, y, z0r], [x1r, y, z1r], [x1l, y, z1l], [x0l, y, z0l], up, [0, 0, 0, 0], step);
     g.quad(
       [x0l, yPrev - 0.3, z0l],
@@ -78,7 +73,6 @@ export function stair(g: GeoBuilder, r: Road): void {
       riserS,
     );
   }
-  // Side walls (low concrete parapets, the stair cut into the slope): 0.2 m thick with a coping.
   const wallS = plain(MATERIAL.retainingWall, 0.9);
   const capS = plain(scaleHex(MATERIAL.retainingWall, 1.25), 0.85);
   const segs = Math.max(1, Math.ceil(len / 4));
@@ -96,7 +90,6 @@ export function stair(g: GeoBuilder, r: Road): void {
     for (let k = 0; k < segs; k++) {
       const s0 = (len * k) / segs;
       const s1 = (len * (k + 1)) / segs;
-      // Outer face (away from the stair), inner face (toward it), coping on top.
       const o0 = P(s0, outer, -1);
       const o1 = P(s1, outer, -1);
       const o2 = P(s1, outer, top);
@@ -118,18 +111,12 @@ export function stair(g: GeoBuilder, r: Road): void {
   }
 }
 
-/**
- * Stepped retaining walls (옹벽) along the uphill edge of cross-slope hillside alleys.
- * Heights vary per 6 m panel so the slope reads as terraces.
- */
 export function alleyRetaining(g: GeoBuilder, r: Road): void {
   const len = Math.hypot(r.b.x - r.a.x, r.b.z - r.a.z);
   if (len < 6) return;
   const dx = (r.b.x - r.a.x) / len;
   const dz = (r.b.z - r.a.z) / len;
-  // Cross-slope alleys run mostly east-west; skip the uphill ones (they get stairs or ramps).
   if (Math.abs(dz) > 0.5) return;
-  // Uphill is -Z (north).
   let px = -dz;
   let pz = dx;
   if (pz > 0) {
@@ -142,7 +129,7 @@ export function alleyRetaining(g: GeoBuilder, r: Road): void {
   const panels = Math.floor(len / 6);
   for (let k = 0; k < panels; k++) {
     const h = seeded01(r.id * 131 + k);
-    if (h < 0.25) continue; // gaps: house entrances, steps
+    if (h < 0.25) continue;
     const s0 = k * 6 + 0.2;
     const s1 = s0 + 5.6;
     const x0 = r.a.x + dx * s0 + px * off;
@@ -153,13 +140,11 @@ export function alleyRetaining(g: GeoBuilder, r: Road): void {
     const yb1 = terrainHeight(x1, z1) - 0.5;
     const up = terrainHeight(x0 + px * 4, z0 + pz * 4);
     const top = Math.max(up, yb0 + 0.5) + 0.6 + h * 1.6;
-    // The wall faces the alley (downhill, -p direction).
     const n3: V3 = [-px, 0, -pz];
     const ax = x1;
     const az = z1;
     const bx = x0;
     const bz = z0;
-    // Orientation: from a to b with outward normal (-tz, tx) == n3.
     const tx = bx - ax;
     const tz = bz - az;
     const flip = -tz * n3[0] + tx * n3[2] < 0;

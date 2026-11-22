@@ -41,7 +41,6 @@ const targets = (): Targets => ({
   l2: new GeoBuilder(0, 0),
 });
 
-/** Fraction of triangles whose winding agrees with their stored vertex normals. */
 function windingAgreement(g: THREE.BufferGeometry): number {
   const P = g.getAttribute('position');
   const N = g.getAttribute('normal');
@@ -203,7 +202,6 @@ describe('chunks and LOD (4.4, 4.5)', () => {
     const c = chunkCenter(i, j);
     expect(Math.abs(c.x - -1199)).toBeLessThanOrEqual(CHUNK_SIZE / 2);
     expect(Math.abs(chunkCenter(j, j).z - 1199)).toBeLessThanOrEqual(CHUNK_SIZE);
-    // Every building lands in a valid chunk.
     for (const b of LAYOUT.buildings) {
       const k = chunkIndex(b.x, b.z);
       expect(k.i).toBeGreaterThanOrEqual(0);
@@ -245,7 +243,6 @@ describe('archetype geometry', () => {
         expect(g1, arch).not.toBeNull();
         expect(g2, arch).not.toBeNull();
         for (const g of [g0, g1, g2]) expect(windingAgreement(g!), arch).toBeGreaterThan(0.97);
-        // LOD0 is the richest level, LOD2 the coarsest.
         expect(T.l0.vertexCount).toBeGreaterThanOrEqual(T.l1.vertexCount);
         expect(T.l1.vertexCount).toBeGreaterThanOrEqual(T.l2.vertexCount);
       }
@@ -294,7 +291,6 @@ describe('archetype geometry', () => {
       types.add(Math.floor(v / 2));
       expect(info.getY(i)).toBeGreaterThanOrEqual(0);
     }
-    // Plain roof, apartment south and corridor faces, plus the 동 number quad in LOD0 only.
     expect([...types].sort()).toEqual(expect.arrayContaining([0, 3, 4]));
     let maxCell = 0;
     for (let i = 0; i < win.count; i++) maxCell = Math.max(maxCell, win.getX(i));
@@ -336,7 +332,6 @@ describe('roads and sidewalks', () => {
     const N = 256;
     const d = puddleData(2077, N);
     for (const ch of [0, 1]) {
-      // Difference across the wrap (last column → first) vs. between neighbouring columns.
       let wrap = 0;
       let inner = 0;
       for (let y = 0; y < N; y++) {
@@ -372,7 +367,6 @@ describe('roads and sidewalks', () => {
     const r = paveRect(block, [{ x: 0, z: 0, w: 10, d: 10, rotY: 0.3 }], 4)!;
     expect(r.x1 - r.x0).toBeCloseTo(108, 6);
     expect(r.z1 - r.z0).toBeCloseTo(68, 6);
-    // A footprint poking out of the block still gets paved around.
     const out = paveRect(block, [{ x: 0, z: 0, w: 120, d: 10, rotY: 0.3 }], 2)!;
     expect(out.x1).toBeCloseTo(62, 6);
     expect(paveRect(block, [], 4)).toBeNull();
