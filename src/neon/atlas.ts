@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { MATERIAL, NEON } from '../core/palette';
 import { createRng, type Rng } from '../core/random';
-import { verticalGlyphs, type Catalog, type Cell } from './catalog';
+import { glyphSlotY, verticalGlyphs, type Catalog, type Cell } from './catalog';
 
 export const FONT = '"Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif';
 
@@ -128,7 +128,7 @@ function drawVerticalGlyphs(
     tube(g, col, 2.5);
   }
   glyphs.forEach((ch, i) => {
-    const y = cellPx * (i + 0.5);
+    const y = glyphSlotY(i, cellPx);
     glowText(
       g,
       ch,
@@ -215,6 +215,22 @@ function drawRing(g: G, c: Cell): void {
   g.fillStyle = 'rgba(0,0,0,0.75)';
   for (let y = 0; y < c.ph; y += 4) g.fillRect(0, y, c.pw, 1);
   for (let x = 0; x < c.pw; x += 4) g.fillRect(x, 0, 1, c.ph);
+}
+
+function drawLine(g: G, c: Cell): void {
+  g.fillStyle = css(BLACK);
+  g.fillRect(0, 0, c.pw, c.ph);
+  glowText(
+    g,
+    c.text,
+    c.pw / 2,
+    c.ph * 0.54,
+    c.ph * 0.6,
+    NEON[c.color].hex,
+    c.pw * 0.94,
+    'neon',
+    900,
+  );
 }
 
 function drawAd(g: G, c: Cell): void {
@@ -344,7 +360,7 @@ function drawKoi(g: G, c: Cell): void {
   g.quadraticCurveTo(s * 0.4, 0, s * 0.45, s * 0.13);
   g.quadraticCurveTo(s * 0.38, s * 0.02, s * 0.28, 0);
   tube(g, NEON.neonOrange.hex, 3);
-  // Fins, eye, scales (黑鱗).
+  // Fins, eye, scales.
   g.beginPath();
   g.moveTo(-s * 0.12, s * 0.09);
   g.quadraticCurveTo(-s * 0.05, s * 0.22, s * 0.02, s * 0.1);
@@ -402,6 +418,9 @@ export function buildAtlas(catalog: Catalog, renderer: THREE.WebGLRenderer, seed
         break;
       case 'ring':
         drawRing(g, c);
+        break;
+      case 'line':
+        drawLine(g, c);
         break;
       case 'ad':
         drawAd(g, c);

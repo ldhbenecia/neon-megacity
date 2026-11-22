@@ -6,6 +6,7 @@ import { createRng, type Rng } from '../core/random';
 import type { NeonName } from '../core/palette';
 import { type BuildingFace, type BuildingSpec, type Layout, type Tier } from '../city/layout';
 import type { Catalog } from './catalog';
+import { CARGO_CROWN } from './content';
 import { firstHit, type Solid } from './solids';
 
 /** Shader animation modes (5.4). Stored per instance; animated on the GPU only. */
@@ -674,7 +675,7 @@ function placeScreens(c: Ctx, b: BuildingSpec, rng: Rng, zone: number, maxScreen
       h: k.h,
       hue: rng.int(0, 2),
       seed: rng.int(0, 1e6),
-      cell: pickCell(c, 'vtext', rng),
+      cell: pickCell(c, 'line', rng),
       logo: pickCell(c, 'logo', rng),
       zone,
       ...r,
@@ -853,15 +854,15 @@ export function placeSigns(
     }
     // Crowns: corp names on megatowers, complex names on apartments, a few offices and 운해물류.
     if (b.tags.corp) {
-      const cell = cat.cells.findIndex((k) => k.kind === 'crown' && k.text === b.tags.corp);
+      const cell = cat.cells.findIndex((k) => k.kind === 'crown' && k.key === b.tags.corp);
       placeCrown(c, b, rng, zone, cell, 2);
     } else if (a === 'apartmentSlab' && b.tags.complex) {
-      const cell = cat.cells.findIndex((k) => k.kind === 'crown' && k.text === b.tags.complex);
+      const cell = cat.cells.findIndex((k) => k.kind === 'crown' && k.key === b.tags.complex);
       placeCrown(c, b, rng, zone, cell >= 0 ? cell : pickCell(c, 'crown', rng), 1);
     } else if ((tower || a === 'officeSlab') && b.h >= 40 && rng.chance(0.3)) {
       placeCrown(c, b, rng, zone, pickCell(c, 'crown', rng), 1);
     } else if (a === 'warehouse' && rng.chance(0.25)) {
-      const cell = cat.cells.findIndex((k) => k.kind === 'crown' && k.text === '운해물류');
+      const cell = cat.cells.findIndex((k) => k.kind === 'crown' && k.key === CARGO_CROWN.name);
       placeCrown(c, b, rng, zone, cell, 1);
     }
     if (b.tags.cross)

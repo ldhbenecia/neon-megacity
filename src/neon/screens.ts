@@ -1,5 +1,5 @@
 // Giant vertical screens, ring billboards and holograms (5.2, 5.4). Fully procedural shaders:
-// screens draw a fictional SDF face, a walking silhouette or flowing Korean type, switching every
+// screens draw a fictional SDF face, a walking silhouette or flowing English type, switching every
 // 12–20 s through a 0.4 s glitch. Nothing here is a real person, brand or logo.
 import * as THREE from 'three';
 import { NEON } from '../core/palette';
@@ -21,14 +21,14 @@ export function buildScreens(
   const iDir = new Float32Array(n * 4); // nx, nz, w, h
   const iRect = new Float32Array(n * 4);
   const iLogo = new Float32Array(n * 4);
-  const iParam = new Float32Array(n * 4); // hue, seed, zone, chars
+  const iParam = new Float32Array(n * 4); // hue, seed, zone, cellAspect
   list.forEach((s, i) => {
     iPos.set([s.x, s.y, s.z], i * 3);
     iDir.set([s.nx, s.nz, s.w, s.h], i * 4);
     const c = cat.cells[s.cell];
     iRect.set(c?.uv ?? [0, 0, 0, 0], i * 4);
     iLogo.set(cat.cells[s.logo]?.uv ?? [0, 0, 0, 0], i * 4);
-    iParam.set([s.hue, (s.seed % 9973) / 9973, s.zone, Math.max(1, c?.chars ?? 4)], i * 4);
+    iParam.set([s.hue, (s.seed % 9973) / 9973, s.zone, c?.aspect ?? 8], i * 4);
   });
   const geo = setInstanceAttributes(toInstanced(new THREE.PlaneGeometry(1, 1)), n, {
     iPos: { size: 3, data: iPos },
@@ -124,20 +124,24 @@ export function buildScreens(
         return col;
       }
 
-      // Scene 2: Korean type flowing upward under a corp mark.
       vec3 sceneType(vec2 uv, vec3 hue, float t) {
         vec3 col = hue * 0.04;
-        if (uv.y > 0.78) {
-          vec2 l = vec2(uv.x, (uv.y - 0.78) / 0.22);
-          vec2 q = (l - 0.5) * vec2(1.0, 0.22 * vSize.y / vSize.x * 0.5) + 0.5;
+        if (uv.y > 0.8) {
+          vec2 l = vec2(uv.x, (uv.y - 0.8) / 0.2);
+          vec2 q = (l - 0.5) * vec2(1.0, 0.2 * vSize.y / vSize.x) + 0.5;
           if (q.y > 0.0 && q.y < 1.0) col += texture2D(uAtlas, vLogo.xy + clamp(q, 0.01, 0.99) * vLogo.zw).rgb;
-        } else {
-          float chars = vParam.w;
-          float rep = (0.78 * vSize.y / vSize.x) / chars;
-          float y = fract(uv.y / 0.78 * rep + t * 0.06 * uScroll);
-          vec3 g = texture2D(uAtlas, vRect.xy + clamp(vec2(uv.x, y), 0.01, 0.99) * vRect.zw).rgb;
-          col += g * mix(hue, vec3(1.0), 0.3) * 1.2;
+          return col;
         }
+        float cellAspect = vParam.w;
+        float rows = floor(0.8 * vSize.y / (vSize.x / 4.5));
+        float shift = floor(t * 0.7 * uScroll);
+        float yy = uv.y / 0.8 * rows - shift;
+        float row = floor(yy);
+        float local = fract(yy);
+        float rowAspect = (vSize.x / (0.8 * vSize.y / rows));
+        vec2 q = vec2((uv.x - 0.5) * rowAspect / cellAspect + 0.5, local);
+        vec3 g = texture2D(uAtlas, vRect.xy + clamp(q, 0.01, 0.99) * vRect.zw).rgb;
+        col += g * mix(0.35, 1.0, step(0.4, nHash(row))) * mix(hue, vec3(1.0), 0.3) * 1.4;
         return col;
       }
 

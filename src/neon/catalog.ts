@@ -5,7 +5,10 @@ import { CORPS, type Layout } from '../city/layout';
 import type { NeonName } from '../core/palette';
 import {
   AD_COPY,
-  CORP_MARKS,
+  CARGO_CROWN,
+  CORP_EN,
+  SCREEN_LINES,
+  complexCrown,
   GENERIC_BANDS,
   GENERIC_BLADES,
   GENERIC_COLORS,
@@ -27,6 +30,8 @@ export interface CellSpec {
   ph: number;
   /** For vertical text: number of square character cells (1 per glyph). */
   chars: number;
+  /** Source identity for lookups (corp, complex or shop name), defaults to `text`. */
+  key: string;
 }
 
 export interface Cell extends CellSpec {
@@ -53,6 +58,19 @@ export const ATLAS_WIDTH = 2048;
 export const VCHAR_PX = 96;
 const PAD = 2;
 
+/**
+ * Canvas y (from the cell top) of glyph i in a vertical sign. Glyph 0 is at the top: with
+ * the atlas flipY convention its v is the largest, so text reads top to bottom.
+ */
+export function glyphSlotY(i: number, cellPx: number): number {
+  return cellPx * (i + 0.5);
+}
+
+/** Atlas v of the center of glyph i of a vertical-text cell. */
+export function glyphCenterV(cell: Cell, i: number, atlasHeight: number): number {
+  return 1 - (cell.py + glyphSlotY(i, cell.pw)) / atlasHeight;
+}
+
 /** Characters of a name drawn vertically (spaces dropped, at most 6). */
 export function verticalGlyphs(text: string): string[] {
   return Array.from(text.replace(/\s+/g, '')).slice(0, 6);
@@ -65,11 +83,12 @@ function color(i: number): NeonName {
 function specs(complexes: readonly string[]): CellSpec[] {
   const out: CellSpec[] = [];
   const add = (kind: CellKind, text: string, sub: string, c: NeonName, pw: number, ph: number) =>
-    out.push({ kind, text, sub, color: c, pw, ph, chars: 0 });
+    out.push({ kind, text, sub, color: c, pw, ph, chars: 0, key: text });
+  const crown = (key: string, text: string, sub: string) =>
+    out.push({ kind: 'crown', text, sub, color: 'neonWhite', pw: 512, ph: 80, chars: 0, key });
   SHOPS.forEach((s) => {
     if (s.kind === 'band') add('band', s.name, s.sub, s.color, 512, 64);
     if (s.kind === 'blade') add('blade', s.name, s.sub, s.color, 64, 320);
-    if (s.kind === 'crown') add('crown', s.name, s.sub, s.color, 512, 80);
     if (s.kind === 'vtext') {
       const g = verticalGlyphs(s.name.split(' ')[0] ?? s.name);
       out.push({
@@ -80,6 +99,7 @@ function specs(complexes: readonly string[]): CellSpec[] {
         pw: VCHAR_PX,
         ph: VCHAR_PX * g.length,
         chars: g.length,
+        key: s.name,
       });
     }
   });
@@ -95,18 +115,21 @@ function specs(complexes: readonly string[]): CellSpec[] {
       pw: VCHAR_PX,
       ph: VCHAR_PX * g.length,
       chars: g.length,
+      key: t,
     });
   });
-  CORPS.forEach((c) => add('crown', c, CORP_MARKS[c], 'neonWhite', 512, 80));
-  complexes.forEach((c) => add('crown', c, '', 'neonWhite', 512, 80));
+  CORPS.forEach((c) => crown(c, CORP_EN[c].name, CORP_EN[c].tag));
+  complexes.forEach((c) => crown(c, complexCrown(c), ''));
+  crown(CARGO_CROWN.name, CARGO_CROWN.name, CARGO_CROWN.tag);
   PANEL_WORDS.forEach((t, i) => add('panel', t, '', color(i + 1), 128, 80));
   RING_COPY.forEach((t, i) => add('ring', t, '', i % 2 ? 'neonCyan' : 'neonOrange', 1024, 64));
   AD_COPY.forEach((a, i) => add('ad', a.name, a.sub, color(i + 2), 128, 192));
   TENT_COPY.forEach((t) => add('tent', t, '', 'neonOrange', 256, 64));
+  SCREEN_LINES.forEach((t, i) => add('line', t, '', i % 2 ? 'neonCyan' : 'neonOrange', 512, 64));
   CORPS.forEach((c, i) =>
-    add('logo', c, CORP_MARKS[c], i % 2 ? 'neonCyan' : 'neonOrange', 256, 256),
+    add('logo', CORP_EN[c].name, CORP_EN[c].tag, i % 2 ? 'neonCyan' : 'neonOrange', 256, 256),
   );
-  add('koi', '흑린', '', 'neonCyan', 256, 256);
+  add('koi', 'HANGANG KOI', '', 'neonCyan', 256, 256);
   return out;
 }
 
@@ -142,6 +165,7 @@ export function buildCatalog(L: Pick<Layout, 'buildings'>): Catalog {
     crown: [],
     panel: [],
     ring: [],
+    line: [],
     ad: [],
     tent: [],
     logo: [],
