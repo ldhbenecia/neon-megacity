@@ -5,7 +5,7 @@
 // base, so the layers get lighter with distance and melt into the sky.
 import * as THREE from 'three';
 import type { Ridge } from '../city/layout';
-import { NEON, RIDGE_COLORS } from '../core/palette';
+import { NEON, RIDGE_BEACON_HDR, RIDGE_COLORS } from '../core/palette';
 import { createRng } from '../core/random';
 import { ridgePeaks, ridgeProfile } from './shape';
 
@@ -88,8 +88,6 @@ void main() {
 
 /** Number of obstruction lights (doc: 5–7). */
 export const BEACON_COUNT = 6;
-/** Beacon HDR multiplier (doc 2.4: ×4). */
-const BEACON_HDR = 4;
 /** Beacon sprite size in CSS px (scaled by the renderer pixel ratio). */
 const BEACON_PX = 9;
 
@@ -200,7 +198,7 @@ export function createRidges(ridges: readonly Ridge[]): Ridges {
     uSize: { value: BEACON_PX },
     uGain: { value: 1 },
     uColor: {
-      value: new THREE.Color().setHex(NEON.neonRed.hex).multiplyScalar(BEACON_HDR),
+      value: new THREE.Color().setHex(NEON.neonRed.hex).multiplyScalar(RIDGE_BEACON_HDR),
     },
   };
   const beaconMat = new THREE.ShaderMaterial({

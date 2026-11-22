@@ -298,6 +298,30 @@ export const RIDGE_COLORS = {
   'ridge-far': 0x10353a,
 } as const;
 
+/**
+ * Ground, river and embankment albedos for the terrain module (2.3, 2.4, 6.1 #4). Kept very dark
+ * (principle 1): the ground is mostly seen between buildings and under fog.
+ */
+export const TERRAIN_COLORS = {
+  /** Flat districts between roads and lots (worn asphalt / packed earth). */
+  groundUrban: 0x15191c,
+  /** 별계단동 slopes: dark soil with scrub. */
+  groundHill: 0x111a17,
+  /** Wooded patches on the slopes and everything past the map edge. */
+  groundWood: 0x0d1a14,
+  /** 둔치 park lawns. */
+  park: 0x111e17,
+  /** Concrete embankment revetment. */
+  embankment: 0x2a2c2c,
+  /** Stone toe of the park where it meets the water. */
+  parkEdge: 0x1f2224,
+  /** River water albedo; reflections (environment map, moon) do the rest. */
+  water: 0x050708,
+} as const;
+
+/** Aviation obstruction lights on the far ridges (2.4): neonRed at this HDR multiplier. */
+export const RIDGE_BEACON_HDR = 4;
+
 /** Fixed material / prop colors named in ART_DIRECTION (4, 6, 7). */
 export const MATERIAL = {
   /** Facade albedo range (4.3 #6). */

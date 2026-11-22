@@ -4,7 +4,7 @@
 // specular, and later neon's reflection streak decals. One draw call, no render-to-texture.
 import * as THREE from 'three';
 import { CITY, RIVER, riverFrame } from '../city/layout';
-import { MATERIAL } from '../core/palette';
+import { TERRAIN_COLORS } from '../core/palette';
 import { OUTER_EXTENT, waterHalfWidth } from './shape';
 
 const WATER_PARS = /* glsl */ `
@@ -78,7 +78,7 @@ export function createWater(): Water {
   const uTime: THREE.IUniform<number> = { value: 0 };
   const material = new THREE.MeshStandardMaterial({
     name: 'RiverWater',
-    color: new THREE.Color().setHex(MATERIAL.deckUnderside),
+    color: new THREE.Color().setHex(TERRAIN_COLORS.water),
     roughness: 0.08,
     metalness: 0,
   });

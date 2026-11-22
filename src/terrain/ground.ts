@@ -5,7 +5,7 @@
 // stays crisp without a fine grid everywhere.
 import * as THREE from 'three';
 import { CITY, RIVER, riverFrame, terrainHeight } from '../city/layout';
-import { MATERIAL } from '../core/palette';
+import { TERRAIN_COLORS as TC } from '../core/palette';
 import {
   OUTER_EXTENT,
   channelDistance,
@@ -20,18 +20,16 @@ const KEEP_DISTANCE = 6;
 
 const c = (hex: number): THREE.Color => new THREE.Color().setHex(hex);
 
-/** Ground albedos derived from the shared palette (no new hex values). */
+/** Ground albedos (palette TERRAIN_COLORS) by surface kind. */
 export function groundPalette(): Record<'urban' | 'hill' | 'wood' | ChannelPart, THREE.Color> {
-  const urban = c(MATERIAL.facadeDark);
-  const wood = c(MATERIAL.tree);
   return {
-    urban,
-    bank: urban.clone(),
-    hill: urban.clone().lerp(wood, 0.55),
-    wood,
-    park: wood.clone().lerp(urban, 0.3).multiplyScalar(1.15),
-    embankment: c(MATERIAL.retainingWall),
-    parkEdge: c(MATERIAL.retainingWall).lerp(urban, 0.5),
+    urban: c(TC.groundUrban),
+    bank: c(TC.groundUrban),
+    hill: c(TC.groundHill),
+    wood: c(TC.groundWood),
+    park: c(TC.park),
+    embankment: c(TC.embankment),
+    parkEdge: c(TC.parkEdge),
   };
 }
 
