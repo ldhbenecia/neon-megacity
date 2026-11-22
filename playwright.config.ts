@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { SWIFTSHADER_ARGS } from './tests/e2e/helpers';
 
 const PORT = 4173;
 
@@ -18,7 +19,7 @@ export default defineConfig({
       use: {
         ...devices['Desktop Chrome'],
         // Software WebGL so the tests run on GPU-less CI runners.
-        launchOptions: { args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] },
+        launchOptions: { args: SWIFTSHADER_ARGS },
       },
     },
   ],

@@ -6,13 +6,9 @@ import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { chromium } from '@playwright/test';
 import { preview } from 'vite';
+import { SWIFTSHADER_ARGS, collectErrors } from '../tests/e2e/helpers';
 
-interface Shot {
-  name: string;
-  query: string;
-}
-
-const SHOTS: Shot[] = [
+const SHOTS = [
   { name: 'night-overview', query: 'time=0.0&cam=overview&rain=0.4' },
   { name: 'night-street', query: 'time=0.0&cam=street&rain=0.5' },
   { name: 'night-core-closeup', query: 'time=0.95&cam=core&rain=0.3' },
@@ -36,19 +32,13 @@ async function main(): Promise<void> {
 
   const server = await preview({ preview: { port: PORT, strictPort: true }, logLevel: 'warn' });
   const browser = await chromium.launch({
-    args: flags.has('--swiftshader')
-      ? ['--use-angle=swiftshader', '--enable-unsafe-swiftshader']
-      : [],
+    args: flags.has('--swiftshader') ? SWIFTSHADER_ARGS : [],
   });
   const failures: string[] = [];
   try {
     for (const shot of SHOTS) {
       const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
-      const errors: string[] = [];
-      page.on('console', (m) => {
-        if (m.type() === 'error') errors.push(m.text());
-      });
-      page.on('pageerror', (e) => errors.push(e.message));
+      const errors = collectErrors(page);
       await page.goto(`http://localhost:${PORT}/?nogui&${shot.query}`);
       await page.waitForFunction(() => window.__city?.ready === true, undefined, {
         timeout: 60_000,

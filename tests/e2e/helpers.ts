@@ -1,5 +1,8 @@
 import type { Page } from '@playwright/test';
 
+/** Chromium flags for software WebGL (GPU-less CI runners, `npm run shots -- --swiftshader`). */
+export const SWIFTSHADER_ARGS = ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'];
+
 /** Collects console errors and uncaught page errors for the lifetime of the page. */
 export function collectErrors(page: Page): string[] {
   const errors: string[] = [];
