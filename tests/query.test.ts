@@ -3,7 +3,15 @@ import { LAYOUT, SKYLINE_PEAK, buildingContaining, surfaceHeight } from '../src/
 import { pointSegmentDistance } from '../src/city/math';
 import { PerspectiveCamera, Vector3 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { CAMERA_LIMITS, CAMERA_PRESETS, type CameraPreset, parseQuery } from '../src/core/query';
+import {
+  CAMERA_LIMITS,
+  CAMERA_PRESETS,
+  STREET_FALLBACK,
+  type CameraPreset,
+  cameraPreset,
+  parseQuery,
+  streetPose,
+} from '../src/core/query';
 
 describe('parseQuery', () => {
   it('returns defaults for an empty query', () => {
@@ -57,6 +65,14 @@ describe('CAMERA_PRESETS', () => {
       const [tx, , tz] = CAMERA_PRESETS[name].target;
       expect(Math.hypot(tx - SKYLINE_PEAK.x, tz - SKYLINE_PEAK.z), name).toBeLessThan(120);
     }
+  });
+
+  it('exposes every preset through cameraPreset() and falls back without a street', () => {
+    for (const name of Object.keys(CAMERA_PRESETS) as CameraPreset[]) {
+      expect(cameraPreset(name)).toEqual(CAMERA_PRESETS[name]);
+    }
+    expect(streetPose([])).toBeNull();
+    expect(cameraPreset('street')).not.toEqual(STREET_FALLBACK);
   });
 
   const names = Object.keys(CAMERA_PRESETS) as CameraPreset[];

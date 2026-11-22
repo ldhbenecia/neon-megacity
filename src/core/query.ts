@@ -19,16 +19,23 @@ export const CAMERA_LIMITS = {
   maxPolarAngle: Math.PI * 0.495,
 } as const;
 
-type Pose = { position: [number, number, number]; target: [number, number, number] };
+export interface CameraPose {
+  readonly position: readonly [number, number, number];
+  readonly target: readonly [number, number, number];
+}
+type Pose = CameraPose;
+
+/** Used when no suitable street exists (e.g. a different layout seed): 8.4 preset 3 as written. */
+export const STREET_FALLBACK: CameraPose = { position: [-760, 6, -360], target: [-700, 1, -470] };
 
 /**
  * Eye-level shot down a 등불가 (sangga) street, snapped onto the road center line nearest to
  * ART_DIRECTION 8.4 preset 3 so it stays on a road whatever the grid angle is.
  */
-function streetPose(): Pose {
+export function streetPose(roads: readonly Road[]): Pose | null {
   const want = { x: -760, z: -360 };
   let best: { road: Road; t: number; d: number } | null = null;
-  for (const road of LAYOUT.roads) {
+  for (const road of roads) {
     if (road.zoneId !== 'sangga-n' || road.kind !== 'street') continue;
     const dx = road.b.x - road.a.x;
     const dz = road.b.z - road.a.z;
@@ -40,7 +47,7 @@ function streetPose(): Pose {
     const d = Math.hypot(road.a.x + dx * t - want.x, road.a.z + dz * t - want.z);
     if (Math.sqrt(len2) > 300 && (!best || d < best.d)) best = { road, t, d };
   }
-  if (!best) throw new Error('no sangga street for the street camera preset');
+  if (!best) return null;
   const { road } = best;
   const dx = road.b.x - road.a.x;
   const dz = road.b.z - road.a.z;
@@ -55,19 +62,30 @@ function streetPose(): Pose {
   };
 }
 
+let streetCache: Pose | undefined;
+
 export const CAMERA_PRESETS = {
   /** ART_DIRECTION 8.4 preset 2 (코어 상공). */
   overview: { position: [520, 420, 380], target: [-40, 120, -360] },
-  street: streetPose(),
+  /** Computed lazily from the layout on first access; falls back to STREET_FALLBACK. */
+  get street(): Pose {
+    streetCache ??= streetPose(LAYOUT.roads) ?? STREET_FALLBACK;
+    return streetCache;
+  },
   /** Between the megatowers around the skyline peak (-60, -380). */
   core: { position: [180, 220, -120], target: [-60, 160, -380] },
   /** 8.4 preset 8. */
   topdown: { position: [0, 1900, 1], target: [0, 0, 0] },
   /** 8.4 preset 1 (강변 히어로), target lowered to satisfy the polar limit. */
   skyline: { position: [-420, 38, 300], target: [-60, 20, -300] },
-} as const satisfies Record<string, Pose | Readonly<Pose>>;
+} as const satisfies Record<string, Pose>;
 
 export type CameraPreset = keyof typeof CAMERA_PRESETS;
+
+/** Pose of a named preset (preferred accessor; the street pose is resolved lazily). */
+export function cameraPreset(name: CameraPreset): CameraPose {
+  return CAMERA_PRESETS[name];
+}
 
 export interface QueryOptions {
   time?: number;

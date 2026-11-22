@@ -16,6 +16,12 @@ import * as neon from './neon/index';
 import * as atmosphere from './atmosphere/index';
 import { createLoader, initUx } from './ux/index';
 
+/**
+ * Boot progress weights (ART_DIRECTION 9.2); all stages sum to 100:
+ * setup (renderer, camera, layout) 5 + modules 77 + shader warm-up 15 + first frame 3.
+ */
+const BOOT_WEIGHTS = { setup: 5, compile: 15, firstFrame: 3 } as const;
+
 /** Init and update order (ART_DIRECTION 13.1) with boot progress weights (9.2). */
 const MODULES: readonly (readonly [name: string, weight: number, module: CityModule])[] = [
   ['lighting', 8, lighting],
@@ -28,7 +34,7 @@ const MODULES: readonly (readonly [name: string, weight: number, module: CityMod
 
 const query = parseQuery(window.location.search);
 const loader = createLoader();
-loader.stage('setup', 5);
+loader.stage('setup', BOOT_WEIGHTS.setup);
 
 const container = document.getElementById('app');
 if (!container) throw new Error('#app container missing');
@@ -106,7 +112,9 @@ for (const [name, weight, mod] of MODULES) {
     throw err;
   }
 }
-loader.done();
+loader.stage('compile', BOOT_WEIGHTS.compile);
+renderer.compile(scene, camera);
+loader.stage('first-frame', BOOT_WEIGHTS.firstFrame);
 
 window.addEventListener('resize', () => {
   const w = window.innerWidth;
@@ -131,5 +139,6 @@ renderer.setAnimationLoop((timestamp) => {
 
   ctx.render();
   frames++;
+  if (frames === 1) loader.done();
   window.__city = { ready: true, frames };
 });
