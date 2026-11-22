@@ -15,13 +15,13 @@ import { ZONES, zoneAt, zoneById } from './districts';
 import { highwaySamples, makeBridges, makeHighways, onBridge } from './highways';
 import {
   clamp,
+  closestSegmentT,
   footprintObb,
   hashString,
   obbBounds,
   obbCorners,
   obbOverlap,
   obbSegmentDistance,
-  pointSegmentDistance,
   toLocal,
   toWorld,
   type Obb,
@@ -636,14 +636,14 @@ function nearestRoadSide(
   const p = { x, z };
   for (const id of roadHash.query({ minX: x - 80, minZ: z - 80, maxX: x + 80, maxZ: z + 80 })) {
     const r = roads[id] as Road;
-    const dist = pointSegmentDistance(p, r.a, r.b);
+    const t = closestSegmentT(p, r.a, r.b);
+    const cx = r.a.x + (r.b.x - r.a.x) * t;
+    const cz = r.a.z + (r.b.z - r.a.z) * t;
+    const dist = Math.hypot(x - cx, z - cz);
     if (dist < best) {
       best = dist;
       // Direction from the building to the closest point on the road.
-      const abx = r.b.x - r.a.x;
-      const abz = r.b.z - r.a.z;
-      const t = clamp(((x - r.a.x) * abx + (z - r.a.z) * abz) / (abx * abx + abz * abz || 1), 0, 1);
-      dir = { x: r.a.x + abx * t - x, z: r.a.z + abz * t - z };
+      dir = { x: cx - x, z: cz - z };
     }
   }
   const l = toLocal(dir.x, dir.z, rotY);

@@ -63,35 +63,33 @@ export function obbBounds(o: Obb): { minX: number; minZ: number; maxX: number; m
 
 /** Separating-axis overlap test with a margin (positive margin = must be at least that far apart). */
 export function obbOverlap(a: Obb, b: Obb, margin = 0): boolean {
-  const axes: Vec2[] = [
-    toWorld(1, 0, a.rotY),
-    toWorld(0, 1, a.rotY),
-    toWorld(1, 0, b.rotY),
-    toWorld(0, 1, b.rotY),
-  ];
+  // Local axes in world space: u = toWorld(1, 0) = (c, -s), v = toWorld(0, 1) = (s, c).
+  const ac = Math.cos(a.rotY);
+  const as = Math.sin(a.rotY);
+  const bc = Math.cos(b.rotY);
+  const bs = Math.sin(b.rotY);
   const dx = b.x - a.x;
   const dz = b.z - a.z;
-  for (const ax of axes) {
-    const ra = projRadius(a, ax);
-    const rb = projRadius(b, ax);
-    if (Math.abs(dx * ax.x + dz * ax.z) >= ra + rb + margin) return false;
-  }
-  return true;
+  const separated = (x: number, z: number): boolean => {
+    const ra = a.hw * Math.abs(ac * x - as * z) + a.hd * Math.abs(as * x + ac * z);
+    const rb = b.hw * Math.abs(bc * x - bs * z) + b.hd * Math.abs(bs * x + bc * z);
+    return Math.abs(dx * x + dz * z) >= ra + rb + margin;
+  };
+  return !(separated(ac, -as) || separated(as, ac) || separated(bc, -bs) || separated(bs, bc));
 }
 
-function projRadius(o: Obb, ax: Vec2): number {
-  const u = toWorld(1, 0, o.rotY);
-  const v = toWorld(0, 1, o.rotY);
-  return o.hw * Math.abs(u.x * ax.x + u.z * ax.z) + o.hd * Math.abs(v.x * ax.x + v.z * ax.z);
+/** Parameter t in [0, 1] of the point on segment ab closest to p (0 for a zero-length segment). */
+export function closestSegmentT(p: Vec2, a: Vec2, b: Vec2): number {
+  const abx = b.x - a.x;
+  const abz = b.z - a.z;
+  const len2 = abx * abx + abz * abz;
+  return len2 > 0 ? clamp(((p.x - a.x) * abx + (p.z - a.z) * abz) / len2, 0, 1) : 0;
 }
 
 /** Distance from point p to segment ab. */
 export function pointSegmentDistance(p: Vec2, a: Vec2, b: Vec2): number {
-  const abx = b.x - a.x;
-  const abz = b.z - a.z;
-  const len2 = abx * abx + abz * abz;
-  const t = len2 > 0 ? clamp(((p.x - a.x) * abx + (p.z - a.z) * abz) / len2, 0, 1) : 0;
-  return Math.hypot(p.x - (a.x + abx * t), p.z - (a.z + abz * t));
+  const t = closestSegmentT(p, a, b);
+  return Math.hypot(p.x - (a.x + (b.x - a.x) * t), p.z - (a.z + (b.z - a.z) * t));
 }
 
 function segmentsIntersect(a: Vec2, b: Vec2, c: Vec2, d: Vec2): boolean {
