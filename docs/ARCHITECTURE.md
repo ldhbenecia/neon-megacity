@@ -12,24 +12,44 @@ export function init(ctx: Ctx): CityModuleInstance {
 }
 ```
 
-`src/main.ts` calls `init` in this order: **lighting → buildings → neon → atmosphere**, and each frame calls `update` in the same order, then `ctx.render()`.
+`src/main.ts` calls `init` in this order: **lighting → terrain → buildings → infra → neon → atmosphere**, and each frame runs
+`ux.beforeUpdate` (camera rig) → every module's `update` in the same order → `ux.afterUpdate` (HUD) → `ctx.render()`.
+`src/ux/` is not in the module list: main drives it directly (`createLoader()` for boot stages, `initUx(ctx)` for the
+camera rig and HUD), so feature PRs never need to edit `src/main.ts`.
 
 ## Shared context (`ctx`)
 
-| key                                             | meaning                                                                                 |
-| ----------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `THREE, scene, camera, renderer, controls, gui` | standard three.js objects, `gui` is lil-gui (add your own folder)                       |
-| `CITY, LAYOUT`                                  | deterministic city layout from `src/city/layout.ts` (blocks, buildings, roads)          |
-| `env.timeOfDay`                                 | 0..1, 0 = midnight, 0.5 = noon. **Owned by lighting.** Initial value comes from `?time` |
-| `env.timeLocked`                                | true when `?time=` was given. **Set by main.** Lighting must not advance `timeOfDay`    |
-| `env.sunDirection`                              | unit Vector3 from ground toward the sun. **Owned by lighting.**                         |
-| `env.sunElevation`                              | sin(sun elevation) == `sunDirection.y`. **Owned by lighting.**                          |
-| `env.dayFactor / env.nightFactor`               | 0..1 smooth blend, sum to 1. **Owned by lighting.**                                     |
-| `env.horizonColor / env.skyColor`               | sky colors for fog and reflections. **Owned by lighting.**                              |
-| `env.rain`                                      | 0..1 rain intensity. **Owned by atmosphere.** Initial value comes from `?rain`          |
-| `buildings`                                     | `BuildingsApi` published by buildings during its init; undefined before that            |
-| `render()`                                      | default `renderer.render`; atmosphere replaces with the post-processing composer        |
-| `onResize(fn)`                                  | register `(w, h) => {}`                                                                 |
+| key                                             | meaning                                                                                        |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `THREE, scene, camera, renderer, controls, gui` | standard three.js objects, `gui` is lil-gui (add your own folder)                              |
+| `CITY, LAYOUT`                                  | constants and the deterministic layout v2 from `src/city/layout.ts` (read only)                |
+| `env`                                           | shared environment state, one owner per field (table below)                                    |
+| `buildings`                                     | `BuildingsApi` published by buildings during its init; undefined before that                   |
+| `infra`                                         | `InfraApi` published by infra during its init (highway curves, `deckHeightAt`); else undefined |
+| `render()`                                      | default `renderer.render`; atmosphere replaces with the post-processing composer               |
+| `onResize(fn)`                                  | register `(w, h) => {}`                                                                        |
+
+### `ctx.env` fields and owners
+
+Only the owner writes a field; everyone else reads it. Types and comments live in `src/core/types.ts`.
+
+| field                          | owner      | meaning                                                                 |
+| ------------------------------ | ---------- | ----------------------------------------------------------------------- |
+| `timeOfDay`                    | lighting   | 0..1, 0 = midnight, 0.5 = noon. Initial value from `?time`              |
+| `timeLocked`                   | ux (main)  | true when `?time=` was given; lighting must not advance `timeOfDay`     |
+| `sunDirection`, `sunElevation` | lighting   | unit vector toward the sun, and its y                                   |
+| `dayFactor`, `nightFactor`     | lighting   | 0..1 smooth blend, sum to 1                                             |
+| `horizonColor`, `skyColor`     | lighting   | sky colors (palette)                                                    |
+| `neonGain`                     | lighting   | sign brightness multiplier: night 1.0, sunset 0.7, day 0.3              |
+| `windowLitRatio`               | lighting   | city-wide lit window ratio; buildings applies per-district factors      |
+| `rain`                         | atmosphere | 0..1 rain intensity. Initial value from `?rain` (default 0.35)          |
+| `wetness`                      | atmosphere | 0..1 surface wetness (road roughness, reflection decals)                |
+| `fogColor`, `fogDensity`       | atmosphere | final FogExp2 color / density this frame (palette base × rain)          |
+| `powerOn`                      | ux         | 0..1 boot fade-in; lighting multiplies exposure, neon lights up by zone |
+| `selectedBuilding`             | ux         | picked building id or null; neon draws the highlight                    |
+
+Colors and tuning numbers come from `src/core/palette.ts` (`paletteAt(t)`, `NEON`, `WINDOW_LIT`, `MATERIAL`, …);
+do not hard-code hex values in modules. Emissive materials use `applyEmissiveFog` from `src/core/shaders/emissiveFog.ts`.
 
 ## URL query hooks
 
@@ -51,19 +71,39 @@ Numbers are clamped to 0..1; invalid values are ignored.
 The Playwright e2e tests (`tests/e2e/`) and the screenshot script (`scripts/screenshot.ts`, `npm run shots`)
 wait on it before asserting or capturing. Keep it in place.
 
-## Coordinates
+## Coordinates and layout
 
-Y up, ground at `y = 0`, 1 unit = 1 m. City spans `[-CITY.extent/2, CITY.extent/2]` on X and Z.
-Roads are `LAYOUT.roads` strips; buildings are `LAYOUT.buildings` `{x, z, w, d, h, district}` (x/z = center, h = height).
+Y up, ground at `y = 0`, 1 unit = 1 m, north = -Z, east = +X. The map spans `[-1200, 1200]` on X and Z (`CITY.extent = 2400`).
+`rotY` / `gridAngle` follow three.js `rotation.y`; `w` is the local X extent and `d` the local Z extent.
+
+`src/city/` is the single source of truth (data types in `src/city/types.ts`, all re-exported by `src/city/layout.ts`):
+
+| data               | what                                                                                             |
+| ------------------ | ------------------------------------------------------------------------------------------------ |
+| `LAYOUT.districts` | zone polygons partitioning the map (`zoneAt`, `districtAt`), each with its own rotated road grid |
+| `LAYOUT.river`     | 흑린강 centerline (33 points), channel 240 m incl. 40 m parks, water y -4                        |
+| `LAYOUT.bridges`   | 3 bridges: abutments `a/b`, approach landings `landA/landB`, deck heights                        |
+| `LAYOUT.highways`  | Catmull-Rom control points (`highwayCurve`), pillars, no-build corridor                          |
+| `LAYOUT.ridges`    | 3 far ridge rings (`ridgeHeight`, `ridgePoint`)                                                  |
+| `LAYOUT.roads`     | straight segments in any direction (`a`, `b`, `width`, `kind`)                                   |
+| `LAYOUT.buildings` | `BuildingSpec`: footprint, `rotY`, `baseY`, archetype, `tiers` (setbacks), tags                  |
+| `LAYOUT.slots`     | street prop slots (street lights, trees, sign poles, 포장마차, bus stops, stair lamps)           |
+
+Pure queries: `terrainHeight`, `surfaceHeight`, `riverSignedDistance`, `buildingsInAabb`, `buildingContaining`,
+`raycastBuildings`, `buildingFaces`, `deckHeightAt`. Never place objects with hard-coded coordinates that bypass them.
 
 ## Ownership
 
-| folder            | owner                                                    |
-| ----------------- | -------------------------------------------------------- |
-| `src/lighting/`   | sun, moon, sky, day/night cycle, shadows                 |
-| `src/buildings/`  | ground, roads, building geometry, windows                |
-| `src/neon/`       | neon signs, holograms, street lights, flying traffic     |
-| `src/atmosphere/` | fog, rain, wet-ground look, stars, bloom post-processing |
+| folder            | owner                                                                                             |
+| ----------------- | ------------------------------------------------------------------------------------------------- |
+| `src/city/`       | layout v2: zones, river, bridges, highways, roads, buildings, slots, pure queries (2 reviewers)   |
+| `src/lighting/`   | sky, sun/moon, hemisphere, shadows, exposure, environment map; also `src/core/palette.ts`         |
+| `src/terrain/`    | ground heightfield, river water, embankments and parks, far ridges and their beacons              |
+| `src/buildings/`  | roads, sidewalks, stairs, building geometry, window shader, rooftop/facade props, trees, LOD      |
+| `src/infra/`      | elevated highway decks, pillars, ramps, sound walls, the three bridges                            |
+| `src/neon/`       | signs, screens, holograms, halos, street lights, reflections, traffic, PointLights, selection     |
+| `src/atmosphere/` | fog chunks, rain, clouds, stars, searchlights, post-processing; `src/core/shaders/emissiveFog.ts` |
+| `src/ux/`         | loader, camera rig, HUD, favicon, `?stats`; boot/loop in `src/main.ts`, `scripts/`, `tests/e2e/`  |
 
 ## CI and deployment
 

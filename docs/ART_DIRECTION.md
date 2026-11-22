@@ -81,6 +81,14 @@
 - 강 북쪽 구역(core, midtown, sangga)의 남쪽 경계는 고정 z가 아니라 `hw-river-north` 회랑의 북쪽 가장자리다. 위 표의 z 범위는 대략값이고, layout이 구역 폴리곤을 강 마스크와 고가 회랑으로 잘라낸다.
 - core 블록의 30%는 건물 사이에 플라자, 선큰 광장, 고가 진입로 같은 빈 공간으로 남긴다. 빽빽함은 sangga와 hillside가 맡는다.
 
+**PR0 구현 확정값 (layout v2, `src/city/`)**
+
+- 구역은 지도 전체를 나누는 폴리곤이다(`ZONES`, `zoneAt`). 강 양안 60 m 띠(제방 바깥)가 `riverside`이고, 강 북쪽 구역의 남쪽 경계는 이 띠의 바깥 가장자리다. `hw-river-north` 회랑(강 중심선에서 134~166 m)은 띠 안에 들어간다. hillside는 x 기준 3구역(`hill-w` -6°, `hill-c` 2°, `hill-e` 7°)으로 나눠 격자 각도를 달리했다.
+- 격자: core는 간선 30 m, 피치 180 m이고 도로선이 x = -150 + 180k, z = -470 + 180k에 놓여 스카이라인 정점이 블록 중앙에 온다. 정점 200 m 안의 core 블록은 2×2 lot(메가타워용), 나머지는 3×3 lot이다. midtown 120 m / 16 m, sangga 72 m / 12 m(블록 가운데 5 m 골목), apartment 270×210 m / 10 m, industrial 140 m / 20 m, hillside 44 m / 골목 4 m(오르막 골목 구간의 9%는 폭 3 m 계단)다.
+- 메가타워는 정점에서 가까운 큰 lot부터 10동을 고르고 블록당 최대 3동이다. 메가타워가 있는 블록은 플라자로 비우지 않는다(낮은 포디움 건물이 있어야 높이 비 규칙을 지킬 수 있다).
+- 높이 비 3 규칙은 블록에서 가장 낮은 비메가 건물을 `최고 높이 / 3` 이하(최소 4.2 m)로 낮춰서 지킨다. 그래서 sangga 블록마다 1~2층짜리 가게가 하나씩 생긴다.
+- 결과(seed 2077): 건물 2849동(hillHouse 1179, sangga 1089, 메가타워 10), 도로 세그먼트 1214, 거리 소품 slot 1853.
+
 ### 2.3 강과 다리
 
 - **흑린강 중심선**: `z(x) = 150 + 110 * sin((x + 300) / 640)`. x -1300..1300 구간에서 33점으로 샘플링한 폴리라인을 쓴다.
@@ -92,6 +100,7 @@
   | `bridge-b` | 140    | 와렌 트러스(높이 14 m)     | 10     | 24  | 트러스 상현재에 주황 라인, 난간 흰 점 4 m 간격     |
   | `bridge-c` | 760    | 2층 거더(상판 10, 하판 4)  | 10 / 4 | 30  | 하판 측면 붉은 띠, 교각 하부 청록 업라이트         |
 - 다리의 점광은 모두 InstancedMesh 발광 쿼드로 만들고 실제 광원은 쓰지 않는다.
+- (PR0 확정) 강 폭 240 m는 제방에서 제방까지이고 양쪽 둔치 40 m를 포함한다. 수면 폭은 160 m다. `riverSignedDistance`는 제방선 기준(< 0이 강 안쪽)이다. 다리의 `a`/`b`는 제방 위 교대, `landA`/`landB`는 riverside 띠 바깥 가장자리(중심선에서 180 m)이고 상판은 교대에서 착지점까지 60 m에 걸쳐 0으로 내려간다. 착지점에서 150 m 간선 진입로(`Road`, arterial)가 구역 안으로 이어진다. `hw-river-north`는 다리 진입로 위를 지나가고(교차 지점 진입로 높이 약 6 m), 다리 폭 + 4 m 안에는 교각을 두지 않는다.
 
 ### 2.4 지형과 산 능선
 
@@ -107,16 +116,17 @@
 
 ### 2.5 고가도로
 
-| id               | 경로                                                                              | 높이 y                  | 폭 / 차로 | 교각 간격 | 비고                        |
-| ---------------- | --------------------------------------------------------------------------------- | ----------------------- | --------- | --------- | --------------------------- |
-| `hw-river-north` | 강 북안을 따라 x -1300..1300, 강 중심선에서 북쪽으로 150 m(제방 북쪽 30 m) 오프셋 | 14                      | 26 m / 6  | 36 m      | 서울식 강변 고가 고속도로   |
-| `hw-ring`        | 정점지구를 감싸는 둥근 사각형(모서리 R 160 m)                                     | 22~28 (완만한 오르내림) | 18 m / 4  | 32 m      | core 외곽에서 휘어짐        |
-| `hw-interchange` | ring 동쪽 모서리와 river-north 사이 램프 2개                                      | 14→28 2층               | 10 m / 2  | 28 m      | 2층 교차, 램프는 3차 베지어 |
-| `hw-south`       | 남측 강변로, 지상                                                                 | 0.3                     | 24 m / 6  | 없음      | 둔치 쪽 방음벽에 청록 띠    |
+| id               | 경로                                                                              | 높이 y                  | 폭 / 차로 | 교각 간격 | 비고                                     |
+| ---------------- | --------------------------------------------------------------------------------- | ----------------------- | --------- | --------- | ---------------------------------------- |
+| `hw-river-north` | 강 북안을 따라 x -1300..1300, 강 중심선에서 북쪽으로 150 m(제방 북쪽 30 m) 오프셋 | 14                      | 26 m / 6  | 36 m      | 서울식 강변 고가 고속도로                |
+| `hw-ring`        | 정점지구를 감싸는 둥근 사각형(모서리 R 160 m)                                     | 22~28 (완만한 오르내림) | 18 m / 4  | 32 m      | core 외곽에서 휘어짐                     |
+| `hw-interchange` | ring 동쪽 변과 river-north 사이 램프 2개(`-a` 하행, `-b` 상행)                    | 25↔14                   | 10 m / 2  | 28 m      | 서로 교차하지 않는 평행 램프, 3차 베지어 |
+| `hw-south`       | 남측 강변로, 지상                                                                 | 0.3                     | 24 m / 6  | 없음      | 둔치 쪽 방음벽에 청록 띠                 |
 
 - 경로는 layout에서 제어점 배열로 정의한다. 구현은 `CatmullRomCurve3(points, false, 'centripetal')`로 한다.
 - 교각은 T자 또는 Y자 단면 2종이다. 데크 아래 그림자를 강조하기 위해 데크 하부는 `#050708`로 둔다.
 - layout은 고가 회랑 폭+6 m 안에 건물 lot을 만들지 않는다. 교각 위치에도 lot을 두지 않는다.
+- (PR0 확정) `hw-ring`은 core 간선 위에 놓인 둥근 사각형(x -330..210, z -650..-110, R 160 m)이고 높이는 `25 + 3 sin(2θ)`(22~28 m)다. 램프는 서로 교차하지 않는 평행 램프 2개로 바꿨다: `hw-interchange-a`는 ring 동쪽 변 z -300에서 river-north x≈480으로 내려가고(25→14), `hw-interchange-b`는 river-north x≈620에서 ring z -440으로 올라간다(14→25). 교각은 `{x, y, z}`이고 y는 그 위치의 데크 높이다. 램프 양 끝에는 교각을 두지 않는다.
 
 ### 2.6 `src/city/layout.ts` 확장 제안 (데이터 구조)
 
@@ -293,11 +303,18 @@ layout 단위 테스트 (반드시 통과):
 - 개수 범위: 건물 2000~3200, 이 중 hillHouse 900~1400, 메가타워(h ≥ 250) 8~12.
 - `terrainHeight`는 연속이고 z > -650에서 0이다.
 
+**PR0에서 확정한 실제 계약**: 위 코드 블록은 제안이고, 확정 타입은 `src/city/types.ts`, 질의 함수는 `src/city/layout.ts`의 export다. 제안과 달라진 점은 다음과 같다.
+
+- 추가 필드: `DistrictZone.name/origin/roadPitchV/roadWidth/roadKind`, `River.parkY/bandWidth`, `Bridge.landA/landB/lowerDeckY/structureH`, `Highway.corridorHalf`(교각은 `Vec3`), `Ridge.fog/baseY`, `Road.zoneId`, `Tier.chamfer`, `BuildingSpec.zoneId/blockId/groundFloorH/floors/twin/skybridge/cantilever/spireH/front`. `tags.name`은 항상 있다.
+- `tiers`의 `x, z`는 월드 좌표 중심이고 `y0, y1`은 baseY를 포함한 월드 높이다. 회전은 건물 `rotY`(three.js `rotation.y`와 같은 규약)를 공유한다. twinTower의 두 번째 동은 `twin`, 캔틸레버 매스는 `cantilever`(항상 포디움 footprint 안)로 따로 둔다. 모든 부분은 `(x, z, w, d, rotY)` footprint 안에 있다.
+- `baseY`는 footprint 아래 지형 높이의 최솟값이다(경사지에서는 옹벽이 보이게 된다).
+- 추가 질의 함수: `zoneAt`, `surfaceHeight`(제방, 둔치 -2, 수면 -4 포함), `riverZ`, `buildingContaining`(카메라 충돌), `buildingFaces`(tier 외벽 면, 간판 배치용), `buildingTop`, `deckHeightAt`(고가, 램프, 다리 상판), `highwayCurve`, `highwaySamples`, `ridgeHeight`, `ridgePoint`.
+
 ---
 
 ## 3. 컬러 팔레트와 노출
 
-팔레트는 `src/core/palette.ts`에 상수로 둔다(PR0에서 생성, 이후 lighting 소유). 시간대 사이 보간은 lighting의 순수 함수 `paletteAt(timeOfDay)`가 맡고 테스트를 붙인다. 키프레임은 `timeOfDay` 0.0(자정), 0.25(06시), 0.5(정오), 0.75(18시)이고, 노을 키는 0.76~0.80(18:15~19:10)에 둔다.
+팔레트는 `src/core/palette.ts`에 상수로 둔다(PR0에서 생성, 이후 lighting 소유). 시간대 사이 보간은 같은 파일의 순수 함수 `paletteAt(timeOfDay)`가 맡고 테스트(`tests/palette.test.ts`)를 붙였다. PR0 확정 키프레임(`PALETTE_KEYS`)은 0(밤), 04:00(밤), 06:00(새벽 `DAWN`), 10:00(낮), 15:00(낮), 18:15(노을), 19:10(노을), 22:00(밤), 1(밤)이고 키 사이는 smoothstep으로 섞는다. 새벽 키는 표에 없어서 PR0에서 노을보다 차갑고 어두운 값으로 정했고 lighting이 조정할 수 있다.
 
 ### 3.1 시간대별 색
 
@@ -342,13 +359,13 @@ layout 단위 테스트 (반드시 통과):
 - threshold 0.85 기준으로 bloom이 생기는 것은 네온관, 간판 글자, 헤드라이트, 스크린 하이라이트까지다. 창문은 HDR ×1.1을 넘기지 않아서 **대부분 bloom이 생기지 않아야 한다.** 지금 night-street가 뿌옇게 보이는 이유는 창문이 bloom되기 때문이다.
 - 렌즈 패스는 색수차 0.0012(현재 0.0022), 비네트 0.38, 그레인 0.025로 바꾼다.
 - **측정 목표** (1600×900 스크린샷, sRGB 8bit 휘도 평균):
-  | 장면                                                                              | 평균 휘도 | 클리핑(≥250) 픽셀 비율 | 휘도 40 이하 픽셀 비율 |
-  | --------------------------------------------------------------------------------- | --------- | ---------------------- | ---------------------- |
-  | 밤 overview                                                                       | 22~38     | ≤ 2.5%                 | ≥ 70%                  |
-  | 밤 street                                                                         | 28~48     | ≤ 4%                   | ≥ 55%                  |
-  | 노을 skyline                                                                      | 45~75     | ≤ 3%                   | 해당 없음              |
-  | 낮 overview                                                                       | 110~150   | ≤ 1%                   | 해당 없음              |
-  | `scripts/screenshot.mjs`에 이 통계를 출력하는 옵션 `--stats`를 추가한다(ux 담당). |
+  | 장면                                                                             | 평균 휘도 | 클리핑(≥250) 픽셀 비율 | 휘도 40 이하 픽셀 비율 |
+  | -------------------------------------------------------------------------------- | --------- | ---------------------- | ---------------------- |
+  | 밤 overview                                                                      | 22~38     | ≤ 2.5%                 | ≥ 70%                  |
+  | 밤 street                                                                        | 28~48     | ≤ 4%                   | ≥ 55%                  |
+  | 노을 skyline                                                                     | 45~75     | ≤ 3%                   | 해당 없음              |
+  | 낮 overview                                                                      | 110~150   | ≤ 1%                   | 해당 없음              |
+  | `scripts/screenshot.ts`에 이 통계를 출력하는 옵션 `--stats`를 추가한다(ux 담당). |
 
 ### 3.4 창문 점등 비율
 
@@ -635,16 +652,18 @@ layout 단위 테스트 (반드시 통과):
 
 | 키  | 이름        | 위치 (x, y, z)               | 타깃 (x, y, z)     | 의도                                     |
 | --- | ----------- | ---------------------------- | ------------------ | ---------------------------------------- |
-| 1   | 강변 히어로 | (-420, 38, 300)              | (-60, 150, -300)   | 기본값. 강, 다리 A, 코어, 능선이 한 화면 |
+| 1   | 강변 히어로 | (-420, 38, 300)              | (-60, 20, -300)    | 기본값. 강, 다리 A, 코어, 능선이 한 화면 |
 | 2   | 코어 상공   | (520, 420, 380)              | (-40, 120, -360)   | 전체 조망                                |
-| 3   | 등불가 거리 | (-760, 6, -360)              | (-700, 14, -470)   | 눈높이 상가 간판 협곡                    |
+| 3   | 등불가 거리 | (-760, 6, -360)              | (-700, 1, -470)    | 눈높이 상가 간판 협곡                    |
 | 4   | 고가도로    | `hw-ring` t=0.1 지점 +8 m    | 진행 방향 120 m 앞 | 광류와 곡선                              |
 | 5   | 별계단동    | (-300, 140, -980)            | (-60, 80, -200)    | 산동네에서 도심과 강을 내려다봄          |
 | 6   | 새빛마을    | (150, 70, 980)               | (60, 40, 700)      | 동 번호와 복도등                         |
-| 7   | 다리 위     | bridge-b 중앙 (140, 14, 150) | (140, 60, -400)    | 다리 트러스와 코어 정면                  |
+| 7   | 다리 위     | bridge-b 중앙 (140, 14, 150) | (140, 12, -400)    | 다리 트러스와 코어 정면                  |
 | 8   | 탑다운      | (0, 1900, 1)                 | (0, 0, 0)          | 지도 확인                                |
 
-프리셋 3, 4, 7처럼 지면이나 데크 근처에 있는 위치는 layout 기준으로 가장 가까운 도로나 데크 중심선에 스냅하고, 건물과 충돌하면 8.1 규칙으로 밀어낸다. 좌표는 layout v2가 확정되면 PR0에서 다시 검증한다.
+프리셋 3, 4, 7처럼 지면이나 데크 근처에 있는 위치는 layout 기준으로 가장 가까운 도로나 데크 중심선에 스냅하고, 건물과 충돌하면 8.1 규칙으로 밀어낸다.
+
+PR0 재검증 결과: 타깃이 카메라보다 높으면 극각이 π/2를 넘어 `maxPolarAngle` 제한에 걸리고 OrbitControls가 첫 프레임에 카메라를 옮긴다. 그래서 프리셋 1, 3, 7의 타깃 y를 카메라 높이 아래로 낮췄다(위 표). 올려다보는 구도가 필요하면 ux가 FOV나 타깃 거리로 해결한다. 현재 `?cam=` 프리셋은 layout v2에 맞춰 다시 잡았다: `overview` = 프리셋 2, `skyline` = 프리셋 1, `street` = 프리셋 3 근처 등불가 도로 중심선에 스냅, `core` = 정점 메가타워 사이 (180, 220, -120) → (-60, 160, -380), `topdown` = 프리셋 8. `CAMERA_LIMITS.maxDistance`는 탑다운을 위해 2600으로 올렸다. 모든 프리셋이 건물 밖, 지면 위에 있는지 `tests/query.test.ts`가 검사한다.
 
 URL 쿼리 `?preset=3&time=0.0&rain=0.5&hud=0`을 지원한다(스크린샷 스크립트용, `env.timeLocked = true`).
 
@@ -798,18 +817,25 @@ main의 부팅을 async 단계로 바꾼다. 각 단계 사이에 `await nextFra
 
 새 순서: **lighting → terrain → buildings → infra → neon → atmosphere**. ux는 main이 부팅 단계에서 직접 사용한다(로더, CameraRig).
 
-| 모듈           | 폴더                                                                                                          | 소유 (쓰기)                                                                                                                                                                                                               | 읽기                                                      |
-| -------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
-| (공통) layout  | `src/city/`                                                                                                   | layout 타입, 생성, 순수 질의 함수 (PR0 이후 변경은 리뷰 2인)                                                                                                                                                              | -                                                         |
-| lighting       | `src/lighting/`, `src/core/palette.ts`                                                                        | 하늘 셰이더(그라디언트, 도시광 돔, 해·달), 해·달 광원, Hemisphere, 그림자 토글, 노출, PMREM 환경맵, `env.timeOfDay, sunDirection, sunElevation, dayFactor, nightFactor, horizonColor, skyColor, neonGain, windowLitRatio` | `env.powerOn`                                             |
-| terrain (신규) | `src/terrain/`                                                                                                | 지면 메쉬(heightfield, 산비탈), 강 수면과 제방, 둔치, 원경 능선 3겹과 장애등                                                                                                                                              | layout, `env.horizonColor, fogColor`                      |
-| buildings      | `src/buildings/`                                                                                              | 도로, 보도, 계단, 건물 지오메트리(archetype, tier), 창 셰이더, 옥상과 외벽 소품, 1층 상점과 캐노피, 가로수, 청크 LOD, `ctx.buildings` API                                                                                 | layout, `env.windowLitRatio, wetness`                     |
-| infra (신규)   | `src/infra/`                                                                                                  | 고가도로 데크, 교각, 램프, 방음벽, 다리 3종 지오메트리와 그 발광 라인(정적)                                                                                                                                               | layout                                                    |
-| neon           | `src/neon/`                                                                                                   | 간판 전 종류, 거대 스크린, 링, 십자가, 홀로그램, 헤일로, 반사 줄무늬 데칼, 가로등, 신호 기둥, 포장마차, 버스정류장, 지상·고가·비행 교통, PointLight 배분, 선택 하이라이트                                                 | layout, `ctx.buildings`, `env.neonGain, powerOn, wetness` |
-| atmosphere     | `src/atmosphere/`, `src/core/shaders/emissiveFog.ts`                                                          | 안개(ShaderChunk 교체: 높이, 산란, 발광 감쇠), 비, 물방울, 구름, 별, 서치라이트, 포스트(bloom, 렌즈), `ctx.render`, `env.rain, wetness, fogColor, fogDensity`                                                             | `env.*`                                                   |
-| ux (신규)      | `src/ux/`, `index.html`, `src/style.css`, `src/main.ts`의 부팅과 루프, `scripts/screenshot.mjs`, `tests/e2e/` | 로딩 스켈레톤, 진행률, 전력 투입 연출, CameraRig(비행, 날아가기, 충돌, 프리셋, 시네마틱, 터치), HUD와 선택 카드, 파비콘, 적응형 DPR, `?stats`, `env.powerOn, timeLocked`                                                  | layout, `env.*`                                           |
+| 모듈           | 폴더                                                                                                         | 소유 (쓰기)                                                                                                                                                                                                               | 읽기                                                      |
+| -------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| (공통) layout  | `src/city/`                                                                                                  | layout 타입, 생성, 순수 질의 함수 (PR0 이후 변경은 리뷰 2인)                                                                                                                                                              | -                                                         |
+| lighting       | `src/lighting/`, `src/core/palette.ts`                                                                       | 하늘 셰이더(그라디언트, 도시광 돔, 해·달), 해·달 광원, Hemisphere, 그림자 토글, 노출, PMREM 환경맵, `env.timeOfDay, sunDirection, sunElevation, dayFactor, nightFactor, horizonColor, skyColor, neonGain, windowLitRatio` | `env.powerOn`                                             |
+| terrain (신규) | `src/terrain/`                                                                                               | 지면 메쉬(heightfield, 산비탈), 강 수면과 제방, 둔치, 원경 능선 3겹과 장애등                                                                                                                                              | layout, `env.horizonColor, fogColor`                      |
+| buildings      | `src/buildings/`                                                                                             | 도로, 보도, 계단, 건물 지오메트리(archetype, tier), 창 셰이더, 옥상과 외벽 소품, 1층 상점과 캐노피, 가로수, 청크 LOD, `ctx.buildings` API                                                                                 | layout, `env.windowLitRatio, wetness`                     |
+| infra (신규)   | `src/infra/`                                                                                                 | 고가도로 데크, 교각, 램프, 방음벽, 다리 3종 지오메트리와 그 발광 라인(정적)                                                                                                                                               | layout                                                    |
+| neon           | `src/neon/`                                                                                                  | 간판 전 종류, 거대 스크린, 링, 십자가, 홀로그램, 헤일로, 반사 줄무늬 데칼, 가로등, 신호 기둥, 포장마차, 버스정류장, 지상·고가·비행 교통, PointLight 배분, 선택 하이라이트                                                 | layout, `ctx.buildings`, `env.neonGain, powerOn, wetness` |
+| atmosphere     | `src/atmosphere/`, `src/core/shaders/emissiveFog.ts`                                                         | 안개(ShaderChunk 교체: 높이, 산란, 발광 감쇠), 비, 물방울, 구름, 별, 서치라이트, 포스트(bloom, 렌즈), `ctx.render`, `env.rain, wetness, fogColor, fogDensity`                                                             | `env.*`                                                   |
+| ux (신규)      | `src/ux/`, `index.html`, `src/style.css`, `src/main.ts`의 부팅과 루프, `scripts/screenshot.ts`, `tests/e2e/` | 로딩 스켈레톤, 진행률, 전력 투입 연출, CameraRig(비행, 날아가기, 충돌, 프리셋, 시네마틱, 터치), HUD와 선택 카드, 파비콘, 적응형 DPR, `?stats`, `env.powerOn, timeLocked`                                                  | layout, `env.*`                                           |
 
 `Env` 추가 필드(PR0에서 `src/core/types.ts`에 선언하고 owner를 주석으로 단다): `neonGain`, `windowLitRatio`(lighting), `wetness`, `fogColor`, `fogDensity`(atmosphere), `powerOn`(ux). `Ctx`에는 `infra?: InfraApi`(교각, 데크 높이 조회용)를 추가한다.
+
+PR0에서 추가로 확정한 것:
+
+- `env.selectedBuilding: number | null`(ux 소유): 클릭이나 날아가기로 고른 건물 id다. neon이 이 값을 읽어 선택 하이라이트(8.3)를 그린다. `env.timeLocked`도 ux 소유다.
+- 초기값(main.ts): 밤 팔레트 값, `rain` 0.35, `wetness` 0.55, `powerOn` 1(ux 로더가 부팅 때 0으로 내렸다가 올린다), `selectedBuilding` null.
+- `BuildingsApi`: `group`, `specs`(= `LAYOUT.buildings`), `faces`(id별 `buildingFaces` 결과), `maxHeight`, `roadY`, `sidewalkHeight`, `materials`. `InfraApi`: `group`, `curves`(highway id → `CatmullRomCurve3`), `deckThickness`, `deckHeightAt(x, z)`. neon과 ux는 이 API가 없어도(스텁 상태) layout의 순수 함수만으로 개발할 수 있다.
+- ux 구조: `src/ux/index.ts`의 `initUx(ctx)`가 CameraRig(`cameraRig.ts`)와 HUD를 묶고, `createLoader()`(`loader.ts`)가 부팅 단계 보고를 받는다. main.ts는 이미 각 모듈 init 전에 `loader.stage(이름, 가중치)`를 부르고, 매 프레임 `ux.beforeUpdate → 모듈 update → ux.afterUpdate → ctx.render()` 순서로 돈다. 그래서 웨이브 1 PR은 main.ts를 고치지 않아도 된다(ux가 async 부팅으로 바꿀 때만 예외).
 
 ### 13.2 의존 관계
 
