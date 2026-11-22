@@ -67,10 +67,10 @@ Roads are `LAYOUT.roads` strips; buildings are `LAYOUT.buildings` `{x, z, w, d, 
 
 ## CI and deployment
 
-| workflow                        | trigger                              | what it does                                                                                                                                                                                                    |
-| ------------------------------- | ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `.github/workflows/ci.yml`      | pull_request, push to main, dispatch | format:check, lint, typecheck, unit tests, build, Playwright e2e (report uploaded on failure)                                                                                                                   |
-| `.github/workflows/autofix.yml` | pull_request (same-repo only)        | `lint:fix` + `format`; if anything changed, commits `style: autofix lint and formatting` as github-actions[bot], pushes to the PR branch and dispatches `ci.yml` for it (GITHUB_TOKEN pushes do not trigger CI) |
-| `.github/workflows/pages.yml`   | push to main, dispatch               | builds with `BASE_PATH=/neon-megacity/` and deploys `dist/` to GitHub Pages                                                                                                                                     |
+| workflow                        | trigger                              | what it does                                                                                                                                                                                               |
+| ------------------------------- | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.github/workflows/ci.yml`      | pull_request, push to main, dispatch | format:check, lint, typecheck, unit tests, build, Playwright e2e (report uploaded on failure)                                                                                                              |
+| `.github/workflows/autofix.yml` | pull_request (same-repo only)        | `lint:fix` + `format`; if anything changed, commits `style: 린트 및 포맷 자동 수정` as github-actions[bot], pushes to the PR branch and dispatches `ci.yml` for it (GITHUB_TOKEN pushes do not trigger CI) |
+| `.github/workflows/pages.yml`   | push to main, dispatch               | builds with `BASE_PATH=/neon-megacity/` and deploys `dist/` to GitHub Pages                                                                                                                                |
 
 `vite.config.ts` uses `base: process.env.BASE_PATH ?? './'`, so dev, preview, e2e and screenshots run with a relative base.

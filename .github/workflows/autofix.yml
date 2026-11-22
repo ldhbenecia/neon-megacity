@@ -66,7 +66,7 @@ jobs:
           fi
           git config user.name "$BOT_NAME"
           git config user.email "$BOT_EMAIL"
-          git commit -am "style: autofix lint and formatting"
+          git commit -am "style: 린트 및 포맷 자동 수정"
           git push origin "HEAD:refs/heads/$HEAD_REF"
           echo "pushed=true" >> "$GITHUB_OUTPUT"
 
