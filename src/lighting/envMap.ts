@@ -79,13 +79,13 @@ function buildPanels(key: PaletteKey): THREE.BufferGeometry {
     const az = rng.range(0, Math.PI * 2);
     const el = rng.range(-0.02, 0.24);
     const tall = rng.chance(0.35);
-    const w = tall ? rng.range(1.5, 4) : rng.range(4, 14);
-    const h = tall ? rng.range(6, 16) : rng.range(1.2, 5);
+    const w = tall ? rng.range(1, 2.6) : rng.range(3, 8);
+    const h = tall ? rng.range(4, 11) : rng.range(0.8, 2.6);
     const name = pickPanelColor(rng.next());
     const neon = NEON[name];
     const hdr = rng.range(neon.hdr[0], neon.hdr[1]);
     // Reflections read better a bit dimmer than the signs themselves.
-    const c = srgb(neon.hex, hdr * key.neonGain * 0.45);
+    const c = srgb(neon.hex, hdr * key.neonGain * 0.35);
     const g = new THREE.PlaneGeometry(w, h);
     const n = g.attributes.position?.count ?? 0;
     const colors = new Float32Array(n * 3);
