@@ -1,10 +1,12 @@
 # Neon Megacity
 
-Browser-based, mouse-explorable cyberpunk city built with three.js (r0.187) + Vite, plain JS ES modules.
+Browser-based, mouse-explorable cyberpunk city built with three.js (r0.187) + Vite + **TypeScript (strict)**.
 The city is an ORIGINAL design inspired by cyberpunk anime aesthetics.
 
 ## Commands
 - `npm run dev` — dev server (Vite)
+- `npm run typecheck` — `tsc --noEmit`; must pass
+- `npm run lint` / `npm test` — ESLint, Vitest unit tests; must pass
 - `npm run build` — production build; must pass before any commit
 - `npm run preview` — serve `dist/`
 
@@ -23,6 +25,8 @@ Read `docs/ARCHITECTURE.md` before editing. Summary:
 | `src/atmosphere/` | fog, rain, stars, clouds, searchlights, post-processing (`ctx.render`) |
 
 ## Rules
+- TypeScript only (`.ts`), `strict: true`. No `any` unless commented with a reason; no `@ts-ignore` (use `@ts-expect-error` with a reason). Shared types (`Ctx`, `Env`, `CityModule`) live in `src/core/types.ts`.
+- Pure logic (layout, time-of-day math, placement) lives in side-effect-free functions with unit tests in `tests/`.
 - Use only current three r0.187 APIs. No deprecated APIs (`Clock` → `Timer`, `outputEncoding` → `outputColorSpace`, `mergeBufferGeometries` → `mergeGeometries`, set `colorSpace` on color textures).
 - No external asset files or CDNs: all textures are procedural (canvas / shaders).
 - No real brands, logos, or names/characters/places from existing games or anime. Invent fictional names.
