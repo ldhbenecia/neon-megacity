@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { RIVER, riverFrame } from '../city/layout';
+import { RIVER } from '../city/layout';
 import { TERRAIN_COLORS } from '../core/palette';
-import { riverSliceXs, waterHalfWidth } from './shape';
+import { bankReach, channelRows, channelSlices, waterEdgeD } from './shape';
 
 const WATER_PARS = /* glsl */ `
 uniform float uTime;
@@ -48,20 +48,21 @@ export interface Water {
 
 /** `ripples: false` (low quality tier) keeps the flat glossy surface without the noise normals. */
 export function createWater(ripples = true): Water {
-  const hw = waterHalfWidth();
+  const c = channelSlices();
+  const depths = [c.xs.map(bankReach), c.xs.map(waterEdgeD)];
+  const north = channelRows(c, depths, -1)[1] ?? [];
+  const south = channelRows(c, depths, 1)[1] ?? [];
   const pos: number[] = [];
   const idx: number[] = [];
-  let n = 0;
-  for (const x of riverSliceXs(16, 40)) {
-    const f = riverFrame(x);
-    for (const s of [-1, 1]) {
-      pos.push(f.p.x + f.south.x * hw * s, RIVER.waterY, f.p.z + f.south.z * hw * s);
-    }
-    if (n > 0) {
-      const a = (n - 1) * 2;
+  for (let i = 0; i < c.xs.length; i++) {
+    const n = north[i];
+    const s = south[i];
+    if (!n || !s) throw new Error('terrain: water row out of range');
+    pos.push(n.x, RIVER.waterY, n.z, s.x, RIVER.waterY, s.z);
+    if (i > 0) {
+      const a = (i - 1) * 2;
       idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
     }
-    n++;
   }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
