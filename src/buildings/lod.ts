@@ -16,8 +16,8 @@ export class NullBuilder extends GeoBuilder {
 export type Level = 0 | 1 | 2;
 
 /**
- * Level for a camera distance with hysteresis around each switch distance: moving out switches
- * at `d ≥ D`, moving back in only at `d < D × (1 − h)`. `distances[0]` is ignored (always 0).
+ * Level for a camera distance with hysteresis (THREE.LOD rules): moving out switches at `d ≥ D`,
+ * moving in crosses each level boundary only at `d < D × (1 − h)`. `distances[0]` is ignored.
  */
 export function pickLevel(
   d: number,
@@ -25,12 +25,12 @@ export function pickLevel(
   distances: readonly [number, number, number],
   h: number,
 ): Level {
-  let level: Level = d >= distances[2] ? 2 : d >= distances[1] ? 1 : 0;
-  if (level < current) {
-    const back = distances[current] * (1 - h);
-    if (d >= back) level = current;
+  const out: Level = d >= distances[2] ? 2 : d >= distances[1] ? 1 : 0;
+  if (out >= current) return out;
+  for (let k = current; k > out; k--) {
+    if (d >= distances[k] * (1 - h)) return k;
   }
-  return level;
+  return out;
 }
 
 /** LOD0 may be released once the camera is this far past the LOD1 switch distance... */

@@ -17,6 +17,11 @@ describe('pickLevel', () => {
     expect(pickLevel(980, 2, D, 0.1)).toBe(1);
   });
 
+  it('crosses each inner boundary with its own hysteresis when jumping in from LOD2', () => {
+    expect(pickLevel(350, 2, D, 0.1)).toBe(1);
+    expect(pickLevel(300, 2, D, 0.1)).toBe(0);
+  });
+
   it('never returns LOD0 when the LOD1 distance is 0 (low tier)', () => {
     expect(pickLevel(0, 1, [0, 0, 380], 0.1)).toBe(1);
     expect(pickLevel(400, 1, [0, 0, 380], 0.1)).toBe(2);

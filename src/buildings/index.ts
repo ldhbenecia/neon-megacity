@@ -130,11 +130,11 @@ export function init(ctx: Ctx): CityModuleInstance {
     'LOD0 chunks': 0,
   };
 
-  const makeMesh = (g: THREE.BufferGeometry | null, near: boolean): THREE.Object3D => {
+  const makeMesh = (g: THREE.BufferGeometry | null, level: Level): THREE.Object3D => {
     if (!g) return new THREE.Object3D();
-    const mesh = new THREE.Mesh(g, near ? facadeNear : facade);
+    const mesh = new THREE.Mesh(g, level === 0 ? facadeNear : facade);
     mesh.castShadow = true;
-    mesh.receiveShadow = near || !low;
+    mesh.receiveShadow = level < 2;
     mesh.matrixAutoUpdate = false;
     return mesh;
   };
@@ -152,8 +152,8 @@ export function init(ctx: Ctx): CityModuleInstance {
       geometries.push(g);
       triangles[k] = (triangles[k] ?? 0) + (g.index ? g.index.count / 3 : 0);
     });
-    const l1 = makeMesh(built[0] ?? null, false);
-    const l2 = makeMesh(built[1] ?? null, false);
+    const l1 = makeMesh(built[0] ?? null, 1);
+    const l2 = makeMesh(built[1] ?? null, 2);
     l2.visible = false;
     group.add(l1, l2);
     group.updateMatrix();
@@ -166,24 +166,35 @@ export function init(ctx: Ctx): CityModuleInstance {
   info['tris LOD1'] = triangles[0] ?? 0;
   info['tris LOD2'] = triangles[1] ?? 0;
 
+  let lod0Count = 0;
+  // Lighting keeps shadowMap.autoUpdate off: casters that appear or vanish must ask for a redraw.
+  const shadowsChanged = (): void => {
+    ctx.renderer.shadowMap.needsUpdate = true;
+  };
   const attachLod0 = (c: ChunkLod, g: THREE.BufferGeometry | null): void => {
-    const obj = makeMesh(g, true);
+    const obj = makeMesh(g, 0);
     obj.visible = false;
     c.group.add(obj);
     obj.updateMatrixWorld(true);
     c.l0 = obj;
-    info['LOD0 chunks']++;
+    lod0Count++;
+    shadowsChanged();
   };
   const releaseLod0 = (c: ChunkLod): void => {
     if (!c.l0) return;
     c.group.remove(c.l0);
     if (c.l0 instanceof THREE.Mesh) (c.l0.geometry as THREE.BufferGeometry).dispose();
     c.l0 = null;
-    info['LOD0 chunks']--;
+    lod0Count--;
+    shadowsChanged();
   };
   const newJob = (c: ChunkLod): Lod0Job =>
     lod0Job(new GeoBuilder(c.chunk.o.x, c.chunk.o.z), c.chunk.lod0);
   let job: { c: ChunkLod; job: Lod0Job } | null = null;
+  /** Chunk whose LOD0 exists only for the boot compile; released like any far LOD0. */
+  let warm: ChunkLod | null = null;
+  /** 1 while a chunk in LOD0 range still shows LOD1 (screenshots wait for 0). */
+  let pending = 0;
 
   const camPos = new THREE.Vector3();
   /** Levels, visibility, LOD0 release and at most one time-sliced LOD0 job per frame. */
@@ -194,7 +205,8 @@ export function init(ctx: Ctx): CityModuleInstance {
     let farthest: ChunkLod | null = null;
     let farthestD = LOD_DISTANCES[1] * LOD0_RELEASE_FACTOR;
     for (const c of lods) {
-      const d = camPos.distanceTo(c.pos);
+      // Same metric as THREE.LOD: distance over zoom (the rig keeps zoom at 1; fov changes instead).
+      const d = camPos.distanceTo(c.pos) / ctx.camera.zoom;
       c.level = pickLevel(d, c.level, distances, LOD_HYSTERESIS);
       if (c.l0 && d > farthestD) {
         farthest = c;
@@ -209,7 +221,13 @@ export function init(ctx: Ctx): CityModuleInstance {
       c.l1.visible = shown === 1;
       c.l2.visible = shown === 2;
     }
-    if (farthest && info['LOD0 chunks'] > LOD0_KEEP) releaseLod0(farthest);
+    if (farthest && lod0Count > LOD0_KEEP) releaseLod0(farthest);
+    // The boot-compile LOD0 has done its job once the first frame runs (after the compile stage).
+    if (warm) {
+      if (warm.level !== 0) releaseLod0(warm);
+      warm = null;
+    }
+    pending = job || nearest ? 1 : 0;
     if (job && job.c.level !== 0) job = null;
     if (!job && nearest) job = { c: nearest, job: newJob(nearest) };
     if (!job) return;
@@ -227,7 +245,7 @@ export function init(ctx: Ctx): CityModuleInstance {
   updateLods(0);
   // A far start pose has no LOD0 yet: build the nearest chunk's anyway and leave it visible for
   // the boot compile; the first update hides it again.
-  if (!low && info['LOD0 chunks'] === 0) {
+  if (!low && lod0Count === 0) {
     let first: ChunkLod | null = null;
     for (const c of lods) {
       if (!first || camPos.distanceTo(c.pos) < camPos.distanceTo(first.pos)) first = c;
@@ -235,6 +253,7 @@ export function init(ctx: Ctx): CityModuleInstance {
     if (first) {
       attachLod0(first, newJob(first).step(Infinity) ?? null);
       if (first.l0) first.l0.visible = true;
+      warm = first;
     }
   }
 
@@ -262,6 +281,7 @@ export function init(ctx: Ctx): CityModuleInstance {
     roadY: ROAD_Y,
     sidewalkHeight: SIDEWALK_H,
     materials: { facade, facadeNear, road: roadMat, sidewalk: walkMat },
+    lod0Pending: () => pending,
   };
   ctx.buildings = api;
 
@@ -280,6 +300,7 @@ export function init(ctx: Ctx): CityModuleInstance {
       uniforms.uTime.value = elapsed;
       wet.value = Math.max(env.wetness, 0.55 * env.nightFactor);
       updateLods(low ? 0 : LOD0_BUDGET_MS);
+      info['LOD0 chunks'] = lod0Count;
     },
     dispose() {
       scene.remove(group);
