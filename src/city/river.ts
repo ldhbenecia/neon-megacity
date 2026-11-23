@@ -24,7 +24,6 @@ export const RIVER: Readonly<River> = {
   samples: CENTERLINE.map((p) => ({ ...p })),
 };
 
-/** Analytic river center z at x (the centerline polyline samples this). */
 /**
  * Bank-to-bank channel width at x (m). Constant in v2; layout v3 varies it by section, so read
  * this instead of `RIVER.width`.
@@ -38,6 +37,7 @@ export function parkWidthAt(_x: number): number {
   return RIVER.parkWidth;
 }
 
+/** Analytic river center z at x (the centerline polyline samples this). */
 export function riverZ(x: number): number {
   return 150 + 110 * Math.sin((x + 300) / 640);
 }
