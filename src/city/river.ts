@@ -1,37 +1,113 @@
-// 흑린강 (Heukrin river) and the terrain height field. Pure functions only.
+// 한강 (layout v3, docs/SEOUL.md 3) and the terrain height field. Pure functions only.
+// The centerline passes through the projected bridge centres (OSM, SEOUL.md 2.1 projection)
+// and stays strictly increasing in x, so `riverZ(x)` is a function of x.
+import { CatmullRomCurve3, Vector3 } from 'three';
 import { fbm1 } from './noise';
-import { clamp, pointSegmentDistance, smoothstep } from './math';
-import type { River, Vec2 } from './types';
+import { clamp, closestSegmentT, pointInPolygon, pointSegmentDistance } from './math';
+import type { Island, Mountain, River, SideChannel, Vec2 } from './types';
 
-const CENTERLINE: Vec2[] = Array.from({ length: 33 }, (_, i) => {
-  const x = -1300 + (2600 * i) / 32;
-  return { x, z: riverZ(x) };
-});
+/** Map half extents (m). The map spans x ±HALF_X, z ±HALF_Z. */
+export const HALF_X = 2000;
+export const HALF_Z = 1300;
 
-const WIDTH = 240;
-const PARK_WIDTH = 40;
+/**
+ * Control points: x, z, bank-to-bank width, park width (each side). Bridge rows use the
+ * projected OSM bridge centre (SEOUL.md 3.1); R0 and the last row lie outside the map.
+ */
+const CONTROL: readonly (readonly [number, number, number, number])[] = [
+  [-2150, -880, 480, 50], // R0, west of the map
+  [-1901, -720, 480, 50], // 가양대교
+  [-1546, -466, 470, 50], // 월드컵대교
+  [-1453, -408, 460, 50], // 성산대교
+  [-1279, -231, 450, 45], // 양화대교
+  [-1194, -222, 450, 45], // 당산철교
+  [-925, -187, 460, 45], // 서강대교 (밤섬)
+  [-788, -66, 440, 45], // 마포대교
+  [-628, 39, 420, 45], // 원효대교
+  [-551, 177, 420, 45], // 한강철교
+  [-480, 271, 420, 45], // 한강대교 (노들섬)
+  [-300, 340, 410, 45], // 이촌 굽이
+  [-118, 359, 410, 50], // 동작대교
+  [96, 286, 400, 50], // 반포대교·잠수교
+  [344, 61, 390, 45], // 한남대교
+  [468, -97, 380, 45], // 동호대교
+  [662, -129, 380, 50], // 성수대교
+  [996, -20, 370, 45], // 영동대교
+  [1087, 81, 360, 45], // 청담대교
+  [1501, 115, 360, 45], // 잠실대교
+  [1606, 37, 365, 45], // 잠실철교
+  [1670, -80, 370, 45], // 올림픽대교
+  [1790, -240, 380, 45], // 천호대교
+  [2150, -430, 380, 45], // east of the map
+];
 
-export const RIVER: Readonly<River> = {
-  centerline: CENTERLINE,
-  width: WIDTH,
-  waterY: -4,
-  bankY: 0,
-  parkWidth: PARK_WIDTH,
-  parkY: -2,
-  bandWidth: 60,
-  widths: CENTERLINE.map(() => WIDTH),
-  parkWidths: CENTERLINE.map(() => PARK_WIDTH),
-  samples: CENTERLINE.map((p) => ({ ...p })),
-};
+const SAMPLE_STEP = 10;
 
-/** Analytic river center z at x (the centerline polyline samples this). */
-export function riverZ(x: number): number {
-  return 150 + 110 * Math.sin((x + 300) / 640);
+function sampleCenterline(): Vec2[] {
+  const curve = new CatmullRomCurve3(
+    CONTROL.map(([x, z]) => new Vector3(x, 0, z)),
+    false,
+    'centripetal',
+  );
+  const n = Math.ceil(curve.getLength() / SAMPLE_STEP);
+  return curve.getSpacedPoints(n).map((v) => ({ x: v.x, z: v.z }));
 }
 
-/** dz/dx of the analytic centerline. */
+const SAMPLES = sampleCenterline();
+const CONTROL_X = CONTROL.map((c) => c[0]);
+
+/** Piecewise linear interpolation of a control column over x. */
+function controlAt(x: number, col: 2 | 3): number {
+  const n = CONTROL.length;
+  if (x <= (CONTROL_X[0] as number)) return (CONTROL[0] as readonly number[])[col] as number;
+  for (let i = 0; i < n - 1; i++) {
+    const x1 = CONTROL_X[i + 1] as number;
+    if (x <= x1) {
+      const x0 = CONTROL_X[i] as number;
+      const a = (CONTROL[i] as readonly number[])[col] as number;
+      const b = (CONTROL[i + 1] as readonly number[])[col] as number;
+      return a + ((b - a) * (x - x0)) / (x1 - x0);
+    }
+  }
+  return (CONTROL[n - 1] as readonly number[])[col] as number;
+}
+
+/** Bank-to-bank width (m) of the channel at x. */
+export function riverWidthAt(x: number): number {
+  return controlAt(x, 2);
+}
+
+/** Park strip width (m) inside each embankment at x. */
+export function parkWidthAt(x: number): number {
+  return controlAt(x, 3);
+}
+
+/** Index i such that SAMPLES[i].x <= x < SAMPLES[i + 1].x (clamped). */
+function sampleIndex(x: number): number {
+  let lo = 0;
+  let hi = SAMPLES.length - 2;
+  if (x <= (SAMPLES[0] as Vec2).x) return 0;
+  if (x >= (SAMPLES[hi + 1] as Vec2).x) return hi;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if ((SAMPLES[mid] as Vec2).x <= x) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo;
+}
+
+/** River center z at x (linear between centerline samples; extrapolated past the ends). */
+export function riverZ(x: number): number {
+  const i = sampleIndex(x);
+  const a = SAMPLES[i] as Vec2;
+  const b = SAMPLES[i + 1] as Vec2;
+  return a.z + ((b.z - a.z) * (x - a.x)) / (b.x - a.x);
+}
+
+/** dz/dx of the centerline, averaged over about ±30 m so frames turn smoothly. */
 export function riverSlope(x: number): number {
-  return (110 / 640) * Math.cos((x + 300) / 640);
+  const h = 30;
+  return (riverZ(x + h) - riverZ(x - h)) / (2 * h);
 }
 
 /** Point on the centerline at x, and the unit normal pointing south (+Z side). */
@@ -42,20 +118,56 @@ export function riverFrame(x: number): { p: Vec2; south: Vec2; along: Vec2 } {
   return { p: { x, z: riverZ(x) }, south: { x: -along.z, z: along.x }, along };
 }
 
-/** Distance from (x, z) to the centerline polyline. */
-export function riverCenterDistance(x: number, z: number): number {
-  const c = RIVER.centerline;
+/** Point at signed distance `k` from the centerline along the south normal at x. */
+export function riverOffset(x: number, k: number): Vec2 {
+  const { p, south } = riverFrame(x);
+  return { x: p.x + south.x * k, z: p.z + south.z * k };
+}
+
+// --- distance to the centerline ---
+
+/**
+ * Distance from (x, z) to the centerline and the x of the closest centerline point. The samples
+ * are sorted by x, so the scan walks outward from x and stops once |sample.x - x| exceeds the
+ * best distance found (no closer segment can lie beyond that).
+ */
+export function riverNearest(x: number, z: number): { d: number; cx: number } {
   const p = { x, z };
+  const n = SAMPLES.length - 1;
+  const i0 = sampleIndex(x);
   let best = Infinity;
-  for (let i = 0; i < c.length - 1; i++) {
-    best = Math.min(best, pointSegmentDistance(p, c[i] as Vec2, c[i + 1] as Vec2));
+  let cx = x;
+  const visit = (i: number): void => {
+    const a = SAMPLES[i] as Vec2;
+    const b = SAMPLES[i + 1] as Vec2;
+    const t = closestSegmentT(p, a, b);
+    const qx = a.x + (b.x - a.x) * t;
+    const d = Math.hypot(x - qx, z - (a.z + (b.z - a.z) * t));
+    if (d < best) {
+      best = d;
+      cx = qx;
+    }
+  };
+  for (let i = i0; i < n; i++) {
+    if ((SAMPLES[i] as Vec2).x - x > best) break;
+    visit(i);
   }
-  return best;
+  for (let i = i0 - 1; i >= 0; i--) {
+    if (x - (SAMPLES[i + 1] as Vec2).x > best) break;
+    visit(i);
+  }
+  return { d: best, cx };
+}
+
+/** Distance from (x, z) to the centerline. */
+export function riverCenterDistance(x: number, z: number): number {
+  return riverNearest(x, z).d;
 }
 
 /** Signed distance to the channel edge (embankment): < 0 inside the channel (park + water). */
 export function riverSignedDistance(x: number, z: number): number {
-  return riverCenterDistance(x, z) - RIVER.width / 2;
+  const { d, cx } = riverNearest(x, z);
+  return d - riverWidthAt(cx) / 2;
 }
 
 /** True when (x, z) is north of the river centerline. */
@@ -63,36 +175,175 @@ export function isNorthOfRiver(x: number, z: number): boolean {
   return z < riverZ(x);
 }
 
+// --- 샛강 (side channel south of 여의도) ---
+
+const SAETGANG_X0 = -1262;
+const SAETGANG_X1 = -598;
+/** Island depth south of the main bank (m) along the channel, by x. */
+function saetgangOffset(x: number): number {
+  const t = clamp((x - SAETGANG_X0) / (SAETGANG_X1 - SAETGANG_X0), 0, 1);
+  // 0 at both mouths (on the main bank), up to 360 m in the middle.
+  return 360 * Math.pow(Math.sin(Math.PI * t), 0.5);
+}
+
+const SAETGANG_WIDTH = 50;
+
+function saetgangLine(): Vec2[] {
+  const pts: Vec2[] = [];
+  for (let x = SAETGANG_X0; x <= SAETGANG_X1 + 1e-6; x += 12) {
+    pts.push(riverOffset(x, riverWidthAt(x) / 2 + saetgangOffset(x) + SAETGANG_WIDTH / 2 - 20));
+  }
+  return pts;
+}
+
+export const SAETGANG: Readonly<SideChannel> = {
+  id: 'saetgang',
+  name: '샛강',
+  centerline: saetgangLine(),
+  width: SAETGANG_WIDTH,
+};
+
+function sideChannelDistance(ch: SideChannel, x: number, z: number): number {
+  const p = { x, z };
+  const c = ch.centerline;
+  const first = c[0] as Vec2;
+  const last = c[c.length - 1] as Vec2;
+  if (x < first.x - 200 || x > last.x + 200 || z < first.z - 600 || z > first.z + 900) {
+    return Infinity;
+  }
+  let best = Infinity;
+  for (let i = 0; i < c.length - 1; i++) {
+    best = Math.min(best, pointSegmentDistance(p, c[i] as Vec2, c[i + 1] as Vec2));
+  }
+  return best - ch.width / 2;
+}
+
+/** Signed distance to the nearest water edge of the main channel bank or a side channel. */
+export function waterSignedDistance(x: number, z: number): number {
+  return Math.min(riverSignedDistance(x, z), sideChannelDistance(SAETGANG, x, z));
+}
+
+export const RIVER: Readonly<River> = {
+  centerline: CONTROL.map(([x, z]) => ({ x, z })),
+  /** Narrowest section; v3 widths vary, use `riverWidthAt(x)`. */
+  width: Math.min(...CONTROL.map((c) => c[2])),
+  waterY: -4,
+  bankY: 0,
+  parkWidth: Math.min(...CONTROL.map((c) => c[3])),
+  parkY: -2,
+  bandWidth: 60,
+  widths: CONTROL.map((c) => c[2]),
+  parkWidths: CONTROL.map((c) => c[3]),
+  samples: SAMPLES.map((p) => ({ ...p })),
+  channels: [SAETGANG],
+};
+
+// --- islands (SEOUL.md 3.2) ---
+
+function ellipse(cx: number, k: number, rx: number, rz: number, n = 24): Vec2[] {
+  const { p, south, along } = riverFrame(cx);
+  const c = { x: p.x + south.x * k, z: p.z + south.z * k };
+  return Array.from({ length: n }, (_, i) => {
+    const a = (i / n) * Math.PI * 2;
+    const u = Math.cos(a) * rx;
+    const v = Math.sin(a) * rz;
+    return { x: c.x + along.x * u + south.x * v, z: c.z + along.z * u + south.z * v };
+  });
+}
+
+function yeouidoPolygon(): Vec2[] {
+  const north: Vec2[] = [];
+  const south: Vec2[] = [];
+  for (let x = SAETGANG_X0 + 12; x <= SAETGANG_X1 - 12 + 1e-6; x += 12) {
+    const bank = riverWidthAt(x) / 2;
+    north.push(riverOffset(x, bank));
+    south.push(riverOffset(x, bank + Math.max(0, saetgangOffset(x) - 20)));
+  }
+  return [...north, ...south.reverse()];
+}
+
+export const ISLANDS: readonly Island[] = [
+  { id: 'yeouido', name: '여의도', kind: 'land', polygon: yeouidoPolygon(), y: 0 },
+  // 윗밤섬 and 아랫밤섬 are one marsh polygon pair; the first ellipse is the larger one.
+  { id: 'bamseom', name: '밤섬', kind: 'marsh', polygon: ellipse(-905, 20, 120, 36), y: -3 },
+  { id: 'nodeul', name: '노들섬', kind: 'culture', polygon: ellipse(-470, -10, 130, 40), y: 0 },
+  {
+    id: 'seorae',
+    name: '서래섬',
+    kind: 'park',
+    polygon: ellipse(-20, riverWidthAt(-20) / 2 - 32, 150, 15),
+    y: -2,
+  },
+  { id: 'seonyu', name: '선유도', kind: 'park', polygon: ellipse(-1262, 90, 60, 30), y: 0 },
+];
+
+/** Island under (x, z), if any. */
+export function islandAt(x: number, z: number): Island | null {
+  const p = { x, z };
+  for (const isl of ISLANDS) if (pointInPolygon(p, isl.polygon)) return isl;
+  return null;
+}
+
+// --- terrain (SEOUL.md 5.1) ---
+
+export const MOUNTAINS: readonly Mountain[] = [
+  { id: 'namsan', name: '남산', peak: { x: -176, z: -389 }, height: 160, radius: 300 },
+  { id: 'bugak', name: '북악산', peak: { x: -200, z: -1180 }, height: 205, radius: 320 },
+  { id: 'inwang', name: '인왕산', peak: { x: -470, z: -1015 }, height: 200, radius: 240 },
+  { id: 'achasan', name: '아차산', peak: { x: 1615, z: -740 }, height: 170, radius: 260 },
+  { id: 'wausan', name: '와우산', peak: { x: -1010, z: -560 }, height: 40, radius: 180 },
+];
+
 export const TERRAIN = {
-  /** Hills start rising north of this z. */
-  hillStartZ: -650,
-  hillEndZ: -1200,
-  base: 70,
-  amp: 40,
-  scale: 300,
+  /** Relative amplitude of the fbm detail on mountain slopes. */
+  detail: 0.12,
+  scale: 140,
   seed: 3301,
 } as const;
 
-/**
- * Natural ground height (river channel NOT carved). 0 for z > -650, rising to at most
- * 110 m at the north edge. Continuous everywhere.
- */
-export function terrainHeight(x: number, z: number): number {
-  if (z >= TERRAIN.hillStartZ) return 0;
-  const s = smoothstep(TERRAIN.hillStartZ, TERRAIN.hillEndZ, z);
-  return s * (TERRAIN.base + TERRAIN.amp * fbm1(x / TERRAIN.scale + 64, TERRAIN.seed));
+/** Smooth compact bump: 1 at t = 0, 0 for t >= 1, zero slope at both ends. */
+function bump(t: number): number {
+  if (t >= 1) return 0;
+  const s = 1 - t * t;
+  return s * s;
 }
 
 /**
- * Walkable / floating surface height: terrain, the embankment slope, the park (y -2)
+ * Natural ground height (river channel NOT carved): the max of the mountain bumps, 0 on the
+ * plain. Continuous everywhere.
+ */
+export function terrainHeight(x: number, z: number): number {
+  let h = 0;
+  for (const m of MOUNTAINS) {
+    const d = Math.hypot(x - m.peak.x, z - m.peak.z);
+    if (d >= m.radius) continue;
+    const b = bump(d / m.radius);
+    const n = fbm1((x + z * 0.7) / TERRAIN.scale + m.peak.x * 0.01, TERRAIN.seed);
+    h = Math.max(h, m.height * b * (1 + TERRAIN.detail * (2 * n - 1)));
+  }
+  return h;
+}
+
+const EDGE_SLOPE = 4; // embankment / park edge transition width (m)
+
+/**
+ * Walkable / floating surface height: terrain, the embankment slope, the park (y -2), islands
  * and the water surface (y -4). Use it for props, cameras and anything resting on the ground.
  */
 export function surfaceHeight(x: number, z: number): number {
-  const d = riverSignedDistance(x, z);
+  const isl = islandAt(x, z);
+  if (isl && isl.kind !== 'land') return isl.y;
+  const { d: dc, cx } = riverNearest(x, z);
+  const d = dc - riverWidthAt(cx) / 2;
+  const ds = sideChannelDistance(SAETGANG, x, z);
+  if (ds < 0) {
+    const t = clamp(-ds / EDGE_SLOPE, 0, 1);
+    return RIVER.waterY * t;
+  }
   if (d >= 0) return terrainHeight(x, z);
-  const slope = 4; // embankment / park edge transition width (m)
-  if (d > -slope) return (RIVER.parkY * -d) / slope;
-  if (d >= -RIVER.parkWidth) return RIVER.parkY;
-  const t = clamp((-RIVER.parkWidth - d) / slope, 0, 1);
+  if (d > -EDGE_SLOPE) return (RIVER.parkY * -d) / EDGE_SLOPE;
+  const park = parkWidthAt(cx);
+  if (d >= -park) return RIVER.parkY;
+  const t = clamp((-park - d) / EDGE_SLOPE, 0, 1);
   return RIVER.parkY + (RIVER.waterY - RIVER.parkY) * t;
 }
