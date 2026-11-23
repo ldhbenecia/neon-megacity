@@ -1,7 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 import { SWIFTSHADER_ARGS } from './tests/e2e/helpers';
 
-const PORT = 4173;
+// E2E_PORT lets several local worktrees run e2e at the same time.
+const PORT = Number(process.env.E2E_PORT ?? 4173);
 
 export default defineConfig({
   testDir: 'tests/e2e',
