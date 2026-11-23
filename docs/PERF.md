@@ -81,10 +81,12 @@ infra init 46–83 ms, first frame 31–79 ms. Canvas: 98.9 MB (`gl.SAMPLES` = 4
   stalls one frame for ~470 ms without any new program (sunset → night: 45 ms, noon → 15:00:
   8 ms). Not a recompile; under investigation.
 
-- **MSAA on the canvas while post-processing is on.** The scene renders into atmosphere's HDR
-  target, and the canvas only receives the final full-screen pass, so `antialias: true` on the
-  canvas costs 74 MB (3 of the 4 samples) and a resolve per frame for nothing. Candidate fix:
-  create the renderer without canvas MSAA when post is active (MSAA on the HDR target instead).
+- **MSAA on the canvas while post-processing is on (fixed).** The scene renders into
+  atmosphere's multisampled HDR target and only the final full-screen pass reaches the canvas, so
+  canvas MSAA cost 74 MB and a resolve per frame for nothing. Main now probes half-float target
+  support and creates the canvas without MSAA when post will run. M4, buildings, preset 2:
+  canvas 98.9 → 24.7 MB, frame 6.5–7.0 → 4.5–5.1 ms (machine under load; indicative), screenshots
+  equal within run-to-run noise.
 - **Programs and textures.** 28–30 programs and 19–21 textures before buildings and neon arrive.
   Modules should share materials and `onBeforeCompile` variants. The low tier (no post, rain,
   clouds, searchlights, shadows) has 12 programs and 3 textures, so those features account for
