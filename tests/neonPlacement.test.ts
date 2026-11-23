@@ -265,6 +265,12 @@ describe('neon sign placement: zero penetration (5.1)', () => {
       P.flats.filter((s) => s.anim !== 0).length + P.tubes.filter((t) => t.anim !== 0).length;
     expect(moving / (P.flats.length + P.tubes.length)).toBeLessThanOrEqual(0.1);
   });
+
+  it('apartment crowns show their own complex name', () => {
+    const crowns = P.flats.filter((s) => s.kind === 'crown' && spec(s.building).tags.complex);
+    expect(crowns.length).toBeGreaterThan(0);
+    for (const s of crowns) expect(cat.cells[s.cell]?.key).toBe(spec(s.building).tags.complex);
+  });
 });
 
 describe('neon solids', () => {

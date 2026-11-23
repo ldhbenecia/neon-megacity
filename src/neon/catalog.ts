@@ -120,7 +120,7 @@ function specs(complexes: readonly string[]): CellSpec[] {
 export function buildCatalog(L: Pick<Layout, 'buildings'>): Catalog {
   const complexes = [
     ...new Set(L.buildings.map((b) => b.tags.complex).filter((c): c is string => !!c)),
-  ].slice(0, 12);
+  ];
   const list = specs(complexes);
   const order = list.map((_, i) => i).sort((a, b) => (list[b]?.ph ?? 0) - (list[a]?.ph ?? 0));
   const pos: { x: number; y: number }[] = list.map(() => ({ x: 0, y: 0 }));
