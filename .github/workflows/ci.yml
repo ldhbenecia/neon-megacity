@@ -43,11 +43,14 @@ jobs:
             # HEAD is the PR merge commit: its first parent is the base branch tip.
             base="HEAD^1"
           elif [ "$EVENT" = workflow_dispatch ] && [ "$REF" != refs/heads/main ]; then
-            base="$(git merge-base origin/main HEAD)"
+            # No common ancestor: base stays empty and e2e runs (the safe side).
+            base="$(git merge-base origin/main HEAD || true)"
           fi
           docs_only=false
           if [ -n "$base" ]; then
-            files="$(git diff --name-only "$base" HEAD)"
+            # --no-renames: a move from src/ into docs/ must list the old path too.
+            # quotePath=false: Hangul file names are printed as-is, not quoted.
+            files="$(git -c core.quotePath=false diff --name-only --no-renames "$base" HEAD)"
             echo "$files"
             if [ -n "$files" ] && ! grep -qvE '^docs/|\.md$' <<<"$files"; then
               docs_only=true
