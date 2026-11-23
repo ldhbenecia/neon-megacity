@@ -264,6 +264,7 @@ describe('ground grid', () => {
     }
   });
 
+  // Builds the whole ground (≈1-2 s, over 5 s on a loaded runner).
   it('ground faces up, follows terrainHeight and leaves the channel open', () => {
     const g = buildGround();
     const pos = g.getAttribute('position');
@@ -287,7 +288,7 @@ describe('ground grid', () => {
         expect(pos.getY(v)).toBeLessThanOrEqual(ridgeHeight(near, Math.atan2(z, x)) + 1e-3);
       }
     }
-  });
+  }, 20_000);
 
   it('river strips end exactly on the outer extent', () => {
     for (const [fine, coarse] of [
