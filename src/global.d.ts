@@ -42,6 +42,8 @@ declare global {
       powered: boolean;
       /** Moving average of each module's update() CPU time (ms), keyed by module name. */
       cpu: Record<string, number>;
+      /** Buildings LOD0 still being built near the camera (screenshots wait for 0). */
+      lod0Pending: number;
     };
     /** Only with `?stats`: frame counters and camera rig state (src/ux). */
     __hangang?: { stats(): HangangStats; camera(): HangangCamera; memory(): HangangMemory };
