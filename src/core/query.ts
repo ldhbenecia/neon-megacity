@@ -25,6 +25,7 @@ export interface CameraPose {
 type Pose = CameraPose;
 
 /** Map-relative presets: the same framing whichever layout version is loaded. */
+// CITY.extent is the longer side of the map on every layout version.
 const TOPDOWN_Y = CITY.extent / 2 + 700;
 
 /**
@@ -45,80 +46,126 @@ export const STREET_FALLBACK: CameraPose = { position: [-760, 6, -360], target: 
 
 export interface StreetAnchor {
   kind: string;
+  /** Zone display name, used for the rig preset label. */
+  name: string;
   want: Vec2;
 }
 
 /**
- * Where the eye-level street preset goes: a nightlife zone's grid origin (layout v3, 홍대),
- * otherwise the sangga point of ART_DIRECTION 8.4 preset 3 (layout v2, 등불가).
+ * Where the eye-level street preset may go, in order of preference: a nightlife zone's grid
+ * origin (layout v3, 홍대), then the sangga point of ART_DIRECTION 8.4 preset 3 (v2, 등불가).
  */
-export function streetAnchor(
-  zones: readonly Pick<DistrictZone, 'kind' | 'origin'>[],
-): StreetAnchor | null {
+export function streetAnchors(
+  zones: readonly Pick<DistrictZone, 'kind' | 'name' | 'origin'>[],
+): StreetAnchor[] {
+  const out: StreetAnchor[] = [];
   const night = zones.find((z) => z.kind === 'nightlife');
-  if (night) return { kind: 'nightlife', want: night.origin };
-  if (zones.some((z) => z.kind === 'sangga')) return { kind: 'sangga', want: { x: -760, z: -360 } };
-  return null;
+  if (night) out.push({ kind: 'nightlife', name: night.name, want: night.origin });
+  const sangga = zones.find((z) => z.kind === 'sangga');
+  if (sangga) out.push({ kind: 'sangga', name: sangga.name, want: { x: -760, z: -360 } });
+  return out;
 }
 
-/** Eye-level shot snapped onto the center line of the `anchor.kind` street nearest to `anchor.want`. */
-export function streetPose(roads: readonly Road[], anchor: StreetAnchor | null): Pose | null {
-  if (!anchor) return null;
+function streetLook(road: Road, t: number, reverse: boolean): Pose {
+  const from = reverse ? road.b : road.a;
+  const to = reverse ? road.a : road.b;
+  const len = Math.hypot(to.x - from.x, to.z - from.z);
+  const ux = (to.x - from.x) / len;
+  const uz = (to.z - from.z) / len;
+  // Keep 160 m of road ahead of the camera.
+  const s = Math.min(reverse ? 1 - t : t, 1 - 160 / len) * len;
+  const px = from.x + ux * s;
+  const pz = from.z + uz * s;
+  const tx = px + ux * 140;
+  const tz = pz + uz * 140;
+  return {
+    position: [px, surfaceHeight(px, pz) + 5, pz],
+    target: [tx, surfaceHeight(tx, tz) + 1, tz],
+  };
+}
+
+const MIN_DROP = Math.tan(Math.PI / 2 - CAMERA_LIMITS.maxPolarAngle) * 1.1;
+
+/** Inside maxPolarAngle (with margin) and no terrain crest hides the target. */
+function streetViewClear({ position: p, target: t }: Pose): boolean {
+  if (p[1] - t[1] < Math.hypot(t[0] - p[0], t[2] - p[2]) * MIN_DROP) return false;
+  for (let i = 1; i < 20; i++) {
+    const f = i / 20;
+    const y = p[1] + (t[1] - p[1]) * f;
+    if (surfaceHeight(p[0] + (t[0] - p[0]) * f, p[2] + (t[2] - p[2]) * f) > y - 0.5) return false;
+  }
+  return true;
+}
+
+/**
+ * Eye-level shot on the center line of an `anchor.kind` street: the nearest street to
+ * `anchor.want` whose view (either direction) is clear of hills.
+ */
+export function streetPose(roads: readonly Road[], anchor: StreetAnchor): Pose | null {
   const { want } = anchor;
-  let best: { road: Road; t: number; d: number } | null = null;
+  const candidates: { road: Road; t: number; d: number }[] = [];
   for (const road of roads) {
     if (road.district !== anchor.kind || road.kind !== 'street') continue;
     const dx = road.b.x - road.a.x;
     const dz = road.b.z - road.a.z;
     const len2 = dx * dx + dz * dz;
+    if (Math.sqrt(len2) <= 300) continue;
     const t = Math.min(
       1,
       Math.max(0, ((want.x - road.a.x) * dx + (want.z - road.a.z) * dz) / len2),
     );
     const d = Math.hypot(road.a.x + dx * t - want.x, road.a.z + dz * t - want.z);
-    if (Math.sqrt(len2) > 300 && (!best || d < best.d)) best = { road, t, d };
+    candidates.push({ road, t, d });
   }
-  if (!best) return null;
-  const { road } = best;
-  const len = Math.hypot(road.b.x - road.a.x, road.b.z - road.a.z);
-  const look = (from: Vec2, to: Vec2, t: number): Pose => {
-    const ux = (to.x - from.x) / len;
-    const uz = (to.z - from.z) / len;
-    // Keep 160 m of road ahead of the camera.
-    const s = Math.min(t, 1 - 160 / len) * len;
-    const px = from.x + ux * s;
-    const pz = from.z + uz * s;
-    const tx = px + ux * 140;
-    const tz = pz + uz * 140;
-    return {
-      position: [px, surfaceHeight(px, pz) + 5, pz],
-      target: [tx, surfaceHeight(tx, tz) + 1, tz],
-    };
-  };
-  const ahead = look(road.a, road.b, best.t);
-  // Looking up a hill street would break maxPolarAngle, so face downhill instead.
-  if (ahead.target[1] < ahead.position[1]) return ahead;
-  return look(road.b, road.a, 1 - best.t);
+  candidates.sort((x, y) => x.d - y.d);
+  for (const { road, t } of candidates) {
+    for (const reverse of [false, true]) {
+      const pose = streetLook(road, t, reverse);
+      if (streetViewClear(pose)) return pose;
+    }
+  }
+  return null;
 }
 
-/** Offsets from SKYLINE_PEAK; on layout v2 these reproduce ART_DIRECTION 8.4 exactly. */
+let streetCache: { pose: Pose; name: string } | null | undefined;
+
+/** First anchor with a clear street view, or null (the preset then uses STREET_FALLBACK). */
+export function streetPreset(): { pose: Pose; name: string } | null {
+  if (streetCache === undefined) {
+    streetCache = null;
+    for (const anchor of streetAnchors(LAYOUT.districts)) {
+      const pose = streetPose(LAYOUT.roads, anchor);
+      if (pose) {
+        streetCache = { pose, name: anchor.name };
+        break;
+      }
+    }
+  }
+  return streetCache;
+}
+
+/**
+ * Offsets from SKYLINE_PEAK, kept above the terrain; on layout v2 these reproduce
+ * ART_DIRECTION 8.4 exactly.
+ */
 const fromPeak = (position: Tuple, target: Tuple): Pose => {
   const { x, z } = SKYLINE_PEAK;
+  const px = x + position[0];
+  const pz = z + position[2];
+  const tx = x + target[0];
+  const tz = z + target[2];
   return {
-    position: [x + position[0], position[1], z + position[2]],
-    target: [x + target[0], target[1], z + target[2]],
+    position: [px, Math.max(position[1], surfaceHeight(px, pz) + 5), pz],
+    target: [tx, Math.max(target[1], surfaceHeight(tx, tz) + 1), tz],
   };
 };
-
-let streetCache: Pose | undefined;
 
 export const CAMERA_PRESETS = {
   /** ART_DIRECTION 8.4 preset 2 (코어 상공). */
   overview: fromPeak([580, 420, 760], [20, 120, 20]),
   /** Computed lazily from the layout on first access; falls back to STREET_FALLBACK. */
   get street(): Pose {
-    streetCache ??= streetPose(LAYOUT.roads, streetAnchor(LAYOUT.districts)) ?? STREET_FALLBACK;
-    return streetCache;
+    return streetPreset()?.pose ?? STREET_FALLBACK;
   },
   /** Between the megatowers around the skyline peak. */
   core: fromPeak([240, 220, 260], [0, 160, 0]),

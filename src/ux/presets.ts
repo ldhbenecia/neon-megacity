@@ -1,5 +1,5 @@
 import { LAYOUT, highwayCurve, type Layout, type Vec3 } from '../city/layout';
-import { CAMERA_LIMITS, cameraPreset, type CameraPreset } from '../core/query';
+import { CAMERA_LIMITS, cameraPreset, streetPreset, type CameraPreset } from '../core/query';
 import { cameraFloor, resolveCollision, targetFloor } from './collision';
 import { clamp, fitPolar, type Pose } from './motion';
 
@@ -61,14 +61,28 @@ function bridgePose(L: Layout): Pose {
   };
 }
 
+/** View relative to the first zone of `kind`; offsets reproduce the v2 presets exactly. */
+function zonePose(L: Layout, kind: string, label: string, p: Tuple, t: Tuple): [string, Pose] {
+  const zone = L.districts.find((z) => z.kind === kind);
+  if (!zone) return [label, camPose('overview')];
+  const { x, z } = zone.origin;
+  return [
+    zone.name,
+    {
+      position: { x: x + p[0], y: p[1], z: z + p[2] },
+      target: { x: x + t[0], y: t[1], z: z + t[2] },
+    },
+  ];
+}
+
 function build(L: Layout): RigPreset[] {
   const raw: [string, Pose][] = [
     ['강변 히어로', camPose('skyline')],
     ['코어 상공', camPose('overview')],
-    ['등불가 거리', camPose('street')],
+    [`${streetPreset()?.name ?? '골목'} 거리`, camPose('street')],
     ['고가도로', highwayPose(L)],
-    ['별계단동', { position: v([-300, 140, -980]), target: v([-60, 80, -200]) }],
-    ['새빛마을', { position: v([150, 70, 980]), target: v([60, 40, 700]) }],
+    zonePose(L, 'hillside', '산동네', [500, 140, -330], [740, 80, 450]),
+    zonePose(L, 'apartment', '아파트 단지', [100, 70, 280], [10, 40, 0]),
     ['다리 위', bridgePose(L)],
     ['탑다운', camPose('topdown')],
   ];
