@@ -45,6 +45,9 @@ attribute vec4 aInfo;
 varying vec2 vFace;
 varying vec4 vWin;
 varying vec4 vInfo;
+vec3 srgbToLinear(vec3 c) {
+  return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c));
+}
 `;
 
 const FRAG_PARS = /* glsl */ `
@@ -394,6 +397,10 @@ export function createFacadeMaterial(
       .replace(
         '#include <begin_vertex>',
         '#include <begin_vertex>\nvFace = aFace;\nvWin = aWin;\nvInfo = aInfo;',
+      )
+      .replace(
+        '#include <color_vertex>',
+        '#include <color_vertex>\nvColor.rgb = srgbToLinear(vColor.rgb);',
       );
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>\n${FRAG_PARS}`)
@@ -412,7 +419,7 @@ export function createFacadeMaterial(
       );
   };
   material.customProgramCacheKey = () =>
-    interior ? 'hangang-facade-near-v2' : 'hangang-facade-v2';
+    interior ? 'hangang-facade-near-v3' : 'hangang-facade-v3';
   material.userData.uLitRatio = uniforms.uLitRatio;
   return material;
 }
