@@ -25,6 +25,19 @@ export const RIVER: Readonly<River> = {
 };
 
 /** Analytic river center z at x (the centerline polyline samples this). */
+/**
+ * Bank-to-bank channel width at x (m). Constant in v2; layout v3 varies it by section, so read
+ * this instead of `RIVER.width`.
+ */
+export function riverWidthAt(_x: number): number {
+  return RIVER.width;
+}
+
+/** Park strip width inside each embankment at x (m). Constant in v2. */
+export function parkWidthAt(_x: number): number {
+  return RIVER.parkWidth;
+}
+
 export function riverZ(x: number): number {
   return 150 + 110 * Math.sin((x + 300) / 640);
 }

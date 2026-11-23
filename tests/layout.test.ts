@@ -27,6 +27,8 @@ import {
   zoneAt,
   type BuildingSpec,
   type Tier,
+  parkWidthAt,
+  riverWidthAt,
 } from '../src/city/layout';
 import { fitScale } from '../src/city/generate';
 import {
@@ -608,6 +610,17 @@ describe('layout v3 fields on the v2 map', () => {
       expect(z.heights.min).toBeLessThanOrEqual(z.heights.max);
       expect(z.heights.max).toBeLessThanOrEqual(z.heights.tallMax);
       expect(z.litScale).toBe(1);
+    }
+  });
+});
+
+describe('axis accessors (layout v3 migration)', () => {
+  it('exposes per-axis half extents and per-x river widths', () => {
+    expect(CITY.halfX).toBe(LAYOUT.extentX / 2);
+    expect(CITY.halfZ).toBe(LAYOUT.extentZ / 2);
+    for (const x of [-1000, 0, 700]) {
+      expect(riverWidthAt(x)).toBe(RIVER.width);
+      expect(parkWidthAt(x)).toBe(RIVER.parkWidth);
     }
   });
 });

@@ -13,6 +13,9 @@ export const CITY = {
   extentX: EXTENT,
   extentZ: EXTENT,
   half: MAP_HALF,
+  /** Half extents per axis. layout v3 makes the map 4000 × 2600 m; read these, not `half`. */
+  halfX: MAP_HALF,
+  halfZ: MAP_HALF,
   seed: 2077,
   /** Spatial hash cell used by layout queries (m). */
   hashCell: HASH_CELL,
@@ -27,6 +30,8 @@ export { generateLayout, SKYLINE_PEAK, MEGA_MIN_H, RIVER_CLEARANCE } from './gen
 export { ZONES, zoneAt, zoneById, districtAt, bandEdgeZ, RIVERSIDE_HALF } from './districts';
 export {
   RIVER,
+  riverWidthAt,
+  parkWidthAt,
   EMBANK_SLOPE,
   TERRAIN,
   riverZ,
