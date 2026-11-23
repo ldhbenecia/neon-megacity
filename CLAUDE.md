@@ -23,7 +23,7 @@ Read `docs/ARCHITECTURE.md` before editing. Summary:
 - `src/city/layout.ts` (layout v2, types in `src/city/types.ts`) is the single source of truth for zones, river, bridges, highways, roads and building specs/tiers. Never place objects using hard-coded coordinates that bypass it.
 - `ctx.env` fields have a single owner (see ARCHITECTURE.md and `src/core/types.ts`). Only the owner writes a field; everyone else reads it.
 - `env.timeLocked` is set at boot when `?time=` is given; lighting must then not advance `env.timeOfDay`.
-- URL query hooks (`src/core/query.ts`): `?time=0..1`, `?cam=overview|street|core|topdown|skyline` (poses via `cameraPreset(name)`), `?rain=0..1`, `?nogui`.
+- URL query hooks (`src/core/query.ts`): `?time=0..1`, `?cam=overview|street|core|topdown|skyline` (poses via `cameraPreset(name)`), `?rain=0..1`, `?nogui`, `?quality=low` (CI tier, `env.quality`).
 - `window.__city = { ready, frames }` is updated every frame; e2e tests and the screenshot script wait on it. Don't remove it.
 - Colors and exposure constants come from `src/core/palette.ts`; visual targets are in `docs/ART_DIRECTION.md`.
 

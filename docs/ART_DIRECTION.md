@@ -803,7 +803,7 @@ main의 부팅을 async 단계로 바꾼다. 각 단계 사이에 `await nextFra
 
 - composer가 패스마다 렌더하므로 `renderer.info.autoReset = false`로 두고 프레임 시작 시 `renderer.info.reset()`을 호출한다. 그러면 info가 한 프레임 전체를 집계한다.
 - `?stats=1`이면 `window.__hangang = { stats(): { calls, triangles, programs, textures, geometries, fps, dpr } }`를 노출한다(ux 소유, 프로덕션 빌드에도 포함, 쿼리가 있을 때만 활성).
-- e2e(Playwright, ux가 `tests/e2e/perf.spec.ts`에 추가): 프리셋 1, 2, 3, 5 × 시간 0.0, 0.78, 0.5마다 120프레임 대기 후 `stats()`를 읽어 calls ≤ 300, triangles ≤ 2.0 M, programs ≤ 50을 확인한다. headless(SwiftShader)에서는 fps를 검사하지 않고 개수만 검사한다. fps는 로컬 실기에서 수동으로 측정해 PR 본문에 적는다.
+- e2e(Playwright, `tests/e2e/perf.spec.ts`): 프리셋 1, 2, 3, 5마다 한 번 부팅하고 타임라인으로 시간 0.0, 0.78, 0.5를 바꿔 12프레임씩 기다린 뒤 `stats()`를 읽어 calls ≤ 300, triangles ≤ 2.0 M, programs ≤ 50을 확인한다. CI 시간 때문에 모든 e2e는 `?quality=low`(그림자, 포스트, 비 없음)로 돌므로 이 검사는 하한선이다. 최고 품질의 개수와 fps는 실기에서 측정해 PR 본문에 적는다.
 
 ---
 
