@@ -1,18 +1,21 @@
 import { expect, test, type Page } from '@playwright/test';
 import { app, collectErrors, waitForCity, waitFrames } from './helpers';
 
-// Performance budget (ART_DIRECTION 11): counts only, in the low tier (no shadow / post passes),
-// so this is a floor. Full-quality counts and fps are measured on real hardware.
+// Performance budget (ART_DIRECTION 11): counts only, headless fps means nothing.
+// The preset × time grid runs in the low tier (a floor: no shadow or post passes); one boot at
+// full quality checks the scene that is worst for the budget (noon, shadow pass included).
 const LIMITS = { calls: 300, triangles: 2_000_000, programs: 50 } as const;
 const PRESETS = [1, 2, 3, 5] as const;
-/** Timeline minutes for time 0.0, 0.78 and 0.5 (the range steps by 5 minutes). */
+/** Timeline minutes (the range steps by 5): 00:00, 18:45 (sunset, t = 0.781), 12:00. */
 const TIMES = [0, 1125, 720] as const;
-// Shadow refresh runs within the first frames after a change; counts are stable after that.
+// Enough for the lazy PMREM bake and env key switch after a time change.
 const SETTLE_FRAMES = 12;
+const LOW_DPR = 0.5;
 
 type Hangang = NonNullable<Window['__hangang']>;
+type Stats = ReturnType<Hangang['stats']>;
 
-async function stats(page: Page): Promise<ReturnType<Hangang['stats']>> {
+async function stats(page: Page): Promise<Stats> {
   return page.evaluate(() => {
     const r = window.__hangang;
     if (!r) throw new Error('__hangang missing');
@@ -20,11 +23,30 @@ async function stats(page: Page): Promise<ReturnType<Hangang['stats']>> {
   });
 }
 
+function checkBudget(s: Stats, label: string): void {
+  test.info().annotations.push({ type: 'stats', description: `${label} ${JSON.stringify(s)}` });
+  expect.soft(s.calls, `calls @ ${label}`).toBeLessThanOrEqual(LIMITS.calls);
+  expect.soft(s.triangles, `triangles @ ${label}`).toBeLessThanOrEqual(LIMITS.triangles);
+  expect.soft(s.programs, `programs @ ${label}`).toBeLessThanOrEqual(LIMITS.programs);
+}
+
+const clock = (m: number): string =>
+  `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+
 test.describe('performance budget', () => {
   test.describe.configure({ mode: 'parallel' });
 
+  test('full quality: preset 2 @ noon', async ({ page }) => {
+    const errors = collectErrors(page);
+    await page.goto('./?nogui&stats&preset=2&time=0.5&rain=0.35');
+    await waitForCity(page);
+    await waitFrames(page, SETTLE_FRAMES);
+    checkBudget(await stats(page), 'full noon');
+    expect(errors).toEqual([]);
+  });
+
   for (const preset of PRESETS) {
-    test(`preset ${preset} @ times 0, 0.78, 0.5`, async ({ page }) => {
+    test(`low: preset ${preset} @ ${TIMES.map(clock).join(', ')}`, async ({ page }) => {
       const errors = collectErrors(page);
       await page.goto(app(`nogui&stats&preset=${preset}&time=0&rain=0.35`));
       await waitForCity(page);
@@ -38,14 +60,8 @@ test.describe('performance budget', () => {
         }, minutes);
         await waitFrames(page, SETTLE_FRAMES);
         const s = await stats(page);
-        test.info().annotations.push({
-          type: 'stats',
-          description: `${minutes}min ${JSON.stringify(s)}`,
-        });
-        expect.soft(s.calls, `calls @ ${minutes}min`).toBeLessThanOrEqual(LIMITS.calls);
-        expect.soft(s.triangles, `triangles @ ${minutes}min`).toBeLessThanOrEqual(LIMITS.triangles);
-        expect.soft(s.programs, `programs @ ${minutes}min`).toBeLessThanOrEqual(LIMITS.programs);
-        expect.soft(s.dpr).toBeLessThanOrEqual(1.5);
+        checkBudget(s, clock(minutes));
+        expect.soft(s.dpr, 'low tier DPR').toBe(LOW_DPR);
       }
       expect(errors).toEqual([]);
     });
