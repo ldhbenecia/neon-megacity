@@ -109,7 +109,7 @@ export function createPerf(ctx: Ctx, opts: { overlay: boolean; resize: () => voi
 export interface MemoryEstimate {
   geometryBytes: number;
   textureBytes: number;
-  framebufferBytes: number;
+  canvasBytes: number;
   /** MSAA samples of the canvas framebuffer (1 = none). */
   samples: number;
 }
@@ -202,7 +202,7 @@ export function estimateMemory(ctx: Ctx): MemoryEstimate {
     geometryBytes,
     textureBytes: texBytes,
     // Color + depth/stencil, 4 bytes each, per sample.
-    framebufferBytes: size.x * size.y * 8 * samples,
+    canvasBytes: size.x * size.y * 8 * samples,
     samples,
   };
 }
