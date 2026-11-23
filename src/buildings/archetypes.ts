@@ -47,6 +47,7 @@ import {
   type Outline,
   type P2,
 } from './shapes';
+import { NullBuilder } from './lod';
 
 export interface Targets {
   l0: GeoBuilder;
@@ -214,18 +215,21 @@ export function emitBuilding(raw: BuildingSpec, T: Targets, onStreet?: StreetTes
     mega: spec.h >= 200,
     shopSides: shopSides(spec, raw.archetype, onStreet),
   };
+  // Discarded levels are skipped. Only LOD0 detail draws from `rng` after facadeHex, so the far
+  // and near passes consume it identically.
   const levels: [GeoBuilder, 0 | 1 | 2][] = [
     [T.l0, 0],
     [T.l1, 1],
   ];
   if (spec.archetype === 'hillHouse') return hillHouse(b, T);
   if (b.inL2) levels.push([T.l2, 2]);
-  else lowBox(b, T.l2);
+  else if (!discards(T.l2)) lowBox(b, T.l2);
 
   const roofKind = roofTopKind(spec);
 
   const stacks = tierStacks(spec);
   for (const [g, lv] of levels) {
+    if (discards(g)) continue;
     for (const tiers of stacks) {
       tiers.forEach((t, i) => {
         const o = tierOutline(t, spec.rotY, cylinderSegments(lv));
@@ -249,8 +253,10 @@ export function emitBuilding(raw: BuildingSpec, T: Targets, onStreet?: StreetTes
     }
     if (lv === 1 && spec.archetype === 'warehouse') warehouseRoof(g, b);
   }
-  detail(b, T.l0);
+  if (!discards(T.l0)) detail(b, T.l0);
 }
+
+const discards = (g: GeoBuilder): boolean => g instanceof NullBuilder;
 
 function detail(b: Bld, g: GeoBuilder): void {
   const { spec, rng } = b;
@@ -905,6 +911,7 @@ export function industrialStacks(spec: BuildingSpec, T: Targets): void {
   const body = plain(0x4a4c4a, 0.8);
   // Taller than the warehouse itself, so it must stay in LOD2 for the skyline.
   for (const g of [T.l0, T.l1, T.l2]) {
+    if (discards(g)) continue;
     g.place(UNIT_CYL8, p.x, t.y0, p.z, r, h, r, 0, body);
     g.place(UNIT_CYL8, p.x, t.y0 + h - 5, p.z, r * 1.02, 2, r * 1.02, 0, plain(0x6a1a1a, 0.7));
     g.box(p.x, t.y0 + h, p.z, 0.6, 0.6, 0.6, 0, glow(NEON.neonRed.hex, 2.5));
@@ -928,11 +935,12 @@ function hillHouse(b: Bld, T: Targets): void {
   const plinth = maxT - spec.baseY > 0.4 ? Math.min(maxT + 0.2, t.y1 - 2.4) : t.y0;
   b.windowY = Math.max(spec.baseY, plinth);
   // After windowY: LOD2 window rows must line up with the plinth like LOD0/1.
-  if (!b.inL2) lowBox(b, T.l2);
+  if (!b.inL2 && !discards(T.l2)) lowBox(b, T.l2);
   const o = tierOutline(t, spec.rotY, 8);
-  shell(T.l0, b, t, o, 0, plinth);
-  shell(T.l1, b, t, o, 0, plinth);
+  if (!discards(T.l1)) shell(T.l1, b, t, o, 0, plinth);
   const g = T.l0;
+  if (discards(g)) return;
+  shell(g, b, t, o, 0, plinth);
   parapet(g, o, t.y1, 0.6, plain(scaleHex(b.wall, 1.1)));
   if (rng.chance(0.75)) {
     const p = toWorldP(
