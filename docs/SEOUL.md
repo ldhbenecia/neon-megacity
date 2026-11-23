@@ -626,7 +626,8 @@ draw call은 청크 70개 × 재질 묶음으로 v2와 같은 수준(buildings 9
   - 강을 넓힌 만큼 강가 동네가 좁아졌다. 원효대교 서쪽에서 강이 북쪽으로 꺾여 용산은 강과 남산 사이 띠가 됐고, 남산 공원 반경은 170 m로 줄였다. 홍대 중심(-990, -480)은 강변 띠 안에 들어가 구역을 북쪽으로 옮겼다.
   - 강가 아파트 띠(이촌, 반포, 압구정, 잠실 강변)와 청담은 제방까지 거리로 판정한다. 굽이 안쪽에서는 오프셋 폴리곤이 접혀서 쓸 수 없다.
   - 여의대로는 뺐다. 서강·마포 대교 진입로가 이미 여의도를 가르고 있다. 여의도 군집은 섬 서쪽 넓은 쪽(-1090)에 둔다.
-- **결과(seed 2077)**: 건물 약 6200동(sangga 약 3600, officeSlab 약 930, hillHouse 500, 아파트 약 125), 생성 시간 약 1초(노트북 Node). 거리 소품 slot은 약 3850개(가로등 약 1600)로 v2의 2배다.
+- **결과(seed 2077)**: 건물 약 6070동(sangga 약 3780, officeSlab 약 940, hillHouse 약 220, 판상형 아파트 95), 생성 시간 약 1초(노트북 Node). 아파트는 계획(약 125동)보다 적다. 강변 띠가 압축돼 짧고, 이촌은 용산 타워 필드와 겹치지 않도록 동쪽으로 옮겼다. 관리자가 화면 기준으로 승인했다. 거리 소품 slot은 약 3470개(가로등 약 1460)다.
+- **강변 아파트 벽**: 이촌, 반포, 압구정, 잠실 강변, 광진 다섯 띠에는 격자 대신 제방 거리 등고선을 따라 판상형 줄을 놓는다. 줄 간격은 72 m(동 간격 0.8 × 높이), 동 길이는 45~70 m, 동 사이는 16 m다.
 - **이름 정리**: `riverZ`, `riverFrame`, `riverSignedDistance`, `surfaceHeight`, `terrainHeight`, `EMBANK_SLOPE`, `TERRAIN.hillStartZ`, 고가 id `hw-river-north`·`hw-south`는 그대로 둔다. 의미가 바뀌는 옛 이름은 없앴다. 옛 의미로 쓰는 코드가 컴파일에서 걸리게 하려는 것이다. `CITY.half`·`CITY.extent`·`Layout.extent`는 `halfX/halfZ`·`extentX/extentZ`로, `RIVER.width`·`RIVER.parkWidth`는 `riverWidthAt(x)`·`parkWidthAt(x)`로, `BRIDGE_LAND(_SOUTH)`는 제방 기준 `BRIDGE_RAMP_NORTH`·`BRIDGE_RAMP_SOUTH_MIN`으로 바뀌었다. 각 모듈이 main에서 먼저 옮겨 갈 수 있도록 #44가 v2 값의 접근자를 먼저 넣는다. 새 함수는 `riverOffset`, `riverNearest`, `waterSignedDistance`, `islandAt`, `riversideHalfAt`, `zoneSide`다. `CITY.chunkSize`는 400(청크 70개 이하)이다.
 - **메가코어**: 격자 lot 대신 타워 필드로 채운다. 정점에서 가까운 자리부터 층(tier)마다 정한 수를 높이에 맞는 footprint로 놓고, 타워끼리 10 m 이상 띄운다. 남은 격자 lot에는 40~110 m 포디움을 둔다.
   - 용산: 600 m 정점에 280~450 m 6동, 120~250 m 16동
