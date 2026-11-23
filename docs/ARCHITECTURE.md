@@ -37,6 +37,7 @@ Only the owner writes a field; everyone else reads it. Types and comments live i
 | ------------------------------ | ---------- | ----------------------------------------------------------------------- |
 | `timeOfDay`                    | lighting\* | 0..1, 0 = midnight, 0.5 = noon. Initial value from `?time`              |
 | `timeLocked`                   | ux (main)  | true when `?time=` was given; lighting must not advance `timeOfDay`     |
+| `quality`                      | ux (main)  | `'high'` or `'low'` (`?quality=low`, CI SwiftShader); fixed at boot     |
 | `sunDirection`, `sunElevation` | lighting   | unit vector toward the sun, and its y                                   |
 | `dayFactor`, `nightFactor`     | lighting   | 0..1 smooth blend, sum to 1                                             |
 | `horizonColor`, `skyColor`     | lighting   | sky colors (palette)                                                    |
@@ -74,14 +75,21 @@ The only moon disc is drawn by lighting's sky dome; atmosphere draws stars (and 
 Parsed by `parseQuery` in `src/core/query.ts` (pure, unit tested) and applied by `src/main.ts`.
 They exist for deterministic screenshots, e2e tests and debugging.
 
-| param        | effect                                                                        |
-| ------------ | ----------------------------------------------------------------------------- |
-| `?time=0..1` | initial `env.timeOfDay` and sets `env.timeLocked = true` (cycle paused)       |
-| `?cam=name`  | camera preset from `CAMERA_PRESETS`: overview, street, core, topdown, skyline |
-| `?rain=0..1` | initial `env.rain` and `env.rainTarget`                                       |
-| `?nogui`     | hides the lil-gui panel                                                       |
+| param          | effect                                                                        |
+| -------------- | ----------------------------------------------------------------------------- |
+| `?time=0..1`   | initial `env.timeOfDay` and sets `env.timeLocked = true` (cycle paused)       |
+| `?cam=name`    | camera preset from `CAMERA_PRESETS`: overview, street, core, topdown, skyline |
+| `?rain=0..1`   | initial `env.rain` and `env.rainTarget`                                       |
+| `?nogui`       | hides the lil-gui panel                                                       |
+| `?quality=low` | software-GL tier for CI e2e: see below                                        |
 
 Numbers are clamped to 0..1; invalid values are ignored.
+
+`env.quality === 'low'` is the CI tier (SwiftShader renders the full city at a few fps). Quality
+branches are owned by perf and stay minimal: DPR 0.5 and no MSAA (ux/main), no shadow map and one
+lazy 64 px PMREM bake (lighting), no post chain, rain, clouds or searchlights (atmosphere; fog and
+stars stay). All e2e specs use it through `app()` in `tests/e2e/helpers.ts`, except one
+full-quality budget check in `perf.spec.ts` (overview at noon, shadow pass included).
 
 ## Test hook: `window.__city`
 

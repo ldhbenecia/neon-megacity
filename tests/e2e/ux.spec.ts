@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { collectErrors, waitForCity, waitFrames } from './helpers';
+import { app, collectErrors, waitForCity, waitFrames } from './helpers';
 
 type Cam = NonNullable<Window['__hangang']>;
 
@@ -13,8 +13,58 @@ async function cam(page: Page): Promise<ReturnType<Cam['camera']>> {
 
 async function waitMode(page: Page, mode: string): Promise<void> {
   await page.waitForFunction((m) => window.__hangang?.camera().mode === m, mode, {
-    timeout: 15_000,
+    timeout: 60_000,
   });
+}
+
+type Metric = 'horizontal' | 'up' | 'distance' | 'zoom';
+
+/**
+ * Waits (frame-driven, not wall-clock) until the camera has moved by `min` from `from` along a
+ * metric. SwiftShader runs a few fps and dt is capped at 0.1 s, so fixed timeouts under-move.
+ */
+async function waitMoved(
+  page: Page,
+  from: Awaited<ReturnType<typeof cam>>,
+  metric: Metric,
+  min: number,
+): Promise<void> {
+  await page.waitForFunction(
+    ({ from, metric, min }) => {
+      const c = window.__hangang?.camera();
+      if (!c) return false;
+      const dx = c.position.x - from.position.x;
+      const dy = c.position.y - from.position.y;
+      const dz = c.position.z - from.position.z;
+      if (metric === 'horizontal') return Math.hypot(dx, dz) > min;
+      if (metric === 'up') return dy > min;
+      if (metric === 'distance') return Math.hypot(dx, dy, dz) > min;
+      const d0 = Math.hypot(
+        from.position.x - from.target.x,
+        from.position.y - from.target.y,
+        from.position.z - from.target.z,
+      );
+      const d1 = Math.hypot(
+        c.position.x - c.target.x,
+        c.position.y - c.target.y,
+        c.position.z - c.target.z,
+      );
+      return d1 < d0 * min;
+    },
+    { from, metric, min },
+    { timeout: 60_000 },
+  );
+}
+
+/** Holds `key` until the camera moved by `min` along `metric`, then releases it. */
+async function holdUntil(page: Page, key: string, metric: Metric, min: number): Promise<void> {
+  const from = await cam(page);
+  await page.keyboard.down(key);
+  try {
+    await waitMoved(page, from, metric, min);
+  } finally {
+    await page.keyboard.up(key);
+  }
 }
 
 const dist = (a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }) =>
@@ -42,7 +92,7 @@ test('boot skeleton paints before JS and is removed after power-on', async ({ pa
       if (p !== undefined && report) report(Number(p));
     }).observe(document, { attributes: true, subtree: true, attributeFilter: ['data-progress'] });
   });
-  await page.goto('./?nogui');
+  await page.goto(app('nogui'));
   await waitForCity(page);
   await expect(page.locator('#boot')).toHaveCount(0);
   expect(seen.length).toBeGreaterThan(3);
@@ -52,7 +102,7 @@ test('boot skeleton paints before JS and is removed after power-on', async ({ pa
 });
 
 test('HUD: brand mark, clock, help sheet on ?, inline SVG favicon', async ({ page }) => {
-  await page.goto('./?nogui&time=0.25');
+  await page.goto(app('nogui&time=0.25'));
   await waitForCity(page);
   await expect(page.locator('.brand-name')).toHaveText(/한강\s*\/\/\s*HANGANG/);
   await expect(page.locator('#clock')).toHaveText('06:00');
@@ -71,24 +121,24 @@ test('HUD: brand mark, clock, help sheet on ?, inline SVG favicon', async ({ pag
 });
 
 test('first entry shows a controls hint that fades out', async ({ page }) => {
-  await page.goto('./?nogui');
+  await page.goto(app('nogui'));
   await waitForCity(page);
   await expect(page.locator('#hud-hint')).toBeVisible();
   await expect(page.locator('#hud-hint')).toBeHidden({ timeout: 15_000 });
 });
 
 test('lil-gui is a developer panel: hidden by default, shown with ?debug', async ({ page }) => {
-  await page.goto('./');
+  await page.goto(app());
   await waitForCity(page);
   await expect(page.locator('.lil-gui.lil-root')).toBeHidden();
-  await page.goto('./?debug');
+  await page.goto(app('debug'));
   await waitForCity(page);
   await expect(page.locator('.lil-gui.lil-root')).toBeVisible();
 });
 
 test.describe('city controls', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('./?stats&cam=overview&time=0.9');
+    await page.goto(app('stats&cam=overview&time=0.9'));
     await waitForCity(page);
   });
 
@@ -105,7 +155,7 @@ test.describe('city controls', () => {
     const box = await page.locator('#panel').boundingBox();
     await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
     await page.mouse.wheel(0, -600);
-    await page.waitForTimeout(400);
+    await waitFrames(page, 10);
     expect(dist((await cam(page)).position, before.position)).toBeLessThan(0.01);
     await page.keyboard.press('Escape');
     await expect(page.locator('#panel')).toBeHidden();
@@ -141,23 +191,21 @@ test.describe('city controls', () => {
 });
 
 test('?hud=0 starts hidden', async ({ page }) => {
-  await page.goto('./?nogui&hud=0');
+  await page.goto(app('nogui&hud=0'));
   await waitForCity(page);
   await expect(page.locator('#hud')).toHaveClass(/is-hidden/);
 });
 
 test.describe('camera rig', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('./?nogui&stats&cam=overview&time=0.0');
+    await page.goto(app('nogui&stats&cam=overview&time=0.0'));
     await waitForCity(page);
   });
 
   test('W moves camera and target forward together, E climbs', async ({ page }) => {
     const a = await cam(page);
-    await page.keyboard.down('w');
-    await page.waitForTimeout(600);
-    await page.keyboard.up('w');
-    await page.waitForTimeout(400);
+    await holdUntil(page, 'w', 'horizontal', 25);
+    await waitFrames(page, 10);
     const b = await cam(page);
     const fx = a.target.x - a.position.x;
     const fz = a.target.z - a.position.z;
@@ -167,10 +215,8 @@ test.describe('camera rig', () => {
     expect((fx * mx + fz * mz) / Math.hypot(fx, fz) / Math.hypot(mx, mz)).toBeGreaterThan(0.95);
     expect(dist(b.position, b.target)).toBeCloseTo(dist(a.position, a.target), -1);
 
-    await page.keyboard.down('e');
-    await page.waitForTimeout(500);
-    await page.keyboard.up('e');
-    await page.waitForTimeout(300);
+    await holdUntil(page, 'e', 'up', 25);
+    await waitFrames(page, 5);
     expect((await cam(page)).position.y).toBeGreaterThan(b.position.y + 20);
   });
 
@@ -181,7 +227,8 @@ test.describe('camera rig', () => {
     await page.mouse.wheel(0, -600);
     await waitFrames(page, 3);
     const mid = await cam(page);
-    await page.waitForTimeout(800);
+    await waitMoved(page, a, 'zoom', 0.8);
+    await waitFrames(page, 10);
     const b = await cam(page);
     expect(dist(b.position, b.target)).toBeLessThan(dist(a.position, a.target) * 0.8);
     expect(dist(b.position, mid.position)).toBeGreaterThan(1);
@@ -194,7 +241,7 @@ test.describe('camera rig', () => {
     await page.mouse.down();
     await page.mouse.move(1000, 450, { steps: 8 });
     await page.mouse.up();
-    await page.waitForTimeout(600);
+    await waitMoved(page, a, 'distance', 50);
     const b = await cam(page);
     expect(dist(b.target, a.target)).toBeLessThan(1);
     expect(dist(b.position, a.position)).toBeGreaterThan(50);
@@ -232,9 +279,7 @@ test.describe('camera rig', () => {
     await waitMode(page, 'fly');
     await expect(page.locator('#hud')).toHaveAttribute('data-mode', 'fly');
     const a = await cam(page);
-    await page.keyboard.down('w');
-    await page.waitForTimeout(500);
-    await page.keyboard.up('w');
+    await holdUntil(page, 'w', 'distance', 25);
     expect(dist((await cam(page)).position, a.position)).toBeGreaterThan(20);
     await page.keyboard.press('f');
     await waitMode(page, 'orbit');
@@ -255,7 +300,8 @@ test.describe('camera rig', () => {
   test('camera never ends up inside the ground', async ({ page }) => {
     await page.keyboard.down('q');
     await page.keyboard.down('Shift');
-    await page.waitForTimeout(2500);
+    // Frames, not wall time: long enough to hit the floor at any frame rate.
+    await waitFrames(page, 150);
     await page.keyboard.up('Shift');
     await page.keyboard.up('q');
     const c = await cam(page);

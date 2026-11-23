@@ -19,11 +19,13 @@ export interface Perf {
 }
 
 export const DPR_CAP = 1.5;
+export const LOW_DPR = 0.5;
 
 export function createPerf(ctx: Ctx, opts: { overlay: boolean; resize: () => void }): Perf {
   const { renderer, gui } = ctx;
   renderer.info.autoReset = false;
-  const adaptive = new AdaptiveDpr({ max: Math.min(window.devicePixelRatio || 1, DPR_CAP) });
+  const max = ctx.env.quality === 'low' ? LOW_DPR : Math.min(window.devicePixelRatio || 1, DPR_CAP);
+  const adaptive = new AdaptiveDpr({ max });
   renderer.setPixelRatio(adaptive.dpr);
 
   const last: FrameStats = {
