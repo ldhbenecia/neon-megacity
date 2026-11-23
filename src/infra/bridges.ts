@@ -1,11 +1,12 @@
-// The three bridges over 흑린강 (ART_DIRECTION 2.3): two-span tied arch (A), Warren truss (B)
-// and a double-deck girder (C), with their static lights. Original designs, not copies of real
-// bridges. Pure: reads a Bridge from the layout and writes InfraParts.
+// Bridges (ART_DIRECTION 2.3): two-span tied arch, Warren truss and double-deck girder, plus a
+// plain girder for any kind this module does not know yet, with their static lights. Original
+// designs, not copies of real bridges. Pure: reads a Bridge from the layout and writes InfraParts.
 import { RIVER, bridgeDeckY, surfaceHeight, type Bridge, type Road } from '../city/layout';
 import { obbSegmentDistance } from '../city/math';
 import type { InfraColors } from './colors';
+import type { HwPath } from './highways';
 import { framesAlong, len, sub, type Frame, type RGB, type V3 } from './mesh';
-import type { InfraParts } from './parts';
+import type { ColumnInstance, InfraParts } from './parts';
 import { DECK_THICKNESS, boxEdges, markingLines, slabEdges, slabLoop } from './profile';
 
 /** Lower road deck height of a double-deck bridge when the layout leaves it unset. */
@@ -44,21 +45,60 @@ export function deckYAt(b: Bridge, f: BridgeFrame, s: number): number {
   return Math.max(0, bridgeDeckY(b, p[0], p[2]) ?? 0);
 }
 
-/** Bridge piers (s positions) by kind; abutments are separate blocks at ±spanHalf. */
+/** Builder key for a bridge. Unknown kinds (newer layouts) fall back to 'girder'. */
+export type BridgeShape = 'arch' | 'truss' | 'doubleDeck' | 'girder';
+
+export function bridgeShape(b: Bridge): BridgeShape {
+  // Widened to string so a layout whose BridgeKind union drops a name still compiles.
+  const kind: string = b.kind;
+  if (kind === 'arch' || kind === 'truss' || kind === 'doubleDeck') return kind;
+  return 'girder';
+}
+
+/**
+ * Lower deck surface y, or undefined for a single-deck bridge. 'arch' ignores `lowerDeckY`:
+ * its center pier and rib springings sit at the upper deck and would cut a lower road.
+ */
+export function lowerDeckY(b: Bridge): number | undefined {
+  const shape = bridgeShape(b);
+  if (shape === 'arch') return undefined;
+  return b.lowerDeckY ?? (shape === 'doubleDeck' ? LOWER_DECK_Y : undefined);
+}
+
+/** Typical span between river piers (m) and the minimum span count, per shape. */
+const SPANS: Record<BridgeShape, { len: number; min: number }> = {
+  arch: { len: Infinity, min: 2 },
+  truss: { len: 80, min: 3 },
+  doubleDeck: { len: 40, min: 2 },
+  girder: { len: 70, min: 2 },
+};
+
+/**
+ * Number of pier-to-pier spans between the abutments, from the span length alone. The layout's
+ * `spans` (arch spans, pylons or truss panels, per kind) is not a pier count and is not read.
+ */
+export function spanCount(b: Bridge, f: BridgeFrame): number {
+  const { len, min } = SPANS[bridgeShape(b)];
+  return Math.max(min, Math.round((2 * f.spanHalf) / len));
+}
+
+/** River piers (s positions), evenly spaced; abutments are separate blocks at ±spanHalf. */
 export function pierStations(b: Bridge, f: BridgeFrame): number[] {
   const h = f.spanHalf;
-  if (b.kind === 'arch') return [0];
-  if (b.kind === 'truss') return [-h / 3, h / 3];
-  return [-h * (2 / 3), -h / 3, 0, h / 3, h * (2 / 3)];
+  const n = spanCount(b, f);
+  return Array.from({ length: n - 1 }, (_, i) => ((2 * (i + 1) - n) / n) * h);
 }
 
 /** Approach pier spacing on the long south ramp, beyond the riverside highway. */
 const APPROACH_BAY = 35;
 
+/** First ramp pier past the riverside highway, measured from the abutment (m). */
+const APPROACH_START = 55;
+
 /**
- * Approach piers: one per side in the gap between the abutment and the riverside highways
- * (river-north / hw-south start 137 / 138 m from the centerline), then every APPROACH_BAY m
- * along the remaining ramp beyond the highway, stopping 20 m short of the landing.
+ * Approach piers: one per side just outside the abutment, then every APPROACH_BAY m from
+ * APPROACH_START past the abutment, stopping 20 m short of the landing. Stations that fall on
+ * a highway are dropped later in `pushPiers`.
  */
 export function approachStations(f: BridgeFrame): number[] {
   const near = f.spanHalf + 13;
@@ -67,7 +107,7 @@ export function approachStations(f: BridgeFrame): number[] {
     [-1, -f.landA],
     [1, f.landB],
   ] as const) {
-    for (let s = 175; s < land - 20; s += APPROACH_BAY) out.push(sgn * s);
+    for (let s = f.spanHalf + APPROACH_START; s < land - 20; s += APPROACH_BAY) out.push(sgn * s);
   }
   return out.sort((a, b) => a - b);
 }
@@ -227,19 +267,57 @@ export function approachPierBlocksRoad(
   });
 }
 
+/**
+ * True when a pier footprint would stand on (or within 0.5 m of) a highway deck that runs below
+ * the pier top. Decks passing over the pier (above the bridge) do not block it.
+ */
+export function pierBlocksHighway(c: ColumnInstance, highways: readonly HwPath[]): boolean {
+  const obb = { x: c.x, z: c.z, hw: c.w / 2, hd: c.d / 2, rotY: c.rotY };
+  const r = Math.hypot(c.w, c.d) / 2;
+  return highways.some((path) => {
+    const pad = path.hw.width / 2 + r + 0.5;
+    if (c.x < path.minX - pad || c.x > path.maxX + pad) return false;
+    if (c.z < path.minZ - pad || c.z > path.maxZ + pad) return false;
+    const pts = path.pts;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i] as V3;
+      const e = pts[i + 1] as V3;
+      if (Math.min(a[1], e[1]) >= c.y1) continue;
+      if (c.x < Math.min(a[0], e[0]) - pad || c.x > Math.max(a[0], e[0]) + pad) continue;
+      if (c.z < Math.min(a[2], e[2]) - pad || c.z > Math.max(a[2], e[2]) + pad) continue;
+      const d = obbSegmentDistance(obb, { x: a[0], z: a[2] }, { x: e[0], z: e[2] });
+      if (d < path.hw.width / 2 + 0.5) return true;
+    }
+    return false;
+  });
+}
+
+/** What pier placement must keep clear of. */
+interface Obstacles {
+  roads: readonly Road[];
+  highways: readonly HwPath[];
+}
+
 function pushPiers(
   b: Bridge,
   f: BridgeFrame,
   parts: InfraParts,
-  topY: (s: number) => number,
+  topY: number,
   w: number,
   d: number,
-  roads: readonly Road[],
-): void {
+  { roads, highways }: Obstacles,
+): number[] {
   const rotY = Math.atan2(-f.v[2], f.v[0]);
+  const blocked = (c: ColumnInstance): boolean =>
+    approachPierBlocksRoad(c, roads) || pierBlocksHighway(c, highways);
+  // River piers can land outside the water when the span is wider than the channel.
+  const placed: number[] = [];
   for (const s of pierStations(b, f)) {
     const p = bridgePoint(f, s, 0, 0);
-    parts.columns.push({ x: p[0], z: p[2], y0: -8, y1: topY(s), w, d, rotY, owner: b.id });
+    const column = { x: p[0], z: p[2], y0: -8, y1: topY, w, d, rotY, owner: b.id };
+    if (blocked(column)) continue;
+    parts.columns.push(column);
+    placed.push(s);
   }
   for (const s of approachStations(f)) {
     const p = bridgePoint(f, s, 0, 0);
@@ -256,9 +334,9 @@ function pushPiers(
       rotY,
       owner: b.id,
     };
-    if (approachPierBlocksRoad(column, roads)) continue;
-    parts.columns.push(column);
+    if (!blocked(column)) parts.columns.push(column);
   }
+  return placed;
 }
 
 /** A: two parabolic arch spans over a center pier, white ribs, cyan points, white hangers. */
@@ -267,7 +345,7 @@ function buildArch(
   f: BridgeFrame,
   parts: InfraParts,
   c: InfraColors,
-  roads: readonly Road[],
+  obstacles: Obstacles,
 ): void {
   const h = f.spanHalf;
   const springY = b.deckY - 1;
@@ -321,7 +399,7 @@ function buildArch(
     }
   }
   // Rib springings rest on wide pier / abutment heads.
-  pushPiers(b, f, parts, () => b.deckY - DECK_THICKNESS, b.width + 5, 6, roads);
+  pushPiers(b, f, parts, b.deckY - DECK_THICKNESS, b.width + 5, 6, obstacles);
 }
 
 /** B: continuous Warren truss over three spans, orange top chord line, white rail dots. */
@@ -330,10 +408,10 @@ function buildTruss(
   f: BridgeFrame,
   parts: InfraParts,
   c: InfraColors,
-  roads: readonly Road[],
+  obstacles: Obstacles,
 ): void {
   const h = f.spanHalf;
-  const panel = 10;
+  const panel = (2 * h) / Math.max(1, Math.round((2 * h) / 10));
   const yb = b.deckY - 0.4;
   const yt = b.deckY + b.structureH;
   const lt = b.width / 2 + 0.5;
@@ -371,23 +449,22 @@ function buildTruss(
   for (let s = -h + panel / 2; s <= h - panel / 2 + 1e-6; s += panel) {
     parts.steel.beam(bridgePoint(f, s, -lt, yt), bridgePoint(f, s, lt, yt), 0.5, 0.6, c.archSteel);
   }
-  pushPiers(b, f, parts, () => b.deckY - DECK_THICKNESS - 0.4, b.width - 2, 4, roads);
+  const lowY = lowerDeckY(b);
+  const top = lowY === undefined ? b.deckY - DECK_THICKNESS - 0.4 : lowY - DECK_THICKNESS;
+  pushPiers(b, f, parts, top, b.width - 2, 4, obstacles);
 }
 
-/** C: upper road deck on posts over a lower deck, red band on the lower fascia, cyan uplights. */
-function buildDoubleDeck(
+/** Lower deck between the abutments, posts up to the upper deck, red band on both fascias. */
+function buildLowerDeck(
   b: Bridge,
   f: BridgeFrame,
   parts: InfraParts,
   c: InfraColors,
-  roads: readonly Road[],
+  lowY: number,
 ): void {
-  const lowY = b.lowerDeckY ?? LOWER_DECK_Y;
   const h = f.spanHalf;
   const half = b.width / 2;
-  // Lower deck runs between the abutments (into the portals).
   buildDeck(b, f, parts, c, -h - ABUT / 2, h + ABUT / 2, () => lowY, c.steel);
-  // Posts tying the decks, every 10 m on both edges.
   for (let s = -h + 5; s < h; s += 10) {
     for (const sgn of [-1, 1] as const) {
       const l = sgn * (half - 0.7);
@@ -400,7 +477,6 @@ function buildDoubleDeck(
       );
     }
   }
-  // Red band on both lower-deck fascias.
   const lowFrames = framesAlong([
     bridgePoint(f, -h, 0, lowY),
     bridgePoint(f, 0, 0, lowY),
@@ -410,16 +486,25 @@ function buildDoubleDeck(
     const l0 = sgn === 1 ? half : -half - 0.06;
     parts.glow.sweep(lowFrames, boxEdges(l0, l0 + 0.06, -0.62, -0.32, c.lowerDeckBand));
   }
-  // Piers with cyan uplight washes on both river-facing faces.
-  const pierW = b.width - 4;
-  const pierD = 3.5;
-  pushPiers(b, f, parts, () => lowY - DECK_THICKNESS, pierW, pierD, roads);
+}
+
+/** Cyan uplight washes on both river-facing faces of the river piers at `stations`. */
+function buildPierWashes(
+  f: BridgeFrame,
+  parts: InfraParts,
+  c: InfraColors,
+  stations: readonly number[],
+  pierW: number,
+  pierD: number,
+  top: number,
+): void {
   const waterY = RIVER.waterY;
-  for (const s0 of pierStations(b, f)) {
+  // A pier head this close to the water leaves no face to light.
+  if (top - waterY < 2) return;
+  for (const s0 of stations) {
     for (const sgn of [-1, 1] as const) {
       const s = s0 + sgn * (pierD / 2 + 0.06);
       const w = pierW * 0.29;
-      const top = lowY - DECK_THICKNESS - 0.2;
       const p = (l: number, y: number): V3 => bridgePoint(f, s, l, y);
       const n: V3 = [f.u[0] * sgn, 0, f.u[2] * sgn];
       // Soft-edged wash: bright at the waterline, gone by the deck, dark at both sides.
@@ -449,25 +534,46 @@ function buildDoubleDeck(
   }
 }
 
-/** `roads`: ground roads approach piers must not stand on (the layout's `roads`). */
+/** Girder piers under the lowest deck, with uplights. Used by 'doubleDeck' and unknown kinds. */
+function buildGirder(
+  b: Bridge,
+  f: BridgeFrame,
+  parts: InfraParts,
+  c: InfraColors,
+  obstacles: Obstacles,
+): void {
+  const pierW = Math.max(4, b.width - 4);
+  const pierD = 3.5;
+  const top = (lowerDeckY(b) ?? b.deckY) - DECK_THICKNESS;
+  const stations = pushPiers(b, f, parts, top, pierW, pierD, obstacles);
+  buildPierWashes(f, parts, c, stations, pierW, pierD, top - 0.2);
+}
+
+const BUILDERS: Record<
+  BridgeShape,
+  (b: Bridge, f: BridgeFrame, parts: InfraParts, c: InfraColors, o: Obstacles) => void
+> = {
+  arch: buildArch,
+  truss: buildTruss,
+  doubleDeck: buildGirder,
+  girder: buildGirder,
+};
+
+/** `roads` (the layout's ground roads) and `highways`: what river and approach piers keep clear of. */
 export function buildBridge(
   b: Bridge,
   parts: InfraParts,
   c: InfraColors,
   roads: readonly Road[] = [],
+  highways: readonly HwPath[] = [],
 ): BridgeFrame {
   const f = bridgeFrame(b);
+  const shape = bridgeShape(b);
+  const lowY = lowerDeckY(b);
   const deckY = (s: number): number => deckYAt(b, f, s);
-  buildDeck(b, f, parts, c, f.landA, f.landB, deckY, b.kind === 'arch' ? c.archSteel : c.steel);
-  buildAbutments(
-    b,
-    f,
-    parts,
-    c,
-    b.kind === 'doubleDeck' ? (b.lowerDeckY ?? LOWER_DECK_Y) : undefined,
-  );
-  if (b.kind === 'arch') buildArch(b, f, parts, c, roads);
-  else if (b.kind === 'truss') buildTruss(b, f, parts, c, roads);
-  else buildDoubleDeck(b, f, parts, c, roads);
+  buildDeck(b, f, parts, c, f.landA, f.landB, deckY, shape === 'arch' ? c.archSteel : c.steel);
+  buildAbutments(b, f, parts, c, lowY);
+  if (lowY !== undefined) buildLowerDeck(b, f, parts, c, lowY);
+  BUILDERS[shape](b, f, parts, c, { roads, highways });
   return f;
 }
