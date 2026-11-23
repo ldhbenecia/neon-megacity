@@ -443,10 +443,10 @@ describe('infra: whole build', () => {
     // Worst case: every bridge whose detail could still be on (hysteresis edge), by horizontal
     // distance (the runtime 3D distance is never shorter). Samples: a 100 m grid plus every
     // bridge center and every midpoint between two centers, where two circles overlap most.
-    const half = LAYOUT.extent / 2;
+    const hx = LAYOUT.extentX / 2;
+    const hz = LAYOUT.extentZ / 2;
     const samples: [number, number][] = [];
-    for (let x = -half; x <= half; x += 100)
-      for (let z = -half; z <= half; z += 100) samples.push([x, z]);
+    for (let x = -hx; x <= hx; x += 100) for (let z = -hz; z <= hz; z += 100) samples.push([x, z]);
     const centers = parts.bridgeDetail.map((d) => d.center);
     for (const [i, a] of centers.entries()) {
       samples.push([a[0], a[2]]);
