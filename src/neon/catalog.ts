@@ -5,7 +5,6 @@ import {
   CARGO_CROWN,
   CORP_EN,
   SCREEN_LINES,
-  complexCrown,
   GENERIC_BANDS,
   GENERIC_BLADES,
   GENERIC_COLORS,
@@ -104,7 +103,7 @@ function specs(complexes: readonly string[]): CellSpec[] {
     });
   });
   CORPS.forEach((c) => crown(c, CORP_EN[c].name, CORP_EN[c].tag));
-  complexes.forEach((c) => crown(c, complexCrown(c), ''));
+  complexes.forEach((c) => crown(c, c, ''));
   crown(CARGO_CROWN.name, CARGO_CROWN.name, CARGO_CROWN.tag);
   PANEL_WORDS.forEach((t, i) => add('panel', t, '', color(i + 1), 128, 80));
   RING_COPY.forEach((t, i) => add('ring', t, '', i % 2 ? 'neonCyan' : 'neonOrange', 1024, 64));

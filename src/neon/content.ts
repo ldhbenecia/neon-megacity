@@ -11,10 +11,11 @@ export interface Shop {
   color: NeonName;
 }
 
-// Copy rule: no hanja; high-rise kinds (crown, ring, line, logo, koi) are English, street-level
-// kinds are at least 85% Korean. All names are fictional (tests/neonCopy.test.ts).
+// Copy rule: no hanja; high-rise kinds (crown, ring, line, logo, koi) are English except apartment
+// complex crowns, which keep their Korean name; street-level kinds are at least 85% Korean.
+// Business names are fictional; real Seoul place names are allowed (tests/neonCopy.test.ts).
 export const SHOPS: readonly Shop[] = [
-  { name: '검은비늘수산', sub: '', kind: 'vtext', color: 'neonCyan' },
+  { name: '노량진 새벽수산', sub: '', kind: 'vtext', color: 'neonCyan' },
   { name: '달무리 코인노래방', sub: '', kind: 'band', color: 'neonMagenta' },
   { name: '한강전자상가', sub: '', kind: 'vtext', color: 'neonOrange' },
   { name: '새벽불 칼국수', sub: '24시', kind: 'band', color: 'neonAmber' },
@@ -45,11 +46,6 @@ export const CORP_EN: Readonly<Record<(typeof CORPS)[number], { name: string; ta
   청람로보틱스: { name: 'CHEONGRAM ROBOTICS', tag: 'MACHINES BY YOUR SIDE' },
 };
 
-export function complexCrown(name: string): string {
-  const m = /(\d+)\s*단지/.exec(name);
-  return m ? `SAEBIT VILLAGE ${m[1] ?? ''}` : 'SAEBIT VILLAGE';
-}
-
 export const CARGO_CROWN = { name: 'UNHAE CARGO', tag: 'HANGANG PORT' } as const;
 
 export const GENERIC_BANDS: readonly { name: string; sub: string }[] = [
@@ -74,7 +70,7 @@ export const GENERIC_BANDS: readonly { name: string; sub: string }[] = [
   { name: '언덕위 교회', sub: '' },
   { name: '등불 고시원', sub: '' },
   { name: '구름 찜질방', sub: '' },
-  { name: '검은비늘 수리센터', sub: '' },
+  { name: '을지로 공구상가', sub: '' },
   { name: '자정 국밥', sub: '' },
   { name: '별빛 미용실', sub: '' },
   { name: '골목 떡볶이', sub: '' },
@@ -108,7 +104,7 @@ export const GENERIC_BLADES: readonly string[] = [
 ];
 
 export const GENERIC_VTEXT: readonly string[] = [
-  '검은비늘빌딩',
+  '청계회관',
   '전자상가',
   '삼첩회관',
   '운해호텔',

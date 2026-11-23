@@ -5,6 +5,7 @@ import { hasHangul, hasHanja } from '../src/neon/content';
 
 const cat = buildCatalog(LAYOUT);
 const HIGH = new Set(['crown', 'ring', 'line', 'logo', 'koi']);
+const COMPLEX = /\d+단지$/;
 const LOW = new Set(['band', 'blade', 'vtext', 'panel', 'ad', 'tent']);
 
 describe('neon copy rules', () => {
@@ -16,9 +17,12 @@ describe('neon copy rules', () => {
   });
 
   it('high-rise copy is English, street-level copy is at least 85% Korean', () => {
-    const high = cat.cells.filter((c) => HIGH.has(c.kind));
+    const high = cat.cells.filter((c) => HIGH.has(c.kind) && !COMPLEX.test(c.key));
     expect(high.length).toBeGreaterThan(10);
     for (const c of high) expect(hasHangul(c.text + c.sub)).toBe(false);
+    const complexes = cat.cells.filter((c) => c.kind === 'crown' && COMPLEX.test(c.key));
+    expect(complexes.length).toBeGreaterThan(0);
+    for (const c of complexes) expect(c.text).toMatch(COMPLEX);
     const low = cat.cells.filter((c) => LOW.has(c.kind));
     const korean = low.filter((c) => hasHangul(c.text)).length;
     expect(korean / low.length).toBeGreaterThanOrEqual(0.85);
