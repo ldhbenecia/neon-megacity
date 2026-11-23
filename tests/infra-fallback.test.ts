@@ -166,17 +166,26 @@ describe('infra fallback: bridge kinds', () => {
     }
   });
 
-  it('reads the layout span count, clamped; arch always has two', () => {
+  it('reads the layout span count, clamped to the shape minimum; arch always has two', () => {
     const b = makeBridge(-200, { ...CASES[0]!, spans: 9 });
     const f = bridgeFrame(b);
     expect(spanCount(b, f)).toBe(9);
     expect(spanCount({ ...b, spans: 1e7 }, f)).toBe(Math.floor((2 * f.spanHalf) / 10));
-    expect(spanCount({ ...b, spans: 0 }, f)).toBe(1);
     expect(spanCount({ ...b, spans: 3.6 }, f)).toBe(4);
-    expect(spanCount({ ...b, spans: Number.NaN }, f)).toBe(Math.round((2 * f.spanHalf) / 70));
+    for (const bad of [1, 0, -3]) {
+      expect(spanCount({ ...b, spans: bad }, f)).toBe(2);
+      expect(pierStations({ ...b, spans: bad }, f)).toHaveLength(1);
+    }
+    expect(spanCount({ ...b, spans: Number.NaN }, f)).toBe(
+      Math.max(2, Math.round((2 * f.spanHalf) / 70)),
+    );
+    // Short span: the length fallback alone would give 1.
+    const short = makeBridge(-200, { ...CASES[3]!, half: 30, landA: 60, landB: 90 });
+    expect(spanCount({ ...short, spans: Number.POSITIVE_INFINITY }, bridgeFrame(short))).toBe(2);
+    const truss = LAYOUT.bridges.find((x) => x.kind === 'truss')!;
+    expect(spanCount({ ...truss, spans: 2 }, bridgeFrame(truss))).toBe(3);
     const arch = LAYOUT.bridges.find((x) => x.kind === 'arch')!;
     expect(spanCount({ ...arch, spans: 7 }, bridgeFrame(arch))).toBe(2);
-    expect(pierStations({ ...b, spans: 1 }, f)).toEqual([]);
   });
 
   it.each(CASES)('$kind builds a finite girder with evenly spaced river piers', (s) => {

@@ -65,7 +65,10 @@ export function lowerDeckY(b: Bridge): number | undefined {
   return b.lowerDeckY ?? (shape === 'doubleDeck' ? LOWER_DECK_Y : undefined);
 }
 
-/** Typical span between river piers (m) and the minimum span count, per shape. */
+/**
+ * Minimum span count per shape (truss: continuous three-span Warren), and the typical span (m)
+ * used only when the layout's `spans` is not a finite number.
+ */
 const SPANS: Record<BridgeShape, { len: number; min: number }> = {
   arch: { len: Infinity, min: 2 },
   truss: { len: 80, min: 3 },
@@ -77,19 +80,17 @@ const SPANS: Record<BridgeShape, { len: number; min: number }> = {
 const MIN_SPAN = 10;
 
 /**
- * Pier-to-pier spans between the abutments: the layout's `spans`, clamped to 1..span/MIN_SPAN,
- * or a count from the span length when it is not a finite number. 'arch' always has two (the
- * builder draws two arches over one center pier).
+ * Pier-to-pier spans between the abutments: the layout's `spans`, clamped to the shape minimum
+ * and span/MIN_SPAN, or a count from the span length when it is not a finite number. 'arch'
+ * always has two (the builder draws two arches over one center pier).
  */
 export function spanCount(b: Bridge, f: BridgeFrame): number {
   const shape = bridgeShape(b);
   const { len, min } = SPANS[shape];
   if (shape === 'arch') return min;
-  if (Number.isFinite(b.spans)) {
-    const most = Math.max(1, Math.floor((2 * f.spanHalf) / MIN_SPAN));
-    return Math.min(most, Math.max(1, Math.round(b.spans)));
-  }
-  return Math.max(min, Math.round((2 * f.spanHalf) / len));
+  if (!Number.isFinite(b.spans)) return Math.max(min, Math.round((2 * f.spanHalf) / len));
+  const most = Math.max(min, Math.floor((2 * f.spanHalf) / MIN_SPAN));
+  return Math.min(most, Math.max(min, Math.round(b.spans)));
 }
 
 /** River piers (s positions), evenly spaced; abutments are separate blocks at ±spanHalf. */
