@@ -1,5 +1,6 @@
 import { WINDOW_LIT } from '../core/palette';
 import { createRng } from '../core/random';
+import { baseKind, isUnbuilt } from '../city/layout';
 import { sideNormal } from '../city/math';
 import type { Archetype, BuildingSpec, DistrictKind, Side } from '../city/types';
 
@@ -106,11 +107,13 @@ export function fitCells(width: number, target: number): { count: number; cellW:
 
 export const NIGHT_MEDIAN_LIT = 0.32;
 
-export function districtLitFactor(d: DistrictKind): number {
-  const n = WINDOW_LIT.night;
+// v3 kinds light like their closest v2 kind; the palace and parks stay dark.
+export function districtLitFactor(kind: DistrictKind): number {
+  if (isUnbuilt(kind)) return 0;
+  const d = baseKind(kind);
   const r =
     d === 'core' || d === 'sangga' || d === 'apartment' || d === 'hillside' || d === 'midtown'
-      ? n[d]
+      ? WINDOW_LIT.night[d]
       : ([0.1, 0.16] as const);
   return (r[0] + r[1]) / 2 / NIGHT_MEDIAN_LIT;
 }
