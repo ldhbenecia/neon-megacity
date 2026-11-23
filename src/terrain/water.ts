@@ -76,7 +76,7 @@ export function createWater(ripples = true): Water {
     roughness: 0.08,
     metalness: 0,
   });
-  if (ripples)
+  if (ripples) {
     material.onBeforeCompile = (shader) => {
       shader.uniforms.uTime = uTime;
       shader.vertexShader = shader.vertexShader
@@ -89,13 +89,14 @@ export function createWater(ripples = true): Water {
         .replace('#include <common>', `#include <common>\n${WATER_PARS}`)
         .replace('#include <normal_fragment_maps>', WATER_NORMAL);
     };
+  }
   const mesh = new THREE.Mesh(geometry, material);
   mesh.name = 'river-water';
   mesh.receiveShadow = true;
   return {
     mesh,
     update(elapsed) {
-      uTime.value = elapsed;
+      if (ripples) uTime.value = elapsed;
     },
     dispose() {
       geometry.dispose();
