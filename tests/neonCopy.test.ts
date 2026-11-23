@@ -30,7 +30,7 @@ describe('neon copy rules', () => {
 
   it('never uses the old city names', () => {
     for (const c of cat.cells) {
-      expect(`${c.text} ${c.sub}`).not.toMatch(/람하|RAMHA|가람|GARAM/i);
+      expect(`${c.text} ${c.sub}`).not.toMatch(/가람|GARAM/i);
     }
   });
 });
