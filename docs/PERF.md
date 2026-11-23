@@ -131,10 +131,14 @@ Check after each v3 PR with `npm run perf -- v3` on the heaviest presets (SEOUL.
   (`KHR_parallel_shader_compile`), the first use may still wait inside three's uniform and
   attribute lookups; re-measure on an integrated GPU.
 
-- **MSAA on the canvas while post-processing is on.** The scene renders into atmosphere's HDR
-  target, and the canvas only receives the final full-screen pass, so `antialias: true` on the
-  canvas costs 74 MB (3 of the 4 samples) and a resolve per frame for nothing. Candidate fix:
-  create the renderer without canvas MSAA when post is active (MSAA on the HDR target instead).
+- **MSAA on the canvas while post-processing is on (fixed).** The scene renders into
+  atmosphere's HDR target (4 / 2 / 0 MSAA samples at DPR ≤ 1 / < 1.5 / ≥ 1.5, `msaaSamplesFor`)
+  and only the final full-screen pass reaches the canvas, so canvas MSAA never touched scene edges
+  and cost 74 MB and a resolve per frame. Main now creates the renderer without canvas MSAA and
+  recreates it with MSAA only if that context cannot run post (`postEnabled` in `src/core/gl.ts`,
+  shared with atmosphere). M4, buildings, preset 2:
+  canvas 98.9 → 24.7 MB, frame 6.5–7.0 → 4.5–5.1 ms (machine under load; indicative), screenshots
+  equal within run-to-run noise.
 - **Programs and textures.** 28–30 programs and 19–21 textures before buildings and neon arrive.
   Modules should share materials and `onBeforeCompile` variants. The low tier (no post, rain,
   clouds, searchlights, shadows) has 12 programs and 3 textures, so those features account for

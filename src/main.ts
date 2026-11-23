@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import GUI from 'lil-gui';
 import { CITY, LAYOUT } from './city/layout';
+import { postEnabled } from './core/gl';
 import { NIGHT } from './core/palette';
 import { CAMERA_LIMITS, parseQuery } from './core/query';
 import type { CityModule, CityModuleInstance, Ctx } from './core/types';
@@ -29,6 +30,22 @@ const debug = parseUxQuery(window.location.search).debug;
 const quality = query.quality ?? 'high';
 const loader = createLoader();
 
+/**
+ * With post (see `postEnabled`) the scene renders into atmosphere's HDR target and only the final
+ * full-screen pass reaches the canvas, so canvas MSAA would cost ~74 MB at 2400×1350 for nothing.
+ * MSAA is fixed at context creation: start without it and recreate the (rare) renderer whose GPU
+ * cannot run post, checking the real context rather than a probe that may land on another GPU.
+ */
+function createRenderer(): THREE.WebGLRenderer {
+  const make = (antialias: boolean): THREE.WebGLRenderer =>
+    new THREE.WebGLRenderer({ antialias, powerPreference: 'high-performance' });
+  const renderer = make(false);
+  if (quality === 'low' || postEnabled(quality, renderer)) return renderer;
+  renderer.dispose();
+  renderer.forceContextLoss();
+  return make(true);
+}
+
 async function boot(): Promise<void> {
   loader.stage('setup', BOOT_WEIGHTS.setup);
   await nextFrame();
@@ -36,10 +53,7 @@ async function boot(): Promise<void> {
   const container = document.getElementById('app');
   if (!container) throw new Error('#app container missing');
 
-  const renderer = new THREE.WebGLRenderer({
-    antialias: quality === 'high',
-    powerPreference: 'high-performance',
-  });
+  const renderer = createRenderer();
   // Pixel ratio is owned by ux/perf (adaptive, capped at 1.5).
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
