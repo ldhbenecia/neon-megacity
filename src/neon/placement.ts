@@ -561,13 +561,14 @@ function placeCross(c: Ctx, b: BuildingSpec, rng: Rng, zone: number): void {
   if (!t) return;
   const h = rng.range(4, 8);
   const poleH = rng.range(3, 6);
+  const rotY = b.rotY + rng.range(-0.3, 0.3);
   const vol: Solid = {
     kind: 'box',
     x: t.x,
     z: t.z,
     hw: 0.55 * h * 0.5,
     hd: 0.3,
-    rotY: b.rotY,
+    rotY,
     y0: t.y1 + 0.05,
     y1: t.y1 + poleH + h,
     building: b.id,
@@ -582,7 +583,7 @@ function placeCross(c: Ctx, b: BuildingSpec, rng: Rng, zone: number): void {
     roofY: t.y1,
     poleH,
     h,
-    rotY: b.rotY + rng.range(-0.3, 0.3),
+    rotY,
     zone,
   });
 }
@@ -828,11 +829,10 @@ export function placeSigns(
     placeHolo(c, t.x, t.z, t.y1 + b.spireH, hrng, zoneDelay(b.district, hrng), hrng.pick(logos));
   }
   if (koi >= 0) {
-    for (const bx of [-260, 420, 980]) {
-      const cl = L.river.centerline;
-      let best = cl[0];
-      for (const p of cl) if (best && Math.abs(p.x - bx) < Math.abs(best.x - bx)) best = p;
-      if (best) placeHolo(c, best.x, best.z, 10, hrng, 0.02, koi);
+    const cl = L.river.centerline;
+    for (const f of [0.3, 0.55, 0.8]) {
+      const p = cl[Math.round(f * (cl.length - 1))];
+      if (p) placeHolo(c, p.x, p.z, L.river.waterY + 14, hrng, 0.02, koi);
     }
   }
   return c.out;

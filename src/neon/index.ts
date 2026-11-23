@@ -340,7 +340,7 @@ export function init(ctx: Ctx): CityModuleInstance {
   const folder = ctx.gui.addFolder('Neon');
   const view = { signs: true, traffic: true, halos: true, reflections: true, holograms: true };
   folder.add(view, 'signs').onChange((v: boolean) => {
-    for (const m of [flats, tubeMesh, crossMesh, screens, rings]) m.visible = v;
+    for (const m of [flats, tubeMesh, crossMesh, crossPoles, screens, rings]) m.visible = v;
   });
   folder.add(view, 'traffic').onChange((v: boolean) => (traffic.group.visible = v));
   folder.add(view, 'halos').onChange((v: boolean) => (halos.visible = v));
