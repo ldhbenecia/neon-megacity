@@ -65,12 +65,12 @@ export function lowerDeckY(b: Bridge): number | undefined {
   return b.lowerDeckY ?? (shape === 'doubleDeck' ? LOWER_DECK_Y : undefined);
 }
 
-/** Typical span between river piers (m) per shape. */
-const SPAN_LENGTH: Record<BridgeShape, number> = {
-  arch: Infinity,
-  truss: 80,
-  doubleDeck: 40,
-  girder: 70,
+/** Typical span between river piers (m) and the minimum span count, per shape. */
+const SPANS: Record<BridgeShape, { len: number; min: number }> = {
+  arch: { len: Infinity, min: 2 },
+  truss: { len: 80, min: 3 },
+  doubleDeck: { len: 40, min: 2 },
+  girder: { len: 70, min: 2 },
 };
 
 /**
@@ -78,9 +78,8 @@ const SPAN_LENGTH: Record<BridgeShape, number> = {
  * `spans` (arch spans, pylons or truss panels, per kind) is not a pier count and is not read.
  */
 export function spanCount(b: Bridge, f: BridgeFrame): number {
-  const shape = bridgeShape(b);
-  if (shape === 'arch') return 2;
-  return Math.max(shape === 'truss' ? 3 : 2, Math.round((2 * f.spanHalf) / SPAN_LENGTH[shape]));
+  const { len, min } = SPANS[bridgeShape(b)];
+  return Math.max(min, Math.round((2 * f.spanHalf) / len));
 }
 
 /** River piers (s positions), evenly spaced; abutments are separate blocks at ±spanHalf. */
@@ -284,6 +283,8 @@ export function pierBlocksHighway(c: ColumnInstance, highways: readonly HwPath[]
       const a = pts[i] as V3;
       const e = pts[i + 1] as V3;
       if (Math.min(a[1], e[1]) >= c.y1) continue;
+      if (c.x < Math.min(a[0], e[0]) - pad || c.x > Math.max(a[0], e[0]) + pad) continue;
+      if (c.z < Math.min(a[2], e[2]) - pad || c.z > Math.max(a[2], e[2]) + pad) continue;
       const d = obbSegmentDistance(obb, { x: a[0], z: a[2] }, { x: e[0], z: e[2] });
       if (d < path.hw.width / 2 + 0.5) return true;
     }
@@ -301,7 +302,7 @@ function pushPiers(
   b: Bridge,
   f: BridgeFrame,
   parts: InfraParts,
-  topY: (s: number) => number,
+  topY: number,
   w: number,
   d: number,
   { roads, highways }: Obstacles,
@@ -313,7 +314,7 @@ function pushPiers(
   const placed: number[] = [];
   for (const s of pierStations(b, f)) {
     const p = bridgePoint(f, s, 0, 0);
-    const column = { x: p[0], z: p[2], y0: -8, y1: topY(s), w, d, rotY, owner: b.id };
+    const column = { x: p[0], z: p[2], y0: -8, y1: topY, w, d, rotY, owner: b.id };
     if (blocked(column)) continue;
     parts.columns.push(column);
     placed.push(s);
@@ -398,7 +399,7 @@ function buildArch(
     }
   }
   // Rib springings rest on wide pier / abutment heads.
-  pushPiers(b, f, parts, () => b.deckY - DECK_THICKNESS, b.width + 5, 6, obstacles);
+  pushPiers(b, f, parts, b.deckY - DECK_THICKNESS, b.width + 5, 6, obstacles);
 }
 
 /** B: continuous Warren truss over three spans, orange top chord line, white rail dots. */
@@ -450,7 +451,7 @@ function buildTruss(
   }
   const lowY = lowerDeckY(b);
   const top = lowY === undefined ? b.deckY - DECK_THICKNESS - 0.4 : lowY - DECK_THICKNESS;
-  pushPiers(b, f, parts, () => top, b.width - 2, 4, obstacles);
+  pushPiers(b, f, parts, top, b.width - 2, 4, obstacles);
 }
 
 /** Lower deck between the abutments, posts up to the upper deck, red band on both fascias. */
@@ -533,10 +534,7 @@ function buildPierWashes(
   }
 }
 
-/**
- * Girder piers under the lowest deck, with uplights. Used by 'doubleDeck' and by every kind
- * this module does not know, so any span length, width, deck height or lower deck renders.
- */
+/** Girder piers under the lowest deck, with uplights. Used by 'doubleDeck' and unknown kinds. */
 function buildGirder(
   b: Bridge,
   f: BridgeFrame,
@@ -547,7 +545,7 @@ function buildGirder(
   const pierW = Math.max(4, b.width - 4);
   const pierD = 3.5;
   const top = (lowerDeckY(b) ?? b.deckY) - DECK_THICKNESS;
-  const stations = pushPiers(b, f, parts, () => top, pierW, pierD, obstacles);
+  const stations = pushPiers(b, f, parts, top, pierW, pierD, obstacles);
   buildPierWashes(f, parts, c, stations, pierW, pierD, top - 0.2);
 }
 
@@ -561,10 +559,7 @@ const BUILDERS: Record<
   girder: buildGirder,
 };
 
-/**
- * `roads`: ground roads approach piers must not stand on (the layout's `roads`).
- * `highways`: decks approach piers must not stand on.
- */
+/** `roads` (the layout's ground roads) and `highways`: what river and approach piers keep clear of. */
 export function buildBridge(
   b: Bridge,
   parts: InfraParts,
