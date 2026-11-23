@@ -44,6 +44,10 @@ async function boot(): Promise<void> {
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   // Exposure is owned by lighting (palette toneMappingExposure × env.powerOn).
   renderer.toneMappingExposure = NIGHT.toneMappingExposure;
+  // three's shader error check reads the program info log on a program's first use, which blocks
+  // on the driver: a ~300-470 ms stall the first time the timeline leaves noon (M4, Metal). Kept
+  // in dev and under automation (e2e, screenshots) so shader errors still fail tests.
+  renderer.debug.checkShaderErrors = import.meta.env.DEV || navigator.webdriver;
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
