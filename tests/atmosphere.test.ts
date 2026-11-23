@@ -35,14 +35,14 @@ describe('fog chunks', () => {
   it('installs height / scattering fog, shares uniforms through clones and uninstalls', () => {
     const before = ShaderChunk.fog_fragment;
     const uninstall = installFogChunks();
-    expect(ShaderChunk.fog_fragment).toContain('ramhaFogAmount');
-    expect(ShaderChunk.fog_pars_fragment).toContain('#define RAMHA_FOG');
+    expect(ShaderChunk.fog_fragment).toContain('cityFogAmount');
+    expect(ShaderChunk.fog_pars_fragment).toContain('#define CITY_FOG');
     const cloned = UniformsUtils.clone(ShaderLib.standard.uniforms);
-    expect(cloned.ramhaFogHeight?.value).toBe(FOG_UNIFORMS.ramhaFogHeight.value);
-    expect(ShaderLib.basic.uniforms.ramhaFogSun?.value).toBe(FOG_UNIFORMS.ramhaFogSun.value);
+    expect(cloned.cityFogHeight?.value).toBe(FOG_UNIFORMS.cityFogHeight.value);
+    expect(ShaderLib.basic.uniforms.cityFogSun?.value).toBe(FOG_UNIFORMS.cityFogSun.value);
     uninstall();
     expect(ShaderChunk.fog_fragment).toBe(before);
-    expect(ShaderLib.standard.uniforms.ramhaFogHeight).toBeUndefined();
+    expect(ShaderLib.standard.uniforms.cityFogHeight).toBeUndefined();
   });
 
   it('height fog: full at the ground, x0.35 up high, x1.25 over water', () => {

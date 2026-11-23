@@ -16,20 +16,20 @@ export const SUN_SCATTER_POWER = 8;
 // by reference, so every material sees the same values. All zeros means plain FogExp2.
 export const FOG_UNIFORMS = {
   // heightTop, top factor, water factor, enabled (the CPU mirrors read it too).
-  ramhaFogHeight: {
+  cityFogHeight: {
     value: new Float32Array([HEIGHT_FOG.heightTop, HEIGHT_FOG.top, HEIGHT_FOG.water, 1]),
   },
-  ramhaFogSun: { value: new Float32Array([0, 1, 0, 0]) },
-  ramhaFogSunColor: { value: new Float32Array([0, 0, 0]) },
+  cityFogSun: { value: new Float32Array([0, 1, 0, 0]) },
+  cityFogSunColor: { value: new Float32Array([0, 0, 0]) },
 };
 
 const f = (n: number): string => n.toFixed(4);
 
 export const EMISSIVE_FOG_FRAGMENT = /* glsl */ `
 #ifdef USE_FOG
-  #ifdef RAMHA_FOG
-    float fogE = ramhaFogAmount( ${f(EMISSIVE_FOG_DENSITY_SCALE)} );
-    vec3 glowFog = ramhaFogTint() + gl_FragColor.rgb * ${f(EMISSIVE_FOG_GLOW)};
+  #ifdef CITY_FOG
+    float fogE = cityFogAmount( ${f(EMISSIVE_FOG_DENSITY_SCALE)} );
+    vec3 glowFog = cityFogTint() + gl_FragColor.rgb * ${f(EMISSIVE_FOG_GLOW)};
   #else
     #ifdef FOG_EXP2
       float fogE = 1.0 - exp( - pow( fogDensity * ${f(EMISSIVE_FOG_DENSITY_SCALE)} * vFogDepth, 2.0 ) );
@@ -54,7 +54,7 @@ export function applyEmissiveFog(shader: ShaderSource): boolean {
 }
 
 export function heightFogScale(worldY: number, cameraY = worldY): number {
-  if ((FOG_UNIFORMS.ramhaFogHeight.value[3] ?? 0) < 0.5) return 1;
+  if ((FOG_UNIFORMS.cityFogHeight.value[3] ?? 0) < 0.5) return 1;
   const H = HEIGHT_FOG.heightTop;
   const t = Math.min(1, Math.max(0, worldY / H));
   const s = t * t * (3 - 2 * t);
