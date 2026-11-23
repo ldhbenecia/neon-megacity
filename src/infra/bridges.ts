@@ -4,9 +4,9 @@
 import { RIVER, bridgeDeckY, surfaceHeight, type Bridge, type Road } from '../city/layout';
 import { obbSegmentDistance } from '../city/math';
 import type { InfraColors } from './colors';
-import { nearestOnPath, type HwPath } from './highways';
+import type { HwPath } from './highways';
 import { framesAlong, len, sub, type Frame, type RGB, type V3 } from './mesh';
-import type { InfraParts } from './parts';
+import type { ColumnInstance, InfraParts } from './parts';
 import { DECK_THICKNESS, boxEdges, markingLines, slabEdges, slabLoop } from './profile';
 
 /** Lower road deck height of a double-deck bridge when the layout leaves it unset. */
@@ -55,12 +55,17 @@ export function bridgeShape(b: Bridge): BridgeShape {
   return 'girder';
 }
 
-/** Lower deck surface y, or undefined for a single-deck bridge. */
+/**
+ * Lower deck surface y, or undefined for a single-deck bridge. 'arch' ignores `lowerDeckY`:
+ * its center pier and rib springings sit at the upper deck and would cut a lower road.
+ */
 export function lowerDeckY(b: Bridge): number | undefined {
-  return b.lowerDeckY ?? (bridgeShape(b) === 'doubleDeck' ? LOWER_DECK_Y : undefined);
+  const shape = bridgeShape(b);
+  if (shape === 'arch') return undefined;
+  return b.lowerDeckY ?? (shape === 'doubleDeck' ? LOWER_DECK_Y : undefined);
 }
 
-/** Typical main span (m) per shape when the layout does not give a span count. */
+/** Typical span between river piers (m) per shape. */
 const SPAN_LENGTH: Record<BridgeShape, number> = {
   arch: Infinity,
   truss: 80,
@@ -68,12 +73,13 @@ const SPAN_LENGTH: Record<BridgeShape, number> = {
   girder: 70,
 };
 
-/** Number of spans between the abutments: the layout's `spans` if present, else by shape. */
+/**
+ * Number of pier-to-pier spans between the abutments, from the span length alone. The layout's
+ * `spans` (arch spans, pylons or truss panels, per kind) is not a pier count and is not read.
+ */
 export function spanCount(b: Bridge, f: BridgeFrame): number {
   const shape = bridgeShape(b);
   if (shape === 'arch') return 2;
-  const given = (b as { spans?: unknown }).spans;
-  if (typeof given === 'number' && Number.isFinite(given) && given >= 1) return Math.round(given);
   return Math.max(shape === 'truss' ? 3 : 2, Math.round((2 * f.spanHalf) / SPAN_LENGTH[shape]));
 }
 
@@ -262,9 +268,27 @@ export function approachPierBlocksRoad(
   });
 }
 
-/** True when a pier of depth `d` (along the bridge) at (x, z) would stand on a highway deck. */
-function onHighway(x: number, z: number, d: number, highways: readonly HwPath[]): boolean {
-  return highways.some((path) => nearestOnPath(path, x, z).d < path.hw.width / 2 + d / 2 + 0.5);
+/**
+ * True when a pier footprint would stand on (or within 0.5 m of) a highway deck that runs below
+ * the pier top. Decks passing over the pier (above the bridge) do not block it.
+ */
+export function pierBlocksHighway(c: ColumnInstance, highways: readonly HwPath[]): boolean {
+  const obb = { x: c.x, z: c.z, hw: c.w / 2, hd: c.d / 2, rotY: c.rotY };
+  const r = Math.hypot(c.w, c.d) / 2;
+  return highways.some((path) => {
+    const pad = path.hw.width / 2 + r + 0.5;
+    if (c.x < path.minX - pad || c.x > path.maxX + pad) return false;
+    if (c.z < path.minZ - pad || c.z > path.maxZ + pad) return false;
+    const pts = path.pts;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i] as V3;
+      const e = pts[i + 1] as V3;
+      if (Math.min(a[1], e[1]) >= c.y1) continue;
+      const d = obbSegmentDistance(obb, { x: a[0], z: a[2] }, { x: e[0], z: e[2] });
+      if (d < path.hw.width / 2 + 0.5) return true;
+    }
+    return false;
+  });
 }
 
 /** What pier placement must keep clear of. */
@@ -281,18 +305,24 @@ function pushPiers(
   w: number,
   d: number,
   { roads, highways }: Obstacles,
-): void {
+): number[] {
   const rotY = Math.atan2(-f.v[2], f.v[0]);
+  const blocked = (c: ColumnInstance): boolean =>
+    approachPierBlocksRoad(c, roads) || pierBlocksHighway(c, highways);
+  // River piers can land outside the water when the span is wider than the channel.
+  const placed: number[] = [];
   for (const s of pierStations(b, f)) {
     const p = bridgePoint(f, s, 0, 0);
-    parts.columns.push({ x: p[0], z: p[2], y0: -8, y1: topY(s), w, d, rotY, owner: b.id });
+    const column = { x: p[0], z: p[2], y0: -8, y1: topY(s), w, d, rotY, owner: b.id };
+    if (blocked(column)) continue;
+    parts.columns.push(column);
+    placed.push(s);
   }
   for (const s of approachStations(f)) {
     const p = bridgePoint(f, s, 0, 0);
     const foot = surfaceHeight(p[0], p[2]);
     const top = deckYAt(b, f, s) - DECK_THICKNESS;
     if (top - foot < 1.5) continue;
-    if (onHighway(p[0], p[2], 1.8, highways)) continue;
     const column = {
       x: p[0],
       z: p[2],
@@ -303,9 +333,9 @@ function pushPiers(
       rotY,
       owner: b.id,
     };
-    if (approachPierBlocksRoad(column, roads)) continue;
-    parts.columns.push(column);
+    if (!blocked(column)) parts.columns.push(column);
   }
+  return placed;
 }
 
 /** A: two parabolic arch spans over a center pier, white ribs, cyan points, white hangers. */
@@ -457,12 +487,12 @@ function buildLowerDeck(
   }
 }
 
-/** Cyan uplight washes on both river-facing faces of every river pier. */
+/** Cyan uplight washes on both river-facing faces of the river piers at `stations`. */
 function buildPierWashes(
-  b: Bridge,
   f: BridgeFrame,
   parts: InfraParts,
   c: InfraColors,
+  stations: readonly number[],
   pierW: number,
   pierD: number,
   top: number,
@@ -470,7 +500,7 @@ function buildPierWashes(
   const waterY = RIVER.waterY;
   // A pier head this close to the water leaves no face to light.
   if (top - waterY < 2) return;
-  for (const s0 of pierStations(b, f)) {
+  for (const s0 of stations) {
     for (const sgn of [-1, 1] as const) {
       const s = s0 + sgn * (pierD / 2 + 0.06);
       const w = pierW * 0.29;
@@ -517,8 +547,8 @@ function buildGirder(
   const pierW = Math.max(4, b.width - 4);
   const pierD = 3.5;
   const top = (lowerDeckY(b) ?? b.deckY) - DECK_THICKNESS;
-  pushPiers(b, f, parts, () => top, pierW, pierD, obstacles);
-  buildPierWashes(b, f, parts, c, pierW, pierD, top - 0.2);
+  const stations = pushPiers(b, f, parts, () => top, pierW, pierD, obstacles);
+  buildPierWashes(f, parts, c, stations, pierW, pierD, top - 0.2);
 }
 
 const BUILDERS: Record<

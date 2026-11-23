@@ -9,6 +9,7 @@ import {
   riverFrame,
   type Bridge,
   type Highway,
+  type Vec3,
 } from '../src/city/layout';
 import {
   bridgeFrame,
@@ -22,9 +23,9 @@ import {
 } from '../src/infra/bridges';
 import { buildInfra } from '../src/infra/build';
 import { infraColors } from '../src/infra/colors';
-import { hwPath, nearestOnPath } from '../src/infra/highways';
+import { hwPath, nearestOnPath, type HwPath } from '../src/infra/highways';
 import { MeshData } from '../src/infra/mesh';
-import { createParts, type InfraParts } from '../src/infra/parts';
+import { createParts, type ColumnInstance, type InfraParts } from '../src/infra/parts';
 import { DECK_THICKNESS } from '../src/infra/profile';
 
 const C = infraColors();
@@ -40,28 +41,40 @@ interface Spec {
   width: number;
   lanes: number;
   lowerDeckY?: number;
-  spans?: number;
+}
+
+/** Point `k` m south of the v2 river centerline at x, plus `l` m along the river. */
+function riverPoint(x: number, k: number, l = 0): { x: number; z: number } {
+  const { p, south, along } = riverFrame(x);
+  return { x: p.x + south.x * k + along.x * l, z: p.z + south.z * k + along.z * l };
 }
 
 /** A synthetic bridge across the v2 river at x, perpendicular to the centerline. */
 function makeBridge(x: number, s: Spec): Bridge {
-  const { p, south } = riverFrame(x);
-  const at = (k: number) => ({ x: p.x + south.x * k, z: p.z + south.z * k });
-  const b: Bridge & { spans?: number } = {
+  // Spread a layout bridge so fields this test does not care about stay valid.
+  const b: Bridge = {
+    ...LAYOUT.bridges[0]!,
     id: `test-${s.kind}`,
     kind: unknownKind(s.kind),
-    a: at(-s.half),
-    b: at(s.half),
-    landA: at(-s.landA),
-    landB: at(s.landB),
+    a: riverPoint(x, -s.half),
+    b: riverPoint(x, s.half),
+    landA: riverPoint(x, -s.landA),
+    landB: riverPoint(x, s.landB),
     deckY: s.deckY,
     width: s.width,
     lanes: s.lanes,
     structureH: 0,
   };
+  delete b.lowerDeckY;
   if (s.lowerDeckY !== undefined) b.lowerDeckY = s.lowerDeckY;
-  if (s.spans !== undefined) b.spans = s.spans;
   return b;
+}
+
+/** A straight highway path through `pts` at height y. */
+function straightHighway(pts: { x: number; z: number }[], y: number, width: number): HwPath {
+  const base = LAYOUT.highways.find((hw) => hw.kind !== 'atGrade')!;
+  const points: Vec3[] = pts.map((p) => ({ x: p.x, y, z: p.z }));
+  return hwPath({ ...base, id: 'hw-test', points, closed: false, width, pillars: [] });
 }
 
 function expectFinite(parts: InfraParts): void {
@@ -84,6 +97,32 @@ const maxY = (m: MeshData): number => {
   return y;
 };
 
+/** Grid of points over a column footprint, edges included. */
+function footprint(c: ColumnInstance): { x: number; z: number }[] {
+  const cos = Math.cos(c.rotY);
+  const sin = Math.sin(c.rotY);
+  const out: { x: number; z: number }[] = [];
+  for (let i = 0; i <= 8; i++) {
+    for (let j = 0; j <= 2; j++) {
+      const lx = (i / 8 - 0.5) * c.w;
+      const lz = (j / 2 - 0.5) * c.d;
+      out.push({ x: c.x + cos * lx + sin * lz, z: c.z - sin * lx + cos * lz });
+    }
+  }
+  return out;
+}
+
+/** No footprint point of `c` lies on a highway deck that runs below the column top. */
+function expectClearOfHighways(c: ColumnInstance, paths: readonly HwPath[]): void {
+  for (const q of footprint(c)) {
+    for (const path of paths) {
+      const n = nearestOnPath(path, q.x, q.z);
+      if (n.y >= c.y1) continue;
+      expect(n.d, `${c.owner} pier on ${path.hw.id}`).toBeGreaterThan(path.hw.width / 2);
+    }
+  }
+}
+
 const CASES: Spec[] = [
   { kind: 'cableStayed', half: 420, landA: 520, landB: 700, deckY: 14, width: 30, lanes: 6 },
   { kind: 'deckArch', half: 300, landA: 360, landB: 480, deckY: 16, width: 28, lanes: 6 },
@@ -98,7 +137,6 @@ const CASES: Spec[] = [
     width: 30,
     lanes: 6,
     lowerDeckY: -1,
-    spans: 9,
   },
 ];
 
@@ -132,7 +170,6 @@ describe('infra fallback: bridge kinds', () => {
     expectFinite(parts);
 
     const n = spanCount(b, f);
-    if (s.spans !== undefined) expect(n).toBe(s.spans);
     expect(n).toBeGreaterThanOrEqual(2);
     const stations = pierStations(b, f);
     expect(stations).toHaveLength(n - 1);
@@ -142,7 +179,7 @@ describe('infra fallback: bridge kinds', () => {
       return cur;
     });
 
-    // River piers reach the lowest deck's underside.
+    // With nothing to avoid, every river pier stands and reaches the lowest deck's underside.
     const top = (lowerDeckY(b) ?? b.deckY) - DECK_THICKNESS;
     const river = parts.columns.filter((c) => c.y0 === -8);
     expect(river).toHaveLength(n - 1);
@@ -179,17 +216,74 @@ describe('infra fallback: bridge kinds', () => {
     expect(parts.wash.vertexCount).toBeGreaterThan(0);
   });
 
-  it('approach piers never stand on a highway deck', () => {
-    const paths = LAYOUT.highways.map((hw) => hwPath(hw));
+  it('arch ignores lowerDeckY, so no lower road runs through its center pier', () => {
+    const arch = LAYOUT.bridges.find((b) => b.kind === 'arch')!;
+    const withLower: Bridge = { ...arch, lowerDeckY: 4 };
+    expect(lowerDeckY(withLower)).toBeUndefined();
+    const a = createParts();
+    const b = createParts();
+    buildBridge(arch, a, C);
+    buildBridge(withLower, b, C);
+    expect(b).toEqual(a);
+  });
+});
+
+describe('infra fallback: piers and highways', () => {
+  const paths = LAYOUT.highways.map((hw) => hwPath(hw));
+
+  it('no pier footprint (river or approach) stands on a highway running below it', () => {
     for (const s of CASES) {
       const parts = createParts();
+      // Wider than the v2 channel: some river piers land on the riverside highways.
       buildBridge(makeBridge(400, s), parts, C, LAYOUT.roads, paths);
-      for (const c of parts.columns.filter((col) => col.y0 !== -8)) {
-        for (const path of paths) {
-          expect(nearestOnPath(path, c.x, c.z).d).toBeGreaterThan(path.hw.width / 2 + c.d / 2);
-        }
-      }
+      for (const c of parts.columns) expectClearOfHighways(c, paths);
     }
+    for (const b of LAYOUT.bridges) {
+      const parts = createParts();
+      buildBridge(b, parts, C, LAYOUT.roads, paths);
+      for (const c of parts.columns) expectClearOfHighways(c, paths);
+    }
+  });
+
+  it('checks the whole rotated footprint, not just the pier center', () => {
+    // A narrow at-grade road along the bridge axis, under one end of each approach pier.
+    const s = CASES[0]!;
+    const b = makeBridge(-200, s);
+    const l = (s.width * 0.55) / 2 - 1;
+    const road = straightHighway(
+      [riverPoint(-200, s.half, l), riverPoint(-200, s.landB, l)],
+      0.3,
+      4,
+    );
+    const free = createParts();
+    buildBridge(b, free, C);
+    const blocked = createParts();
+    buildBridge(b, blocked, C, [], [road]);
+    const approach = (p: InfraParts) => p.columns.filter((c) => c.y0 !== -8);
+    const south = (p: InfraParts) =>
+      approach(p).filter(
+        (c) => bridgeFrame(b).u[0] * (c.x - b.b.x) + bridgeFrame(b).u[2] * (c.z - b.b.z) > 0,
+      );
+    expect(south(free).length).toBeGreaterThan(3);
+    expect(south(blocked)).toHaveLength(0);
+    for (const c of approach(blocked)) expectClearOfHighways(c, [road]);
+  });
+
+  it('keeps piers under a highway that passes over the bridge, drops them on one below', () => {
+    const s = CASES[0]!;
+    const b = makeBridge(-200, s);
+    const k = s.half + 55 + 35; // an approach station on the south ramp
+    const across = (y: number) =>
+      straightHighway([riverPoint(-200, k, -80), riverPoint(-200, k, 80)], y, 20);
+    const count = (hw: HwPath) => {
+      const parts = createParts();
+      buildBridge(b, parts, C, [], [hw]);
+      return parts.columns.length;
+    };
+    const none = createParts();
+    buildBridge(b, none, C);
+    expect(count(across(40))).toBe(none.columns.length);
+    expect(count(across(0.3))).toBe(none.columns.length - 1);
   });
 });
 
