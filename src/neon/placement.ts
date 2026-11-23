@@ -780,8 +780,8 @@ export function placeSigns(
       a === 'setbackTower' || a === 'bracedTower' || a === 'cantileverTower' || a === 'twinTower';
     if (a === 'sangga' || (a === 'officeSlab' && b.district === 'sangga')) {
       shopFaces(c, b).forEach((fi, k) => {
-        placeBands(c, b, rng, zone, fi, k === 0 ? 0.6 : 0.28);
-        placeBlades(c, b, rng, zone, (a === 'sangga' ? 0.5 : 0.3) * (k === 0 ? 0.7 : 0.35), fi);
+        placeBands(c, b, rng, zone, fi, k === 0 ? 1.6 : 0.7);
+        placeBlades(c, b, rng, zone, (a === 'sangga' ? 0.5 : 0.3) * (k === 0 ? 1.3 : 0.6), fi);
       });
     } else if (a === 'officeSlab' && b.h < 40) {
       const fi = shopFaces(c, b)[0];

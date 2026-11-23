@@ -260,7 +260,7 @@ describe('neon sign placement: zero penetration (5.1)', () => {
       P.rings.length +
       P.holos.length;
     expect(total).toBeGreaterThanOrEqual(2500);
-    expect(total).toBeLessThanOrEqual(4000);
+    expect(total).toBeLessThanOrEqual(8000);
     const moving =
       P.flats.filter((s) => s.anim !== 0).length + P.tubes.filter((t) => t.anim !== 0).length;
     expect(moving / (P.flats.length + P.tubes.length)).toBeLessThanOrEqual(0.1);
