@@ -92,6 +92,8 @@ export interface BuildingsApi {
    * (at least 'road' and 'sidewalk'; window materials expose `uLitRatio`).
    */
   materials: Readonly<Record<string, THREE.Material>>;
+  /** 1 while a chunk in LOD0 range still shows LOD1 (LOD0 is built over several frames), else 0. */
+  lod0Pending(): number;
 }
 
 /** Published by infra during init. */
