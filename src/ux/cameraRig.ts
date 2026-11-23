@@ -43,6 +43,7 @@ export interface CameraRig {
   setFly(on: boolean): void;
   select(id: number | null, fly?: boolean): void;
   debug(): RigDebug;
+  buildingPoint(): { x: number; y: number; id: number } | null;
   dispose(): void;
 }
 
@@ -791,6 +792,28 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
         fov: camera.fov,
         selected: env.selectedBuilding,
       };
+    },
+    buildingPoint() {
+      // Central area only, clear of the HUD card (right) and the time bar (bottom).
+      const r = canvas.getBoundingClientRect();
+      const pts: { x: number; y: number }[] = [];
+      for (let i = 0; i <= 12; i++) {
+        for (let j = 0; j <= 8; j++) {
+          pts.push({
+            x: r.left + r.width * (0.25 + 0.04 * i),
+            y: r.top + r.height * (0.2 + 0.06 * j),
+          });
+        }
+      }
+      const cx = r.left + r.width / 2;
+      const cy = r.top + r.height / 2;
+      pts.sort((a, b) => Math.hypot(a.x - cx, a.y - cy) - Math.hypot(b.x - cx, b.y - cy));
+      for (const p of pts) {
+        if (document.elementFromPoint(p.x, p.y) !== canvas) continue;
+        const hit = pickAt(p.x, p.y);
+        if (hit?.kind === 'building') return { ...p, id: hit.id };
+      }
+      return null;
     },
     dispose() {
       window.removeEventListener('wheel', onWheel, { capture: true });
