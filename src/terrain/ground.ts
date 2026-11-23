@@ -1,19 +1,18 @@
 import * as THREE from 'three';
-import type { Vec2 } from '../city/layout';
 import { TERRAIN_COLORS as TC } from '../core/palette';
 import {
   GROUND_RADIUS,
   MAP_HALF_X,
   MAP_HALF_Z,
   channelDistance,
-  channelHalfWidth,
   channelProfile,
+  bankReach,
+  channelParkWidth,
+  channelRows,
+  channelSlices,
   groundAxes,
   groundVertex,
   noise2,
-  riverSliceXs,
-  stripRow,
-  unfoldPair,
   type ChannelPart,
 } from './shape';
 
@@ -88,34 +87,18 @@ export function buildGround(): THREE.BufferGeometry {
   return g;
 }
 
-// Must cover the cells dropped by KEEP_DISTANCE, which grow past the map edge.
-function bankReach(x: number): number {
-  const t = Math.min(1, Math.max(0, (Math.abs(x) - (MAP_HALF_X + 40)) / 300));
-  return 40 + 40 * t * t * (3 - 2 * t);
-}
-
 export function buildChannel(): THREE.BufferGeometry {
   const pal = groundPalette();
-  const xs = riverSliceXs(8, 20);
+  const c = channelSlices();
+  const { xs } = c;
   const pos: number[] = [];
   const col: number[] = [];
   const idx: number[] = [];
-  const profiles = xs.map((x) => channelProfile(bankReach(x)));
+  const profiles = xs.map((x) => channelProfile(bankReach(x), channelParkWidth(x)));
   const profLen = channelProfile(0).length;
   const perSlice = profLen * 2;
-  const rows: Vec2[][] = [];
-  for (const side of [-1, 1] as const) {
-    for (let j = 0; j < profLen; j++) {
-      rows.push(stripRow(xs, (x, i) => (channelHalfWidth(x) + (profiles[i]?.[j]?.d ?? 0)) * side));
-    }
-  }
-  for (let side = 0; side < 2; side++) {
-    for (let j = 0; j < profLen; j += 2) {
-      const a = rows[side * profLen + j];
-      const b = rows[side * profLen + j + 1];
-      if (a && b) unfoldPair(a, b, side === 1);
-    }
-  }
+  const depths = Array.from({ length: profLen }, (_, j) => profiles.map((p) => p[j]?.d ?? 0));
+  const rows = [...channelRows(c, depths, -1), ...channelRows(c, depths, 1)];
   for (let s = 0; s < xs.length; s++) {
     const profile = profiles[s] ?? [];
     for (let side = 0; side < 2; side++) {

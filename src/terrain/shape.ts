@@ -4,7 +4,6 @@ import {
   LAYOUT,
   RIVER,
   TERRAIN,
-  riverCenterDistance,
   riverFrame,
   riverSignedDistance,
   riverZ,
@@ -13,6 +12,7 @@ import {
   type Ridge,
   type Vec2,
 } from '../city/layout';
+import * as LAYOUT_QUERIES from '../city/layout';
 import { createRng } from '../core/random';
 
 export { EMBANK_SLOPE };
@@ -34,12 +34,26 @@ const RIVER_X0 = Math.min(...RIVER.centerline.map((p) => p.x)) + 10;
 const RIVER_X1 = Math.max(...RIVER.centerline.map((p) => p.x)) - 10;
 const HILL_GRID_Z = TERRAIN.hillStartZ + 90;
 
-// Read back from the distance queries so a layout with a varying width needs no change here.
-// Clamped to the polyline: past its ends the river keeps its end width.
-export function channelHalfWidth(x: number): number {
-  const p = riverFrame(Math.min(RIVER_X1, Math.max(RIVER_X0, x))).p;
-  return riverCenterDistance(p.x, p.z) - riverSignedDistance(p.x, p.z);
+// Layout v3 has per-x widths; v2 has one width for the whole river. Looked up by name so this
+// builds against both until v3 is on main.
+function layoutQuery(name: string): ((x: number) => number) | null {
+  const f: unknown = (LAYOUT_QUERIES as Record<string, unknown>)[name];
+  return typeof f === 'function' ? (f as (x: number) => number) : null;
 }
+const riverWidthAt = layoutQuery('riverWidthAt') ?? ((): number => RIVER.width);
+const parkWidthAt = layoutQuery('parkWidthAt') ?? ((): number => RIVER.parkWidth);
+
+/** Past the polyline ends the river keeps its end width. */
+export function channelHalfWidth(x: number): number {
+  return riverWidthAt(Math.min(RIVER_X1, Math.max(RIVER_X0, x))) / 2;
+}
+
+export function channelParkWidth(x: number): number {
+  return parkWidthAt(Math.min(RIVER_X1, Math.max(RIVER_X0, x)));
+}
+
+const END_HALF_W0 = channelHalfWidth(RIVER_X0);
+const END_HALF_W1 = channelHalfWidth(RIVER_X1);
 
 // Past the polyline ends, continues the centerline so the river runs to the horizon. Switches on
 // the foot of the perpendicular, not on x, or a slanted end opens a seam across the banks.
@@ -48,10 +62,122 @@ export function channelDistance(x: number, z: number): number {
   const dz = z - riverZ(x);
   const foot = x + f.along.x * f.along.z * dz;
   if (foot >= RIVER_X0 && foot <= RIVER_X1) return riverSignedDistance(x, z);
-  return Math.abs(dz * f.along.x) - channelHalfWidth(x);
+  return Math.abs(dz * f.along.x) - (foot < RIVER_X0 ? END_HALF_W0 : END_HALF_W1);
 }
 
-function segmentHit(a: Vec2, b: Vec2, c: Vec2, d: Vec2): Vec2 | null {
+export interface StripSlice {
+  p: Vec2;
+  south: Vec2;
+  along: Vec2;
+}
+
+interface Run {
+  lo: number;
+  hi: number;
+  p: Vec2 | null;
+}
+
+/**
+ * One row of a river strip: the line at signed distance `target[i]` from the bank, built from
+ * normal offsets `offset[i]` off the centerline. Where a bend is tighter than the offset those
+ * points fall inside a swallow-tail and miss `target`; each such run, widened to the row's
+ * outermost self-crossing, collapses onto that crossing, which is where the true distance line
+ * turns. `moved` marks the collapsed slices.
+ */
+export function isoRow(
+  slices: readonly StripSlice[],
+  offset: readonly number[],
+  target: readonly number[],
+  dist: (p: Vec2) => number,
+  tol = 1,
+  reach = 60,
+): { points: Vec2[]; moved: boolean[] } {
+  const n = slices.length;
+  const raw: Vec2[] = [];
+  const bad: boolean[] = [];
+  for (let i = 0; i < n; i++) {
+    const f = slices[i];
+    const k = offset[i];
+    const t = target[i];
+    if (!f || k === undefined || t === undefined) throw new Error('terrain: strip row size');
+    const p = { x: f.p.x + f.south.x * k, z: f.p.z + f.south.z * k };
+    raw.push(p);
+    bad.push(Math.abs(dist(p) - t) > tol);
+  }
+  const widen = (lo: number, hi: number): Run => {
+    const hit = selfCrossing(raw, lo, hi, reach);
+    return hit
+      ? { lo: Math.min(hit.a, lo), hi: Math.max(hit.b, hi), p: hit.p }
+      : { lo, hi, p: null };
+  };
+  let runs: Run[] = [];
+  for (let m = 0; m < n; m++) {
+    if (!bad[m]) continue;
+    let e = m;
+    while (e < n && bad[e]) e++;
+    runs.push(widen(m, e));
+    m = e;
+  }
+  // Widened runs can overlap; merged ones are widened again until they settle.
+  for (let pass = 0; pass < 8; pass++) {
+    runs.sort((r, q) => r.lo - q.lo);
+    const merged: Run[] = [];
+    let changed = false;
+    for (const r of runs) {
+      const last = merged[merged.length - 1];
+      // A lone slice that passes between two bad runs is part of the same fold.
+      if (last && r.lo <= last.hi + 2) {
+        merged[merged.length - 1] = widen(last.lo, Math.max(last.hi, r.hi));
+        changed = true;
+      } else merged.push(r);
+    }
+    runs = merged;
+    if (!changed) break;
+  }
+  const points = raw.slice();
+  const moved = raw.map(() => false);
+  for (const { lo, hi, p } of runs) {
+    const fill = p ?? runFill(raw[lo - 1], slices[lo - 1]?.along, raw[hi], slices[hi]?.along);
+    for (let i = lo; i < hi; i++) {
+      const q = fill ?? lerpRun(raw[lo - 1], raw[hi], (i - lo + 1) / (hi - lo + 1));
+      points[i] = q ?? raw[i] ?? { x: 0, z: 0 };
+      moved[i] = true;
+    }
+  }
+  return { points, moved };
+}
+
+/**
+ * Outermost self-crossing of the raw row around the bad run [m, e): segment (a-1, a) meets the
+ * later segment (b-1, b). Searches `reach` metres along the row beyond each end of the run,
+ * since points near a cusp can still pass the distance test while stepping backwards.
+ */
+function selfCrossing(
+  raw: readonly Vec2[],
+  m: number,
+  e: number,
+  reach: number,
+): { a: number; b: number; p: Vec2 } | null {
+  const step = (i: number): number => {
+    const p = raw[i - 1];
+    const q = raw[i];
+    return p && q ? Math.hypot(q.x - p.x, q.z - p.z) : 0;
+  };
+  let a0 = m;
+  for (let len = 0; a0 > 1 && len <= reach; a0--) len += step(a0);
+  let b1 = e;
+  for (let len = 0; b1 < raw.length - 1 && len <= reach; b1++) len += step(b1 + 1);
+  for (let a = a0; a <= e; a++) {
+    for (let b = b1; b >= a + 2; b--) {
+      const p = segmentHit(raw[a - 1], raw[a], raw[b - 1], raw[b]);
+      if (p) return { a, b, p };
+    }
+  }
+  return null;
+}
+
+function segmentHit(a?: Vec2, b?: Vec2, c?: Vec2, d?: Vec2): Vec2 | null {
+  if (!a || !b || !c || !d) return null;
   const rx = b.x - a.x;
   const rz = b.z - a.z;
   const sx = d.x - c.x;
@@ -60,73 +186,111 @@ function segmentHit(a: Vec2, b: Vec2, c: Vec2, d: Vec2): Vec2 | null {
   if (Math.abs(den) < 1e-12) return null;
   const t = ((c.x - a.x) * sz - (c.z - a.z) * sx) / den;
   const u = ((c.x - a.x) * rz - (c.z - a.z) * rx) / den;
-  if (t <= 0 || t >= 1 || u <= 0 || u >= 1) return null;
+  if (t < 0 || t > 1 || u < 0 || u > 1) return null;
   return { x: a.x + rx * t, z: a.z + rz * t };
 }
 
+// Corner where the arm through `a` (heading `u`) meets the arm through `b` (arriving along `v`).
+// Null when the arms are missing, parallel, meet implausibly far away or out of order.
+function runFill(a?: Vec2, u?: Vec2, b?: Vec2, v?: Vec2): Vec2 | null {
+  if (!a || !u || !b || !v) return a ?? b ?? null;
+  const den = u.x * v.z - u.z * v.x;
+  if (Math.abs(den) < 1e-6) return null;
+  const bx = b.x - a.x;
+  const bz = b.z - a.z;
+  const t = (bx * v.z - bz * v.x) / den;
+  const s = (bx * u.z - bz * u.x) / den;
+  const reach = 3 * Math.hypot(bx, bz) + 2;
+  if (t < 0 || s < 0 || t > reach || s > reach) return null;
+  const p = { x: a.x + u.x * t, z: a.z + u.z * t };
+  // A cusp without a loop can put the corner past `b`; a chord is safer there.
+  if ((b.x - p.x) * v.x + (b.z - p.z) * v.z < 0) return null;
+  return p;
+}
+
+function lerpRun(a: Vec2 | undefined, b: Vec2 | undefined, t: number): Vec2 | null {
+  if (!a || !b) return a ?? b ?? null;
+  return { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t };
+}
+
+export interface ChannelSlices {
+  xs: number[];
+  slices: StripSlice[];
+  half: number[];
+}
+
+// Channel and water share these slices so the water edge follows the stone edge it tucks under.
+export function channelSlices(): ChannelSlices {
+  const xs = riverSliceXs(8, 20);
+  return { xs, slices: xs.map((x) => riverFrame(x)), half: xs.map(channelHalfWidth) };
+}
+
+// Must cover the ground cells dropped near the channel, which grow past the map edge.
+export function bankReach(x: number): number {
+  const t = Math.min(1, Math.max(0, (Math.abs(x) - (MAP_HALF_X + 40)) / 300));
+  return 40 + 40 * t * t * (3 - 2 * t);
+}
+
 /**
- * Offsets slices of a strip along their frame normals. Where a bend is tighter than the offset
- * the row loops back over itself; the slices inside the loop collapse onto the crossing point so
- * every row stays a simple curve and the strip never folds.
+ * Rows of one side (-1 north, 1 south) at bank distances `depths[j][i]`; `depths[0]` must be the
+ * outermost. Only that row is cleaned of folds. The others step from it toward the river by
+ * their depth difference: along the centerline normal (the plain offset) where it is untouched,
+ * and along normals fanned around its corner where it collapsed, so rows never cross and rows
+ * with equal depths are identical.
  */
-export function stripRow(
-  xs: readonly number[],
-  offset: (x: number, i: number) => number,
-  window = 120,
+export function channelRows(
+  c: ChannelSlices,
+  depths: readonly (readonly number[])[],
+  side: -1 | 1,
+): Vec2[][] {
+  const d0 = depths[0];
+  if (!d0) return [];
+  const offset = c.half.map((h, i) => (h + (d0[i] ?? 0)) * side);
+  const outer = isoRow(c.slices, offset, d0, (p) => channelDistance(p.x, p.z));
+  const dirs = fanDirections(c.slices, outer.moved, side);
+  return depths.map((d, j) => {
+    if (j === 0) return outer.points;
+    return c.slices.map((f, i) => {
+      if (!outer.moved[i]) {
+        const k = ((c.half[i] ?? 0) + (d[i] ?? 0)) * side;
+        return { x: f.p.x + f.south.x * k, z: f.p.z + f.south.z * k };
+      }
+      const o = outer.points[i] ?? f.p;
+      const n = dirs[i] ?? f.south;
+      const t = (d0[i] ?? 0) - (d[i] ?? 0);
+      return { x: o.x + n.x * t, z: o.z + n.z * t };
+    });
+  });
+}
+
+// Unit direction toward the river at each slice, turned evenly across each collapsed run.
+function fanDirections(
+  slices: readonly StripSlice[],
+  moved: readonly boolean[],
+  side: number,
 ): Vec2[] {
-  const out: Vec2[] = [];
-  for (const [i, x] of xs.entries()) {
-    const f = riverFrame(x);
-    const k = offset(x, i);
-    const p = { x: f.p.x + f.south.x * k, z: f.p.z + f.south.z * k };
-    const last = out[i - 1];
-    if (last && (p.x - last.x) * f.along.x + (p.z - last.z) * f.along.z <= 0) {
-      out.push(last);
-      continue;
-    }
-    if (last) {
-      for (let s = i - 2; s >= Math.max(1, i - window); s--) {
-        const c = out[s - 1];
-        const d = out[s];
-        const hit = c && d ? segmentHit(last, p, c, d) : null;
-        if (hit) {
-          for (let m = s; m < i; m++) out[m] = hit;
-          break;
-        }
+  const n = slices.length;
+  const base = slices.map((f) => ({ x: -f.south.x * side, z: -f.south.z * side }));
+  const out = base.slice();
+  for (let m = 0; m < n; m++) {
+    if (!moved[m]) continue;
+    let e = m;
+    while (e < n && moved[e]) e++;
+    const u = base[m - 1] ?? base[e];
+    const v = base[e] ?? base[m - 1];
+    if (u && v) {
+      const a0 = Math.atan2(u.z, u.x);
+      let da = Math.atan2(v.z, v.x) - a0;
+      if (da > Math.PI) da -= Math.PI * 2;
+      if (da < -Math.PI) da += Math.PI * 2;
+      for (let i = m; i < e; i++) {
+        const a = a0 + (da * (i - m + 1)) / (e - m + 1);
+        out[i] = { x: Math.cos(a), z: Math.sin(a) };
       }
     }
-    out.push(p);
+    m = e;
   }
   return out;
-}
-
-// > 0 when the triangle faces up (three's winding: (c - b) x (a - b)).
-function upArea(a: Vec2, b: Vec2, c: Vec2): number {
-  return (c.z - b.z) * (a.x - b.x) - (c.x - b.x) * (a.z - b.z);
-}
-
-/**
- * Pins both rows to the previous slice wherever the quad between them would face down, which
- * happens where the two rows collapsed over different spans. `flip` mirrors the winding for a
- * strip whose rows run the other way across the river. Mutates the rows.
- */
-export function unfoldPair(a: Vec2[], b: Vec2[], flip: boolean): void {
-  const sign = flip ? -1 : 1;
-  for (let pass = 0; pass < 8; pass++) {
-    let changed = false;
-    for (let s = 0; s < a.length - 1; s++) {
-      const a0 = a[s];
-      const b0 = b[s];
-      const a1 = a[s + 1];
-      const b1 = b[s + 1];
-      if (!a0 || !b0 || !a1 || !b1) continue;
-      if (sign * upArea(a0, b0, a1) >= -1e-6 && sign * upArea(b0, b1, a1) >= -1e-6) continue;
-      a[s + 1] = a0;
-      b[s + 1] = b0;
-      changed = true;
-    }
-    if (!changed) return;
-  }
 }
 
 export type ChannelPart = 'bank' | 'embankment' | 'park' | 'parkEdge';
@@ -139,8 +303,8 @@ export interface ProfilePoint {
 }
 
 // Must match surfaceHeight; the stone edge sinks below waterY so the water plane cuts it cleanly.
-export function channelProfile(outer: number): ProfilePoint[] {
-  const { bankY, parkY, parkWidth, waterY } = RIVER;
+export function channelProfile(outer: number, parkWidth = RIVER.parkWidth): ProfilePoint[] {
+  const { bankY, parkY, waterY } = RIVER;
   const below = waterY - 0.8;
   const edgeD = -parkWidth - EMBANK_SLOPE * ((below - parkY) / (waterY - parkY));
   return [
@@ -155,8 +319,9 @@ export function channelProfile(outer: number): ProfilePoint[] {
   ];
 }
 
-export function waterHalfWidth(x: number): number {
-  return channelHalfWidth(x) - RIVER.parkWidth - EMBANK_SLOPE * 0.5;
+/** Bank distance of the water edge at x (< 0, inside the channel). */
+export function waterEdgeD(x: number): number {
+  return -channelParkWidth(x) - EMBANK_SLOPE * 0.5;
 }
 
 export function gridAxis(

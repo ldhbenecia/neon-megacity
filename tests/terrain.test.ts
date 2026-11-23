@@ -25,13 +25,16 @@ import {
   ridgePeaks,
   ridgeProfile,
   riverSliceXs,
-  waterHalfWidth,
+  channelParkWidth,
+  waterEdgeD,
+  isoRow,
+  type StripSlice,
 } from '../src/terrain/shape';
 import { buildChannel, buildGround } from '../src/terrain/ground';
 import { createWater } from '../src/terrain/water';
 
-function profileY(d: number): number {
-  const p = channelProfile(40);
+function profileY(d: number, park = RIVER.parkWidth): number {
+  const p = channelProfile(40, park);
   for (let i = 0; i < p.length - 1; i++) {
     const a = p[i]!;
     const b = p[i + 1]!;
@@ -42,27 +45,31 @@ function profileY(d: number): number {
 
 describe('channel profile', () => {
   it('matches surfaceHeight across the embankment, park and park edge', () => {
-    for (const t of [-0.75, -0.25, 0.12, 0.58]) {
-      const f = riverFrame(t * MAP_HALF_X);
-      for (let off = 40; off <= 121; off += 0.5) {
+    // Away from the islands and side channels, which surfaceHeight also models.
+    for (const t of [-0.75, 0.12, 0.3, 0.58]) {
+      const x = t * MAP_HALF_X;
+      const f = riverFrame(x);
+      const hw = channelHalfWidth(x);
+      const park = channelParkWidth(x);
+      for (let off = hw - 80; off <= hw + 1; off += 0.5) {
         const px = f.p.x + f.south.x * off;
         const pz = f.p.z + f.south.z * off;
         const d = riverSignedDistance(px, pz);
-        if (d < -RIVER.parkWidth - 4) continue; // under water
-        expect(profileY(d)).toBeCloseTo(surfaceHeight(px, pz), 1);
+        if (d < -park - 4) continue; // under water
+        expect(profileY(d, park)).toBeCloseTo(surfaceHeight(px, pz), 1);
       }
     }
   });
 
   it('puts the water edge under the stone park edge', () => {
-    const p = channelProfile(40);
-    const last = p[p.length - 1]!;
-    expect(last.y).toBeLessThan(RIVER.waterY);
     for (const t of [-0.75, 0, 0.58]) {
       const x = t * MAP_HALF_X;
-      const waterD = waterHalfWidth(x) - channelHalfWidth(x);
-      expect(waterD).toBeGreaterThan(last.d);
-      expect(profileY(waterD)).toBeGreaterThan(RIVER.waterY);
+      const park = channelParkWidth(x);
+      const p = channelProfile(40, park);
+      const last = p[p.length - 1]!;
+      expect(last.y).toBeLessThan(RIVER.waterY);
+      expect(waterEdgeD(x)).toBeGreaterThan(last.d);
+      expect(profileY(waterEdgeD(x), park)).toBeGreaterThan(RIVER.waterY);
     }
   });
 });
@@ -99,10 +106,104 @@ describe('channelDistance', () => {
     }
   });
 
-  it('half width is the layout width on the centerline', () => {
+  it('half width matches the layout distance query on the centerline', () => {
     for (let x = x0 + 10; x <= x1 - 10; x += 97) {
       const f = riverFrame(x);
       expect(riverSignedDistance(f.p.x, f.p.z)).toBeCloseTo(-channelHalfWidth(x), 0);
+    }
+  });
+});
+
+// Straight arm, a 90° turn of radius 60 and a straight arm: tighter than the offsets below.
+type Vec2Like = { x: number; z: number };
+function bendCenterline(): Vec2Like[] {
+  const pts: Vec2Like[] = [];
+  for (let x = -300; x < 0; x += 5) pts.push({ x, z: 0 });
+  for (let a = 0; a <= 90; a += 3) {
+    const r = (a * Math.PI) / 180;
+    pts.push({ x: 60 * Math.sin(r), z: 60 - 60 * Math.cos(r) });
+  }
+  for (let z = 65; z <= 360; z += 5) pts.push({ x: 60, z });
+  return pts;
+}
+
+function polyDistance(pts: readonly Vec2Like[], p: Vec2Like): number {
+  let best = Infinity;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i]!;
+    const b = pts[i + 1]!;
+    const dx = b.x - a.x;
+    const dz = b.z - a.z;
+    const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.z - a.z) * dz) / (dx * dx + dz * dz)));
+    best = Math.min(best, Math.hypot(p.x - a.x - dx * t, p.z - a.z - dz * t));
+  }
+  return best;
+}
+
+function bendSlices(pts: readonly Vec2Like[]): StripSlice[] {
+  return pts.map((p, i) => {
+    const a = pts[Math.max(0, i - 1)]!;
+    const b = pts[Math.min(pts.length - 1, i + 1)]!;
+    const len = Math.hypot(b.x - a.x, b.z - a.z);
+    const along = { x: (b.x - a.x) / len, z: (b.z - a.z) / len };
+    return { p, along, south: { x: -along.z, z: along.x } };
+  });
+}
+
+describe('isoRow on a bend tighter than the offset', () => {
+  const pts = bendCenterline();
+  const slices = bendSlices(pts);
+  const halfW = 100;
+  const dist = (p: Vec2Like): number => polyDistance(pts, p) - halfW;
+  const row = (d: number, side: -1 | 1): Vec2Like[] =>
+    isoRow(
+      slices,
+      slices.map(() => (halfW + d) * side),
+      slices.map(() => d),
+      dist,
+    ).points;
+
+  it('keeps every point on the distance line and never steps backwards', () => {
+    // The turn heads toward +Z, so side 1 (south) is the inner side.
+    for (const d of [60, 0, -30]) {
+      const r = row(d, 1);
+      let collapsed = 0;
+      for (let i = 0; i < r.length; i++) {
+        expect(Math.abs(dist(r[i]!) - d)).toBeLessThan(1.5);
+        if (i > 0 && r[i]!.x === r[i - 1]!.x && r[i]!.z === r[i - 1]!.z) collapsed++;
+        if (i > 0) {
+          const s = slices[i]!.along;
+          const step = (r[i]!.x - r[i - 1]!.x) * s.x + (r[i]!.z - r[i - 1]!.z) * s.z;
+          expect(step).toBeGreaterThanOrEqual(-1e-9);
+        }
+      }
+      expect(collapsed).toBeGreaterThan(5);
+    }
+  });
+
+  it('returns a new array and leaves the outer side untouched', () => {
+    const r = row(0, -1);
+    for (let i = 0; i < r.length; i++) {
+      const f = slices[i]!;
+      expect(r[i]!.x).toBeCloseTo(f.p.x - f.south.x * halfW, 9);
+      expect(r[i]!.z).toBeCloseTo(f.p.z - f.south.z * halfW, 9);
+    }
+  });
+
+  it('strips between rows of different depth face up', () => {
+    for (const side of [-1, 1] as const) {
+      const a = row(60, side);
+      const b = row(0, side);
+      for (let i = 0; i < a.length - 1; i++) {
+        // Quad a[i], b[i], a[i+1], b[i+1]; orientation flips with the side.
+        for (const [p, q, r] of [
+          [a[i]!, b[i]!, a[i + 1]!],
+          [b[i]!, b[i + 1]!, a[i + 1]!],
+        ] as const) {
+          const area = (r.z - q.z) * (p.x - q.x) - (r.x - q.x) * (p.z - q.z);
+          expect(area * -side).toBeGreaterThanOrEqual(-1e-6);
+        }
+      }
     }
   });
 });
@@ -144,7 +245,7 @@ describe('ground grid', () => {
         expect(pos.getY(v)).toBeLessThanOrEqual(ridgeHeight(near, Math.atan2(z, x)) + 1e-3);
       }
     }
-  }, 20_000);
+  });
 
   it('river strips end exactly on the outer extent', () => {
     for (const [fine, coarse] of [
@@ -165,6 +266,33 @@ describe('ground grid', () => {
     expect(EMBANK_SLOPE).toBe(LAYOUT_EMBANK_SLOPE);
   });
 
+  it('channel rows that share an edge coincide and the water edge tucks under the stone edge', () => {
+    const ch = buildChannel().getAttribute('position');
+    const w = createWater().mesh.geometry.getAttribute('position');
+    const prof = channelProfile(0).length;
+    const per = prof * 2;
+    expect(ch.count / per).toBe(w.count / 2);
+    const xz = (attr: THREE.BufferAttribute | THREE.InterleavedBufferAttribute, i: number) => ({
+      x: attr.getX(i),
+      z: attr.getZ(i),
+    });
+    const gap = (a: { x: number; z: number }, b: { x: number; z: number }) =>
+      Math.hypot(a.x - b.x, a.z - b.z);
+    for (let s = 0; s < ch.count / per; s++) {
+      for (let side = 0; side < 2; side++) {
+        const base = s * per + side * prof;
+        for (const j of [1, 3, 5]) expect(gap(xz(ch, base + j), xz(ch, base + j + 1))).toBe(0);
+        // Ground drops 12 m cells with a corner nearer than 6 m; the strip must reach past them.
+        const o = xz(ch, base);
+        expect(channelDistance(o.x, o.z)).toBeGreaterThan(6 + 12 * Math.SQRT2);
+        const park = xz(ch, base + 6);
+        const edge = xz(ch, base + 7);
+        const water = xz(w, s * 2 + side);
+        expect(gap(park, water) + gap(water, edge)).toBeCloseTo(gap(park, edge), 1);
+      }
+    }
+  });
+
   it('channel strip and water face up', () => {
     for (const g of [buildChannel(), createWater().mesh.geometry]) {
       const pos = g.getAttribute('position');
@@ -181,7 +309,7 @@ describe('ground grid', () => {
         // Slices collapsed onto a crossing point leave zero-area faces.
         if (n.length() < 1e-3) continue;
         faces++;
-        expect(n.normalize().y).toBeGreaterThan(0);
+        expect(n.normalize().y).toBeGreaterThan(0.3);
       }
       expect(faces).toBeGreaterThan(index.count / 6);
     }
