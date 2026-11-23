@@ -10,12 +10,16 @@ export function app(query = ''): string {
   return `./?quality=low${query ? `&${query}` : ''}`;
 }
 
-/** Jumps the timeline (minutes, 5-minute steps) through its input event, like a user scrub. */
+/** Frames to let the scene settle after boot or a time change (env-map switch, lazy PMREM bake). */
+export const SETTLE_FRAMES = 12;
+
+/** Jumps the timeline (minutes) through its input event; fails if the range snaps the value. */
 export async function scrubTo(page: Page, minutes: number): Promise<void> {
   await page.evaluate((m) => {
     const input = document.getElementById('tl-range');
     if (!(input instanceof HTMLInputElement)) throw new Error('#tl-range missing');
     input.value = String(m);
+    if (input.value !== String(m)) throw new Error(`#tl-range snapped ${m} to ${input.value}`);
     input.dispatchEvent(new Event('input'));
   }, minutes);
 }
