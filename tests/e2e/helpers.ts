@@ -10,12 +10,19 @@ export function app(query = ''): string {
   return `./?quality=low${query ? `&${query}` : ''}`;
 }
 
+/** Frames to wait after a time change: lazy PMREM bake and env-map key switch in the low tier. */
+export const SETTLE_FRAMES = 12;
+
 /** Jumps the timeline (minutes, 5-minute steps) through its input event, like a user scrub. */
 export async function scrubTo(page: Page, minutes: number): Promise<void> {
+  if (!Number.isInteger(minutes) || minutes % 5 !== 0 || minutes < 0 || minutes > 1440) {
+    throw new Error(`scrubTo: ${minutes} is not a 5-minute step in 0..1440`);
+  }
   await page.evaluate((m) => {
     const input = document.getElementById('tl-range');
     if (!(input instanceof HTMLInputElement)) throw new Error('#tl-range missing');
     input.value = String(m);
+    if (input.value !== String(m)) throw new Error(`#tl-range snapped ${m} to ${input.value}`);
     input.dispatchEvent(new Event('input'));
   }, minutes);
 }
