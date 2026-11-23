@@ -68,6 +68,15 @@ infra init 46–83 ms, first frame 31–79 ms. Canvas: 98.9 MB (`gl.SAMPLES` = 4
 
 ## Findings and candidates
 
+- **Day/night scrub stall (fixed).** Toggling the key light's `castShadow` changed the program
+  variant of every lit material. With buildings (#11), preset 2, M4: a timeline jump between night
+  and day added 8 programs (35 → 43) and stalled one frame for 0.57–1.26 s, both directions.
+  Lighting now keeps `castShadow` fixed and sets `shadow.intensity` to 0 at night: 0 new programs,
+  worst frame 16–18 ms for night → noon / sunset.
+- **Leaving the noon palette (open).** Booted at noon, the first jump to sunset or night still
+  stalls one frame for ~470 ms without any new program (sunset → night: 45 ms, noon → 15:00:
+  8 ms). Not a recompile; under investigation.
+
 - **MSAA on the canvas while post-processing is on.** The scene renders into atmosphere's HDR
   target, and the canvas only receives the final full-screen pass, so `antialias: true` on the
   canvas costs 74 MB (3 of the 4 samples) and a resolve per frame for nothing. Candidate fix:
