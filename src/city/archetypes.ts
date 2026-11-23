@@ -187,7 +187,7 @@ export function computeTiers(m: Massing, rng: Rng, district: string): TierResult
   }
 }
 
-// --- Fictional names (no real places, brands or works) ---
+// Fictional names only: no real places, brands or works.
 
 const SYL_A = [
   '청',

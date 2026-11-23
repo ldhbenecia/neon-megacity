@@ -52,7 +52,6 @@ export function obbCorners(o: Obb): Vec2[] {
   return out;
 }
 
-/** Axis-aligned bounds of an OBB. */
 export function obbBounds(o: Obb): { minX: number; minZ: number; maxX: number; maxZ: number } {
   const c = Math.abs(Math.cos(o.rotY));
   const s = Math.abs(Math.sin(o.rotY));
@@ -86,7 +85,6 @@ export function closestSegmentT(p: Vec2, a: Vec2, b: Vec2): number {
   return len2 > 0 ? clamp(((p.x - a.x) * abx + (p.z - a.z) * abz) / len2, 0, 1) : 0;
 }
 
-/** Distance from point p to segment ab. */
 export function pointSegmentDistance(p: Vec2, a: Vec2, b: Vec2): number {
   const t = closestSegmentT(p, a, b);
   return Math.hypot(p.x - (a.x + (b.x - a.x) * t), p.z - (a.z + (b.z - a.z) * t));
