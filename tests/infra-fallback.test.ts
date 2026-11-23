@@ -41,6 +41,8 @@ interface Spec {
   width: number;
   lanes: number;
   lowerDeckY?: number;
+  /** Layout span count; defaults to about 70 m spans. */
+  spans?: number;
 }
 
 /** Point `k` m south of the v2 river centerline at x, plus `l` m along the river. */
@@ -64,6 +66,7 @@ function makeBridge(x: number, s: Spec): Bridge {
     width: s.width,
     lanes: s.lanes,
     structureH: 0,
+    spans: s.spans ?? Math.max(2, Math.round((2 * s.half) / 70)),
   };
   delete b.lowerDeckY;
   if (s.lowerDeckY !== undefined) b.lowerDeckY = s.lowerDeckY;
@@ -137,6 +140,7 @@ const CASES: Spec[] = [
     width: 30,
     lanes: 6,
     lowerDeckY: -1,
+    spans: 9,
   },
 ];
 
@@ -162,6 +166,28 @@ describe('infra fallback: bridge kinds', () => {
     }
   });
 
+  it('reads the layout span count, clamped to the shape minimum; arch always has two', () => {
+    const b = makeBridge(-200, { ...CASES[0]!, spans: 9 });
+    const f = bridgeFrame(b);
+    expect(spanCount(b, f)).toBe(9);
+    expect(spanCount({ ...b, spans: 1e7 }, f)).toBe(Math.floor((2 * f.spanHalf) / 10));
+    expect(spanCount({ ...b, spans: 3.6 }, f)).toBe(4);
+    for (const bad of [1, 0, -3]) {
+      expect(spanCount({ ...b, spans: bad }, f)).toBe(2);
+      expect(pierStations({ ...b, spans: bad }, f)).toHaveLength(1);
+    }
+    expect(spanCount({ ...b, spans: Number.NaN }, f)).toBe(
+      Math.max(2, Math.round((2 * f.spanHalf) / 70)),
+    );
+    // Short span: the length fallback alone would give 1.
+    const short = makeBridge(-200, { ...CASES[3]!, half: 30, landA: 60, landB: 90 });
+    expect(spanCount({ ...short, spans: Number.POSITIVE_INFINITY }, bridgeFrame(short))).toBe(2);
+    const truss = LAYOUT.bridges.find((x) => x.kind === 'truss')!;
+    expect(spanCount({ ...truss, spans: 2 }, bridgeFrame(truss))).toBe(3);
+    const arch = LAYOUT.bridges.find((x) => x.kind === 'arch')!;
+    expect(spanCount({ ...arch, spans: 7 }, bridgeFrame(arch))).toBe(2);
+  });
+
   it.each(CASES)('$kind builds a finite girder with evenly spaced river piers', (s) => {
     const b = makeBridge(-200, s);
     const f = bridgeFrame(b);
@@ -170,6 +196,7 @@ describe('infra fallback: bridge kinds', () => {
     expectFinite(parts);
 
     const n = spanCount(b, f);
+    if (s.spans !== undefined) expect(n).toBe(s.spans);
     expect(n).toBeGreaterThanOrEqual(2);
     const stations = pierStations(b, f);
     expect(stations).toHaveLength(n - 1);
