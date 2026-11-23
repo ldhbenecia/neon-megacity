@@ -334,7 +334,7 @@ interface Lot {
   blockId: number;
 }
 
-const SIDEWALK: Partial<Record<DistrictZone['kind'], number>> = {
+export const SIDEWALK: Record<string, number> = {
   core: 4,
   midtown: 4,
   sangga: 2,
