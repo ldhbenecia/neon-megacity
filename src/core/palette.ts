@@ -1,4 +1,4 @@
-// Color palette and exposure constants (ART_DIRECTION 3). Created in PR0, owned by lighting.
+// Color palette and exposure constants (ART_DIRECTION 3). Owned by lighting.
 // Every module imports colors from here instead of hard-coding hex values.
 // Colors are sRGB hex; feed them to three with `color.setHex(hex)` (ColorManagement converts),
 // or `color.setRGB(r, g, b, SRGBColorSpace)` for the interpolated tuples from `paletteAt`.

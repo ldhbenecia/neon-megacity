@@ -83,13 +83,13 @@ export function terrainHeight(x: number, z: number): number {
   return s * (TERRAIN.base + TERRAIN.amp * fbm1(x / TERRAIN.scale + 64, TERRAIN.seed));
 }
 
+/** Width of the embankment and park-edge slopes (m). */
+export const EMBANK_SLOPE = 4;
+
 /**
  * Walkable / floating surface height: terrain, the embankment slope, the park (y -2)
  * and the water surface (y -4). Use it for props, cameras and anything resting on the ground.
  */
-/** Width of the embankment and park-edge slopes (m). */
-export const EMBANK_SLOPE = 4;
-
 export function surfaceHeight(x: number, z: number): number {
   const d = riverSignedDistance(x, z);
   if (d >= 0) return terrainHeight(x, z);

@@ -168,7 +168,7 @@ describe('rig presets (8.4)', () => {
     },
   );
 
-  // PR0 finding: presets 1, 3 and 7 sit near the polar limit. Keep them inside it.
+  // Presets 1, 3 and 7 sit near the polar limit; keep them inside it.
   it.each(presets.map((p) => [p.key, p] as const))(
     'preset %i satisfies the orbit limits and is not moved by OrbitControls.update()',
     (_k, p) => {
