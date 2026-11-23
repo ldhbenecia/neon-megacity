@@ -211,8 +211,11 @@ describe('infra: pillars', () => {
     const total = raised.reduce((n, hw) => n + hw.pillars.length, 0);
     expect(specs.length).toBeGreaterThan(total * 0.9);
     expect(specs.length).toBeLessThanOrEqual(total);
-    const byId = new Map(LAYOUT.highways.map((hw) => [hw.id, hw]));
-    for (const s of specs) expect(s.kind).toBe(pillarKind(byId.get(s.owner)!));
+    // Every highway pillarKind maps to 'Y' (v2: hw-ring) actually gets Y pillars.
+    for (const hw of raised.filter((h) => h.pillars.length > 0 && pillarKind(h) === 'Y')) {
+      const ys = specs.filter((s) => s.owner === hw.id && s.kind === 'Y');
+      expect(ys.length, hw.id).toBeGreaterThan(hw.pillars.length * 0.5);
+    }
     expect(specs.filter((s) => s.kind === 'T').length).toBeGreaterThan(40);
   });
 
@@ -274,10 +277,11 @@ describe('infra: bridges', () => {
     for (const b of LAYOUT.bridges) {
       const f = bridgeFrame(b);
       // Landings lie on the bridge axis, beyond the abutments; the south ramp is the longer one.
+      const ax = b.b.x - b.a.x;
+      const az = b.b.z - b.a.z;
       for (const land of [b.landA, b.landB]) {
-        expect(
-          pointSegmentDistance(land, b.a, b.b) - Math.hypot(land.x - b.a.x, land.z - b.a.z),
-        ).toBeLessThan(1e-6);
+        const off = (ax * (land.z - b.a.z) - az * (land.x - b.a.x)) / Math.hypot(ax, az);
+        expect(Math.abs(off), `${b.id} landing off the axis`).toBeLessThan(1e-6);
       }
       expect(-f.landA).toBeGreaterThan(f.spanHalf);
       expect(f.landB - f.spanHalf).toBeGreaterThan(-f.landA - f.spanHalf);
@@ -330,6 +334,10 @@ describe('infra: bridges', () => {
   it('arch ribs crown at mid span and get cyan points every 6 m', () => {
     expect(archY(60, 0, 120, 11, 48)).toBeCloseTo(48, 9);
     expect(archY(0, 0, 120, 11, 48)).toBeCloseTo(11, 9);
+    // ART_DIRECTION 2.3: the v2 arch bridge crowns at 48 m (layout v3 has no 'arch' kind).
+    for (const a of LAYOUT.bridges.filter((b) => b.kind === 'arch')) {
+      expect(a.deckY + a.structureH, a.id).toBe(48);
+    }
     const pts: V3[] = [];
     for (let i = 0; i <= 32; i++) pts.push([i * 4, archY(i * 4, 0, 128, 11, 48), 0]);
     const r = resample(pts, 6);

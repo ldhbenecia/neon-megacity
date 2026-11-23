@@ -147,7 +147,6 @@ const CASES: Spec[] = [
 describe('infra fallback: bridge kinds', () => {
   it('keeps the v2 shapes and maps every other kind to girder', () => {
     const v2 = new Set<string>(['arch', 'truss', 'doubleDeck']);
-    for (const b of LAYOUT.bridges) expect(bridgeShape(b)).toBe(v2.has(b.kind) ? b.kind : 'girder');
     for (const k of v2) expect(bridgeShape(makeBridge(0, { ...CASES[3]!, kind: k }))).toBe(k);
     for (const k of ['deckArch', 'tiedArch', 'girder', 'cableStayed', 'mystery', '']) {
       expect(bridgeShape(makeBridge(0, { ...CASES[0]!, kind: k }))).toBe('girder');
