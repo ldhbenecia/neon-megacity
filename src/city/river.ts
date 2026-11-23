@@ -1,4 +1,4 @@
-// 흑린강 (Heukrin river) and the terrain height field. Pure functions only.
+// River channel (layout v2) and the terrain height field. Pure functions only.
 import { fbm1 } from './noise';
 import { clamp, pointSegmentDistance, smoothstep } from './math';
 import type { River, Vec2 } from './types';
