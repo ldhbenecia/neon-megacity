@@ -295,6 +295,8 @@ export const MOUNTAINS: readonly Mountain[] = [
 ];
 
 export const TERRAIN = {
+  /** v2 hill edge, kept for terrain's mesh refinement band until it follows MOUNTAINS. */
+  hillStartZ: -650,
   /** Relative amplitude of the fbm detail on mountain slopes. */
   detail: 0.12,
   scale: 140,
@@ -307,6 +309,9 @@ function bump(t: number): number {
   const s = 1 - t * t;
   return s * s;
 }
+
+/** Width of the embankment and park-edge slopes (m). */
+export const EMBANK_SLOPE = 4;
 
 /**
  * Natural ground height (river channel NOT carved): the max of the mountain bumps, 0 on the
@@ -324,8 +329,6 @@ export function terrainHeight(x: number, z: number): number {
   return h;
 }
 
-const EDGE_SLOPE = 4; // embankment / park edge transition width (m)
-
 /**
  * Walkable / floating surface height: terrain, the embankment slope, the park (y -2), islands
  * and the water surface (y -4). Use it for props, cameras and anything resting on the ground.
@@ -337,13 +340,13 @@ export function surfaceHeight(x: number, z: number): number {
   const d = dc - riverWidthAt(cx) / 2;
   const ds = sideChannelDistance(SAETGANG, x, z);
   if (ds < 0) {
-    const t = clamp(-ds / EDGE_SLOPE, 0, 1);
+    const t = clamp(-ds / EMBANK_SLOPE, 0, 1);
     return RIVER.waterY * t;
   }
   if (d >= 0) return terrainHeight(x, z);
-  if (d > -EDGE_SLOPE) return (RIVER.parkY * -d) / EDGE_SLOPE;
+  if (d > -EMBANK_SLOPE) return (RIVER.parkY * -d) / EMBANK_SLOPE;
   const park = parkWidthAt(cx);
   if (d >= -park) return RIVER.parkY;
-  const t = clamp((-park - d) / EDGE_SLOPE, 0, 1);
+  const t = clamp((-park - d) / EMBANK_SLOPE, 0, 1);
   return RIVER.parkY + (RIVER.waterY - RIVER.parkY) * t;
 }

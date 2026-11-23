@@ -16,7 +16,6 @@ export const CITY = {
   half: Math.max(HALF_X, HALF_Z),
   halfX: HALF_X,
   halfZ: HALF_Z,
-  /** Default layout seed. */
   seed: 2077,
   /** Spatial hash cell used by layout queries (m). */
   hashCell: HASH_CELL,
@@ -47,6 +46,7 @@ export {
 } from './districts';
 export {
   RIVER,
+  EMBANK_SLOPE,
   TERRAIN,
   HALF_X,
   HALF_Z,

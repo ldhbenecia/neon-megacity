@@ -301,8 +301,6 @@ export function buildingFaces(b: BuildingSpec): BuildingFace[] {
   return out;
 }
 
-// --- decks (highways + bridges) ---
-
 interface DeckSeg {
   a: Vec3;
   b: Vec3;
@@ -359,8 +357,6 @@ export function deckHeightAt(L: Layout, x: number, z: number): number | null {
   }
   return best;
 }
-
-// --- far ridges ---
 
 /**
  * Ridge silhouette height (m above y = 0) at a bearing around the city center.

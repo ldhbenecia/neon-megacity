@@ -13,7 +13,8 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "shots": "tsx scripts/screenshot.ts"
+    "shots": "tsx scripts/screenshot.ts",
+    "perf": "tsx scripts/perf.ts"
   },
   "keywords": [],
   "author": "",

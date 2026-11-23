@@ -1,9 +1,4 @@
-// Sky dome (ART_DIRECTION 3.1, 7.5): zenith → horizon gradient with a sun-side / anti-sun horizon
-// split, the teal city-light dome in the lowest 12°, and the sun and moon discs. Lighting owns the
-// only moon disc; atmosphere draws stars (and clouds) on top.
-//
-// One draw call. The dome is centered on the camera and pushed to the far plane (z = w), drawn as
-// the LAST opaque object so depth testing skips every pixel already covered by the city.
+// Lighting owns the only moon disc; atmosphere draws stars on top.
 import * as THREE from 'three';
 
 const SKY_VERTEX = /* glsl */ `
@@ -47,8 +42,6 @@ void main() {
   vec3 dir = normalize(vDir);
   float h = dir.y;
 
-  // Horizon color depends on the bearing relative to the sun: orange only on the sun side at
-  // sunset, teal on the far side (identical colors at night and noon).
   vec2 sxz = uSunDir.xz;
   float sl = length(sxz);
   float side = sl > 1e-4 ? dot(normalize(dir.xz + 1e-6), sxz / sl) * 0.5 + 0.5 : 0.5;
@@ -56,22 +49,19 @@ void main() {
 
   float up = max(h, 0.0);
   vec3 col = mix(horizon, uZenith, 1.0 - exp(-up * 3.2));
-  // City light dome (light pollution) in the first ~12° above the horizon.
   col += uGlow * exp(-up / 0.075);
 
-  // Sun: tight disc, warm halo and a broad scattering lobe near the horizon.
   float cs = max(dot(dir, uSunDir), 0.0);
   float horizonMask = smoothstep(-0.015, 0.01, h);
   float disc = smoothstep(0.99990, 0.99994, cs) * horizonMask;
   vec3 sun = uSunColor * (disc * 18.0 + pow(cs, 600.0) * 1.2 + pow(cs, 32.0) * 0.07);
   col += sun * uSunVis;
 
-  // Moon: mottled, slightly gibbous disc with a cold halo.
   float cm = dot(dir, uMoonDir);
   if (uMoonVis > 0.0) {
     vec3 mu = normalize(cross(uMoonDir, vec3(0.0, 1.0, 0.0)) + vec3(1e-5));
     vec3 mv = cross(mu, uMoonDir);
-    vec2 uv = vec2(dot(dir, mu), dot(dir, mv)) / 0.021; // ~1.2° radius
+    vec2 uv = vec2(dot(dir, mu), dot(dir, mv)) / 0.021;
     float r = length(uv);
     float inDisc = 1.0 - smoothstep(0.92, 1.0, r);
     float shade = 0.72 + 0.28 * vnoise(uv * 3.0 + 7.0) - 0.18 * smoothstep(0.55, 0.9, vnoise(uv * 6.5));
@@ -81,15 +71,13 @@ void main() {
     col += uMoonColor * (moon * 2.4 + halo) * uMoonVis * horizonMask;
   }
 
-  // Below the horizon: fade to the ground haze (terrain and ridges normally cover this).
   col = mix(col, uGround, smoothstep(0.0, -0.06, h));
 
   gl_FragColor = vec4(col, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
-  // Dither: the night gradient spans only ~40 sRGB steps and bands badly without it. The noise
-  // is one 8-bit sRGB step; when rendering into a linear target (post-processing composer) it is
-  // applied in sRGB and converted back, so it stays one display step instead of sparkling.
+  // Dither must be one sRGB step: in a linear target (composer) it is applied in sRGB space,
+  // otherwise it sparkles after OutputPass.
   float dither = (hash12(gl_FragCoord.xy) - 0.5) / 255.0;
   if (uLinearOut > 0.5) {
     vec3 s = pow(max(gl_FragColor.rgb, 0.0), vec3(1.0 / 2.2));
@@ -137,7 +125,7 @@ export function createSky(): Sky {
     uLinearOut: { value: 0 },
   };
   const material = new THREE.ShaderMaterial({
-    name: 'RamhaSky',
+    name: 'HangangSky',
     uniforms: uniforms as unknown as Record<string, THREE.IUniform>,
     vertexShader: SKY_VERTEX,
     fragmentShader: SKY_FRAGMENT,
@@ -145,15 +133,13 @@ export function createSky(): Sky {
     depthWrite: false,
     fog: false,
   });
-  // Low-poly is enough: the gradient is per pixel. Radius is irrelevant (far plane).
   const geometry = new THREE.SphereGeometry(10, 32, 16);
   const mesh = new THREE.Mesh(geometry, material);
   mesh.name = 'sky';
   mesh.frustumCulled = false;
-  // Last opaque object: early-z rejects every pixel the city already covers.
+  // z = w plus last opaque object: early-z skips every pixel the city already covers.
   mesh.renderOrder = 1e6;
   mesh.matrixAutoUpdate = false;
-  // Linear render target (EffectComposer) vs the sRGB canvas / OutputPass: pick the dither space.
   mesh.onBeforeRender = (renderer) => {
     const target = renderer.getRenderTarget();
     uniforms.uLinearOut.value =

@@ -4,7 +4,7 @@ import { createCameraRig, type CameraRig, type RigDebug } from './cameraRig';
 import { createControls } from './controls';
 import { createHud, type Hud } from './hud';
 import { reducedMotion } from './loader';
-import { createPerf, type FrameStats, type Perf } from './perf';
+import { createPerf, estimateMemory, type FrameStats, type Perf } from './perf';
 import { camPose, DEFAULT_PRESET, rigPreset } from './presets';
 import { parseUxQuery } from './query';
 
@@ -53,6 +53,7 @@ export function initUx(ctx: Ctx, opts: UxOptions): Ux {
     window.__hangang = {
       stats: (): FrameStats => perf.stats(),
       camera: (): RigDebug => rig.debug(),
+      memory: () => estimateMemory(ctx),
     };
   }
 
