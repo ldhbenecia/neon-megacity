@@ -24,7 +24,8 @@ import { buildInfra } from '../src/infra/build';
 import { infraColors } from '../src/infra/colors';
 import { deckRings, hwPath, nearestOnPath, ringsCovering, runs } from '../src/infra/highways';
 import { MeshData, cross, dot, frameAt, framesAlong, norm, sub, type V3 } from '../src/infra/mesh';
-import type { ColumnInstance } from '../src/infra/parts';
+import { BRIDGE_LOD_FAR } from '../src/infra/lod';
+import type { BridgeDetail, ColumnInstance } from '../src/infra/parts';
 import { pillarInstances, pillarKind, pillarSpecs } from '../src/infra/pillars';
 import {
   DECK_THICKNESS,
@@ -428,7 +429,7 @@ describe('infra: whole build', () => {
     expect(again.concrete.positions.slice(0, 300)).toEqual(parts.concrete.positions.slice(0, 300));
   });
 
-  it('stays inside the triangle budget', () => {
+  it('stays inside the triangle budget from every camera position (detail only near)', () => {
     const merged =
       parts.concrete.triangleCount +
       parts.steel.triangleCount +
@@ -437,11 +438,34 @@ describe('infra: whole build', () => {
       parts.wash.triangleCount;
     // Instanced: columns 14 tris (+ caps), beams 12, points 8.
     const instanced = parts.columns.length * 28 + parts.beams.length * 12 + parts.points.length * 8;
-    // Temporary (hangang-perf, layout v3 ≈ 341k): 대교 near/far LOD 도입 뒤 300k로 복구.
-    expect(merged + instanced).toBeLessThan(360_000);
+    const detailTris = (d: BridgeDetail) =>
+      d.steel.triangleCount + d.glow.triangleCount + d.markings.triangleCount;
+    // Worst case over a 100 m grid: every bridge whose detail could still be on (hysteresis edge).
+    const half = LAYOUT.extent / 2;
+    let worst = 0;
+    for (let x = -half; x <= half; x += 100) {
+      for (let z = -half; z <= half; z += 100) {
+        let near = 0;
+        for (const d of parts.bridgeDetail) {
+          if (Math.hypot(x - d.center[0], z - d.center[2]) < BRIDGE_LOD_FAR) near += detailTris(d);
+        }
+        worst = Math.max(worst, near);
+      }
+    }
+    expect(merged + instanced + worst).toBeLessThan(300_000);
     expect(parts.points.length).toBeGreaterThan(300);
     expect(parts.glow.triangleCount).toBeGreaterThan(0);
     expect(parts.wash.triangleCount).toBeGreaterThan(0);
+  });
+
+  it('every bridge has detail (rails, posts, paint), kept out of the base meshes', () => {
+    expect(parts.bridgeDetail.map((d) => d.id)).toEqual(LAYOUT.bridges.map((b) => b.id));
+    for (const d of parts.bridgeDetail) {
+      expect(d.steel.triangleCount, d.id).toBeGreaterThan(0);
+      const b = LAYOUT.bridges.find((x) => x.id === d.id)!;
+      if (b.lanes > 0) expect(d.markings.triangleCount, d.id).toBeGreaterThan(0);
+      expect(d.center[1]).toBe(b.deckY);
+    }
   });
 
   it('merged geometry has consistent winding', () => {
@@ -449,5 +473,9 @@ describe('infra: whole build', () => {
     expectConsistentWinding(parts.markings);
     expectConsistentWinding(parts.wash);
     expectConsistentWinding(parts.steel);
+    for (const d of parts.bridgeDetail) {
+      expectConsistentWinding(d.steel);
+      expectConsistentWinding(d.markings);
+    }
   });
 });

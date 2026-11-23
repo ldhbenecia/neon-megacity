@@ -5,8 +5,11 @@ import { RIVER, bridgeDeckY, surfaceHeight, type Bridge, type Road } from '../ci
 import { obbSegmentDistance } from '../city/math';
 import type { InfraColors } from './colors';
 import type { HwPath } from './highways';
-import { framesAlong, len, sub, type Frame, type RGB, type V3 } from './mesh';
-import type { ColumnInstance, InfraParts } from './parts';
+import { MeshData, framesAlong, len, sub, type Frame, type RGB, type V3 } from './mesh';
+import type { ColumnInstance, DetailParts, InfraParts } from './parts';
+
+/** Bridge builders write the always-drawn parts into InfraParts and fine parts into `detail`. */
+type BridgeParts = InfraParts & { detail: DetailParts };
 import { DECK_THICKNESS, boxEdges, markingLines, slabEdges, slabLoop } from './profile';
 
 /** Lower road deck height of a double-deck bridge when the layout leaves it unset. */
@@ -173,7 +176,7 @@ function deckPath(
 function buildDeck(
   b: Bridge,
   f: BridgeFrame,
-  parts: InfraParts,
+  parts: BridgeParts,
   c: InfraColors,
   from: number,
   to: number,
@@ -191,14 +194,14 @@ function buildDeck(
     const lo = sgn === 1 ? half - 0.45 : -half;
     parts.concrete.sweep(frames, boxEdges(lo, lo + 0.45, -0.02, 0.5, c.concrete));
     const rl = sgn * (half - 0.2);
-    parts.steel.sweep(frames, boxEdges(rl - 0.08, rl + 0.08, 1.05, 1.2, railColor));
+    parts.detail.steel.sweep(frames, boxEdges(rl - 0.08, rl + 0.08, 1.05, 1.2, railColor));
   }
   // Rail posts every 3 m.
   for (let s = Math.ceil(from / 3) * 3; s <= to; s += 3) {
     for (const sgn of [-1, 1] as const) {
       const l = sgn * (half - 0.2);
       const yy = y(s);
-      parts.steel.beam(
+      parts.detail.steel.beam(
         bridgePoint(f, s, l, yy + 0.5),
         bridgePoint(f, s, l, yy + 1.06),
         0.1,
@@ -214,11 +217,11 @@ function buildDeck(
       { a: [line.l - 0.075, 0.02] as const, b: [line.l + 0.075, 0.02] as const, color },
     ];
     if (!line.dashed) {
-      parts.markings.sweep(frames, edge);
+      parts.detail.markings.sweep(frames, edge);
       continue;
     }
     for (let s = from + 4; s + 6 < to; s += 15) {
-      parts.markings.sweep(
+      parts.detail.markings.sweep(
         framesAlong([s, s + 3, s + 6].map((k) => bridgePoint(f, k, 0, y(k)))),
         edge,
       );
@@ -230,7 +233,7 @@ function buildDeck(
 function buildAbutments(
   b: Bridge,
   f: BridgeFrame,
-  parts: InfraParts,
+  parts: BridgeParts,
   c: InfraColors,
   portalY?: number,
 ): void {
@@ -312,7 +315,7 @@ interface Obstacles {
 function pushPiers(
   b: Bridge,
   f: BridgeFrame,
-  parts: InfraParts,
+  parts: BridgeParts,
   topY: number,
   w: number,
   d: number,
@@ -354,7 +357,7 @@ function pushPiers(
 function buildArch(
   b: Bridge,
   f: BridgeFrame,
-  parts: InfraParts,
+  parts: BridgeParts,
   c: InfraColors,
   obstacles: Obstacles,
 ): void {
@@ -387,7 +390,7 @@ function buildArch(
       for (let s = s0 + 6; s < s1 - 3; s += 6) {
         const ry = archY(s, s0, s1, springY, crownY) - 1.1;
         if (ry - b.deckY < 2) continue;
-        parts.glow.beam(
+        parts.detail.glow.beam(
           bridgePoint(f, s, l, b.deckY + 0.3),
           bridgePoint(f, s, l, ry),
           0.14,
@@ -400,7 +403,7 @@ function buildArch(
     for (let s = s0 + 12; s < s1 - 6; s += 12) {
       const ry = archY(s, s0, s1, springY, crownY);
       if (ry - b.deckY < 10) continue;
-      parts.steel.beam(
+      parts.detail.steel.beam(
         bridgePoint(f, s, -ribL, ry),
         bridgePoint(f, s, ribL, ry),
         0.9,
@@ -417,7 +420,7 @@ function buildArch(
 function buildTruss(
   b: Bridge,
   f: BridgeFrame,
-  parts: InfraParts,
+  parts: BridgeParts,
   c: InfraColors,
   obstacles: Obstacles,
 ): void {
@@ -433,8 +436,8 @@ function buildTruss(
     parts.steel.beam(P(-h + panel / 2, yt), P(h - panel / 2, yt), 0.9, 0.9, c.archSteel, f.v);
     for (let s = -h; s < h - 1e-6; s += panel) {
       const m = s + panel / 2;
-      parts.steel.beam(P(s, yb), P(m, yt), 0.7, 0.7, c.archSteel, f.v);
-      parts.steel.beam(P(m, yt), P(s + panel, yb), 0.7, 0.7, c.archSteel, f.v);
+      parts.detail.steel.beam(P(s, yb), P(m, yt), 0.7, 0.7, c.archSteel, f.v);
+      parts.detail.steel.beam(P(m, yt), P(s + panel, yb), 0.7, 0.7, c.archSteel, f.v);
     }
     // Orange line along the top chord crest.
     parts.glow.beam(
@@ -458,7 +461,13 @@ function buildTruss(
   }
   // Top lateral struts at every top node.
   for (let s = -h + panel / 2; s <= h - panel / 2 + 1e-6; s += panel) {
-    parts.steel.beam(bridgePoint(f, s, -lt, yt), bridgePoint(f, s, lt, yt), 0.5, 0.6, c.archSteel);
+    parts.detail.steel.beam(
+      bridgePoint(f, s, -lt, yt),
+      bridgePoint(f, s, lt, yt),
+      0.5,
+      0.6,
+      c.archSteel,
+    );
   }
   const lowY = lowerDeckY(b);
   const top = lowY === undefined ? b.deckY - DECK_THICKNESS - 0.4 : lowY - DECK_THICKNESS;
@@ -469,7 +478,7 @@ function buildTruss(
 function buildLowerDeck(
   b: Bridge,
   f: BridgeFrame,
-  parts: InfraParts,
+  parts: BridgeParts,
   c: InfraColors,
   lowY: number,
 ): void {
@@ -502,7 +511,7 @@ function buildLowerDeck(
 /** Cyan uplight washes on both river-facing faces of the river piers at `stations`. */
 function buildPierWashes(
   f: BridgeFrame,
-  parts: InfraParts,
+  parts: BridgeParts,
   c: InfraColors,
   stations: readonly number[],
   pierW: number,
@@ -549,7 +558,7 @@ function buildPierWashes(
 function buildGirder(
   b: Bridge,
   f: BridgeFrame,
-  parts: InfraParts,
+  parts: BridgeParts,
   c: InfraColors,
   obstacles: Obstacles,
 ): void {
@@ -562,7 +571,7 @@ function buildGirder(
 
 const BUILDERS: Record<
   BridgeShape,
-  (b: Bridge, f: BridgeFrame, parts: InfraParts, c: InfraColors, o: Obstacles) => void
+  (b: Bridge, f: BridgeFrame, parts: BridgeParts, c: InfraColors, o: Obstacles) => void
 > = {
   arch: buildArch,
   truss: buildTruss,
@@ -573,12 +582,15 @@ const BUILDERS: Record<
 /** `roads` (the layout's ground roads) and `highways`: what river and approach piers keep clear of. */
 export function buildBridge(
   b: Bridge,
-  parts: InfraParts,
+  out: InfraParts,
   c: InfraColors,
   roads: readonly Road[] = [],
   highways: readonly HwPath[] = [],
 ): BridgeFrame {
   const f = bridgeFrame(b);
+  const detail = { steel: new MeshData(), glow: new MeshData(), markings: new MeshData() };
+  out.bridgeDetail.push({ id: b.id, center: [f.mid[0], b.deckY, f.mid[2]], ...detail });
+  const parts: BridgeParts = { ...out, detail };
   const shape = bridgeShape(b);
   const lowY = lowerDeckY(b);
   const deckY = (s: number): number => deckYAt(b, f, s);
