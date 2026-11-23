@@ -12,6 +12,14 @@ interface HangangStats {
   dpr: number;
 }
 
+/** Rough GPU memory estimate (bytes) of what the scene graph references, for `npm run perf`. */
+interface HangangMemory {
+  geometryBytes: number;
+  textureBytes: number;
+  /** Drawing buffer: color + depth, times MSAA samples. */
+  framebufferBytes: number;
+}
+
 /** Camera rig state for e2e control tests. */
 interface HangangCamera {
   mode: 'orbit' | 'fly' | 'cinematic' | 'flight';
@@ -27,8 +35,14 @@ declare global {
      * Set every frame by main.ts once boot finished; polled by e2e tests and the screenshot
      * script. `powered` turns true when the loader is gone and the power-on ramp has ended.
      */
-    __city?: { ready: boolean; frames: number; powered: boolean };
+    __city?: {
+      ready: boolean;
+      frames: number;
+      powered: boolean;
+      /** Moving average of each module's update() CPU time (ms), keyed by module name. */
+      cpu: Record<string, number>;
+    };
     /** Only with `?stats`: frame counters and camera rig state (src/ux). */
-    __hangang?: { stats(): HangangStats; camera(): HangangCamera };
+    __hangang?: { stats(): HangangStats; camera(): HangangCamera; memory(): HangangMemory };
   }
 }

@@ -117,12 +117,12 @@ async function boot(): Promise<void> {
   loader.detail('buildings', `건물 ${LAYOUT.buildings.length.toLocaleString('ko-KR')}동 조립 완료`);
 
   // Order matters: lighting computes env first, others consume it in the same frame.
-  const modules: CityModuleInstance[] = [];
+  const modules: (readonly [name: string, instance: CityModuleInstance])[] = [];
   for (const [name, weight, mod] of MODULES) {
     loader.stage(name, weight);
     await nextFrame();
     try {
-      modules.push(mod.init(ctx));
+      modules.push([name, mod.init(ctx)]);
     } catch (err) {
       loader.fail(name, err);
       throw err;
@@ -146,7 +146,9 @@ async function boot(): Promise<void> {
 
   const timer = new THREE.Timer();
   timer.connect(document);
-  const cityState = { ready: true, frames: 0, powered: false };
+  // cpu: moving average of each module's update() in ms, read by `npm run perf`.
+  const cpu: Record<string, number> = Object.fromEntries(modules.map(([name]) => [name, 0]));
+  const cityState = { ready: true, frames: 0, powered: false, cpu };
   let bootGone = false;
   const frame = (timestamp?: number): void => {
     timer.update(timestamp);
@@ -156,7 +158,11 @@ async function boot(): Promise<void> {
 
     ux.frameStart();
     ux.beforeUpdate(dt, t);
-    for (const m of modules) m.update?.(dt, t);
+    for (const [name, m] of modules) {
+      const start = performance.now();
+      m.update?.(dt, t);
+      cpu[name] = (cpu[name] ?? 0) * 0.95 + (performance.now() - start) * 0.05;
+    }
     ux.afterUpdate(dt, t);
     ctx.render();
     ux.frameEnd(raw);

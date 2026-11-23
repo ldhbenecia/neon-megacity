@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import type { Ctx } from '../core/types';
 import { AdaptiveDpr } from './dpr';
 
@@ -103,4 +104,80 @@ export function createPerf(ctx: Ctx, opts: { overlay: boolean; resize: () => voi
     },
   };
   return perf;
+}
+
+export interface MemoryEstimate {
+  geometryBytes: number;
+  textureBytes: number;
+  framebufferBytes: number;
+}
+
+function textureBytes(tex: THREE.Texture): number {
+  const img: unknown = tex.image;
+  const images = Array.isArray(img) ? img : [img];
+  let texels = 0;
+  for (const i of images) {
+    const {
+      width = 0,
+      height = 0,
+      depth = 1,
+    } = (i ?? {}) as {
+      width?: number;
+      height?: number;
+      depth?: number;
+    };
+    texels += width * height * depth;
+  }
+  const bpp = tex.type === THREE.FloatType ? 16 : tex.type === THREE.HalfFloatType ? 8 : 4;
+  return texels * bpp * (tex.generateMipmaps && tex.minFilter !== THREE.LinearFilter ? 4 / 3 : 1);
+}
+
+/**
+ * Bytes of geometry and textures reachable from the scene graph (plus scene.environment /
+ * background). Render targets owned by post-processing are not reachable and not counted.
+ */
+export function estimateMemory(ctx: Ctx): MemoryEstimate {
+  const { scene, renderer } = ctx;
+  const buffers = new Set<ArrayBufferLike>();
+  const textures = new Set<THREE.Texture>();
+  let geometryBytes = 0;
+  const addArray = (a: { array: ArrayLike<number> & { buffer: ArrayBufferLike } }): void => {
+    if (buffers.has(a.array.buffer)) return;
+    buffers.add(a.array.buffer);
+    geometryBytes += a.array.buffer.byteLength;
+  };
+  const addTextures = (o: object): void => {
+    for (const v of Object.values(o) as unknown[]) {
+      const inner: unknown = v && typeof v === 'object' && 'value' in v ? v.value : v;
+      if (inner instanceof THREE.Texture) textures.add(inner as THREE.Texture);
+    }
+  };
+  scene.traverse((obj) => {
+    const mesh = obj as Partial<THREE.Mesh> & Partial<THREE.InstancedMesh>;
+    if (mesh.geometry) {
+      for (const attr of Object.values(mesh.geometry.attributes)) {
+        addArray('data' in attr ? attr.data : attr);
+      }
+      if (mesh.geometry.index) addArray(mesh.geometry.index);
+    }
+    if (mesh.instanceMatrix) addArray(mesh.instanceMatrix);
+    if (mesh.instanceColor) addArray(mesh.instanceColor);
+    const mats = mesh.material ? [mesh.material].flat() : [];
+    for (const m of mats) {
+      addTextures(m);
+      if (m instanceof THREE.ShaderMaterial) addTextures(m.uniforms);
+    }
+  });
+  for (const t of [scene.environment, scene.background]) {
+    if (t instanceof THREE.Texture) textures.add(t);
+  }
+  let texBytes = 0;
+  for (const t of textures) texBytes += textureBytes(t);
+  const size = renderer.getDrawingBufferSize(new THREE.Vector2());
+  const samples = renderer.getContext().getContextAttributes()?.antialias ? 4 : 1;
+  return {
+    geometryBytes,
+    textureBytes: texBytes,
+    framebufferBytes: size.x * size.y * 8 * samples,
+  };
 }
