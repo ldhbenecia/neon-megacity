@@ -17,6 +17,13 @@ export const FLOOR_H: Record<Archetype, [number, number]> = {
   hillHouse: [2.7, 2.7],
   warehouse: [6, 6],
   pavilion: [3, 3],
+  taperTower: [3.6, 6],
+  mediaSlab: [3.6, 6],
+  lowOffice: [3.4, 4.5],
+  hanokRow: [3, 3.6],
+  palaceHall: [6, 6],
+  brickWarehouse: [4.5, 5],
+  showroomBox: [5, 6],
 };
 
 export function floorsFor(h: number, floorH: number, groundH: number): number {
@@ -178,6 +185,29 @@ export function computeTiers(m: Massing, rng: Rng, district: string): TierResult
         spireH: 0,
       };
     }
+    case 'taperTower': {
+      // Six tiers whose plan shrinks by 1 - 0.55 t^1.6 (SEOUL.md 4.3).
+      const tiers: Tier[] = [];
+      const n = 6;
+      for (let i = 0; i < n; i++) {
+        const k = 1 - 0.55 * Math.pow(i / n, 1.6);
+        const y0 = m.baseY + (m.h * i) / n;
+        const y1 = i === n - 1 ? top : m.baseY + (m.h * (i + 1)) / n;
+        tiers.push(tier(m, 0, m.w * k, m.d * k, y0, y1, 'chamfer', Math.min(3, (m.w * k) / 4)));
+      }
+      return { tiers, spireH: m.h * rng.range(0.06, 0.1) };
+    }
+    case 'palaceHall': {
+      // Raised stone platform, then the hall (its curved roof is drawn by buildings).
+      const plinth = Math.min(rng.range(1.5, 2.5), m.h * 0.3);
+      return {
+        tiers: [
+          tier(m, 0, m.w, m.d, m.baseY, m.baseY + plinth, 'box', 0),
+          tier(m, 0, m.w * 0.84, m.d * 0.78, m.baseY + plinth, top, 'box', 0),
+        ],
+        spireH: 0,
+      };
+    }
     case 'officeSlab':
       return rng.chance(0.3)
         ? { tiers: box('chamfer', Math.min(2, m.w / 4, m.d / 4)), spireH: 0 }
@@ -187,7 +217,7 @@ export function computeTiers(m: Massing, rng: Rng, district: string): TierResult
   }
 }
 
-// --- Fictional names (no real places, brands or works) ---
+// --- Fictional names (no brands or existing works; real Seoul place names are fine) ---
 
 const SYL_A = [
   '청',
@@ -219,13 +249,22 @@ export const CORPS = [
   '청람로보틱스',
 ] as const;
 
-export function fictionalName(rng: Rng, archetype: Archetype): string {
+/** Fictional building name; `place` is the zone's display name (real Seoul place names are allowed). */
+export function fictionalName(rng: Rng, archetype: Archetype, place: string): string {
   const stem = `${rng.pick(SYL_A)}${rng.pick(SYL_B)}`;
   switch (archetype) {
     case 'sangga':
       return `${stem}${rng.pick(SANGGA_SUFFIX)}`;
     case 'hillHouse':
-      return `별계단동 ${rng.int(1, 300)}번지`;
+      return `${place} ${rng.int(1, 300)}번지`;
+    case 'hanokRow':
+      return `${stem}${rng.pick(['상회', '약재상', '서점', '다방'])}`;
+    case 'brickWarehouse':
+      return `${stem} 벽돌창고`;
+    case 'showroomBox':
+      return `${stem} 쇼룸`;
+    case 'palaceHall':
+      return `${stem}전`;
     case 'warehouse':
       return `운해물류 제${rng.int(1, 40)}창고`;
     case 'pavilion':

@@ -80,25 +80,35 @@ export interface ZoneHeights {
 }
 
 export interface River {
-  /** 33 points, x -1300..1300, z(x) = 150 + 110 sin((x + 300) / 640). */
+  /** Control points (SEOUL.md 3.1), x strictly increasing; the curve through them is `samples`. */
   centerline: Vec2[];
-  /** Channel width bank to bank (m). Includes the parks (둔치) on both sides. */
+  /** Narrowest bank-to-bank width (m). Widths vary: use `riverWidthAt(x)`. Includes the parks. */
   width: number;
   /** Water surface y. */
   waterY: number;
   /** Top of the embankment (= ground). */
   bankY: number;
-  /** Park strip inside each embankment (m), at `parkY`. Water width = width - 2 * parkWidth. */
+  /** Narrowest park strip (m). Use `parkWidthAt(x)`. */
   parkWidth: number;
   parkY: number;
   /** Riverside district band outside each bank (m). */
   bandWidth: number;
-  /** Bank-to-bank width at each centerline point (v3 varies it; v2 = `width` everywhere). */
+  /** Bank-to-bank width at each control point (linear in x between them). */
   widths: number[];
-  /** Park strip width at each centerline point (v2 = `parkWidth` everywhere). */
+  /** Park strip width at each control point. */
   parkWidths: number[];
-  /** Dense resampling of the centerline for v3 distance queries (v2: a copy of the centerline; v2 queries still use `centerline`). */
+  /** Centerline resampled about every 10 m; the distance queries use it. */
   samples: Vec2[];
+  /** Side channels that split land from the main channel (샛강). */
+  channels: SideChannel[];
+}
+
+export interface SideChannel {
+  id: string;
+  name: string;
+  centerline: Vec2[];
+  /** Water width (m); no parks. */
+  width: number;
 }
 
 export type IslandId = 'yeouido' | 'bamseom' | 'nodeul' | 'seorae' | 'seonyu';
@@ -167,10 +177,9 @@ export interface Bridge {
   a: Vec2;
   b: Vec2;
   /**
-   * Where the approach ramps meet the ground (y = 0). The ramps are asymmetric: `landA` (north)
-   * is RIVERSIDE_HALF (180 m) from the centerline, a 60 m ramp; `landB` (south) is
-   * BRIDGE_LAND_SOUTH (260 m), a 140 m ramp that clears hw-south. The deck descends linearly
-   * from `deckY` at the abutment to 0 at the landing (see `bridgeDeckY`).
+   * Where the approach ramps meet the ground (y = 0): BRIDGE_LAND (100 m) beyond the north bank,
+   * past 강변북로, and BRIDGE_LAND_SOUTH (180 m) beyond the south bank, past 올림픽대로. The deck
+   * descends linearly from `deckY` at the abutment to 0 at the landing (see `bridgeDeckY`).
    */
   landA: Vec2;
   landB: Vec2;
@@ -181,7 +190,7 @@ export interface Bridge {
   lanes: number;
   /** Arch crown height for 'arch', truss height for 'truss' (m above the deck). */
   structureH: number;
-  /** Spans between the abutments (piers = spans - 1), for every kind. */
+  /** Spans between the abutments (piers = spans - 1). 'arch' is always 2 (v2 only); 'truss' ≥ 3, others ≥ 2. */
   spans: number;
   rail: boolean;
   /** Island the span crosses. */
@@ -194,6 +203,8 @@ export type HighwayKind = 'elevated' | 'atGrade' | 'ramp';
 
 export interface Highway {
   id: string;
+  /** Real road name (Korean), e.g. '강변북로'. */
+  name: string;
   kind: HighwayKind;
   /** Centripetal Catmull-Rom control points (y = deck surface). Use `highwayCurve(hw)`. */
   points: Vec3[];
@@ -270,7 +281,14 @@ export type Archetype =
   | 'apartmentSlab'
   | 'hillHouse'
   | 'warehouse'
-  | 'pavilion';
+  | 'pavilion'
+  | 'taperTower'
+  | 'mediaSlab'
+  | 'lowOffice'
+  | 'hanokRow'
+  | 'palaceHall'
+  | 'brickWarehouse'
+  | 'showroomBox';
 
 export type TierShape = 'box' | 'cylinder' | 'chamfer';
 

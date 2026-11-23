@@ -1,36 +1,65 @@
-// Shared, deterministic city layout (layout v2). Every module reads from here so that
+// Shared, deterministic city layout (layout v3, docs/SEOUL.md). Every module reads from here so that
 // terrain, buildings, infra, neon and the camera all agree. Units: 1 = 1 m.
 // Coordinates: Y up, ground y = 0, north = -Z, east = +X, map centered at the origin.
 // Data types: ./types.ts. Generation: ./generate.ts. Pure queries: ./queries.ts.
-import { MAP_HALF } from './districts';
-import { EXTENT, generateLayout } from './generate';
+import { EXTENT, EXTENT_X, EXTENT_Z, generateLayout } from './generate';
+import { HALF_X, HALF_Z } from './river';
 import { HASH_CELL } from './spatial';
 import type { Layout } from './types';
 
 export const CITY = {
-  /** Play area edge length (m); the map spans [-half, half] on X and Z. */
+  /** Longer side (kept for v2 callers). The map spans x ±halfX, z ±halfZ. */
   extent: EXTENT,
-  extentX: EXTENT,
-  extentZ: EXTENT,
-  half: MAP_HALF,
+  extentX: EXTENT_X,
+  extentZ: EXTENT_Z,
+  /** max(halfX, halfZ); bounds checks should use halfX / halfZ. */
+  half: Math.max(HALF_X, HALF_Z),
+  halfX: HALF_X,
+  halfZ: HALF_Z,
   /** Default layout seed. */
   seed: 2077,
   /** Spatial hash cell used by layout queries (m). */
   hashCell: HASH_CELL,
   /** Suggested chunk size for merged geometry / LOD (ART_DIRECTION 4.4). */
-  chunkSize: 256,
+  chunkSize: 400,
 } as const;
 
 export const LAYOUT: Layout = generateLayout(CITY.seed);
 
 export * from './types';
-export { generateLayout, SKYLINE_PEAK, MEGA_MIN_H, RIVER_CLEARANCE } from './generate';
-export { ZONES, zoneAt, zoneById, districtAt, bandEdgeZ, RIVERSIDE_HALF } from './districts';
+export {
+  generateLayout,
+  SKYLINE_PEAK,
+  MEGA_MIN_H,
+  RIVER_CLEARANCE,
+  EXTENT_X,
+  EXTENT_Z,
+} from './generate';
+export {
+  ZONES,
+  zoneAt,
+  zoneById,
+  zoneSide,
+  districtAt,
+  bandEdgeZ,
+  riversideHalfAt,
+  TEHERAN,
+} from './districts';
 export {
   RIVER,
   TERRAIN,
+  HALF_X,
+  HALF_Z,
+  ISLANDS,
+  MOUNTAINS,
+  SAETGANG,
   riverZ,
   riverFrame,
+  riverOffset,
+  riverWidthAt,
+  parkWidthAt,
+  waterSignedDistance,
+  islandAt,
   riverCenterDistance,
   riverSignedDistance,
   isNorthOfRiver,
@@ -38,8 +67,6 @@ export {
   surfaceHeight,
 } from './river';
 export {
-  RING,
-  ringDeckY,
   highwayCurve,
   highwaySamples,
   onBridge,
@@ -48,6 +75,9 @@ export {
   BRIDGE_LAND_SOUTH,
   MAX_DECK_THICKNESS,
   MIN_ROAD_CLEARANCE,
+  GANGBYEON_OFFSET,
+  GANGBYEON_Y,
+  OLYMPIC_OFFSET,
 } from './highways';
 export {
   buildingsInAabb,
