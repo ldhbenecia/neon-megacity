@@ -5,8 +5,17 @@ import {
   MEGA_MIN_H,
   RIVER,
   RIVER_CLEARANCE,
+  SAETGANG,
   SKYLINE_PEAK,
   ZONES,
+  ISLANDS,
+  MOUNTAINS,
+  TERRAIN,
+  islandAt,
+  parkWidthAt,
+  riverOffset,
+  riverWidthAt,
+  waterSignedDistance,
   allTiers,
   buildingContaining,
   buildingTop,
@@ -52,7 +61,7 @@ function digest(L: typeof LAYOUT): string {
   return hashString(json).toString(16);
 }
 
-describe('layout v2: determinism', () => {
+describe('layout v3: determinism', () => {
   it('is deterministic for the default seed', () => {
     const again = generateLayout(CITY.seed);
     expect(again).toEqual(LAYOUT);
@@ -68,11 +77,11 @@ describe('layout v2: determinism', () => {
       digest: digest(LAYOUT),
     }).toMatchInlineSnapshot(`
       {
-        "blocks": 936,
-        "buildings": 4329,
-        "digest": "abe77f35",
-        "roads": 1082,
-        "slots": 1802,
+        "blocks": 1359,
+        "buildings": 6187,
+        "digest": "118f545d",
+        "roads": 1272,
+        "slots": 4063,
       }
     `);
   });
@@ -91,60 +100,88 @@ describe('layout v2: determinism', () => {
   });
 });
 
-describe('layout v2: counts (ART_DIRECTION 2.6)', () => {
+describe('layout v3: counts (SEOUL.md 7.4)', () => {
   const count = (pred: (b: BuildingSpec) => boolean) => B.filter(pred).length;
 
-  it('has 3600..4800 buildings, 2200..3200 hill houses, 8..12 megatowers', () => {
-    expect(B.length).toBeGreaterThanOrEqual(3600);
-    expect(B.length).toBeLessThanOrEqual(4800);
+  it('has 5000..7000 buildings, a few hundred hill houses and 9..14 megatowers', () => {
+    expect(B.length).toBeGreaterThanOrEqual(5000);
+    expect(B.length).toBeLessThanOrEqual(7000);
     const hill = count((b) => b.archetype === 'hillHouse');
-    expect(hill).toBeGreaterThanOrEqual(2200);
-    expect(hill).toBeLessThanOrEqual(3200);
+    expect(hill).toBeGreaterThanOrEqual(300);
+    expect(hill).toBeLessThanOrEqual(900);
     const mega = count((b) => b.h >= MEGA_MIN_H);
-    expect(mega).toBeGreaterThanOrEqual(8);
-    expect(mega).toBeLessThanOrEqual(12);
+    expect(mega).toBeGreaterThanOrEqual(9);
+    expect(mega).toBeLessThanOrEqual(14);
   });
 
-  it('puts the 520 m peak near the skyline anchor with two ≥ 450 m followers', () => {
+  it('puts the 600 m 용산 apex at the skyline peak, then 잠실 500 m and 여의도 430 m', () => {
     const sorted = [...B].sort((a, b) => b.h - a.h);
     const top = sorted[0]!;
-    expect(top.h).toBe(520);
-    expect(Math.hypot(top.x - SKYLINE_PEAK.x, top.z - SKYLINE_PEAK.z)).toBeLessThan(120);
-    expect(sorted[1]!.h).toBeGreaterThanOrEqual(450);
-    expect(sorted[2]!.h).toBeGreaterThanOrEqual(450);
-    expect(sorted[3]!.h).toBeLessThan(450);
-    expect(sorted.slice(0, 12).every((b) => b.district === 'core')).toBe(true);
+    expect(top.h).toBe(600);
+    expect(top.zoneId).toBe('yongsan');
+    expect(top.tags.landmark).toBe('yongsan-apex');
+    expect(Math.hypot(top.x - SKYLINE_PEAK.x, top.z - SKYLINE_PEAK.z)).toBeLessThan(200);
+    expect(sorted[1]!.h).toBe(500);
+    expect(sorted[1]!.tags.landmark).toBe('jamsil-blade');
+    expect(sorted[1]!.archetype).toBe('taperTower');
+    expect(sorted[2]!.h).toBe(430);
+    expect(sorted[2]!.zoneId).toBe('yeouido');
+    for (const b of B.filter((x) => x.h >= MEGA_MIN_H)) expect(b.district).toBe('megacore');
+    const ids = LAYOUT.landmarks.map((l) => l.id).sort();
+    expect(ids).toEqual(['jamsil-blade', 'namsan-mast', 'palace', 'yeouido-gold', 'yongsan-apex']);
   });
 
   it('has the expected infrastructure', () => {
-    expect(LAYOUT.bridges.map((b) => b.id)).toEqual(['bridge-a', 'bridge-b', 'bridge-c']);
+    expect(LAYOUT.bridges.map((b) => b.name)).toEqual([
+      '성산대교',
+      '양화대교',
+      '서강대교',
+      '마포대교',
+      '한강철교',
+      '한강대교',
+      '반포대교·잠수교',
+      '동호대교',
+      '성수대교',
+      '청담대교',
+      '올림픽대교',
+    ]);
     expect(LAYOUT.highways.map((h) => h.id)).toEqual([
       'hw-river-north',
-      'hw-ring',
-      'hw-interchange-a',
-      'hw-interchange-b',
       'hw-south',
+      'hw-naebu-w',
+      'hw-naebu-e',
+      'hw-naebu-w-ramp',
+      'hw-naebu-e-ramp',
     ]);
-    expect(LAYOUT.ridges.map((r) => r.radius)).toEqual([2500, 4000, 6000]);
-    expect(LAYOUT.river.centerline).toHaveLength(33);
+    expect(LAYOUT.ridges.map((r) => r.radius)).toEqual([3200, 4800, 7000]);
+    expect(LAYOUT.extentX).toBe(4000);
+    expect(LAYOUT.extentZ).toBe(2600);
+    expect(LAYOUT.namedRoads.map((r) => r.name)).toContain('테헤란로');
+    expect(LAYOUT.islands.map((i) => i.id)).toEqual([
+      'yeouido',
+      'bamseom',
+      'nodeul',
+      'seorae',
+      'seonyu',
+    ]);
   });
 
-  it('places street slots within the 6.2 target ranges', () => {
+  it('places street slots within the target ranges', () => {
     const n = (k: string) => LAYOUT.slots.filter((s) => s.kind === k).length;
     const within = (k: string, lo: number, hi: number) => {
       expect(n(k), k).toBeGreaterThanOrEqual(lo);
       expect(n(k), k).toBeLessThanOrEqual(hi);
     };
-    within('streetLight', 400, 650);
-    within('tree', 500, 900);
-    within('signPole', 150, 320);
-    within('pojangmacha', 40, 70);
-    within('busStop', 30, 50);
-    within('stairLamp', 200, 350);
+    within('streetLight', 1300, 2000);
+    within('tree', 1000, 1600);
+    within('signPole', 750, 1200);
+    within('pojangmacha', 60, 130);
+    within('busStop', 70, 120);
+    within('stairLamp', 1, 60);
   });
 });
 
-describe('layout v2: no overlaps', () => {
+describe('layout v3: no overlaps', () => {
   it('buildings never overlap each other', () => {
     for (const b of B) {
       for (const id of buildingsInAabb(LAYOUT, b.x - 60, b.z - 60, b.x + 60, b.z + 60)) {
@@ -171,14 +208,24 @@ describe('layout v2: no overlaps', () => {
     }
   });
 
-  it('buildings keep clear of the river channel', () => {
+  it('buildings keep clear of the river channel and 샛강', () => {
+    const c = LAYOUT.river.samples;
+    const sg = SAETGANG.centerline;
     for (const b of B) {
-      const c = LAYOUT.river.centerline;
       for (let i = 0; i < c.length - 1; i++) {
-        const d = obbSegmentDistance(obb(b), c[i]!, c[i + 1]!);
-        expect(d - RIVER.width / 2, `building ${b.id}`).toBeGreaterThanOrEqual(RIVER_CLEARANCE);
+        const a = c[i]!;
+        const e = c[i + 1]!;
+        // The channel is ≤ 480 m wide, so only segments within 500 m in x can be the closest.
+        if (Math.abs(a.x - b.x) > 500) continue;
+        const half = Math.max(riverWidthAt(a.x), riverWidthAt(e.x)) / 2;
+        const d = obbSegmentDistance(obb(b), a, e);
+        expect(d - half, `building ${b.id}`).toBeGreaterThanOrEqual(RIVER_CLEARANCE - 1e-6);
       }
-      expect(riverSignedDistance(b.x, b.z)).toBeGreaterThanOrEqual(RIVER_CLEARANCE);
+      for (let i = 0; i < sg.length - 1; i++) {
+        const d = obbSegmentDistance(obb(b), sg[i]!, sg[i + 1]!);
+        expect(d - SAETGANG.width / 2, `building ${b.id}`).toBeGreaterThanOrEqual(RIVER_CLEARANCE);
+      }
+      expect(waterSignedDistance(b.x, b.z)).toBeGreaterThanOrEqual(RIVER_CLEARANCE);
     }
   });
 
@@ -224,13 +271,13 @@ describe('layout v2: no overlaps', () => {
         for (const br of LAYOUT.bridges) {
           expect(pointSegmentDistance(p, br.landA, br.landB)).toBeGreaterThan(br.width / 2);
         }
-        expect(riverSignedDistance(p.x, p.z)).toBeGreaterThan(0);
+        expect(waterSignedDistance(p.x, p.z)).toBeGreaterThan(0);
       }
     }
   });
 });
 
-describe('layout v2: tiers', () => {
+describe('layout v3: tiers', () => {
   const stacks = (b: BuildingSpec): Tier[][] => (b.twin ? [b.tiers, b.twin] : [b.tiers]);
 
   it('stack from baseY to baseY + h and never grow upward', () => {
@@ -295,21 +342,27 @@ describe('layout v2: tiers', () => {
           'bracedTower',
           'cantileverTower',
           'twinTower',
+          'taperTower',
         ]).toContain(b.archetype);
       }
       if (b.district === 'hillside') expect(b.archetype).toBe('hillHouse');
+      if (b.district === 'palace') expect(b.archetype).toBe('palaceHall');
+      if (b.district === 'palace') expect(b.h).toBeLessThanOrEqual(18);
+      if (b.archetype === 'mediaSlab') expect(b.tags.mediaFace).toBe(b.front);
       if (b.archetype === 'cylinderTower')
         expect(b.tiers.every((t) => t.shape === 'cylinder')).toBe(true);
       if (b.archetype === 'apartmentSlab') {
         expect(b.tags.dong).toBeGreaterThanOrEqual(101);
-        expect(b.floors).toBeGreaterThanOrEqual(15);
-        expect(b.floors).toBeLessThanOrEqual(25);
+        const z = ZONES.find((x) => x.id === b.zoneId)!;
+        expect(b.floors).toBeGreaterThanOrEqual(Math.round(z.heights.min / 2.8) - 1);
+        // A piloti ground floor (5 m) can add 2.2 m over the zone's height band.
+        expect(b.h).toBeLessThanOrEqual(z.heights.tallMax + 2.2 + 1e-6);
       }
     }
   });
 });
 
-describe('layout v2: districts', () => {
+describe('layout v3: districts', () => {
   it('assigns every building to the zone under its footprint center', () => {
     for (const b of B) {
       expect(zoneAt(b.x, b.z).id).toBe(b.zoneId);
@@ -317,24 +370,30 @@ describe('layout v2: districts', () => {
     }
   });
 
-  it('classifies landmarks of the map', () => {
-    expect(districtAt(SKYLINE_PEAK.x, SKYLINE_PEAK.z)).toBe('core');
-    expect(districtAt(800, -400)).toBe('midtown');
-    expect(districtAt(-800, -400)).toBe('sangga');
-    expect(districtAt(0, -900)).toBe('hillside');
+  it('puts the Seoul districts where SEOUL.md 4.2 says', () => {
+    const at = (x: number, z: number) => zoneAt(x, z).id;
+    expect(at(SKYLINE_PEAK.x, SKYLINE_PEAK.z)).toBe('yongsan');
+    expect(at(-150, -800)).toBe('jongno');
+    expect(at(-190, -990)).toBe('palace');
+    expect(at(-176, -389)).toBe('namsan');
+    expect(at(980, -420)).toBe('seongsu');
+    expect(at(-1000, -620)).toBe('hongdae');
+    expect(at(816, 490)).toBe('gangnam');
+    expect(at(1650, 330)).toBe('jamsil');
+    expect(at(-1100, 700)).toBe('yeongdeungpo');
+    const yeouido = ISLANDS.find((i) => i.id === 'yeouido')!;
+    const c = yeouido.polygon.reduce((a, p) => ({ x: a.x + p.x, z: a.z + p.z }), { x: 0, z: 0 });
+    expect(at(c.x / yeouido.polygon.length, c.z / yeouido.polygon.length)).toBe('yeouido');
     expect(districtAt(0, riverZ(0))).toBe('riverside');
-    expect(districtAt(0, 900)).toBe('apartment');
-    expect(districtAt(900, 900)).toBe('industrial');
-    expect(districtAt(-900, 900)).toBe('sangga');
+    for (const z of ZONES) expect(z.nameEn).toMatch(/^[A-Z][A-Z -]*$/);
   });
 
-  it('keeps the riverside band 60 m outside both banks', () => {
-    for (let x = -1150; x <= 1150; x += 50) {
-      const z = riverZ(x);
-      expect(districtAt(x, z - 170)).toBe('riverside');
-      expect(districtAt(x, z + 170)).toBe('riverside');
-      expect(districtAt(x, z - 200)).not.toBe('riverside');
-      expect(districtAt(x, z + 200)).not.toBe('riverside');
+  it('makes the riverside band exactly the channel plus 60 m', () => {
+    for (let x = -1950; x <= 1950; x += 37) {
+      for (let z = -1290; z <= 1290; z += 41) {
+        const inBand = riverSignedDistance(x, z) <= RIVER.bandWidth;
+        expect(districtAt(x, z) === 'riverside', `${x},${z}`).toBe(inBand);
+      }
     }
   });
 
@@ -345,9 +404,10 @@ describe('layout v2: districts', () => {
 
   it('keeps the block height ratio ≥ 3 in core, midtown and sangga blocks', () => {
     for (const bl of LAYOUT.blocks) {
-      if (!['core', 'midtown', 'sangga'].includes(bl.district) || bl.buildingIds.length < 2) {
-        continue;
-      }
+      const RATIO = ['core', 'megacore', 'corridor', 'midtown', 'sangga', 'nightlife'];
+      if (!RATIO.includes(bl.district) || bl.buildingIds.length < 2) continue;
+      // Blocks of megatowers only have no low building to compare against.
+      if (bl.buildingIds.every((id) => B[id]!.tags.corp)) continue;
       const hs = bl.buildingIds.map((id) => B[id]!.h);
       expect(Math.max(...hs) / Math.min(...hs), `block ${bl.id}`).toBeGreaterThanOrEqual(3 - 1e-9);
     }
@@ -355,71 +415,112 @@ describe('layout v2: districts', () => {
 });
 
 describe('terrain and river', () => {
-  it('terrainHeight is 0 south of z = -650 and at most 110 m', () => {
-    for (let x = -1200; x <= 1200; x += 37) {
-      for (let z = -640; z <= 1200; z += 53) expect(terrainHeight(x, z)).toBe(0);
-      for (let z = -1200; z <= -650; z += 11) {
+  it('raises the named mountains and keeps the plain flat', () => {
+    for (const m of MOUNTAINS) {
+      const h = terrainHeight(m.peak.x, m.peak.z);
+      expect(h, m.id).toBeGreaterThan(m.height * (1 - TERRAIN.detail) - 1e-6);
+      expect(h, m.id).toBeLessThanOrEqual(m.height * (1 + TERRAIN.detail) + 1e-6);
+    }
+    const far = (x: number, z: number) =>
+      MOUNTAINS.every((m) => Math.hypot(x - m.peak.x, z - m.peak.z) >= m.radius);
+    for (let x = -2000; x <= 2000; x += 61) {
+      for (let z = -1300; z <= 1300; z += 67) {
         const h = terrainHeight(x, z);
         expect(h).toBeGreaterThanOrEqual(0);
-        expect(h).toBeLessThanOrEqual(110);
+        if (far(x, z)) expect(h).toBe(0);
       }
     }
-    expect(terrainHeight(0, -1200)).toBeGreaterThan(60);
   });
 
   it('terrainHeight is continuous', () => {
     const step = 0.05;
-    for (let x = -1200; x <= 1200; x += 13) {
-      for (let z = -1200; z <= -600; z += 7) {
-        expect(Math.abs(terrainHeight(x + step, z) - terrainHeight(x, z))).toBeLessThan(0.5);
-        expect(Math.abs(terrainHeight(x, z + step) - terrainHeight(x, z))).toBeLessThan(0.5);
+    for (const m of MOUNTAINS) {
+      for (let x = m.peak.x - m.radius; x <= m.peak.x + m.radius; x += 13) {
+        for (let z = m.peak.z - m.radius; z <= m.peak.z + m.radius; z += 13) {
+          expect(Math.abs(terrainHeight(x + step, z) - terrainHeight(x, z))).toBeLessThan(0.5);
+          expect(Math.abs(terrainHeight(x, z + step) - terrainHeight(x, z))).toBeLessThan(0.5);
+        }
       }
     }
   });
 
-  it('surfaceHeight follows bank, park and water levels', () => {
-    const x = 0;
-    const z = riverZ(x);
-    expect(surfaceHeight(x, z)).toBe(RIVER.waterY);
-    expect(surfaceHeight(x, z + RIVER.width / 2 - 20)).toBe(RIVER.parkY);
-    expect(surfaceHeight(x, z - RIVER.width / 2 - 20)).toBe(0);
-    expect(riverSignedDistance(x, z)).toBeCloseTo(-RIVER.width / 2, 0);
-  });
-
-  it('bridges are perpendicular to the river and span bank to bank', () => {
+  it('follows the bridge control points with a centerline strictly increasing in x', () => {
+    const s = LAYOUT.river.samples;
+    for (let i = 1; i < s.length; i++) expect(s[i]!.x).toBeGreaterThan(s[i - 1]!.x);
     for (const br of LAYOUT.bridges) {
       const mx = (br.a.x + br.b.x) / 2;
-      const span = Math.hypot(br.b.x - br.a.x, br.b.z - br.a.z);
-      expect(span).toBeCloseTo(RIVER.width, 6);
-      // The midpoint is on the centerline and both abutments are on the channel edge.
-      expect(Math.abs((br.a.z + br.b.z) / 2 - riverZ(mx))).toBeLessThan(1);
-      expect(Math.abs(riverSignedDistance(br.a.x, br.a.z))).toBeLessThan(1);
-      expect(Math.abs(riverSignedDistance(br.b.x, br.b.z))).toBeLessThan(1);
-      expect(deckHeightAt(LAYOUT, mx, (br.a.z + br.b.z) / 2)).toBeGreaterThanOrEqual(br.deckY);
+      const mz = (br.a.z + br.b.z) / 2;
+      expect(Math.abs(mz - riverZ(mx)), br.id).toBeLessThan(5);
+    }
+    // Widths follow SEOUL.md 3.1: wide downstream, narrowest at 잠실.
+    expect(riverWidthAt(-1900)).toBeCloseTo(480, 0);
+    expect(riverWidthAt(1501)).toBe(360);
+  });
+
+  it('surfaceHeight follows bank, park, water, 샛강 and islands', () => {
+    const x = 600;
+    const z = riverZ(x);
+    const half = riverWidthAt(x) / 2;
+    expect(surfaceHeight(x, z)).toBe(RIVER.waterY);
+    const park = riverOffset(x, half - parkWidthAt(x) / 2);
+    expect(surfaceHeight(park.x, park.z)).toBe(RIVER.parkY);
+    const land = riverOffset(x, -half - 20);
+    expect(surfaceHeight(land.x, land.z)).toBe(0);
+    expect(riverSignedDistance(x, z)).toBeCloseTo(-half, 0);
+    const sg = SAETGANG.centerline[Math.floor(SAETGANG.centerline.length / 2)]!;
+    expect(surfaceHeight(sg.x, sg.z)).toBe(RIVER.waterY);
+    for (const id of ['bamseom', 'nodeul'] as const) {
+      const isl = ISLANDS.find((i) => i.id === id)!;
+      const c = isl.polygon.reduce((a, p) => ({ x: a.x + p.x, z: a.z + p.z }), { x: 0, z: 0 });
+      const p = { x: c.x / isl.polygon.length, z: c.z / isl.polygon.length };
+      expect(islandAt(p.x, p.z)?.id).toBe(id);
+      expect(surfaceHeight(p.x, p.z)).toBe(isl.y);
+      expect(riverSignedDistance(p.x, p.z)).toBeLessThan(0);
     }
   });
 
-  it('ridges are seamless and highest in the north', () => {
+  it('bridges span bank to bank and keep the approach asymmetry', () => {
+    for (const br of LAYOUT.bridges) {
+      const mx = (br.a.x + br.b.x) / 2;
+      const span = Math.hypot(br.b.x - br.a.x, br.b.z - br.a.z);
+      expect(span, br.id).toBeCloseTo(riverWidthAt(mx), 0);
+      // Abutments sit on the normal at the bridge's x; on tight bends that is up to ~15 m off
+      // the nearest-bank distance. 한강철교 follows 한강대교's direction, so it is further off.
+      const tol = br.motif === 'railTruss' ? 40 : 16;
+      expect(Math.abs(riverSignedDistance(br.a.x, br.a.z)), br.id).toBeLessThan(tol);
+      expect(Math.abs(riverSignedDistance(br.b.x, br.b.z)), br.id).toBeLessThan(tol);
+      const rampA = Math.hypot(br.a.x - br.landA.x, br.a.z - br.landA.z);
+      const rampB = Math.hypot(br.b.x - br.landB.x, br.b.z - br.landB.z);
+      expect(rampB).toBeGreaterThan(rampA);
+      expect(deckHeightAt(LAYOUT, mx, (br.a.z + br.b.z) / 2)).toBeGreaterThanOrEqual(br.deckY);
+      if (br.kind === 'truss') expect(br.spans).toBeGreaterThanOrEqual(3);
+      else expect(br.spans).toBeGreaterThanOrEqual(2);
+    }
+  });
+
+  it('ridges are seamless, highest in the north and carry the named peaks', () => {
     for (const r of LAYOUT.ridges) {
       expect(ridgeHeight(r, -Math.PI)).toBeCloseTo(ridgeHeight(r, Math.PI), 9);
+      const top = Math.max(r.peakNorth, ...r.peaks.map((p) => p.height));
       let north = 0;
       let south = 0;
-      for (let i = 0; i < 64; i++) {
-        const a = (i / 64) * Math.PI * 2;
+      for (let i = 0; i < 256; i++) {
+        const a = (i / 256) * Math.PI * 2;
         const h = ridgeHeight(r, a);
         expect(h).toBeGreaterThanOrEqual(0);
-        expect(h).toBeLessThanOrEqual(r.peakNorth);
+        expect(h).toBeLessThanOrEqual(top);
         if (Math.sin(a) < -0.7) north = Math.max(north, h);
         if (Math.sin(a) > 0.7) south = Math.max(south, h);
       }
       expect(north).toBeGreaterThan(south);
+      for (const p of r.peaks) expect(ridgeHeight(r, p.angle)).toBeGreaterThan(p.height * 0.84);
     }
   });
 });
 
 describe('layout queries', () => {
   it('buildingsInAabb matches a brute-force scan', () => {
-    const q = { minX: -300, minZ: -500, maxX: 100, maxZ: -200 };
+    const q = { minX: -300, minZ: -800, maxX: 100, maxZ: -500 };
     const brute = B.filter((b) =>
       obbOverlap(obb(b), {
         x: (q.minX + q.maxX) / 2,
@@ -468,12 +569,11 @@ describe('layout queries', () => {
   });
 
   it('deckHeightAt reports highway decks and nothing on open ground', () => {
-    const ring = LAYOUT.highways.find((h) => h.id === 'hw-ring')!;
-    const p = ring.points[2]!;
+    const naebu = LAYOUT.highways.find((h) => h.id === 'hw-naebu-e')!;
+    const p = naebu.points[2]!;
     const y = deckHeightAt(LAYOUT, p.x, p.z);
     expect(y).not.toBeNull();
-    expect(y!).toBeGreaterThanOrEqual(22 - 0.5);
-    expect(y!).toBeLessThanOrEqual(28 + 0.5);
+    expect(y!).toBeCloseTo(26, 0);
     expect(deckHeightAt(LAYOUT, 900, 900)).toBeNull();
   });
 
@@ -580,34 +680,21 @@ describe('noise', () => {
   });
 });
 
-describe('layout v3 fields on the v2 map', () => {
-  it('fills v3 fields with v2 defaults', () => {
-    expect(LAYOUT.extentX).toBe(LAYOUT.extent);
-    expect(LAYOUT.extentZ).toBe(LAYOUT.extent);
-    expect(LAYOUT.islands).toEqual([]);
-    expect(LAYOUT.mountains).toEqual([]);
-    expect(LAYOUT.namedRoads).toEqual([]);
-    expect(LAYOUT.landmarks).toEqual([]);
-    const r = LAYOUT.river;
-    expect(r.widths).toHaveLength(r.centerline.length);
-    expect(r.parkWidths).toHaveLength(r.centerline.length);
-    expect(r.widths.every((w) => w === r.width)).toBe(true);
-    expect(r.parkWidths.every((w) => w === r.parkWidth)).toBe(true);
-    expect(r.samples).toEqual(r.centerline);
-    expect(LAYOUT.ridges.every((g) => g.peaks.length === 0)).toBe(true);
-  });
-
-  it('gives every bridge and zone its v3 descriptors', () => {
+describe('layout v3: descriptors', () => {
+  it('names every bridge, zone and highway', () => {
     for (const b of LAYOUT.bridges) {
-      expect(b.name.length).toBeGreaterThan(0);
-      expect(b.spans).toBe({ arch: 2, truss: 3, doubleDeck: 6 }[b.kind as string]);
-      expect(b.rail).toBe(false);
+      expect(b.name).toMatch(/대교|철교/);
+      expect(b.id).toMatch(/^br-/);
     }
+    expect(LAYOUT.bridges.filter((b) => b.rail).map((b) => b.id)).toEqual([
+      'br-hangang-rail',
+      'br-dongho',
+      'br-cheongdam',
+    ]);
+    for (const h of LAYOUT.highways) expect(h.name.length).toBeGreaterThan(0);
     for (const z of LAYOUT.districts) {
-      expect(z.nameEn.length).toBeGreaterThan(0);
       expect(z.heights.min).toBeLessThanOrEqual(z.heights.max);
       expect(z.heights.max).toBeLessThanOrEqual(z.heights.tallMax);
-      expect(z.litScale).toBe(1);
     }
   });
 });

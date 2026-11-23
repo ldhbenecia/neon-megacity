@@ -2,9 +2,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   MEGA_MIN_H,
-  RIVER,
   RIVER_CLEARANCE,
+  SAETGANG,
+  ZONES,
   buildingsInAabb,
+  riverWidthAt,
   generateLayout,
   highwaySamples,
   type Block,
@@ -36,13 +38,22 @@ describe.each(SEEDS)('seed %i', (seed) => {
   });
 
   it('keeps block rectangles out of the river and the highway corridors', () => {
-    const c = L.river.centerline;
+    const c = L.river.samples;
+    const sg = SAETGANG.centerline;
     const segs = L.highways.map((hw) => ({ hw, s: highwaySamples(hw, 8) }));
     for (const bl of L.blocks) {
       const o = blockObb(bl);
       for (let i = 0; i < c.length - 1; i++) {
-        const d = obbSegmentDistance(o, c[i]!, c[i + 1]!);
-        expect(d - RIVER.width / 2, `block ${bl.id}`).toBeGreaterThanOrEqual(RIVER_CLEARANCE);
+        const a = c[i]!;
+        const e = c[i + 1]!;
+        if (Math.abs(a.x - bl.x) > 900) continue;
+        const half = Math.max(riverWidthAt(a.x), riverWidthAt(e.x)) / 2;
+        const d = obbSegmentDistance(o, a, e);
+        expect(d - half, `block ${bl.id}`).toBeGreaterThanOrEqual(RIVER_CLEARANCE - 1e-6);
+      }
+      for (let i = 0; i < sg.length - 1; i++) {
+        const d = obbSegmentDistance(o, sg[i]!, sg[i + 1]!);
+        expect(d - SAETGANG.width / 2, `block ${bl.id}`).toBeGreaterThanOrEqual(RIVER_CLEARANCE);
       }
       for (const { hw, s } of segs) {
         for (let i = 0; i < s.length - 1; i++) {
@@ -68,10 +79,11 @@ describe.each(SEEDS)('seed %i', (seed) => {
 
   it('applies the block height rules (ratio ≥ 3, touching neighbours differ > 10 %)', () => {
     for (const bl of L.blocks) {
-      if (!['core', 'midtown', 'sangga'].includes(bl.district) || bl.buildingIds.length < 2) {
-        continue;
-      }
+      const RATIO = ['core', 'megacore', 'corridor', 'midtown', 'sangga', 'nightlife'];
+      if (!RATIO.includes(bl.district) || bl.buildingIds.length < 2) continue;
       const bs = bl.buildingIds.map((id) => B[id]!);
+      // Blocks of megatowers only have no low building to compare against.
+      if (bs.every((b) => b.tags.corp)) continue;
       const hs = bs.map((b) => b.h);
       expect(Math.max(...hs) / Math.min(...hs), `block ${bl.id}`).toBeGreaterThanOrEqual(3 - 1e-9);
       for (let i = 0; i < bs.length; i++) {
@@ -86,12 +98,13 @@ describe.each(SEEDS)('seed %i', (seed) => {
     }
   });
 
-  it('keeps non-megatower heights under their district caps', () => {
-    const cap: Record<string, number> = { core: 245, midtown: 210, sangga: 70 };
+  it('keeps non-megatower heights under their zone caps (heights.tallMax)', () => {
+    const cap = new Map(ZONES.map((z) => [z.id, z.heights.tallMax]));
     for (const b of B) {
       if (b.tags.corp) continue;
-      const c = cap[b.district];
-      if (c !== undefined) expect(b.h, `building ${b.id}`).toBeLessThanOrEqual(c + 1e-9);
+      // A piloti ground floor can add 2.2 m to an apartment slab.
+      const extra = b.archetype === 'apartmentSlab' ? 2.2 : 0;
+      expect(b.h, `building ${b.id}`).toBeLessThanOrEqual(cap.get(b.zoneId)! + extra + 1e-9);
     }
   });
 });
