@@ -62,7 +62,7 @@ export interface DistrictZone {
   /** Width of the zone's grid roads (m) and their kind. */
   roadWidth: number;
   roadKind: RoadKind;
-  /** Romanized name for English UI, e.g. 'YEOUIDO'. */
+  /** Name shown in English UI: romanized for real places in v3 (e.g. 'YEOUIDO'). */
   nameEn: string;
   /** Height band (m): most buildings in [min, max], `tallShare` of them up to `tallMax`. */
   heights: ZoneHeights;
@@ -97,7 +97,7 @@ export interface River {
   widths: number[];
   /** Park strip width at each centerline point (v2 = `parkWidth` everywhere). */
   parkWidths: number[];
-  /** Dense polyline the distance queries use (v2 = the centerline itself). */
+  /** Dense resampling of the centerline for v3 distance queries (v2: a copy of the centerline; v2 queries still use `centerline`). */
   samples: Vec2[];
 }
 
@@ -155,6 +155,7 @@ export type BridgeMotif =
   | 'fountain'
   | 'orangeChord'
   | 'subwayDeck'
+  | 'redBand'
   | 'ringPylon';
 
 export interface Bridge {
@@ -180,7 +181,7 @@ export interface Bridge {
   lanes: number;
   /** Arch crown height for 'arch', truss height for 'truss' (m above the deck). */
   structureH: number;
-  /** Arch spans, pylons or truss panels, depending on kind. */
+  /** Spans between the abutments (piers = spans - 1), for every kind. */
   spans: number;
   rail: boolean;
   /** Island the span crosses. */

@@ -18,7 +18,7 @@ export const RIVER: Readonly<River> = {
   bandWidth: 60,
   widths: CENTERLINE.map(() => 240),
   parkWidths: CENTERLINE.map(() => 40),
-  samples: CENTERLINE,
+  samples: CENTERLINE.map((p) => ({ ...p })),
 };
 
 /** Analytic river center z at x (the centerline polyline samples this). */

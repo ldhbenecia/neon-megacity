@@ -23,9 +23,14 @@ function edge(x0: number, x1: number, side: -1 | 1): Vec2[] {
   });
 }
 
+type V2Kind = Extract<
+  DistrictKind,
+  'core' | 'midtown' | 'sangga' | 'apartment' | 'industrial' | 'hillside' | 'riverside'
+>;
+
 interface ZoneDef {
   id: string;
-  kind: DistrictKind;
+  kind: V2Kind;
   name: string;
   x0: number;
   x1: number;
@@ -158,10 +163,11 @@ const DEFS: ZoneDef[] = [
   },
 ];
 
-/** v2 zone profile per kind (ART_DIRECTION 2.2). Informational: the v2 generator does not read it. */
-const V2_PROFILE: Partial<
-  Record<DistrictKind, { nameEn: string; heights: ZoneHeights; coverage: number }>
-> = {
+/**
+ * v2 zone profile per kind: target values from ART_DIRECTION 2.2, not derived from the
+ * generator (which does not read them; megatowers and the block height rules go beyond them).
+ */
+const V2_PROFILE: Record<V2Kind, { nameEn: string; heights: ZoneHeights; coverage: number }> = {
   core: {
     nameEn: 'APEX',
     heights: { min: 120, max: 245, tallShare: 0.1, tallMax: 520 },
@@ -199,14 +205,13 @@ const V2_PROFILE: Partial<
   },
 };
 
-function profile(kind: DistrictKind): {
+function profile(kind: V2Kind): {
   nameEn: string;
   heights: ZoneHeights;
   coverage: number;
   litScale: number;
 } {
   const p = V2_PROFILE[kind];
-  if (!p) throw new Error(`no v2 profile for ${kind}`);
   return { ...p, heights: { ...p.heights }, litScale: 1 };
 }
 

@@ -747,6 +747,19 @@ function draftsFor(zone: DistrictZone, lots: Lot[], rng: Rng): Draft[] {
     case 'riverside':
       for (const lot of lots) drafts.push(make(lot, 'pavilion', rng.range(3, 8)));
       break;
+    case 'megacore':
+    case 'corridor':
+    case 'oldtown':
+    case 'palace':
+    case 'brick':
+    case 'nightlife':
+    case 'showroom':
+    case 'park':
+      throw new Error(`layout v2 generator does not support zone kind ${zone.kind}`);
+    default: {
+      const unknown: never = zone.kind;
+      throw new Error(`unknown zone kind ${String(unknown)}`);
+    }
   }
   return drafts;
 }

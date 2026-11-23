@@ -70,7 +70,7 @@ describe('layout v2: determinism', () => {
       {
         "blocks": 936,
         "buildings": 4329,
-        "digest": "ed6e1dae",
+        "digest": "abe77f35",
         "roads": 1082,
         "slots": 1802,
       }
@@ -600,7 +600,7 @@ describe('layout v3 fields on the v2 map', () => {
   it('gives every bridge and zone its v3 descriptors', () => {
     for (const b of LAYOUT.bridges) {
       expect(b.name.length).toBeGreaterThan(0);
-      expect(b.spans).toBeGreaterThanOrEqual(1);
+      expect(b.spans).toBe({ arch: 2, truss: 3, doubleDeck: 6 }[b.kind as string]);
       expect(b.rail).toBe(false);
     }
     for (const z of LAYOUT.districts) {
