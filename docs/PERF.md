@@ -127,8 +127,9 @@ new one for every distinct combination of:
 - render target: with post on, the scene renders untonemapped into the HDR target; drawing one
   material to both the canvas and the target compiles both variants.
 - day / night: swap uniforms, never materials or shadow flags (#31).
-- helpers that stay alive: a `PMREMGenerator` keeps its 3 programs until disposed (lighting now
-  disposes it after the boot bakes).
+- helpers that stay alive: a `PMREMGenerator` keeps its programs until disposed. Lighting disposes
+  it once every env key is baked: at boot in full quality; the low tier bakes lazily and usually
+  keeps it.
 
 Budget (ceiling 50 stays the CI gate; team total 45 leaves a reserve):
 

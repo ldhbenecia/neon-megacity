@@ -97,8 +97,8 @@ export interface EnvMaps {
 }
 
 export function createEnvMaps(renderer: THREE.WebGLRenderer, size = 256): EnvMaps {
-  // Created on demand and dropped after bakeAll: its blur/convolution programs (3) would otherwise
-  // stay compiled for the whole session although nothing bakes again.
+  // Created on demand and dropped once every key is baked (boot in full quality; the low tier bakes
+  // lazily and usually keeps it): its blur/convolution programs would otherwise stay compiled.
   let pmrem: THREE.PMREMGenerator | null = null;
   const cache = new Map<EnvKey, THREE.WebGLRenderTarget>();
 
@@ -130,25 +130,28 @@ export function createEnvMaps(renderer: THREE.WebGLRenderer, size = 256): EnvMap
     return target;
   }
 
+  function releaseGenerator(): void {
+    pmrem?.dispose();
+    pmrem = null;
+  }
+
   return {
     get(key) {
       let t = cache.get(key);
       if (!t) {
         t = bake(key);
         cache.set(key, t);
+        if (cache.size === ENV_KEY_LIST.length) releaseGenerator();
       }
       return t.texture;
     },
     bakeAll() {
       for (const k of ENV_KEY_LIST) this.get(k);
-      pmrem?.dispose();
-      pmrem = null;
     },
     dispose() {
       for (const t of cache.values()) t.dispose();
       cache.clear();
-      pmrem?.dispose();
-      pmrem = null;
+      releaseGenerator();
     },
   };
 }

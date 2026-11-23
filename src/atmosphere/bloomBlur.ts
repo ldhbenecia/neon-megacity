@@ -36,29 +36,48 @@ function numbers(u: IUniform | undefined): number[] {
   return Array.isArray(u?.value) ? (u.value as number[]) : [];
 }
 
-/** Replaces `bloom.separableBlurMaterials` in place; the pass keeps driving their uniforms. */
-export function shareBlurProgram(bloom: UnrealBloomPass): void {
+/**
+ * Replaces `bloom.separableBlurMaterials` in place; the pass keeps driving their uniforms. If the
+ * pass's uniforms ever stop matching (a three upgrade), the original materials are kept: correct
+ * bloom with 5 programs beats a silently broken one.
+ */
+export function shareBlurProgram(bloom: UnrealBloomPass): boolean {
   const mats = bloom.separableBlurMaterials;
-  const max = Math.max(...mats.map((m) => numbers(m.uniforms.gaussianOffsets).length));
+  const taps = mats.map((m) => ({
+    offsets: numbers(m.uniforms.gaussianOffsets),
+    weights: numbers(m.uniforms.gaussianWeights),
+  }));
+  const usable =
+    mats.length > 0 &&
+    mats.every((m) => m.uniforms.invSize && m.uniforms.direction && m.uniforms.centerWeight) &&
+    taps.every((t) => t.offsets.length > 0 && t.offsets.length === t.weights.length);
+  if (!usable) return false;
+  const max = Math.max(...taps.map((t) => t.offsets.length));
+  const pad = (a: number[]): number[] => [...a, ...new Array<number>(max - a.length).fill(0)];
   for (let i = 0; i < mats.length; i++) {
     const old = mats[i];
-    if (!old) continue;
-    const offsets = numbers(old.uniforms.gaussianOffsets);
-    const pad = (a: number[]): number[] => [...a, ...new Array<number>(max - a.length).fill(0)];
-    mats[i] = new ShaderMaterial({
+    const t = taps[i];
+    if (!old || !t) continue;
+    const mat = new ShaderMaterial({
       defines: { MAX_PAIRS: max },
       uniforms: {
         colorTexture: { value: null },
         invSize: { value: old.uniforms.invSize?.value as unknown },
         direction: { value: old.uniforms.direction?.value as unknown },
         centerWeight: { value: old.uniforms.centerWeight?.value as unknown },
-        pairs: { value: offsets.length },
-        gaussianOffsets: { value: pad(offsets) },
-        gaussianWeights: { value: pad(numbers(old.uniforms.gaussianWeights)) },
+        pairs: { value: t.offsets.length },
+        gaussianOffsets: { value: pad(t.offsets) },
+        gaussianWeights: { value: pad(t.weights) },
       },
       vertexShader: BLUR_VERTEX,
       fragmentShader: BLUR_FRAGMENT,
     });
+    mat.blending = old.blending;
+    mat.transparent = old.transparent;
+    mat.depthTest = old.depthTest;
+    mat.depthWrite = old.depthWrite;
+    mats[i] = mat;
     old.dispose();
   }
+  return true;
 }
