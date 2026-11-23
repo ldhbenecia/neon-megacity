@@ -209,13 +209,6 @@ export function chunkCenter(i: number, j: number, grid: ChunkGrid): { x: number;
   return { x: (x0 + x1) / 2, z: (z0 + z1) / 2 };
 }
 
-// Mirrors THREE.LOD.update without hysteresis.
-export function lodLevel(distance: number): 0 | 1 | 2 {
-  if (distance >= LOD_DISTANCES[2]) return 2;
-  if (distance >= LOD_DISTANCES[1]) return 1;
-  return 0;
-}
-
 export function keepInLod2(spec: Pick<BuildingSpec, 'h' | 'archetype'>): boolean {
   return spec.h >= LOD2_MIN_HEIGHT;
 }
