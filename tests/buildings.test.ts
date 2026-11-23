@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type * as THREE from 'three';
-import { LAYOUT, sideNormal, type Archetype, type BuildingSpec } from '../src/city/layout';
+import { CITY, LAYOUT, sideNormal, type BuildingSpec } from '../src/city/layout';
 import { GeoBuilder } from '../src/buildings/builder';
 import {
   MAX_HALF_INT,
@@ -10,13 +10,13 @@ import {
   type Targets,
 } from '../src/buildings/archetypes';
 import {
-  CHUNK_SIZE,
   LOD_DISTANCES,
   bandLevels,
   braceLevels,
   chunkCenter,
+  chunkCount,
+  chunkGrid,
   chunkIndex,
-  chunksPerAxis,
   columnOffsets,
   cylinderSegments,
   districtLitFactor,
@@ -82,13 +82,13 @@ describe('window parameters (4.1)', () => {
   });
 
   it('uses real window sizes smaller than a floor', () => {
-    const archetypes: Archetype[] = [
+    const archetypes = [
       'setbackTower',
       'officeSlab',
       'sangga',
       'apartmentSlab',
       'hillHouse',
-    ];
+    ] as const;
     for (const a of archetypes) {
       for (const role of ['front', 'back', 'south', 'north'] as const) {
         const s = windowStyle(a, role, 1);
@@ -194,19 +194,36 @@ describe('face roles and normals', () => {
 });
 
 describe('chunks and LOD (4.4, 4.5)', () => {
-  it('maps positions to 256 m chunks and back', () => {
-    const { i, j } = chunkIndex(-1199, 1199);
-    expect(i).toBe(0);
-    expect(j).toBe(chunksPerAxis() - 1);
-    expect(chunksPerAxis() ** 2).toBeLessThanOrEqual(81);
-    const c = chunkCenter(i, j);
-    expect(Math.abs(c.x - -1199)).toBeLessThanOrEqual(CHUNK_SIZE / 2);
-    expect(Math.abs(chunkCenter(j, j).z - 1199)).toBeLessThanOrEqual(CHUNK_SIZE);
+  it('maps every position on the layout map to a chunk and back', () => {
+    const grid = chunkGrid(LAYOUT, CITY.chunkSize);
+    const nx = chunkCount(grid.halfX, grid.size);
+    const nz = chunkCount(grid.halfZ, grid.size);
+    expect(nx * nz).toBeLessThanOrEqual(81);
+    const corner = chunkIndex(-grid.halfX + 1, grid.halfZ - 1, grid);
+    expect(corner).toEqual({ i: 0, j: nz - 1 });
+    const c = chunkCenter(corner.i, corner.j, grid);
+    expect(c.x).toBeCloseTo(-grid.halfX + grid.size / 2, 9);
+    expect(c.z).toBeCloseTo((-grid.halfZ + (nz - 1) * grid.size + grid.halfZ) / 2, 9);
     for (const b of LAYOUT.buildings) {
-      const k = chunkIndex(b.x, b.z);
+      const k = chunkIndex(b.x, b.z, grid);
       expect(k.i).toBeGreaterThanOrEqual(0);
-      expect(k.j).toBeLessThan(chunksPerAxis());
+      expect(k.i).toBeLessThan(nx);
+      expect(k.j).toBeGreaterThanOrEqual(0);
+      expect(k.j).toBeLessThan(nz);
     }
+  });
+
+  it('splits v2 and v3 map sizes into the planned chunk counts', () => {
+    expect(chunkCount(1200, 256)).toBe(9);
+    expect(chunkCenter(8, 8, chunkGrid({ extentX: 2400, extentZ: 2400 }, 256)).x).toBeCloseTo(
+      1024,
+      9,
+    );
+    expect(chunkCount(2000, 400)).toBe(10);
+    expect(chunkCount(1300, 400)).toBe(7);
+    const grid = chunkGrid({ extentX: 4000, extentZ: 2600 }, 400);
+    expect(chunkIndex(1999, 1299, grid)).toEqual({ i: 9, j: 6 });
+    expect(chunkCenter(9, 6, grid).z).toBeCloseTo(1200, 9);
   });
 
   it('selects levels at 380 / 1100 m', () => {
@@ -223,7 +240,7 @@ describe('chunks and LOD (4.4, 4.5)', () => {
 });
 
 describe('archetype geometry', () => {
-  const byArchetype = new Map<Archetype, BuildingSpec[]>();
+  const byArchetype = new Map<string, BuildingSpec[]>();
   for (const b of LAYOUT.buildings) {
     const list = byArchetype.get(b.archetype) ?? [];
     if (list.length < 4) list.push(b);
