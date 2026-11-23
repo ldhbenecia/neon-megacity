@@ -14,6 +14,7 @@ import {
   type Road,
   type Vec2,
 } from '../city/layout';
+import { closestSegmentT, pointSegmentDistance } from '../city/math';
 import type { Quality } from './types';
 
 type Tuple = readonly [number, number, number];
@@ -105,16 +106,9 @@ export function streetPose(roads: readonly Road[], anchor: StreetAnchor): Pose |
   const candidates: { road: Road; t: number; d: number }[] = [];
   for (const road of roads) {
     if (road.district !== anchor.kind || road.kind !== 'street') continue;
-    const dx = road.b.x - road.a.x;
-    const dz = road.b.z - road.a.z;
-    const len2 = dx * dx + dz * dz;
-    if (Math.sqrt(len2) <= 300) continue;
-    const t = Math.min(
-      1,
-      Math.max(0, ((want.x - road.a.x) * dx + (want.z - road.a.z) * dz) / len2),
-    );
-    const d = Math.hypot(road.a.x + dx * t - want.x, road.a.z + dz * t - want.z);
-    candidates.push({ road, t, d });
+    if (Math.hypot(road.b.x - road.a.x, road.b.z - road.a.z) <= 300) continue;
+    const t = closestSegmentT(want, road.a, road.b);
+    candidates.push({ road, t, d: pointSegmentDistance(want, road.a, road.b) });
   }
   candidates.sort((x, y) => x.d - y.d);
   for (const { road, t } of candidates) {
@@ -126,20 +120,19 @@ export function streetPose(roads: readonly Road[], anchor: StreetAnchor): Pose |
   return null;
 }
 
+function findStreet(): { pose: Pose; name: string } | null {
+  for (const anchor of streetAnchors(LAYOUT.districts)) {
+    const pose = streetPose(LAYOUT.roads, anchor);
+    if (pose) return { pose, name: anchor.name };
+  }
+  return null;
+}
+
 let streetCache: { pose: Pose; name: string } | null | undefined;
 
 /** First anchor with a clear street view, or null (the preset then uses STREET_FALLBACK). */
 export function streetPreset(): { pose: Pose; name: string } | null {
-  if (streetCache === undefined) {
-    streetCache = null;
-    for (const anchor of streetAnchors(LAYOUT.districts)) {
-      const pose = streetPose(LAYOUT.roads, anchor);
-      if (pose) {
-        streetCache = { pose, name: anchor.name };
-        break;
-      }
-    }
-  }
+  if (streetCache === undefined) streetCache = findStreet();
   return streetCache;
 }
 
@@ -162,7 +155,6 @@ const fromPeak = (position: Tuple, target: Tuple): Pose => {
 export const CAMERA_PRESETS = {
   /** ART_DIRECTION 8.4 preset 2 (코어 상공). */
   overview: fromPeak([580, 420, 760], [20, 120, 20]),
-  /** Computed lazily from the layout on first access; falls back to STREET_FALLBACK. */
   get street(): Pose {
     return streetPreset()?.pose ?? STREET_FALLBACK;
   },
@@ -176,7 +168,7 @@ export const CAMERA_PRESETS = {
 
 export type CameraPreset = keyof typeof CAMERA_PRESETS;
 
-/** Pose of a named preset (preferred accessor; the street pose is resolved lazily). */
+/** Pose of a named preset (preferred accessor). */
 export function cameraPreset(name: CameraPreset): CameraPose {
   return CAMERA_PRESETS[name];
 }
