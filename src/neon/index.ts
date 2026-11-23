@@ -15,7 +15,7 @@ import { createNeonUniforms } from './glsl';
 import { hdrColor } from './geom';
 import { bridgePaths, groundPaths, highwayPath, vehicleStreams, type Path } from './lanes';
 import { createLightPool, type LightCandidate } from './lights';
-import { placeSigns, type Placement } from './placement';
+import { placeSigns, roadGapIndex, type Placement } from './placement';
 import { buildHolograms, buildRings, buildScreens } from './screens';
 import { createSelection } from './selection';
 import {
@@ -104,15 +104,21 @@ function decalList(
   street: StreetPlan,
   faces: readonly (readonly BuildingFace[])[],
   roadY: number,
+  roadGap: (x: number, z: number) => number,
 ): DecalInstance[] {
   const out: (DecalInstance & { h: number })[] = [];
   const ground = (x: number, z: number): number => surfaceHeight(x, z) + roadY + 0.04;
+  // Start wall-sign reflections at the carriageway edge: on the sidewalk slab they are hidden.
+  const outFromWall = (x: number, z: number): number => {
+    const gap = roadGap(x, z);
+    return Number.isFinite(gap) ? Math.min(8, Math.max(3, gap + 0.3)) : 3;
+  };
   for (const s of [...P.flats, ...street.flats]) {
     if (s.kind === 'crown' || s.y0 > 30) continue;
     const f = s.face >= 0 ? faces[s.building]?.[s.face] : undefined;
     const nx = f ? f.normal.x : s.nx;
     const nz = f ? f.normal.z : s.nz;
-    const out3 = f ? 3 : 0.5;
+    const out3 = f ? outFromWall(s.x, s.z) : 0.5;
     const x = s.x + nx * out3;
     const z = s.z + nz * out3;
     const hAbove = Math.max(0, s.y - ground(x, z));
@@ -287,7 +293,10 @@ export function init(ctx: Ctx): CityModuleInstance {
   const rings = buildRings(shared, atlas.texture, catalog, P.rings);
   const holos = buildHolograms(shared, atlas.texture, catalog, P.holos);
   const halos = buildHalos(shared, haloList(P));
-  const decals = buildReflections(shared, decalList(P, street, faces, roadY));
+  const decals = buildReflections(
+    shared,
+    decalList(P, street, faces, roadY, roadGapIndex(ctx.LAYOUT)),
+  );
   for (const m of [screens, rings, holos, halos, decals]) {
     disposables.push(m.geometry, m.material as THREE.Material);
   }
