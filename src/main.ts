@@ -134,7 +134,11 @@ async function boot(): Promise<void> {
   loader.stage('compile', BOOT_WEIGHTS.compile);
   await nextFrame();
   try {
-    await renderer.compileAsync(scene, camera);
+    // The post chain (atmosphere) renders into an HDR target, a different program variant than the
+    // canvas: when it publishes `scene.userData.compile`, that warms up exactly what will be drawn.
+    const compileScene = (scene.userData as { compile?: () => void }).compile;
+    if (compileScene) compileScene();
+    else await renderer.compileAsync(scene, camera);
   } catch (err) {
     loader.fail('compile', err);
     throw err;
