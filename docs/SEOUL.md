@@ -326,6 +326,303 @@ v2 archetype은 그대로 쓰고, 새 archetype 6개(★)를 더한다.
 
 ---
 
+## 5. 지형과 도로
+
+### 5.1 지도 안 산 (heightfield)
+
+v2의 "북쪽 전체가 비탈"을 버리고, 이름 있는 산 봉우리의 합으로 지형을 만든다. 높이는 실제 해발 × 0.6(2.2)이다. 봉우리 하나는 `h × bump(d / r)`(`bump(t) = (1 - t²)²`, t > 1이면 0)에 진폭 12% fbm을 얹고, 겹치면 큰 값을 쓴다(`max`). 강 수로 안은 v2처럼 수로 마스크로 판다.
+
+| id             | 이름          | 봉우리 (투영) | 높이 y | 반지름 (m) | 위에 놓이는 것                                                               |
+| -------------- | ------------- | ------------- | ------ | ---------- | ---------------------------------------------------------------------------- |
+| `namsan`       | 남산          | (-176, -389)  | 160    | 300        | 송신탑(4.5), 산책로 가로등, 성곽 점선. 남쪽 비탈 아래 1/3에 이태원·해방촌 집 |
+| `bugak`        | 북악산        | (-200, -1180) | 205    | 320        | 성곽 점선, 북쪽 지도 끝에서 내부순환로 터널 입구                             |
+| `inwang`       | 인왕산        | (-470, -1015) | 200    | 240        | 바위 질감(지형 셰이더 노출 암반), 성곽 점선                                  |
+| `achasan`      | 아차산 (선택) | (1615, -740)  | 170    | 260        | 광진 주거 뒤 어두운 언덕                                                     |
+| `hongdae-hill` | 와우산 (선택) | (-1010, -560) | 40     | 180        | 홍대 골목이 비탈을 타고 오르는 느낌만                                        |
+
+- 북악과 인왕 사이 안부(-330, -1100)는 y 90까지만 낮아지게 해서 두 산이 하나의 능선으로 읽히게 한다.
+- 지형 위 건물은 v2 hillHouse처럼 `baseY` = footprint 최저 높이, 옹벽을 둔다. `park` 구역에는 건물을 두지 않는다.
+
+### 5.2 원경 능선
+
+v2의 3겹 링(반경 2500/4000/6000 m)을 유지하되, 지도가 넓어져 반경을 3200/4800/7000 m로 늘리고 방위별로 **이름 있는 봉우리**를 프로파일에 박는다. 그 밖의 구간은 v2 fbm을 쓴다.
+
+| 봉우리      | 방위 (지도 중심 기준) | 층         | 높이 y (해발 × 0.6) | 비고                                              |
+| ----------- | --------------------- | ---------- | ------------------- | ------------------------------------------------- |
+| 북한산      | 북 (약 -5°)           | ridge-near | 500 (836 m)         | 3봉우리 바위 능선, 가장 뾰족하게 (`pow` 2.2)      |
+| 도봉산 방면 | 북북동 (약 15°)       | ridge-mid  | 430                 | 북한산 뒤로 이어지는 겹                           |
+| 관악산      | 남남서 (약 190°)      | ridge-near | 380 (632 m)         | 꼭대기 송신 시설 대신 붉은 장애등 2개             |
+| 청계산 방면 | 남남동 (약 165°)      | ridge-mid  | 370                 |                                                   |
+| 서쪽        | 서 (270°)             | ridge-far  | 150                 | 하구 쪽은 낮고 평평하게 (강이 바다로 빠지는 느낌) |
+| 동쪽        | 동 (90°)              | ridge-mid  | 300                 | 남양주·하남 방면 산                               |
+
+### 5.3 고가와 간선 (v3)
+
+v2의 `hw-ring`은 없앤다. 서울에는 도심을 감싸는 고가 원형이 없고, 대신 내부순환로가 북쪽을 반원으로 돈다.
+
+| id             | 이름            | 종류                | 경로 (v3)                                                                                                         | 높이 y                     | 폭 / 차로 | 교각 간격 |
+| -------------- | --------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------- | -------------------------- | --------- | --------- |
+| `hw-gangbyeon` | 강변북로        | `elevated`          | 강 북쪽 제방 바깥 25 m, x -2150..2150 (강 중심선 오프셋 = 반폭 + 25 + 13)                                         | 16 (대교 진입로 교차부 18) | 26 / 6    | 36 m      |
+| `hw-olympic`   | 올림픽대로      | `atGrade` (제방 위) | 강 남쪽 제방 바깥 15 m, x -2150..2150. 남쪽에 방음벽 (청록 띠)                                                    | 0.3                        | 28 / 8    | 없음      |
+| `hw-naebu-w`   | 내부순환로 (서) | `elevated`          | 성산대교 북단 강변북로 분기 (-1460, -640) → (-1300, -900) → (-1050, -1120) → 북쪽 지도 끝 터널 입구 (-900, -1300) | 22~28                      | 22 / 4    | 34 m      |
+| `hw-naebu-e`   | 내부순환로 (동) | `elevated`          | 북쪽 지도 끝 터널 입구 (250, -1300) → (420, -980) → (620, -720) → (830, -470) → 성수 강변북로 합류 (920, -340)    | 22~28                      | 22 / 4    | 34 m      |
+| `hw-*-ramp`    | 분기 램프       | `ramp`              | 내부순환로 양 끝과 강변북로 사이 2개씩 (v2 interchange 방식: 평행, 서로 교차 없음)                                | 16↔22                      | 10 / 2    | 28 m      |
+
+- 내부순환로는 실제로 북쪽 산 아래 홍지문터널(1,890 m)과 정릉터널(1,650 m)을 지난다. [S38] 그래서 지도 북쪽 끝은 터널 입구(어두운 사각 개구부와 주황 터널등 줄)로 끝내 지도 경계가 자연스럽다.
+- 대교 남쪽 진입로는 올림픽대로(지상 0.3) 위를 넘어야 한다. v2처럼 남쪽 착지점을 멀리 두되 강이 넓어진 만큼 제방에서 140 m로 둔다.
+
+| id (NamedRoad)  | 이름     | 경로 (투영, 대략)                                          | 폭 (m) | 비고                                     |
+| --------------- | -------- | ---------------------------------------------------------- | ------ | ---------------------------------------- |
+| `rd-sejong`     | 세종대로 | 광화문 (-190, -900) → 서울역 (-282, -456)                  | 60     | 도시에서 가장 넓은 길, 양쪽 낮은 옛 도심 |
+| `rd-jongno`     | 종로     | (-190, -820) → 동대문 방면 (280, -760)                     | 30     |                                          |
+| `rd-hangang`    | 한강대로 | 서울역 (-282, -456) → 한강대교 북단                        | 40     | 용산 국제업무지구 동쪽 가장자리          |
+| `rd-mapo`       | 마포대로 | 마포대교 북단 → 공덕 (-573, -259) → 서울역                 | 36     |                                          |
+| `rd-yanghwa`    | 양화로   | 양화대교 북단 → 홍대 (-985, -481) → 신촌 방면 (-800, -620) | 30     | 홍대 골목의 척추                         |
+| `rd-yeoui`      | 여의대로 | 여의도 섬 가운데 남북                                      | 50     |                                          |
+| `rd-gangnam`    | 강남대로 | 한남대교 남단 → 강남역 (559, 592) → 남쪽 끝 (600, 1300)    | 50     |                                          |
+| `rd-teheran`    | 테헤란로 | 강남역 (559, 592) → 삼성역 (1073, 389)                     | 50     | 실제 3.5~3.9 km → 약 560 m. 타워 회랑    |
+| `rd-yeongdong`  | 영동대로 | 영동대교 남단 → 삼성역 (1073, 389) → (1100, 800)           | 50     |                                          |
+| `rd-banpo`      | 반포대로 | 반포대교 남단 → 서초 방면 (60, 900)                        | 40     |                                          |
+| `rd-olympic-ro` | 올림픽로 | 잠실 (1300, 330) → 동쪽 끝 (2000, 330)                     | 40     | 잠실 랜드마크 앞                         |
+
+간선은 구역 격자보다 먼저 깔고, 구역 격자는 간선에 걸리는 도로를 잘라 붙인다(v2의 다리 진입로 arterial과 같은 방식).
+
+---
+
+## 6. 카메라 프리셋 (서울 명소 시점)
+
+숫자 키 1~8과 `?cam=` 이름을 함께 바꾼다. 기존 이름(`overview`, `street`, `core`, `topdown`, `skyline`)은 e2e와 스크린샷 스크립트가 쓰므로 **별칭으로 남긴다**. 타깃 y는 카메라 y보다 낮게 둔다(ART_DIRECTION 8.4의 극각 제한). 아래 좌표는 v3 layout 기준 초안이고, ux PR이 `safePose`와 `tests/query.test.ts`로 건물 밖·지면 위인지 확인한 뒤 조정한다.
+
+| 키  | `?cam=`    | 이름                  | 위치 (x, y, z)     | 타깃 (x, y, z)   | 화면에 들어올 것                                                       | 별칭      |
+| --- | ---------- | --------------------- | ------------------ | ---------------- | ---------------------------------------------------------------------- | --------- |
+| 1   | `banpo`    | 반포대교 남단         | (215, 18, 470)     | (0, 10, 0)       | 기본값. 분수 걸린 반포대교, 강, 이촌 아파트 벽, 남산 송신탑, 용산 정점 | `skyline` |
+| 2   | `yeouido`  | 여의도 상공           | (-620, 260, 0)     | (-980, 140, 220) | 섬 위 메가타워 군집, 서강대교 붉은 아치와 어두운 밤섬                  | `core`    |
+| 3   | `namsan`   | 남산에서 내려다보기   | (-150, 240, -360)  | (-600, 60, 100)  | 용산 국제업무지구, 한강 굽이, 여의도, 노들섬                           |           |
+| 4   | `teheran`  | 테헤란로 거리         | (600, 6, 580)      | (900, 3, 455)    | 눈높이에서 본 스크린 협곡, 차량 광류                                   |           |
+| 5   | `seongsu`  | 성수대교 위           | (660, 17, -120)    | (1600, 10, 120)  | 트러스 사이로 강 상류, 청담대교, 올림픽대교, 잠실 랜드마크             |           |
+| 6   | `jamsil`   | 잠실 스카이라인       | (1250, 70, -260)   | (1650, 50, 300)  | 강 건너 잠실 랜드마크와 올림픽대교 4주탑                               |           |
+| 7   | `hongdae`  | 홍대 골목             | (-985, 4, -470)    | (-940, 2, -520)  | 눈높이 네온 골목, 가로지르는 현수 간판 (가까운 골목 중심선에 스냅)     | `street`  |
+| 8   | `bugak`    | 북악 능선에서 본 도심 | (-200, 240, -1170) | (-150, 60, -500) | 궁궐, 종로 옛 도심의 어둠, 그 너머 남산 송신탑과 용산·강               |           |
+| -   | `overview` | 전체 조망             | (1800, 900, 1500)  | (0, 80, -100)    | 강 전체와 세 고층 군집 (용산, 여의도, 잠실)                            |           |
+| -   | `topdown`  | 탑다운                | (0, 2700, 1)       | (0, 0, 0)        | 지도 확인                                                              |           |
+
+시네마틱 순서(ART_DIRECTION 8.5 대체): 1 → 3 → 2 → 7 → 8 → 4 → 5 → 6 → 1. 한 바퀴 180초(지도가 넓어져 v2 150초에서 늘림).
+
+---
+
+## 7. layout v2 → v3 이행 계획
+
+### 7.1 데이터 구조 (`src/city/types.ts` 변경안)
+
+```ts
+export interface River {
+  /** Control points (x strictly increasing), see SEOUL.md 3.1. Sampled to `samples` for queries. */
+  centerline: Vec2[];
+  /** Bank-to-bank width at each control point (m); linearly interpolated by arc length. */
+  widths: number[];
+  /** Park strip width at each control point (m). */
+  parkWidths: number[];
+  waterY: number;
+  bankY: number;
+  parkY: number;
+  bandWidth: number;
+  /** Dense polyline (about every 20 m) the queries actually use. */
+  samples: Vec2[];
+}
+
+export type IslandKind = 'land' | 'marsh' | 'culture' | 'park';
+export interface Island {
+  id: 'yeouido' | 'bamseom' | 'nodeul' | 'seorae' | 'seonyu';
+  name: string;
+  kind: IslandKind;
+  polygon: Vec2[];
+  /** Ground height of the island top. */
+  y: number;
+}
+
+export type BridgeKind =
+  'deckArch' | 'tiedArch' | 'girder' | 'truss' | 'doubleDeck' | 'cableStayed';
+export interface Bridge {
+  id: string;
+  /** Real name (Korean), e.g. '반포대교'. */
+  name: string;
+  kind: BridgeKind;
+  a: Vec2;
+  b: Vec2;
+  landA: Vec2;
+  landB: Vec2;
+  deckY: number;
+  lowerDeckY?: number;
+  width: number;
+  lanes: number;
+  structureH: number;
+  /** Number of arch spans / pylons / truss panels depending on kind. */
+  spans: number;
+  rail: boolean;
+  /** Island id the span crosses (bamseom, nodeul, seonyu). */
+  island?: Island['id'];
+  /** Lighting motif key consumed by infra (static) and neon (animated). */
+  motif:
+    | 'cyanRib'
+    | 'whiteArch'
+    | 'redArch'
+    | 'textRail'
+    | 'railTruss'
+    | 'fountain'
+    | 'orangeChord'
+    | 'subwayDeck'
+    | 'torchPylon';
+}
+
+export type DistrictKind =
+  | 'megacore'
+  | 'corridor'
+  | 'oldtown'
+  | 'palace'
+  | 'brick'
+  | 'nightlife'
+  | 'showroom'
+  | 'hillside'
+  | 'apartment'
+  | 'midtown'
+  | 'sangga'
+  | 'park'
+  | 'riverside';
+
+export interface DistrictZone {
+  // v2 fields kept
+  id: string;
+  kind: DistrictKind;
+  name: string;
+  polygon: Vec2[];
+  gridAngle: number;
+  origin: Vec2;
+  roadPitch: number;
+  roadPitchV: number;
+  roadWidth: number;
+  roadKind: RoadKind;
+  /** Romanized name for English UI, e.g. 'YEOUIDO'. */
+  nameEn: string;
+  /** Height band and density knobs (SEOUL.md 4.2). */
+  heights: { min: number; max: number; tallShare: number; tallMax: number };
+  coverage: number;
+  /** Multiplier on env.windowLitRatio. */
+  litScale: number;
+}
+
+export interface NamedRoad {
+  id: string;
+  name: string;
+  points: Vec2[];
+  width: number;
+}
+
+export interface Mountain {
+  id: string;
+  name: string;
+  peak: Vec2;
+  height: number;
+  radius: number;
+}
+
+export interface Landmark {
+  id: 'namsan-mast' | 'jamsil-blade' | 'yongsan-apex' | 'yeouido-gold' | 'palace';
+  buildingId: number | null;
+  x: number;
+  z: number;
+  h: number;
+}
+
+export interface Ridge {
+  // v2 fields kept, plus:
+  peaks: { angle: number; height: number; width: number }[];
+}
+
+export interface Layout {
+  // v2 fields kept, plus:
+  extent: number; // now the larger of extentX/extentZ, kept for compatibility
+  extentX: number; // 4000
+  extentZ: number; // 2600
+  islands: Island[];
+  mountains: Mountain[];
+  namedRoads: NamedRoad[];
+  landmarks: Landmark[];
+}
+```
+
+- `Archetype`에 `taperTower | mediaSlab | lowOffice | hanokRow | palaceHall | brickWarehouse | showroomBox`를 더한다. `BuildingSpec.tags`에 `mediaFace?: Side`, `landmark?: Landmark['id']`를 더한다.
+- **호환 유지**: `riverZ(x)`, `riverFrame(x)`, `riverSignedDistance`, `isNorthOfRiver`, `terrainHeight`, `surfaceHeight`, `bandEdgeZ`, `zoneAt`, `bridgeDeckY`, `deckHeightAt`, `highwayCurve`는 이름과 시그니처를 유지한다(중심선이 x 단조라서 가능). 내부만 폴리라인 기반으로 바꾼다. `riverCenterDistance`는 `samples` 세그먼트를 `GridHash`로 찾아 O(1)에 가깝게 한다.
+- `CITY.extent`는 호환용으로 남기고 `CITY.extentX / extentZ / chunkSize = 400`을 추가한다.
+
+### 7.2 모듈별 영향
+
+| 모듈       | 바뀌는 것                                                                                                                                                                          | 규모 |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| city       | 7.1 전체. 강 폴리라인·폭 보간, 섬, 산 heightfield, 구역 22개, 간선, 고가 재정의(hw-ring 삭제), 대교 11개, 새 archetype tier 생성, 랜드마크 고정 배치, 테스트 갱신                  | 대   |
+| terrain    | 가변 폭 수로 메쉬(폴리라인 리본), 섬 메쉬 5종(밤섬 습지 셰이더), 산 heightfield 해상도(지도 4000×2600, 셀 10 m → 400×260 정점, 1 draw), 원경 능선 이름 봉우리, 둔치 공원 길이 증가 | 중   |
+| buildings  | 청크 400 m, 새 archetype 7종의 지오메트리와 창 셰이더(벽돌, 석재, 기와), kind별 점등 배율, 랜드마크 3동 전용 지오메트리, `mediaFace` 표시                                          | 대   |
+| infra      | 대교 형식 6종(deckArch, tiedArch, girder, truss, doubleDeck, cableStayed)과 조명 모티프 9종(정적 부분), 강변북로·올림픽대로·내부순환로 곡선, 터널 입구, 방음벽                     | 대   |
+| neon       | 구역별 간판 업종·언어 표, 가상 영문 기업명 목록, 반포대교 분수 셰이더, 열차(철교 2개, 2층 지하철 다리) 교통, 올림픽대교 불꽃 왕관, 마포대교 문장 띠, mediaSlab 스크린              | 대   |
+| atmosphere | 안개 density 재조정(지도 1.7배), 강 안개를 폴리라인 따라, 서치라이트 원점을 용산·여의도·잠실 정점으로, 비 영역을 카메라 주변으로 유지                                              | 소   |
+| lighting   | 그림자 카메라를 카메라 주변 1.2 km로 추종, 원경 능선이 멀어진 만큼 하늘 지평선 색 확인                                                                                             | 소   |
+| ux         | 프리셋 8개와 별칭, 시네마틱 순서, `CAMERA_LIMITS`(maxDistance 3600), 지도 경계 4000×2600, HUD 구역 이름(실제 지명), 로더 문구                                                      | 중   |
+
+### 7.3 PR 순서와 병렬화
+
+v3는 layout을 바꾸므로 순서가 중요하다. 핵심은 **city PR이 main을 깨지 않게** 하는 것이다. 모듈은 새 kind나 archetype을 모를 때 기본 형태로 그리는 분기를 먼저 갖춘다.
+
+| 순서 | PR                                                   | 담당 (팀)          | 선행 조건         | 병렬                                                                            |
+| ---- | ---------------------------------------------------- | ------------------ | ----------------- | ------------------------------------------------------------------------------- |
+| 0    | `docs: 미래 서울 한강 설계 문서` (이 문서)           | 도시 설계          | -                 | -                                                                               |
+| 1    | `chore(types): layout v3 타입 선언`                  | 지도 데이터        | 0                 | 단독 (작음). 새 필드는 빈 배열과 기본값                                         |
+| 2a   | `fix(infra): 알 수 없는 대교 kind 기본 형태`         | 인프라             | 1                 | 2b와 병렬                                                                       |
+| 2b   | `fix(buildings): 알 수 없는 archetype 기본 형태`     | 건축               | 1                 | 2a와 병렬                                                                       |
+| 3    | `feat(city): layout v3 강, 섬, 산, 대교, 고가, 구역` | 지도 데이터        | 2a, 2b            | 단독, 가장 큰 PR. 커밋을 강→섬·산→대교·고가→구역·도로→건물 생성기 순으로 나눈다 |
+| 4    | `feat(terrain): 가변 폭 한강, 섬, 산`                | 환경 아트          | 3                 | 4~8 병렬                                                                        |
+| 5    | `feat(infra): 한강 대교 11개와 서울 고가`            | 인프라             | 3                 | 병렬                                                                            |
+| 6    | `feat(buildings): 서울 구역 archetype과 랜드마크`    | 건축               | 3                 | 병렬                                                                            |
+| 7    | `feat(ux): 서울 명소 프리셋과 지도 경계`             | UX                 | 3                 | 병렬                                                                            |
+| 8    | `feat(atmosphere): 넓은 지도 안개와 서치라이트`      | 환경 아트          | 3                 | 병렬                                                                            |
+| 9    | `feat(neon): 구역 간판, 분수, 열차, 대교 조명`       | 네온               | 5, 6 머지 후 머지 | 3 이후 개발 시작 가능                                                           |
+| 10   | `fix: v3 통합 튜닝과 성능 측정`                      | 성능 + 품질 + 통합 | 4~9               | 순차                                                                            |
+
+- 3번은 크지만 `src/city/`만 건드린다. 3번 머지 직후 화면은 "새 지도 위에 v2 모양 건물과 기본 다리"가 되고, 4~9가 각자 채운다.
+- 3번의 unit test 목록: 중심선이 대교 기준점 11개를 5 m 안으로 지남, 폭 보간 연속, 섬이 수면 안이고 서로 겹치지 않음(여의도는 제방에 붙음), 대교가 중심선에 수직이고 진입로 클리어런스 5 m, 강변북로·올림픽대로가 제방과 겹치지 않음, `park` 구역 건물 0, `palace` 건물 높이 18 m 이하, 용산 정점이 최고(600)이고 잠실 랜드마크 500, 건물 수 5000~7000, 모든 프리셋 위치가 건물 밖·지면 위.
+- 성능 확인(10번): 프리셋 1~8 × 밤에서 calls ≤ 300, triangles ≤ 2.0 M. 특히 overview와 namsan은 고층 군집 세 개가 한 화면에 들어오므로 가장 무겁다.
+
+### 7.4 건물 수와 성능 추정
+
+| 구역 묶음                            | 건물 수 (추정) | 비고                           |
+| ------------------------------------ | -------------- | ------------------------------ |
+| hillside (이태원·해방촌)             | 600            | hillHouse 인스턴스             |
+| nightlife (홍대)                     | 700            | 가장 빽빽, 간판 수도 가장 많음 |
+| sangga (영등포, 왕십리, fill)        | 1400           |                                |
+| oldtown + palace (종로, 궁궐)        | 550            | 낮고 단순, 삼각형 적음         |
+| brick (성수)                         | 300            |                                |
+| midtown (마포·공덕, 서초)            | 600            |                                |
+| corridor + showroom (테헤란로, 청담) | 400            | mediaSlab 20~30동              |
+| megacore (여의도, 용산, 잠실)        | 250            | 메가타워 10동 + 랜드마크 3동   |
+| apartment (강변 5곳)                 | 350            | 판상형 벽                      |
+| riverside 파빌리온                   | 150            |                                |
+| **합계**                             | **약 5300**    | v2 4329의 1.2배                |
+
+draw call은 청크 70개 × 재질 묶음으로 v2와 같은 수준(buildings 90)을 목표로 하고, 대교 11개는 형식별로 병합해 infra 할당 12 안에 둔다(형식 6 + 조명 쿼드 인스턴스 2 + 고가 3 + 교각 1).
+
+---
+
+## 8. 불확실한 점과 열어 둔 결정
+
+- **좌표 정확도**: 대교 위치 중 5개(마포, 한강, 잠수, 한남, 잠실)만 검색으로 확인했다. 나머지는 지도 판독값이라 3번 PR에서 공개 지도와 대조해야 한다. 굽이 모양은 맞지만 개별 점은 ±50 m(v3 좌표) 틀릴 수 있다.
+- **축척 체감**: 1:6 평면과 1:2.5 강의 조합이 "서울 같다"고 느껴질지는 스크린샷으로만 판단할 수 있다. 3번 PR 직후 프리셋 1, 3, overview 스크린샷으로 확인하고, 강이 너무 넓으면 폭을 10~15% 줄인다.
+- **강변 정합 규칙의 왜곡**: 강을 넓힌 만큼 강가 동네가 실제보다 강에서 멀어진다. 특히 공덕과 이태원은 투영 좌표가 북안 띠 가까이에 걸린다. 구역 폴리곤을 그릴 때 사람이 한 번 손봐야 한다.
+- **용산 높이**: 실제 계획은 100층 내외지만 80층이나 60층으로 바뀔 수 있다는 언급도 있다. [S25] 이 도시는 미래 서울이므로 600 m 정점으로 정했다. 잠실보다 높게 두는 것은 스카이라인 중심을 지도 가운데(용산)로 옮기기 위한 의도적 결정이다.
+- **새 archetype 작업량**: 7종은 많다. 우선순위는 brickWarehouse, palaceHall, taperTower, mediaSlab > showroomBox, hanokRow, lowOffice다. 뒤 3종은 v3.1로 미뤄도 된다(그동안 sangga와 officeSlab로 대체).
+- **분수 색**: 실제 분수는 무지개색이지만 ART_DIRECTION은 무지개를 금지한다(7.4 서치라이트 등). 청록·흰색·마젠타 3색으로 정했다.
+- **원경**: 북한산은 지도 밖 능선으로만 둔다. 지도 안에 넣으면 영역이 북쪽으로 1 km 이상 늘어난다.
+- **ART_DIRECTION의 v2 내용**: 2장(지도), 2.6(데이터 구조), 8.4(프리셋), 5.3(가상 상호, 한자 포함)은 람하 기준이다. 이 문서가 우선하고, 3번 PR 이후 해당 장을 v3에 맞게 고치는 문서 PR을 따로 올린다.
+
+---
+
 ## 출처
 
 조사일 2026-11-23. 검색 결과 요약과 페이지 판독으로 확인했다. 수치가 출처마다 다르면 본문에 범위로 적었다.
@@ -367,3 +664,4 @@ v2 archetype은 그대로 쓰고, 새 archetype 6개(★)를 더한다.
 - [S35] Wikipedia, 잠실 123층 초고층 (List of tallest buildings in Seoul): https://en.wikipedia.org/wiki/List_of_tallest_buildings_in_Seoul
 - [S36] 서울신문, 성동구 붉은벽돌 건축물 지원 확대: https://m.go.seoul.co.kr/news/2025/03/18/20250318500044
 - [S37] 내 손안에 서울, 선유도공원: https://mediahub.seoul.go.kr/archives/2008441
+- [S38] Wikipedia, Naebu Expressway (홍지문터널, 정릉터널): https://en.wikipedia.org/wiki/Naebu_Expressway
