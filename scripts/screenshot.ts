@@ -92,9 +92,19 @@ async function hudSelected(browser: Browser, file: string): Promise<void> {
   await page.goto(`${BASE}?stats&time=0.0&cam=overview`);
   await waitPowered(page);
   await page.mouse.click(VIEWPORT.width / 2, VIEWPORT.height / 2);
-  await page.waitForFunction(() => window.__hangang?.camera().mode === 'orbit', undefined, {
-    timeout: 10_000,
-  });
+  // The fly-to can outlast 10 s on heavy frames; the card only opens once it lands.
+  await page.waitForFunction(
+    () => {
+      const cam = window.__hangang?.camera();
+      return (
+        cam?.selected != null &&
+        cam.mode === 'orbit' &&
+        document.getElementById('hud-card')?.hidden === false
+      );
+    },
+    undefined,
+    { timeout: 60_000 },
+  );
   await page.waitForTimeout(600);
   await page.screenshot({ path: file });
   await page.close();
