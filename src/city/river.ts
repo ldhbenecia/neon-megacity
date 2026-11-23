@@ -287,6 +287,27 @@ export function isNorthOfRiver(x: number, z: number): boolean {
   return z < riverZ(x);
 }
 
+/**
+ * Offset `k` along the normal at x that puts the point `outside` m beyond the bank. On the inner
+ * side of a bend the plain normal offset lands closer to the channel, so it is pushed out until
+ * the true distance to the embankment matches.
+ */
+export function bankOffset(x: number, side: -1 | 1, outside: number): number {
+  let k = riverWidthAt(x) / 2 + outside;
+  for (let i = 0; i < 4; i++) {
+    const p = riverOffset(x, side * k);
+    const err = outside - riverSignedDistance(p.x, p.z);
+    if (err < 0.5) break;
+    k += err;
+  }
+  return k;
+}
+
+/** Point `outside` m beyond the bank at x (true embankment distance), north side -1. */
+export function bankPoint(x: number, side: -1 | 1, outside: number): Vec2 {
+  return riverOffset(x, side * bankOffset(x, side, outside));
+}
+
 // --- 샛강 (side channel south of 여의도) ---
 
 const SAETGANG_X0 = -1262;
@@ -300,10 +321,28 @@ function saetgangOffset(x: number): number {
 
 const SAETGANG_WIDTH = 50;
 
+/**
+ * z of the south embankment on the vertical line at x (first point south of the centerline where
+ * riverSignedDistance reaches 0). A function of x, so offsets from it straight south (+z) cannot
+ * fold the way large normal offsets do on the inside of the 서강–마포 bend.
+ */
+function southBankZ(x: number): number {
+  let lo = riverZ(x);
+  let hi = lo;
+  while (riverSignedDistance(x, hi) < 0 && hi - lo < 2000) hi += 10;
+  lo = hi - 10;
+  for (let i = 0; i < 30; i++) {
+    const mid = (lo + hi) / 2;
+    if (riverSignedDistance(x, mid) < 0) lo = mid;
+    else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
 function saetgangLine(): Vec2[] {
   const pts: Vec2[] = [];
   for (let x = SAETGANG_X0; x <= SAETGANG_X1 + 1e-6; x += 12) {
-    pts.push(riverOffset(x, riverWidthAt(x) / 2 + saetgangOffset(x) + SAETGANG_WIDTH / 2 - 20));
+    pts.push({ x, z: southBankZ(x) + saetgangOffset(x) + SAETGANG_WIDTH / 2 - 20 });
   }
   return pts;
 }
@@ -371,9 +410,9 @@ function yeouidoPolygon(): Vec2[] {
   const north: Vec2[] = [];
   const south: Vec2[] = [];
   for (let x = SAETGANG_X0 + 12; x <= SAETGANG_X1 - 12 + 1e-6; x += 12) {
-    const bank = riverWidthAt(x) / 2;
-    north.push(riverOffset(x, bank));
-    south.push(riverOffset(x, bank + Math.max(0, saetgangOffset(x) - 20)));
+    const bank = southBankZ(x);
+    north.push({ x, z: bank });
+    south.push({ x, z: bank + Math.max(0, saetgangOffset(x) - 20) });
   }
   return [...north, ...south.reverse()];
 }

@@ -11,7 +11,7 @@ import {
   weighted,
   type Massing,
 } from './archetypes';
-import { TEHERAN, ZONES, zoneAt, zoneById } from './districts';
+import { TEHERAN, ZONES, zoneAt, zoneBank, zoneById, zoneSide } from './districts';
 import { makeNamedRoads } from './named';
 import {
   MAX_DECK_THICKNESS,
@@ -40,6 +40,7 @@ import {
   HALF_X,
   HALF_Z,
   ISLANDS,
+  bankPoint,
   MOUNTAINS,
   RIVER,
   SAETGANG,
@@ -47,6 +48,7 @@ import {
   riverFrame,
   riverOffset,
   riverWidthAt,
+  riverSignedDistance,
   surfaceHeight,
   terrainHeight,
   waterClear,
@@ -104,6 +106,7 @@ const MEGA: Record<string, MegaPlan> = {
       { count: 1, h: [600, 600], size: [80, 88] },
       { count: 6, h: [280, 450], size: [46, 54] },
       { count: 16, h: [120, 250], size: [27, 34] },
+      { count: 18, h: [40, 110], size: [26, 40] },
     ],
     landmark: 'yongsan-apex',
   },
@@ -113,6 +116,7 @@ const MEGA: Record<string, MegaPlan> = {
       { count: 1, h: [430, 430], size: [56, 62] },
       { count: 4, h: [300, 360], size: [40, 44] },
       { count: 18, h: [120, 220], size: [22, 28] },
+      { count: 12, h: [40, 100], size: [24, 36] },
     ],
     landmark: 'yeouido-gold',
   },
@@ -121,6 +125,7 @@ const MEGA: Record<string, MegaPlan> = {
     tiers: [
       { count: 1, h: [500, 500], size: [70, 78] },
       { count: 10, h: [150, 300], size: [34, 44] },
+      { count: 16, h: [40, 110], size: [26, 40] },
     ],
     landmark: 'jamsil-blade',
   },
@@ -290,6 +295,8 @@ function buildRoads(seed: number, bridges: readonly Bridge[], named: readonly Na
   }
   for (const zone of ZONES) {
     if (!hasGrid(zone)) continue;
+    // Riverside apartment strips are laid out as slab rows along the bank (bankRows), not a grid.
+    if (zone.kind === 'apartment' && zoneBank(zone.id)) continue;
     const rng = zoneRng(seed, `roads:${zone.id}`);
     const { u0, u1, v0, v1 } = gridRange(zone);
     const P = zone.roadPitch;
@@ -330,7 +337,7 @@ function buildRoads(seed: number, bridges: readonly Bridge[], named: readonly Na
       }
     }
   }
-  // Road bridge approach avenues continue 150 m into the districts on both banks.
+  // Road bridge approach avenues continue 90 m into the districts on both banks.
   for (const br of bridges) {
     if (br.motif === 'railTruss') continue; // rail only: no road continues
     for (const [land, abut] of [
@@ -340,7 +347,7 @@ function buildRoads(seed: number, bridges: readonly Bridge[], named: readonly Na
       const dx = land.x - abut.x;
       const dz = land.z - abut.z;
       const len = Math.hypot(dx, dz);
-      const end = { x: land.x + (dx / len) * 150, z: land.z + (dz / len) * 150 };
+      const end = { x: land.x + (dx / len) * 90, z: land.z + (dz / len) * 90 };
       clipped(land, end, br.width, (o) => o === br);
     }
   }
@@ -353,6 +360,8 @@ interface Lot {
   blockId: number;
   /** Set on tower-field lots of a megacore: fixed height and tier (0 = landmark). */
   tower?: { h: number; tier: number };
+  /** Set on bank-row apartment lots: clear gap (m) to the next row toward the land. */
+  rowGap?: number;
 }
 
 export const SIDEWALK: Record<string, number> = {
@@ -542,7 +551,16 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
     if (!hasGrid(zone)) continue;
     const rng = zoneRng(seed, `lots:${zone.id}`);
     const mega = MEGA[zone.id];
-    if (mega) towerField(zone, mega, zoneRng(seed, `towers:${zone.id}`));
+    if (mega) {
+      // The tower field lays out the whole cluster (towers first, then podiums between them).
+      towerField(zone, mega, zoneRng(seed, `towers:${zone.id}`));
+      continue;
+    }
+    const bank = zoneBank(zone.id);
+    if (bank && zone.kind === 'apartment') {
+      bankRows(zone, bank, rng);
+      continue;
+    }
     const { u0, u1, v0, v1 } = gridRange(zone);
     const P = zone.roadPitch;
     const Q = zone.roadPitchV;
@@ -637,39 +655,115 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
       const hs = Array.from({ length: tier.count }, () => rng.range(tier.h[0], tier.h[1])).sort(
         (a, b) => b - a,
       );
-      let k = 0;
-      for (const site of sites) {
-        if (k >= hs.length) break;
-        const h = hs[k] as number;
+      // Each height takes the nearest site where its footprint fits; a height that fits nowhere
+      // is skipped so the smaller ones after it still get their chance.
+      for (const h of hs) {
         // The draft insets the lot by 4 % and the depth may be 15 % short: size for that.
         const side = Math.max(rng.range(tier.size[0], tier.size[1]), h / (MAX_SLENDER * 0.8));
-        const o: Obb = {
-          x: site.x,
-          z: site.z,
-          hw: side / 2,
-          hd: (side * (t === 0 ? rng.range(0.95, 1) : rng.range(0.85, 1))) / 2,
-          rotY: zone.gridAngle,
-        };
-        if (placed.some((q) => obbOverlap(q, o, TOWER_GAP))) continue;
-        if (!accept(o, zone)) continue;
-        placed.push(o);
+        const depth = side * (t === 0 ? rng.range(0.95, 1) : rng.range(0.85, 1));
+        for (const site of sites) {
+          const o: Obb = {
+            x: site.x,
+            z: site.z,
+            hw: side / 2,
+            hd: depth / 2,
+            rotY: zone.gridAngle,
+          };
+          if (placed.some((q) => obbOverlap(q, o, TOWER_GAP))) continue;
+          if (!accept(o, zone)) continue;
+          placed.push(o);
+          const blockId = blocks.length;
+          blocks.push({
+            id: blockId,
+            zoneId: zone.id,
+            district: zone.kind,
+            x: o.x,
+            z: o.z,
+            w: o.hw * 2,
+            d: o.hd * 2,
+            rotY: o.rotY,
+            buildingIds: [],
+          });
+          lotHash.insert(lots.length, obbBounds(o));
+          lots.push({ obb: o, zone, blockId, tower: { h, tier: t } });
+          break;
+        }
+      }
+    });
+  }
+
+  /**
+   * Riverside apartment walls (SEOUL.md 4.2): slab rows parallel to the bank at true bank
+   * distances, from just outside the riverside band inland. Rows are ROW_PITCH apart, so a slab
+   * may be as tall as the clear gap / 0.8 (ART_DIRECTION 4.2). Every slab is a one-lot block.
+   */
+  function bankRows(
+    zone: DistrictZone,
+    bank: { x0: number; x1: number; o0: number; o1: number },
+    rng: Rng,
+  ): void {
+    const side = zoneSide(zone.id) === 'north' ? -1 : 1;
+    const first = Math.max(bank.o0, RIVER.bandWidth) + 4 + SLAB_DEPTH / 2;
+    for (let o = first; o + SLAB_DEPTH / 2 <= bank.o1; o += ROW_PITCH) {
+      // Seed on the row as close to the middle of the strip (world x) as the normal offsets
+      // reach (they bunch up or spread out on bends), then trace both ways.
+      const mid = (bank.x0 + bank.x1) / 2;
+      let seed: Vec2 | null = null;
+      for (let x = bank.x0; x <= bank.x1; x += 10) {
+        const p = bankPoint(x, side, o);
+        if (p.x < bank.x0 || p.x > bank.x1) continue;
+        if (!seed || Math.abs(p.x - mid) < Math.abs(seed.x - mid)) seed = p;
+      }
+      if (!seed) continue;
+      const row = bankContour(seed, o, bank.x0, bank.x1);
+      // Place slabs by arc length along the row: slab, gap, slab, …
+      let s0 = rng.range(0, SLAB_GAP);
+      const arc = [0];
+      for (let i = 1; i < row.length; i++) {
+        const a = row[i - 1] as Vec2;
+        const b = row[i] as Vec2;
+        arc.push((arc[i - 1] as number) + Math.hypot(b.x - a.x, b.z - a.z));
+      }
+      const at = (sx: number): Vec2 => {
+        let i = 1;
+        while (i < row.length - 1 && (arc[i] as number) < sx) i++;
+        const a = row[i - 1] as Vec2;
+        const b = row[i] as Vec2;
+        const t = clamp(
+          (sx - (arc[i - 1] as number)) / ((arc[i] as number) - (arc[i - 1] as number) || 1),
+          0,
+          1,
+        );
+        return { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t };
+      };
+      const total = arc[arc.length - 1] as number;
+      while (s0 < total) {
+        const want = rng.range(45, 70);
+        if (s0 + want > total) break;
+        const a = at(s0);
+        const b = at(s0 + want);
+        s0 += want + SLAB_GAP;
+        const c = { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 };
+        const len = Math.hypot(b.x - a.x, b.z - a.z);
+        const rotY = Math.atan2(-(b.z - a.z), b.x - a.x);
+        const obb: Obb = { x: c.x, z: c.z, hw: len / 2, hd: SLAB_DEPTH / 2, rotY };
+        if (!accept(obb, zone)) continue;
         const blockId = blocks.length;
         blocks.push({
           id: blockId,
           zoneId: zone.id,
           district: zone.kind,
-          x: o.x,
-          z: o.z,
-          w: o.hw * 2,
-          d: o.hd * 2,
-          rotY: o.rotY,
+          x: obb.x,
+          z: obb.z,
+          w: obb.hw * 2,
+          d: obb.hd * 2,
+          rotY,
           buildingIds: [],
         });
-        lotHash.insert(lots.length, obbBounds(o));
-        lots.push({ obb: o, zone, blockId, tower: { h, tier: t } });
-        k++;
+        lotHash.insert(lots.length, obbBounds(obb));
+        lots.push({ obb, zone, blockId, rowGap: ROW_PITCH - SLAB_DEPTH });
       }
-    });
+    }
   }
 
   // Riverside pavilions (매점, 펌프장): a thin row between the embankment and the highway corridor.
@@ -680,7 +774,7 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
       if (!rng.chance(0.55)) continue;
       const f = riverFrame(x);
       // Just outside the embankment, inside the band and short of the riverside highways.
-      const p = riverOffset(x, side * (riverWidthAt(x) / 2 + 9.5));
+      const p = bankPoint(x, side, 9.5);
       if (onBridge(bridges, p, 30)) continue;
       const rotY = Math.atan2(-f.along.z, f.along.x);
       const obb: Obb = { x: p.x, z: p.z, hw: rng.range(3, 6), hd: rng.range(2, 3.5), rotY };
@@ -735,6 +829,42 @@ function slenderCap(w: number, d: number): number {
   return MAX_SLENDER * 0.98 * Math.sqrt(w * d);
 }
 
+/**
+ * Points every 4 m along the line `o` m beyond the bank, west to east, covering world x in
+ * [x0, x1]. Steps follow the level set of riverSignedDistance (along the tangent, then a Newton
+ * nudge back onto it), so the row stays even on the inside of a bend where normal offsets bunch
+ * up. It is traced both ways from a seed in the middle of the range.
+ */
+function bankContour(seed: Vec2, o: number, x0: number, x1: number): Vec2[] {
+  const f = (x: number, z: number): number => riverSignedDistance(x, z);
+  const trace = (east: boolean): Vec2[] => {
+    const out: Vec2[] = [];
+    let p = seed;
+    let dir: Vec2 | null = null;
+    for (let k = 0; k < 1500; k++) {
+      const gx = (f(p.x + 1, p.z) - f(p.x - 1, p.z)) / 2;
+      const gz = (f(p.x, p.z + 1) - f(p.x, p.z - 1)) / 2;
+      const gl = Math.hypot(gx, gz) || 1;
+      let t = { x: -gz / gl, z: gx / gl };
+      const flip = dir ? t.x * dir.x + t.z * dir.z < 0 : east ? t.x < 0 : t.x > 0;
+      if (flip) t = { x: -t.x, z: -t.z };
+      dir = t;
+      const q = { x: p.x + t.x * 4, z: p.z + t.z * 4 };
+      const err = o - f(q.x, q.z);
+      p = { x: q.x + (gx / gl) * err, z: q.z + (gz / gl) * err };
+      if (p.x < x0 || p.x > x1) break;
+      out.push(p);
+    }
+    return out;
+  };
+  return [...trace(false).reverse(), seed, ...trace(true)];
+}
+
+/** Apartment slab depth, gap between slabs in a row, and distance between rows (m). */
+const SLAB_DEPTH = 14;
+const SLAB_GAP = 16;
+const ROW_PITCH = 72;
+
 /** Clear gap kept between megacore towers (m). */
 const TOWER_GAP = 10;
 
@@ -748,6 +878,16 @@ const HIGHRISE_MIX: readonly (readonly [Archetype, number])[] = [
   ['cantileverTower', 10],
   ['cylinderTower', 15],
   ['taperTower', 10],
+];
+
+/** Low and mid-rise blocks between the megacore towers. */
+const PODIUM_MIX: readonly (readonly [Archetype, number])[] = [
+  ['officeSlab', 40],
+  ['setbackTower', 25],
+  ['bracedTower', 15],
+  ['cantileverTower', 10],
+  ['twinTower', 5],
+  ['cylinderTower', 5],
 ];
 
 const MEGA_BAG: Archetype[] = [
@@ -883,7 +1023,9 @@ function draftsFor(zone: DistrictZone, lots: Lot[], rng: Rng): Draft[] {
             ? LANDMARK_ARCHETYPE[plan.landmark]
             : mega
               ? (bag[corp % bag.length] as Archetype)
-              : weighted<Archetype>(rng, HIGHRISE_MIX);
+              : tw.h < 120
+                ? weighted<Archetype>(rng, PODIUM_MIX)
+                : weighted<Archetype>(rng, HIGHRISE_MIX);
         const extra: Partial<Draft> = {};
         if (mega) extra.corp = CORPS[corp++ % CORPS.length];
         if (tw.tier === 0 && plan) extra.landmark = plan.landmark;
@@ -1037,13 +1179,18 @@ function draftsFor(zone: DistrictZone, lots: Lot[], rng: Rng): Draft[] {
         }
         // Taller zones get taller slabs (SEOUL.md 4.2), but rows stay ≥ 0.8 × height apart:
         // the lot depth minus the slab depth (≈ 13 m) is the gap to the next row.
-        const gap = lot.obb.hd * 2 - 13;
+        const gap = lot.rowGap ?? lot.obb.hd * 2 - 13;
         const fGap = Math.floor(gap / 0.8 / 2.8);
         const fTop = Math.min(Math.floor(H.tallMax / 2.8), fGap);
         const want = rng.chance(H.tallShare)
           ? Math.round(rng.int(fMin, fMax) * 1.2)
           : rng.int(fMin, fMax);
-        const floors = Math.max(5, Math.min(fTop, want));
+        // Too shallow for a 5-storey slab at 0.8 × height: a low shopping block instead.
+        if (fTop < 5) {
+          drafts.push(make(lot, 'sangga', 4.2 + 3.3 * rng.int(1, 2)));
+          continue;
+        }
+        const floors = Math.min(fTop, want);
         drafts.push(make(lot, 'apartmentSlab', floors * 2.8));
       }
       break;
@@ -1412,7 +1559,7 @@ function buildSlots(
       if (!rng.chance(0.75)) continue;
       const f = riverFrame(x);
       // Middle of the park strip (둔치).
-      const p = riverOffset(x, side * (riverWidthAt(x) / 2 - parkWidthAt(x) / 2));
+      const p = bankPoint(x, side, -parkWidthAt(x) / 2);
       if (onBridge(bridges, p, 8)) continue;
       add('pojangmacha', p, Math.atan2(-f.along.z, f.along.x));
     }

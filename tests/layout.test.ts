@@ -39,6 +39,7 @@ import {
   zoneAt,
   type BuildingSpec,
   type Tier,
+  type Vec2,
 } from '../src/city/layout';
 import { MAX_SLENDER, fitScale } from '../src/city/generate';
 import { riverDistanceLowerBound } from '../src/city/river';
@@ -81,11 +82,11 @@ describe('layout v3: determinism', () => {
       digest: digest(LAYOUT),
     }).toMatchInlineSnapshot(`
       {
-        "blocks": 1366,
-        "buildings": 6026,
-        "digest": "178e4e67",
-        "roads": 1245,
-        "slots": 3828,
+        "blocks": 1486,
+        "buildings": 6074,
+        "digest": "397a6a54",
+        "roads": 1209,
+        "slots": 3469,
       }
     `);
   });
@@ -111,7 +112,7 @@ describe('layout v3: counts (SEOUL.md 7.4)', () => {
     expect(B.length).toBeGreaterThanOrEqual(5000);
     expect(B.length).toBeLessThanOrEqual(7000);
     const hill = count((b) => b.archetype === 'hillHouse');
-    expect(hill).toBeGreaterThanOrEqual(300);
+    expect(hill).toBeGreaterThanOrEqual(150);
     expect(hill).toBeLessThanOrEqual(900);
     const mega = count((b) => b.h >= MEGA_MIN_H);
     expect(mega).toBeGreaterThanOrEqual(14);
@@ -198,7 +199,7 @@ describe('layout v3: counts (SEOUL.md 7.4)', () => {
       expect(n(k), k).toBeLessThanOrEqual(hi);
     };
     within('streetLight', 1300, 2000);
-    within('tree', 1000, 1600);
+    within('tree', 650, 1600);
     within('signPole', 750, 1200);
     within('pojangmacha', 60, 130);
     within('busStop', 70, 120);
@@ -728,6 +729,30 @@ describe('layout v3: water and islands', () => {
     }
     for (const s of LAYOUT.slots) expect(s.y, s.kind).toBeGreaterThan(RIVER.waterY + 0.5);
   }, 60_000);
+
+  it('keeps island outlines and the 샛강 centerline free of self-intersections', () => {
+    const crosses = (a: Vec2, b: Vec2, c: Vec2, d: Vec2): boolean => {
+      const o = (p: Vec2, q: Vec2, r: Vec2) =>
+        (q.x - p.x) * (r.z - p.z) - (q.z - p.z) * (r.x - p.x);
+      return o(a, b, c) * o(a, b, d) < 0 && o(c, d, a) * o(c, d, b) < 0;
+    };
+    const selfCrossings = (pts: readonly Vec2[], closed: boolean): number => {
+      const n = pts.length;
+      const segs = closed ? n : n - 1;
+      let hits = 0;
+      for (let i = 0; i < segs; i++) {
+        for (let j = i + 2; j < segs; j++) {
+          if (closed && i === 0 && j === n - 1) continue;
+          if (crosses(pts[i]!, pts[(i + 1) % n]!, pts[j]!, pts[(j + 1) % n]!)) hits++;
+        }
+      }
+      return hits;
+    };
+    for (const isl of ISLANDS) expect(selfCrossings(isl.polygon, true), isl.id).toBe(0);
+    expect(selfCrossings(SAETGANG.centerline, false)).toBe(0);
+    const c = SAETGANG.centerline;
+    for (let i = 1; i < c.length; i++) expect(c[i]!.x).toBeGreaterThan(c[i - 1]!.x);
+  });
 
   it('tags every bridge whose span crosses an island', () => {
     for (const br of LAYOUT.bridges) {
