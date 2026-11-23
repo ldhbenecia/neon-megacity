@@ -179,9 +179,18 @@ const FRAG_MAIN = /* glsl */ `
         g *= mix(0.45, 1.0, smoothstep(0.85, 1.0, f.y));
         float shelves = step(0.55, hb) * step(1.0, f.y);
         g *= 1.0 - shelves * 0.45 * fpulse(f.y / 0.45, 0.0, 0.18, fwidth(f.y / 0.45));
-        float sx = floor(f.x / 0.7);
-        float sh = fhash(vec2(sx, fSeed * 41.0 + bay));
-        g *= 1.0 - 0.75 * step(0.68, sh) * step(f.y, 0.6 + 1.3 * fract(sh * 13.0));
+        // Silhouettes read as counters, shelves and the odd person, not a bar chart.
+        float ux = f.x / 2.4;
+        float uid = floor(ux);
+        float uh = fhash(vec2(uid, fSeed * 41.0 + bay));
+        float objH = uh < 0.55 ? 0.95 : 1.5;
+        float obj = step(0.3, uh) * fpulse(ux, 0.1, 0.9, fwidth(ux)) * step(f.y, objH);
+        obj *= 1.0 - 0.6 * step(1.2, objH) * fpulse(f.y / 0.5, 0.0, 0.1, fwidth(f.y / 0.5));
+        float pc = (uid + 0.2 + 0.6 * fhash(vec2(uid, fSeed * 7.0 + 3.0))) * 2.4;
+        float dx = abs(f.x - pc);
+        float person = step(0.8, fhash(vec2(uid, fSeed * 13.0 + bay)));
+        person *= (1.0 - smoothstep(0.16, 0.22, dx)) * step(f.y, 1.72 - dx * dx * 6.0);
+        g *= 1.0 - 0.75 * max(obj, person);
         fAlbedo = vec3(0.015);
       }
       fRough = 0.15;
