@@ -31,14 +31,14 @@ type Pose = CameraPose;
 export const STREET_FALLBACK: CameraPose = { position: [-760, 6, -360], target: [-700, 1, -470] };
 
 /**
- * Eye-level shot down a 등불가 (sangga) street, snapped onto the road center line nearest to
+ * Eye-level shot down a sangga street, snapped onto the road center line nearest to
  * ART_DIRECTION 8.4 preset 3 so it stays on a road whatever the grid angle is.
  */
 export function streetPose(roads: readonly Road[]): Pose | null {
   const want = { x: -760, z: -360 };
   let best: { road: Road; t: number; d: number } | null = null;
   for (const road of roads) {
-    if (road.zoneId !== 'sangga-n' || road.kind !== 'street') continue;
+    if (road.district !== 'sangga' || road.kind !== 'street') continue;
     const dx = road.b.x - road.a.x;
     const dz = road.b.z - road.a.z;
     const len2 = dx * dx + dz * dz;

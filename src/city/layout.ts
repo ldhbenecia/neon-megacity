@@ -13,7 +13,6 @@ export const CITY = {
   extentX: EXTENT,
   extentZ: EXTENT,
   half: MAP_HALF,
-  /** Default layout seed. */
   seed: 2077,
   /** Spatial hash cell used by layout queries (m). */
   hashCell: HASH_CELL,

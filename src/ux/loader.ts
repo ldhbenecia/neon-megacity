@@ -87,6 +87,8 @@ export function createLoader(root: HTMLElement | null = document.getElementById(
   return {
     stage(name, weight) {
       if (failed) return;
+      // Boot stage timings for `npm run perf` (performance.getEntriesByType('mark')).
+      performance.mark(`boot:${name}`);
       closeRunning();
       state = startStage(state, name, weight);
       running = line('..', STAGE_TEXT[name]?.[0] ?? `${name}…`);
@@ -97,6 +99,7 @@ export function createLoader(root: HTMLElement | null = document.getElementById(
     },
     async done() {
       if (failed) return;
+      performance.mark('boot:interactive');
       closeRunning();
       state = finish(state);
       render();
