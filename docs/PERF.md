@@ -119,14 +119,26 @@ Check after each v3 PR with `npm run perf -- v3` on the heaviest presets (SEOUL.
   two runs each: river 5.1 / 6.7 ms on main vs 6.7 / 6.5 ms, top-down 7.8 / 7.3 vs 7.9 / 7.2, i.e.
   within run-to-run noise on the M4; re-check on an integrated GPU. The alternative, compiling
   both variants at boot, keeps 52 programs alive (ceiling 50) for the same night frame times.
-- **Leaving the noon palette (open).** Booted at noon, the first jump to sunset or night still
-  stalls one frame for ~470 ms without any new program (sunset → night: 45 ms, noon → 15:00:
-  8 ms). Not a recompile; under investigation.
+- **Leaving the noon palette (fixed).** Booted at noon, the first jump to sunset or night
+  stalled one frame for ~500 ms with no new program: no link happened, but a CPU profile showed
+  ~300 ms in `getProgramInfoLog`. three's `checkShaderErrors` reads it on a program's first use,
+  and the driver blocks there. Main now turns the check off for users (kept in dev and under
+  automation and with `?debug`, so e2e still fails on shader errors). M4, buildings, preset 2:
+  noon → night 505 → 17 ms, noon → sunset 522 → 25 ms (worst of 30 frames after a timeline
+  input event). `npm run perf` cannot show this: Playwright sets `navigator.webdriver`, which keeps
+  the check on; the numbers came from a probe launched with
+  `--disable-blink-features=AutomationControlled`. On GPUs where linking itself is slow
+  (`KHR_parallel_shader_compile`), the first use may still wait inside three's uniform and
+  attribute lookups; re-measure on an integrated GPU.
 
-- **MSAA on the canvas while post-processing is on.** The scene renders into atmosphere's HDR
-  target, and the canvas only receives the final full-screen pass, so `antialias: true` on the
-  canvas costs 74 MB (3 of the 4 samples) and a resolve per frame for nothing. Candidate fix:
-  create the renderer without canvas MSAA when post is active (MSAA on the HDR target instead).
+- **MSAA on the canvas while post-processing is on (fixed).** The scene renders into
+  atmosphere's HDR target (4 / 2 / 0 MSAA samples at DPR ≤ 1 / < 1.5 / ≥ 1.5, `msaaSamplesFor`)
+  and only the final full-screen pass reaches the canvas, so canvas MSAA never touched scene edges
+  and cost 74 MB and a resolve per frame. Main now creates the renderer without canvas MSAA and
+  recreates it with MSAA only if that context cannot run post (`postEnabled` in `src/core/gl.ts`,
+  shared with atmosphere). M4, buildings, preset 2:
+  canvas 98.9 → 24.7 MB, frame 6.5–7.0 → 4.5–5.1 ms (machine under load; indicative), screenshots
+  equal within run-to-run noise.
 - **Programs and textures.** 28–30 programs and 19–21 textures before buildings and neon arrive.
   Modules should share materials and `onBeforeCompile` variants. The low tier (no post, rain,
   clouds, searchlights, shadows) has 12 programs and 3 textures, so those features account for
