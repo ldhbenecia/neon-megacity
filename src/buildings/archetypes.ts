@@ -189,12 +189,12 @@ function shell(
   g.cap(o.pts, top, plain(b.roof, 0.92));
 }
 
-// Crown rings stay coloured under bloom (threshold 0.85): no white, HDR near 1.
+// Coloured, just above the palette bloom threshold: white crowns burned out the skyline.
 function crownStyle(b: Bld): Style {
   const pick = seeded01(b.spec.seed + 7);
   const hex =
     pick < 0.5 ? NEON.neonCyan.hex : pick < 0.8 ? NEON.neonAmber.hex : NEON.neonOrange.hex;
-  return glow(hex, 0.75 + 0.25 * seeded01(b.spec.seed + 8));
+  return glow(hex, 1.2 + 0.3 * seeded01(b.spec.seed + 8));
 }
 
 export function emitBuilding(raw: BuildingSpec, T: Targets, onStreet?: StreetTest): void {
