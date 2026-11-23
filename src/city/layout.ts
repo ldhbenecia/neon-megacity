@@ -10,6 +10,8 @@ import type { Layout } from './types';
 export const CITY = {
   /** Play area edge length (m); the map spans [-half, half] on X and Z. */
   extent: EXTENT,
+  extentX: EXTENT,
+  extentZ: EXTENT,
   half: MAP_HALF,
   /** Default layout seed. */
   seed: 2077,
