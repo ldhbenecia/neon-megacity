@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { PerspectiveCamera, Vector3 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { LAYOUT, buildingContaining } from '../src/city/layout';
+import { LAYOUT, SKYLINE_PEAK, buildingContaining } from '../src/city/layout';
 import { CAMERA_LIMITS } from '../src/core/query';
 import {
   cameraFloor,
@@ -144,7 +144,7 @@ describe('collision', () => {
     expect(t).toBeCloseTo(100 - cameraFloor(0, 2000) + 2, 1);
     expect(raycastSurface({ x: 0, y: 100, z: 0 }, { x: 0, y: 1, z: 0 })).toBeNull();
     const t0 = tall.tiers[0]!;
-    const from = { x: t0.x + 2000, y: t0.y0 + 20, z: t0.z };
+    const from = { x: t0.x + t0.w + 60, y: t0.y0 + 20, z: t0.z };
     const dir = { x: -1, y: 0, z: 0 };
     const hit = pick(LAYOUT, from, dir);
     expect(hit?.kind).toBe('building');
@@ -190,11 +190,14 @@ describe('rig presets (8.4)', () => {
 
 describe('framing and cinematic keys', () => {
   it('frames core towers with a clear line of sight from outside every building', () => {
-    const core = LAYOUT.buildings.filter((b) => b.district === 'core' && b.h > 120).slice(0, 12);
+    const P = SKYLINE_PEAK;
+    const core = LAYOUT.buildings
+      .filter((b) => b.h > 120 && Math.hypot(b.x - P.x, b.z - P.z) < 400)
+      .slice(0, 12);
     expect(core.length).toBeGreaterThan(3);
     let clear = 0;
     for (const b of core) {
-      const pose = frameBuildingClear(LAYOUT, b, { x: 520, y: 420, z: 380 });
+      const pose = frameBuildingClear(LAYOUT, b, { x: P.x + 580, y: 420, z: P.z + 760 });
       const p = pose.position;
       expect(buildingContaining(LAYOUT, p.x, p.y, p.z)).toBeNull();
       const dir = { x: pose.target.x - p.x, y: pose.target.y - p.y, z: pose.target.z - p.z };
