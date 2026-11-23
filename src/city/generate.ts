@@ -49,7 +49,7 @@ import {
   riverWidthAt,
   surfaceHeight,
   terrainHeight,
-  waterSignedDistance,
+  waterClear,
 } from './river';
 import { GridHash, segmentBounds } from './spatial';
 import type {
@@ -196,6 +196,19 @@ function clipLine(
  */
 function underLowDeck(bridges: readonly Bridge[], x: number, z: number, half: number): boolean {
   for (const br of bridges) {
+    const reach = br.width / 2 + 2 * half;
+    if (
+      x < Math.min(br.landA.x, br.landB.x) - reach ||
+      x > Math.max(br.landA.x, br.landB.x) + reach
+    ) {
+      continue;
+    }
+    if (
+      z < Math.min(br.landA.z, br.landB.z) - reach ||
+      z > Math.max(br.landA.z, br.landB.z) + reach
+    ) {
+      continue;
+    }
     // The road strip spans ±half around (x, z); check its centre and both edges along the
     // bridge axis, where the approach deck is lowest on the landing side.
     const ax = br.landB.x - br.landA.x;
@@ -482,7 +495,7 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
   const accept = (o: Obb, zone: DistrictZone): boolean => {
     for (const p of [...obbCorners(o), { x: o.x, z: o.z }]) {
       if (zoneAt(p.x, p.z).id !== zone.id) return false;
-      if (waterSignedDistance(p.x, p.z) < RIVER_CLEARANCE) return false;
+      if (!waterClear(p.x, p.z, RIVER_CLEARANCE)) return false;
     }
     if (obstacles.blocked(o)) return false;
     for (const id of lotHash.query(obbBounds(o))) {

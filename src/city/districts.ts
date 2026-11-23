@@ -13,6 +13,7 @@ import {
   isNorthOfRiver,
   riverFrame,
   riverOffset,
+  riverBeyondBounds,
   riverNearest,
   riverWidthAt,
 } from './river';
@@ -587,14 +588,27 @@ export function zoneSide(id: string): Side | null {
 export function zoneAt(x: number, z: number): DistrictZone {
   const e = 1e-6;
   const p = { x: clamp(x, -HALF_X + e, HALF_X - e), z: clamp(z, -HALF_Z + e, HALF_Z - e) };
-  const near = riverNearest(p.x, p.z);
-  const beyond = near.d - riverWidthAt(near.cx) / 2;
-  if (beyond <= RIVER.bandWidth) return riversideZone;
+  // The distance beyond the bank is only computed exactly when a threshold (band edge, bank
+  // strip offsets) falls inside its cheap bounds.
+  const b = riverBeyondBounds(p.x, p.z);
+  let exact: number | null = null;
+  const beyond = (): number => {
+    if (exact === null) {
+      const n = riverNearest(p.x, p.z);
+      exact = n.d - riverWidthAt(n.cx) / 2;
+    }
+    return exact;
+  };
+  /** v ≤ t, deciding from the bounds when they do not straddle t. */
+  const atMost = (t: number): boolean => (b.hi <= t ? true : b.lo > t ? false : beyond() <= t);
+  /** v < t, likewise. */
+  const below = (t: number): boolean => (b.hi < t ? true : b.lo >= t ? false : beyond() < t);
+  if (atMost(RIVER.bandWidth)) return riversideZone;
   const list = isNorthOfRiver(p.x, p.z) ? NORTH : SOUTH;
   for (const zone of list) {
     const bank = BANK_OF.get(zone.id);
     if (bank) {
-      if (p.x >= bank.x0 && p.x <= bank.x1 && beyond >= bank.o0 && beyond < bank.o1) {
+      if (p.x >= bank.x0 && p.x <= bank.x1 && !below(bank.o0) && below(bank.o1)) {
         return zone;
       }
     } else if (pointInPolygon(p, zone.polygon)) {

@@ -132,10 +132,15 @@ export function riverOffset(x: number, k: number): Vec2 {
  * best distance found (no closer segment can lie beyond that).
  */
 export function riverNearest(x: number, z: number): { d: number; cx: number } {
+  return nearestScan(x, z, riverDistanceUpperBound(x, z));
+}
+
+function nearestScan(x: number, z: number, cutoff: number): { d: number; cx: number } {
   const p = { x, z };
   const n = SAMPLES.length - 1;
   const i0 = sampleIndex(x);
-  let best = Infinity;
+  // Segments farther than `cutoff` (a known upper bound) can stop the scan early.
+  let best = cutoff;
   let cx = x;
   const visit = (i: number): void => {
     const a = SAMPLES[i] as Vec2;
@@ -143,7 +148,7 @@ export function riverNearest(x: number, z: number): { d: number; cx: number } {
     const t = closestSegmentT(p, a, b);
     const qx = a.x + (b.x - a.x) * t;
     const d = Math.hypot(x - qx, z - (a.z + (b.z - a.z) * t));
-    if (d < best) {
+    if (d <= best) {
       best = d;
       cx = qx;
     }
@@ -157,6 +162,72 @@ export function riverNearest(x: number, z: number): { d: number; cx: number } {
     visit(i);
   }
   return { d: best, cx };
+}
+
+// Lower bound on the centerline distance from a lazily filled 20 m grid. The distance is
+// 1-Lipschitz, so d(p) >= d(corner) - |p - corner|; callers skip the exact scan when the bound
+// already rules the river out.
+const LB_CELL = 20;
+const LB_X0 = -HALF_X - 400;
+const LB_Z0 = -HALF_Z - 400;
+const LB_NX = Math.ceil((2 * HALF_X + 800) / LB_CELL) + 1;
+const LB_NZ = Math.ceil((2 * HALF_Z + 800) / LB_CELL) + 1;
+const LB = new Float32Array(LB_NX * LB_NZ).fill(-1);
+
+/** Exact distance at the nearest grid corner and the offset to it, or null off the grid. */
+function cornerDistance(x: number, z: number): { d: number; off: number } | null {
+  const i = Math.round((x - LB_X0) / LB_CELL);
+  const k = Math.round((z - LB_Z0) / LB_CELL);
+  if (i < 0 || k < 0 || i >= LB_NX || k >= LB_NZ) return null;
+  const idx = k * LB_NX + i;
+  const cxw = LB_X0 + i * LB_CELL;
+  const czw = LB_Z0 + k * LB_CELL;
+  let d = LB[idx] as number;
+  if (d < 0) {
+    d = nearestScan(cxw, czw, Infinity).d;
+    LB[idx] = d;
+  }
+  // + 0.01 covers the Float32 rounding of the cached value.
+  return { d, off: Math.hypot(x - cxw, z - czw) + 0.01 };
+}
+
+/** A value ≤ the distance from (x, z) to the centerline (cheap, cached). */
+export function riverDistanceLowerBound(x: number, z: number): number {
+  const c = cornerDistance(x, z);
+  return c ? c.d - c.off : 0;
+}
+
+/** Min and max channel width over the control x range [x0, x1]. */
+function widthRange(x0: number, x1: number): { lo: number; hi: number } {
+  let lo = Math.min(riverWidthAt(x0), riverWidthAt(x1));
+  let hi = Math.max(riverWidthAt(x0), riverWidthAt(x1));
+  for (const c of CONTROL) {
+    if (c[0] > x0 && c[0] < x1) {
+      lo = Math.min(lo, c[2]);
+      hi = Math.max(hi, c[2]);
+    }
+  }
+  return { lo, hi };
+}
+
+/**
+ * Interval [lo, hi] that contains the distance beyond the embankment (riverSignedDistance)
+ * at (x, z), from the cached grid. Exact callers only need the full scan when a threshold
+ * falls inside it.
+ */
+export function riverBeyondBounds(x: number, z: number): { lo: number; hi: number } {
+  const c = cornerDistance(x, z);
+  if (!c) return { lo: -Infinity, hi: Infinity };
+  const dLo = Math.max(0, c.d - c.off);
+  const dHi = c.d + c.off;
+  // The nearest centerline point lies within dHi of x along the axis.
+  const w = widthRange(x - dHi, x + dHi);
+  return { lo: dLo - w.hi / 2, hi: dHi - w.lo / 2 };
+}
+
+function riverDistanceUpperBound(x: number, z: number): number {
+  const c = cornerDistance(x, z);
+  return c ? c.d + c.off : Infinity;
 }
 
 /** Distance from (x, z) to the centerline. */
@@ -221,6 +292,15 @@ function sideChannelDistance(ch: SideChannel, x: number, z: number): number {
 /** Signed distance to the nearest water edge of the main channel bank or a side channel. */
 export function waterSignedDistance(x: number, z: number): number {
   return Math.min(riverSignedDistance(x, z), sideChannelDistance(SAETGANG, x, z));
+}
+
+const MAX_HALF_WIDTH = Math.max(...CONTROL.map((c) => c[2])) / 2;
+
+/** True when (x, z) is at least `margin` m outside every water edge (cheap far from water). */
+export function waterClear(x: number, z: number, margin: number): boolean {
+  if (sideChannelDistance(SAETGANG, x, z) < margin) return false;
+  if (riverDistanceLowerBound(x, z) - MAX_HALF_WIDTH >= margin) return true;
+  return riverSignedDistance(x, z) >= margin;
 }
 
 export const RIVER: Readonly<River> = {
