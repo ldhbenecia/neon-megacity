@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { errors, expect, test, type Page } from '@playwright/test';
 import { app, collectErrors, waitForCity, waitFrames } from './helpers';
 
 type Cam = NonNullable<Window['__hangang']>;
@@ -20,10 +20,10 @@ async function waitMode(page: Page, mode: string): Promise<void> {
 type Metric = 'horizontal' | 'up' | 'distance' | 'zoom';
 
 /**
- * Waits (condition, not wall-clock) until the camera moved from `from` along a metric; this is
- * the assertion itself. `amount` is metres, except for 'zoom': the orbit distance must drop below
- * `amount` × the start distance. SwiftShader runs a few fps and dt is capped at 0.1 s, so fixed
- * timeouts under-move. On timeout the error carries the start and current camera.
+ * Waits (condition, not wall-clock) until the camera crossed a threshold from `from` along a
+ * metric. `amount` is metres, except for 'zoom': the orbit distance must drop below `amount` ×
+ * the start distance. SwiftShader runs a few fps and dt is capped at 0.1 s, so fixed timeouts
+ * under-move. This only sees the crossing: tests re-check the settled pose afterwards.
  */
 async function waitMoved(
   page: Page,
@@ -59,10 +59,16 @@ async function waitMoved(
   try {
     await wait;
   } catch (err) {
+    if (!(err instanceof errors.TimeoutError)) throw err;
     const now = await cam(page).catch(() => null);
+    const pose = (c: typeof now): string =>
+      c ? `${JSON.stringify(c.position)} → target ${JSON.stringify(c.target)}` : 'unknown';
+    const ratio =
+      metric === 'zoom' && now
+        ? `, orbit distance ${orbit(from).toFixed(1)} → ${orbit(now).toFixed(1)}`
+        : '';
     throw new Error(
-      `camera did not move ${metric} ${amount}: from ${JSON.stringify(from.position)} ` +
-        `to ${JSON.stringify(now?.position)}`,
+      `camera did not move ${metric} ${amount}: from ${pose(from)} to ${pose(now)}${ratio}`,
       { cause: err },
     );
   }
@@ -81,6 +87,7 @@ async function holdUntil(page: Page, key: string, metric: Metric, amount: number
 
 const dist = (a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }) =>
   Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+const orbit = (c: Awaited<ReturnType<typeof cam>>): number => dist(c.position, c.target);
 
 test('boot skeleton paints before JS and is removed after power-on', async ({ page }) => {
   const ctx = await page.context().browser()?.newContext();
@@ -223,10 +230,14 @@ test.describe('camera rig', () => {
     const fz = a.target.z - a.position.z;
     const mx = b.position.x - a.position.x;
     const mz = b.position.z - a.position.z;
+    // Settled after release: damping must not pull the camera back.
+    expect(Math.hypot(mx, mz)).toBeGreaterThan(20);
     expect((fx * mx + fz * mz) / Math.hypot(fx, fz) / Math.hypot(mx, mz)).toBeGreaterThan(0.95);
     expect(dist(b.position, b.target)).toBeCloseTo(dist(a.position, a.target), -1);
 
-    await holdUntil(page, 'e', 'up', 20);
+    await holdUntil(page, 'e', 'up', 25);
+    await waitFrames(page, 10);
+    expect((await cam(page)).position.y).toBeGreaterThan(b.position.y + 20);
   });
 
   test('wheel zooms smoothly toward the cursor', async ({ page }) => {
@@ -239,6 +250,7 @@ test.describe('camera rig', () => {
     await waitMoved(page, a, 'zoom', 0.8);
     await waitFrames(page, 10);
     const b = await cam(page);
+    expect(orbit(b)).toBeLessThan(orbit(a) * 0.8);
     expect(dist(b.position, mid.position)).toBeGreaterThan(1);
     expect(b.mode).toBe('orbit');
   });
@@ -250,7 +262,9 @@ test.describe('camera rig', () => {
     await page.mouse.move(1000, 450, { steps: 8 });
     await page.mouse.up();
     await waitMoved(page, a, 'distance', 50);
+    await waitFrames(page, 10);
     const b = await cam(page);
+    expect(dist(b.position, a.position)).toBeGreaterThan(50);
     expect(dist(b.target, a.target)).toBeLessThan(1);
     expect(b.selected).toBeNull();
   });
@@ -285,7 +299,10 @@ test.describe('camera rig', () => {
     await page.keyboard.press('f');
     await waitMode(page, 'fly');
     await expect(page.locator('#hud')).toHaveAttribute('data-mode', 'fly');
-    await holdUntil(page, 'w', 'distance', 20);
+    const a = await cam(page);
+    await holdUntil(page, 'w', 'distance', 25);
+    await waitFrames(page, 10);
+    expect(dist((await cam(page)).position, a.position)).toBeGreaterThan(20);
     await page.keyboard.press('f');
     await waitMode(page, 'orbit');
 
