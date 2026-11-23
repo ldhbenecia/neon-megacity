@@ -24,6 +24,32 @@ export const RIVER: Readonly<River> = {
   samples: CENTERLINE.map((p) => ({ ...p })),
 };
 
+/** Linear interpolation of a per-centerline-point column over the centerline x. */
+function alongCenterline(x: number, col: readonly number[]): number {
+  const c = RIVER.centerline;
+  const n = c.length;
+  if (x <= (c[0] as Vec2).x) return col[0] as number;
+  for (let i = 0; i < n - 1; i++) {
+    const x1 = (c[i + 1] as Vec2).x;
+    if (x <= x1) {
+      const x0 = (c[i] as Vec2).x;
+      const a = col[i] as number;
+      return a + (((col[i + 1] as number) - a) * (x - x0)) / (x1 - x0);
+    }
+  }
+  return col[n - 1] as number;
+}
+
+/** Bank-to-bank channel width at x (m), interpolated from `RIVER.widths`. */
+export function riverWidthAt(x: number): number {
+  return alongCenterline(x, RIVER.widths);
+}
+
+/** Park strip width inside each embankment at x (m), interpolated from `RIVER.parkWidths`. */
+export function parkWidthAt(x: number): number {
+  return alongCenterline(x, RIVER.parkWidths);
+}
+
 /** Analytic river center z at x (the centerline polyline samples this). */
 export function riverZ(x: number): number {
   return 150 + 110 * Math.sin((x + 300) / 640);

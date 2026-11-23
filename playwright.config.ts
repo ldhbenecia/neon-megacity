@@ -18,7 +18,9 @@ export default defineConfig({
     viewport: process.env.CI ? { width: 960, height: 540 } : { width: 1280, height: 720 },
     trace: 'retain-on-failure',
     // Skips the cosmetic boot motion (dolly-in, idle cinematic, long power ramp and loader fade):
-    // several seconds per boot in SwiftShader. The boot-skeleton test opts back in.
+    // several seconds per boot in SwiftShader. The boot-skeleton test opts back in. Not covered
+    // by e2e on purpose: input during the boot dolly-in (only ~0.3 s of it is left after the
+    // overlay goes on a fast machine, so a test would race it).
     contextOptions: { reducedMotion: 'reduce' },
   },
   projects: [

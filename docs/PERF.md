@@ -66,6 +66,48 @@ infra init 46–83 ms, first frame 31–79 ms. Canvas: 98.9 MB (`gl.SAMPLES` = 4
 | boot → interactive (M1) | ≤ 3 s / 10 s              | 0.4–0.5 s                   |                                                  |
 | JS gzip                 | ≤ 260 / 400 KB            | 243.2 KB                    | **close to the target**                          |
 
+## With buildings (#11 + #31 merged, terrain + buildings, neon still a stub)
+
+Measured while verifying #31 (M4, full quality, night, two runs each); not a full snapshot yet:
+
+| scenario              | frame ms (mean) | calls | tris   | programs | textures | geo MB |
+| --------------------- | --------------- | ----- | ------ | -------- | -------- | ------ |
+| 1 강변 히어로 · night | 6.5–6.7         | 70    | 0.36 M | 37       | 23       | 122.1  |
+| 8 탑다운 · night      | 7.2–7.9         | 112   | 0.34 M | 37       | 23       | 122.1  |
+
+Boot to interactive 1.0–1.6 s (buildings init 0.5–0.65 s). SwiftShader, low tier, 960×540: a frame
+costs ~40 ms and ~31–39 ms at 400×225, so in CI the floor is per-vertex / per-draw work (0.32 M
+triangles, 61 calls), not fill.
+
+## Top bottlenecks (real GPU)
+
+1. **GPU memory: ≥ 225 MB against the 200 MB target** (post-processing targets not counted). Geometry 122 MB, almost all buildings LOD0
+   (the low tier, which skips LOD0, has 29.8 MB), plus a 99 MB canvas with 4× MSAA that is wasted
+   while the post chain renders into its own HDR target. Next: no canvas MSAA when post is on;
+   build LOD0 only for chunks near the camera.
+2. **Shader programs: 37 against the target 35** (ceiling 50). Buildings adds 2 facade variants,
+   shadows keep their variant at night (#31). Neon has not arrived yet. Next: shared materials
+   and `onBeforeCompile` variants across modules; every new program needs a reason.
+3. **Leaving the noon palette: one ~470 ms frame** (below). Not a recompile; next to investigate.
+
+## Budget for layout v3 (map 4000×2600 m, ~6200 buildings, ~3850 street slots, 11 bridges)
+
+Same ART_DIRECTION 11 ceilings; v3 must fit them, not raise them. Per-module rules for v3:
+
+| item                      | rule for v3                                                                                                                                                |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| draw calls (buildings 90) | one draw per visible chunk × LOD × material. ~70 chunks of 400 m fit; adding a material per chunk does not                                                 |
+| buildings LOD0            | LOD distance measured to the chunk AABB, not its centre (SEOUL.md 2.1), so 400 m chunks keep the v2 LOD0 radius (380 m); LOD0 built lazily near the camera |
+| geometry memory           | ≤ 120 MB total (v2 is 122 MB; ×1.43 buildings would be ~175 MB)                                                                                            |
+| street slots              | one `InstancedMesh` per kind; street lights as emissive quads / shader, real `PointLight`s ≤ 8 in total; trees LOD0 only                                   |
+| infra triangles           | ≤ 300 k on screen; bridges get near / far LOD at 600 m (660 m back), low tier builds far only (temporary test limit 360 k until then)                      |
+| triangles on screen       | ≤ 1.2 M target at the top-down and river presets (v2: 0.36 M)                                                                                              |
+| layout generation         | ≤ 1 s in the browser on an M1-class laptop; otherwise precompute it at build time or move it to a Worker in parallel with PMREM bakes                      |
+| boot → interactive        | ≤ 3 s M1, ≤ 6 s Intel iGPU (v2 with buildings: 1.0–1.6 s on M4)                                                                                            |
+| low tier (`env.quality`)  | every new module adds its branch in the same PR: skip LOD0 / near meshes, props, per-pixel noise and post                                                  |
+
+Check after each v3 PR with `npm run perf -- v3` on the heaviest presets (SEOUL.md 7: overview and namsan) plus top-down.
+
 ## Findings and candidates
 
 - **Day/night scrub stall (fixed).** Toggling the key light's `castShadow` changed the program
@@ -77,14 +119,26 @@ infra init 46–83 ms, first frame 31–79 ms. Canvas: 98.9 MB (`gl.SAMPLES` = 4
   two runs each: river 5.1 / 6.7 ms on main vs 6.7 / 6.5 ms, top-down 7.8 / 7.3 vs 7.9 / 7.2, i.e.
   within run-to-run noise on the M4; re-check on an integrated GPU. The alternative, compiling
   both variants at boot, keeps 52 programs alive (ceiling 50) for the same night frame times.
-- **Leaving the noon palette (open).** Booted at noon, the first jump to sunset or night still
-  stalls one frame for ~470 ms without any new program (sunset → night: 45 ms, noon → 15:00:
-  8 ms). Not a recompile; under investigation.
+- **Leaving the noon palette (fixed).** Booted at noon, the first jump to sunset or night
+  stalled one frame for ~500 ms with no new program: no link happened, but a CPU profile showed
+  ~300 ms in `getProgramInfoLog`. three's `checkShaderErrors` reads it on a program's first use,
+  and the driver blocks there. Main now turns the check off for users (kept in dev and under
+  automation and with `?debug`, so e2e still fails on shader errors). M4, buildings, preset 2:
+  noon → night 505 → 17 ms, noon → sunset 522 → 25 ms (worst of 30 frames after a timeline
+  input event). `npm run perf` cannot show this: Playwright sets `navigator.webdriver`, which keeps
+  the check on; the numbers came from a probe launched with
+  `--disable-blink-features=AutomationControlled`. On GPUs where linking itself is slow
+  (`KHR_parallel_shader_compile`), the first use may still wait inside three's uniform and
+  attribute lookups; re-measure on an integrated GPU.
 
-- **MSAA on the canvas while post-processing is on.** The scene renders into atmosphere's HDR
-  target, and the canvas only receives the final full-screen pass, so `antialias: true` on the
-  canvas costs 74 MB (3 of the 4 samples) and a resolve per frame for nothing. Candidate fix:
-  create the renderer without canvas MSAA when post is active (MSAA on the HDR target instead).
+- **MSAA on the canvas while post-processing is on (fixed).** The scene renders into
+  atmosphere's HDR target (4 / 2 / 0 MSAA samples at DPR ≤ 1 / < 1.5 / ≥ 1.5, `msaaSamplesFor`)
+  and only the final full-screen pass reaches the canvas, so canvas MSAA never touched scene edges
+  and cost 74 MB and a resolve per frame. Main now creates the renderer without canvas MSAA and
+  recreates it with MSAA only if that context cannot run post (`postEnabled` in `src/core/gl.ts`,
+  shared with atmosphere). M4, buildings, preset 2:
+  canvas 98.9 → 24.7 MB, frame 6.5–7.0 → 4.5–5.1 ms (machine under load; indicative), screenshots
+  equal within run-to-run noise.
 - **Programs and textures.** 28–30 programs and 19–21 textures before buildings and neon arrive.
   Modules should share materials and `onBeforeCompile` variants. The low tier (no post, rain,
   clouds, searchlights, shadows) has 12 programs and 3 textures, so those features account for
