@@ -27,6 +27,9 @@ import {
   OPPOSITE,
   scaleHex,
   windowStyle,
+  baseArchetype,
+  withBaseArchetype,
+  type BaseSpec,
 } from './params';
 import {
   band,
@@ -60,7 +63,7 @@ const TOWERS = new Set([
 ]);
 
 interface Bld {
-  spec: BuildingSpec;
+  spec: BaseSpec;
   rng: Rng;
   seed01: number;
   lit: number;
@@ -81,9 +84,10 @@ const ALL_SIDES: readonly Side[] = ['px', 'nx', 'pz', 'nz'];
 const tierStacks = (spec: BuildingSpec): Tier[][] =>
   spec.twin ? [spec.tiers, spec.twin] : [spec.tiers];
 
-function shopSides(spec: BuildingSpec, onStreet?: StreetTest): Set<Side> {
+// `raw` is the layout archetype: fallback forms must not inherit pavilion's forced shop front.
+function shopSides(spec: BaseSpec, raw: string, onStreet?: StreetTest): Set<Side> {
   const out = new Set<Side>();
-  if (!spec.tags.storefront && spec.archetype !== 'pavilion') return out;
+  if (!spec.tags.storefront && raw !== 'pavilion') return out;
   out.add(spec.front);
   if (!onStreet || !SHOP_ARCHETYPES.has(spec.archetype)) return out;
   for (const side of ALL_SIDES) {
@@ -192,7 +196,8 @@ function crownStyle(b: Bld): Style {
   return glow(hex, pick < 0.45 ? 1.6 : 2.4);
 }
 
-export function emitBuilding(spec: BuildingSpec, T: Targets, onStreet?: StreetTest): void {
+export function emitBuilding(raw: BuildingSpec, T: Targets, onStreet?: StreetTest): void {
+  const spec = withBaseArchetype(raw);
   const rng = createRng(spec.seed);
   const wall = facadeHex(spec, rng);
   const b: Bld = {
@@ -206,7 +211,7 @@ export function emitBuilding(spec: BuildingSpec, T: Targets, onStreet?: StreetTe
     inL2: keepInLod2(spec),
     tower: TOWERS.has(spec.archetype),
     mega: spec.h >= 200,
-    shopSides: shopSides(spec, onStreet),
+    shopSides: shopSides(spec, raw.archetype, onStreet),
   };
   const levels: [GeoBuilder, 0 | 1 | 2][] = [
     [T.l0, 0],
@@ -889,7 +894,7 @@ function warehouseProps(g: GeoBuilder, b: Bld, rng: Rng): void {
 }
 
 export function industrialStacks(spec: BuildingSpec, T: Targets): void {
-  if (spec.archetype !== 'warehouse') return;
+  if (baseArchetype(spec) !== 'warehouse') return;
   const rng = createRng(spec.seed ^ 0x5a5a);
   const t = spec.tiers[0];
   if (!t || !rng.chance(0.3)) return;

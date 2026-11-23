@@ -25,6 +25,7 @@ import {
 import { FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import type { Ctx } from '../core/types';
+import { postEnabled } from '../core/gl';
 import { LENS, TIME_WRAP, bloomScaleFor, msaaSamplesFor, wrapTime } from './logic';
 import { HASH_GLSL } from './noise';
 
@@ -166,13 +167,8 @@ const uniform = (uniforms: Record<string, IUniform>, name: string): IUniform => 
   return u;
 };
 
-export function supportsHalfFloatTargets(ctx: Ctx): boolean {
-  const ext = ctx.renderer.extensions;
-  return ext.has('EXT_color_buffer_float') || ext.has('EXT_color_buffer_half_float');
-}
-
 export function createPost(ctx: Ctx): Post | null {
-  if (!supportsHalfFloatTargets(ctx)) return null;
+  if (!postEnabled(ctx.env.quality, ctx.renderer)) return null;
   const { renderer, scene, camera } = ctx;
   const cssSize = renderer.getSize(new Vector2());
   let pixelRatio = renderer.getPixelRatio();

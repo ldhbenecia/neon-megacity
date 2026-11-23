@@ -789,7 +789,7 @@ main의 부팅을 async 단계로 바꾼다. 각 단계 사이에 `await nextFra
 | DPR                                                              | `min(devicePixelRatio, 1.5)`           | 2.0 (적응형으로 올라갈 때만) |
 | 모듈 update CPU 합계                                             | ≤ 1.5 ms                               | 3 ms                         |
 | 초기 로딩 → 상호작용 가능                                        | M1급 ≤ 3 s, 인텔 iGPU ≤ 6 s            | 10 s                         |
-| JS 번들 (gzip)                                                   | ≤ 260 KB                               | 400 KB                       |
+| JS 번들 (gzip, 첫 로드분: index.html이 참조하는 스크립트)        | ≤ 260 KB                               | 400 KB                       |
 
 **규칙**
 
