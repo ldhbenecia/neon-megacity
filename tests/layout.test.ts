@@ -39,7 +39,7 @@ import {
   type BuildingSpec,
   type Tier,
 } from '../src/city/layout';
-import { fitScale } from '../src/city/generate';
+import { MAX_SLENDER, fitScale } from '../src/city/generate';
 import {
   hashString,
   obbOverlap,
@@ -79,11 +79,11 @@ describe('layout v3: determinism', () => {
       digest: digest(LAYOUT),
     }).toMatchInlineSnapshot(`
       {
-        "blocks": 1359,
-        "buildings": 6186,
-        "digest": "7fc5a711",
-        "roads": 1271,
-        "slots": 4065,
+        "blocks": 1390,
+        "buildings": 6136,
+        "digest": "325e992e",
+        "roads": 1255,
+        "slots": 3934,
       }
     `);
   });
@@ -105,15 +105,15 @@ describe('layout v3: determinism', () => {
 describe('layout v3: counts (SEOUL.md 7.4)', () => {
   const count = (pred: (b: BuildingSpec) => boolean) => B.filter(pred).length;
 
-  it('has 5000..7000 buildings, a few hundred hill houses and 9..14 megatowers', () => {
+  it('has 5000..7000 buildings, a few hundred hill houses and 16..28 megatowers', () => {
     expect(B.length).toBeGreaterThanOrEqual(5000);
     expect(B.length).toBeLessThanOrEqual(7000);
     const hill = count((b) => b.archetype === 'hillHouse');
     expect(hill).toBeGreaterThanOrEqual(300);
     expect(hill).toBeLessThanOrEqual(900);
     const mega = count((b) => b.h >= MEGA_MIN_H);
-    expect(mega).toBeGreaterThanOrEqual(9);
-    expect(mega).toBeLessThanOrEqual(14);
+    expect(mega).toBeGreaterThanOrEqual(16);
+    expect(mega).toBeLessThanOrEqual(28);
   });
 
   it('puts the 600 m 용산 apex at the skyline peak, then 잠실 500 m and 여의도 430 m', () => {
@@ -123,14 +123,35 @@ describe('layout v3: counts (SEOUL.md 7.4)', () => {
     expect(top.zoneId).toBe('yongsan');
     expect(top.tags.landmark).toBe('yongsan-apex');
     expect(Math.hypot(top.x - SKYLINE_PEAK.x, top.z - SKYLINE_PEAK.z)).toBeLessThan(200);
-    expect(sorted[1]!.h).toBe(500);
+    const mark = (id: string) => B.find((b) => b.tags.landmark === id)!;
+    expect(mark('jamsil-blade').h).toBe(500);
+    expect(mark('jamsil-blade').archetype).toBe('taperTower');
     expect(sorted[1]!.tags.landmark).toBe('jamsil-blade');
-    expect(sorted[1]!.archetype).toBe('taperTower');
-    expect(sorted[2]!.h).toBe(430);
-    expect(sorted[2]!.zoneId).toBe('yeouido');
+    expect(mark('yeouido-gold').h).toBe(430);
+    expect(mark('yeouido-gold').zoneId).toBe('yeouido');
     for (const b of B.filter((x) => x.h >= MEGA_MIN_H)) expect(b.district).toBe('megacore');
     const ids = LAYOUT.landmarks.map((l) => l.id).sort();
     expect(ids).toEqual(['jamsil-blade', 'namsan-mast', 'palace', 'yeouido-gold', 'yongsan-apex']);
+  });
+
+  it('grows each megacore into a stepped tower cluster (manager review)', () => {
+    const inZone = (id: string, lo: number, hi = Infinity) =>
+      B.filter((b) => b.zoneId === id && b.h >= lo && b.h < hi).length;
+    expect(inZone('yongsan', 280, 599)).toBeGreaterThanOrEqual(5);
+    expect(inZone('yongsan', 120, 280)).toBeGreaterThanOrEqual(12);
+    expect(inZone('yeouido', 300)).toBeGreaterThanOrEqual(5);
+    expect(inZone('yeouido', 120, 300)).toBeGreaterThanOrEqual(15);
+    expect(inZone('jamsil', 150, 499)).toBeGreaterThanOrEqual(8);
+    const apex = B.find((b) => b.tags.landmark === 'yongsan-apex')!;
+    expect(Math.min(apex.w, apex.d)).toBeGreaterThanOrEqual(70);
+    const blade = B.find((b) => b.tags.landmark === 'jamsil-blade')!;
+    expect(Math.min(blade.w, blade.d)).toBeGreaterThanOrEqual(58);
+  });
+
+  it('keeps every building at most 10 × as tall as it is wide (√(w·d))', () => {
+    for (const b of B) {
+      expect(b.h / Math.sqrt(b.w * b.d), `building ${b.id}`).toBeLessThanOrEqual(MAX_SLENDER);
+    }
   });
 
   it('has the expected infrastructure', () => {
@@ -450,9 +471,9 @@ describe('terrain and river', () => {
     const s = LAYOUT.river.samples;
     for (let i = 1; i < s.length; i++) expect(s[i]!.x).toBeGreaterThan(s[i - 1]!.x);
     for (const br of LAYOUT.bridges) {
-      const mx = (br.a.x + br.b.x) / 2;
-      const mz = (br.a.z + br.b.z) / 2;
-      expect(Math.abs(mz - riverZ(mx)), br.id).toBeLessThan(5);
+      // The deck crosses the centerline (abutments need not be symmetric on a bend).
+      const gap = Math.min(...s.map((p) => pointSegmentDistance(p, br.a, br.b)));
+      expect(gap, br.id).toBeLessThan(5);
     }
     // Widths follow SEOUL.md 3.1: wide downstream, narrowest at 잠실.
     expect(riverWidthAt(-1900)).toBeCloseTo(480, 0);
@@ -485,12 +506,10 @@ describe('terrain and river', () => {
     for (const br of LAYOUT.bridges) {
       const mx = (br.a.x + br.b.x) / 2;
       const span = Math.hypot(br.b.x - br.a.x, br.b.z - br.a.z);
-      expect(span, br.id).toBeCloseTo(riverWidthAt(mx), 0);
-      // Abutments sit on the normal at the bridge's x; on tight bends that is up to ~15 m off
-      // the nearest-bank distance. 한강철교 follows 한강대교's direction, so it is further off.
-      const tol = br.motif === 'railTruss' ? 40 : 16;
-      expect(Math.abs(riverSignedDistance(br.a.x, br.a.z)), br.id).toBeLessThan(tol);
-      expect(Math.abs(riverSignedDistance(br.b.x, br.b.z)), br.id).toBeLessThan(tol);
+      expect(span, br.id).toBeGreaterThan(riverWidthAt(mx) * 0.9);
+      // Abutments sit exactly where the axis meets the embankment.
+      expect(Math.abs(riverSignedDistance(br.a.x, br.a.z)), br.id).toBeLessThan(0.5);
+      expect(Math.abs(riverSignedDistance(br.b.x, br.b.z)), br.id).toBeLessThan(0.5);
       const rampA = Math.hypot(br.a.x - br.landA.x, br.a.z - br.landA.z);
       const rampB = Math.hypot(br.b.x - br.landB.x, br.b.z - br.landB.z);
       expect(rampB).toBeGreaterThan(rampA);
@@ -753,6 +772,37 @@ describe('layout v3: highway curves', () => {
         if (inside) buried++;
       }
       expect(buried, ramp.id).toBe(0);
+    }
+  });
+
+  it('ends every ramp on its parent decks', () => {
+    const decks = LAYOUT.highways.filter((h) => h.kind !== 'ramp');
+    for (const ramp of LAYOUT.highways.filter((h) => h.kind === 'ramp')) {
+      const s = highwaySamples(ramp, 4);
+      for (const end of [s[0]!, s[s.length - 1]!]) {
+        const gap = Math.min(
+          ...decks.flatMap((h) =>
+            highwaySamples(h, 4).map((q) => Math.hypot(q.x - end.x, q.z - end.z)),
+          ),
+        );
+        expect(gap, ramp.id).toBeLessThan(3);
+      }
+    }
+  });
+
+  it('runs the named roads around parks and over gentle ground', () => {
+    for (const nr of LAYOUT.namedRoads) {
+      for (let i = 0; i < nr.points.length - 1; i++) {
+        const a = nr.points[i]!;
+        const b = nr.points[i + 1]!;
+        const n = Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / 10);
+        for (let k = 0; k <= n; k++) {
+          const x = a.x + ((b.x - a.x) * k) / n;
+          const z = a.z + ((b.z - a.z) * k) / n;
+          expect(districtAt(x, z), nr.name).not.toBe('park');
+          expect(terrainHeight(x, z), nr.name).toBeLessThan(15);
+        }
+      }
     }
   });
 

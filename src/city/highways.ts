@@ -249,12 +249,15 @@ export function bridgeDeckY(br: Bridge, x: number, z: number, margin = 0): numbe
  * where the road crosses the bridge axis.
  */
 let olympicCache: Vec3[] | null = null;
-function olympicSamples(): Vec3[] {
-  olympicCache ??= highwaySamples(
-    { points: bankPoints(1, OLYMPIC_OFFSET, OLYMPIC_Y), closed: false },
-    4,
-  );
+function olympicPoints(): Vec3[] {
+  olympicCache ??= bankPoints(1, OLYMPIC_OFFSET, OLYMPIC_Y);
   return olympicCache;
+}
+
+let olympicSampleCache: Vec3[] | null = null;
+function olympicSamples(): Vec3[] {
+  olympicSampleCache ??= highwaySamples({ points: olympicPoints(), closed: false }, 4);
+  return olympicSampleCache;
 }
 
 function southRamp(c: Vec2, south: Vec2, half: number, width: number, deckY: number): number {
@@ -273,20 +276,34 @@ function southRamp(c: Vec2, south: Vec2, half: number, width: number, deckY: num
   return Math.max(BRIDGE_LAND_SOUTH, Math.ceil((far + roadHalf) / keep) + 5);
 }
 
+/** Distance along `dir` from c (on the centerline) where the axis meets the embankment. */
+function bankCrossing(c: Vec2, dir: Vec2): number {
+  let lo = 0;
+  let hi = 600;
+  for (let i = 0; i < 40; i++) {
+    const k = (lo + hi) / 2;
+    if (riverSignedDistance(c.x + dir.x * k, c.z + dir.z * k) < 0) lo = k;
+    else hi = k;
+  }
+  return (lo + hi) / 2;
+}
+
 export function makeBridges(): Bridge[] {
   return BRIDGE_DEFS.map((d) => {
-    const half = riverWidthAt(d.x) / 2;
     const c = riverOffset(d.x, 0);
     const { south } = riverFrame(d.normalX ?? d.x);
     const at = (k: number): Vec2 => ({ x: c.x + south.x * k, z: c.z + south.z * k });
+    // Abutments sit where the axis actually meets the bank (bends and skewed axes included).
+    const kA = bankCrossing(c, { x: -south.x, z: -south.z });
+    const kB = bankCrossing(c, south);
     const b: Bridge = {
       id: d.id,
       name: d.name,
       kind: d.kind,
-      a: at(-half),
-      b: at(half),
-      landA: at(-half - BRIDGE_LAND),
-      landB: at(half + southRamp(c, south, half, d.width, d.deckY)),
+      a: at(-kA),
+      b: at(kB),
+      landA: at(-kA - BRIDGE_LAND),
+      landB: at(kB + southRamp(c, south, kB, d.width, d.deckY)),
       deckY: d.deckY,
       width: d.width,
       lanes: d.lanes,
@@ -428,7 +445,11 @@ function tangentRamp(
   );
 }
 
-const gangbyeonPoints = (): Vec3[] => bankPoints(-1, GANGBYEON_OFFSET, GANGBYEON_Y);
+let gangbyeonCache: Vec3[] | null = null;
+function gangbyeonPoints(): Vec3[] {
+  gangbyeonCache ??= bankPoints(-1, GANGBYEON_OFFSET, GANGBYEON_Y);
+  return gangbyeonCache;
+}
 
 /** West ramp: off 강변북로 to its north (left of eastbound travel), up into 내부순환로. */
 function rampWest(): Vec3[] {
@@ -474,7 +495,7 @@ function hwDefs(): HwDef[] {
       id: 'hw-river-north',
       name: '강변북로',
       kind: 'elevated',
-      points: bankPoints(-1, GANGBYEON_OFFSET, GANGBYEON_Y),
+      points: gangbyeonPoints(),
       closed: false,
       width: 26,
       lanes: 6,
@@ -484,7 +505,7 @@ function hwDefs(): HwDef[] {
       id: 'hw-south',
       name: '올림픽대로',
       kind: 'atGrade',
-      points: bankPoints(1, OLYMPIC_OFFSET, OLYMPIC_Y),
+      points: olympicPoints(),
       closed: false,
       width: OLYMPIC_WIDTH,
       lanes: 8,

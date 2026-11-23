@@ -14,7 +14,9 @@ function landing(bridges: readonly Bridge[], id: string, side: 'north' | 'south'
 const southOf = (x: number, k: number): Vec2 => riverOffset(x, riverWidthAt(x) / 2 + k);
 
 export function makeNamedRoads(bridges: readonly Bridge[]): NamedRoad[] {
-  const seoulStation = { x: -282, z: -456 };
+  // 서울역 sits west of 남산 in reality; with the plan compressed 1:6 its projection (-282, -456)
+  // lands on the mountain, so it is moved to the foot of the slope.
+  const seoulStation = { x: -480, z: -520 };
   const gwanghwamun = { x: -190, z: -890 };
   return [
     { id: 'rd-sejong', name: '세종대로', width: 50, points: [gwanghwamun, seoulStation] },

@@ -253,8 +253,8 @@ const SAETGANG_X1 = -598;
 /** Island depth south of the main bank (m) along the channel, by x. */
 function saetgangOffset(x: number): number {
   const t = clamp((x - SAETGANG_X0) / (SAETGANG_X1 - SAETGANG_X0), 0, 1);
-  // 0 at both mouths (on the main bank), up to 360 m in the middle.
-  return 360 * Math.pow(Math.sin(Math.PI * t), 0.5);
+  // 0 at both mouths (on the main bank), up to 440 m in the middle.
+  return 440 * Math.pow(Math.sin(Math.PI * t), 0.4);
 }
 
 const SAETGANG_WIDTH = 50;

@@ -79,31 +79,54 @@ export const SKYLINE_PEAK: Vec2 = { x: -380, z: -80 };
 /** Megatower threshold. */
 export const MEGA_MIN_H = 250;
 
-interface MegaPlan {
-  peak: Vec2;
-  /** Fixed heights, tallest first; one megatower per entry. */
-  tops: readonly number[];
-  /** Blocks whose center is within this distance of the peak get 2 × 2 megatower lots. */
-  radius: number;
-  landmark?: Landmark['id'];
+interface TowerTier {
+  count: number;
+  /** Height range (m); the towers nearest the peak get the top of the range. */
+  h: readonly [number, number];
+  /** Footprint side range (m); always at least h / MAX_SLENDER. */
+  size: readonly [number, number];
 }
 
-/** Megatower plans per megacore zone (SEOUL.md 4.2, 4.5). */
+interface MegaPlan {
+  peak: Vec2;
+  /** Tiers placed outward from the peak, tallest first. The first tier is the landmark. */
+  tiers: readonly TowerTier[];
+  landmark: Landmark['id'];
+}
+
+/** Tallest allowed height / footprint width (√(w·d)) for any building. */
+export const MAX_SLENDER = 10;
+
+/** Tower clusters per megacore zone: one apex, then stepped tiers (SEOUL.md 4.5, 7.5). */
 const MEGA: Record<string, MegaPlan> = {
   yongsan: {
     peak: SKYLINE_PEAK,
-    tops: [600, 420, 380, 340, 300],
-    radius: 1000,
+    tiers: [
+      { count: 1, h: [600, 600], size: [80, 88] },
+      { count: 6, h: [280, 450], size: [46, 54] },
+      { count: 16, h: [120, 250], size: [27, 34] },
+    ],
     landmark: 'yongsan-apex',
   },
   yeouido: {
     peak: riverOffset(-1090, riverWidthAt(-1090) / 2 + 170),
-    tops: [430, 400, 360, 330, 300, 280],
-    radius: 1000,
+    tiers: [
+      { count: 1, h: [430, 430], size: [56, 62] },
+      { count: 4, h: [300, 360], size: [40, 44] },
+      { count: 18, h: [120, 240], size: [24, 30] },
+    ],
     landmark: 'yeouido-gold',
   },
-  jamsil: { peak: { x: 1650, z: 330 }, tops: [500], radius: 160, landmark: 'jamsil-blade' },
+  jamsil: {
+    peak: { x: 1650, z: 330 },
+    tiers: [
+      { count: 1, h: [500, 500], size: [70, 78] },
+      { count: 10, h: [150, 300], size: [34, 44] },
+    ],
+    landmark: 'jamsil-blade',
+  },
 };
+
 /** Building must keep this far from the channel edge (riverSignedDistance). */
 export const RIVER_CLEARANCE = 5;
 
@@ -254,11 +277,13 @@ function buildRoads(seed: number, bridges: readonly Bridge[], named: readonly Na
     }
   };
   for (const nr of named) {
-    const ends = [nr.points[0] as Vec2, nr.points[nr.points.length - 1] as Vec2];
-    const own = (br: Bridge): boolean =>
-      ends.some((e) => [br.landA, br.landB].some((l) => Math.hypot(l.x - e.x, l.z - e.z) < 1));
     for (let i = 0; i < nr.points.length - 1; i++) {
-      clipped(nr.points[i] as Vec2, nr.points[i + 1] as Vec2, nr.width, own);
+      const a = nr.points[i] as Vec2;
+      const b = nr.points[i + 1] as Vec2;
+      // Only the segment that starts or ends at a landing continues that bridge's deck.
+      const own = (br: Bridge): boolean =>
+        [a, b].some((e) => [br.landA, br.landB].some((l) => Math.hypot(l.x - e.x, l.z - e.z) < 1));
+      clipped(a, b, nr.width, own);
     }
   }
   for (const zone of ZONES) {
@@ -324,6 +349,8 @@ interface Lot {
   obb: Obb;
   zone: DistrictZone;
   blockId: number;
+  /** Set on tower-field lots of a megacore: fixed height and tier (0 = landmark). */
+  tower?: { h: number; tier: number };
 }
 
 export const SIDEWALK: Record<string, number> = {
@@ -512,6 +539,7 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
     if (!hasGrid(zone)) continue;
     const rng = zoneRng(seed, `lots:${zone.id}`);
     const mega = MEGA[zone.id];
+    if (mega) towerField(zone, mega, zoneRng(seed, `towers:${zone.id}`));
     const { u0, u1, v0, v1 } = gridRange(zone);
     const P = zone.roadPitch;
     const Q = zone.roadPitchV;
@@ -534,10 +562,8 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
           buildingIds: [],
         };
         const before = lots.length;
-        // Megacore: big 2×2 lots near the zone's peak (megatowers), 3×3 elsewhere.
-        const dense =
-          zone.kind === 'megacore' &&
-          (!mega || Math.hypot(c.x - mega.peak.x, c.z - mega.peak.z) > mega.radius);
+        // Megacore: the tower field took the big sites; the grid fills in with podium lots.
+        const dense = zone.kind === 'megacore';
         const grid = lotGrid(dense ? 'coreDense' : zone.kind, bw - 2 * walk, bd - 2 * walk, rng);
         const cand = new Map<string, Obb>();
         for (const g of grid) {
@@ -577,6 +603,70 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
         }
       }
     }
+  }
+
+  /**
+   * Megacore towers: candidate sites every 10 m, nearest the peak first; each tier claims the
+   * closest sites where a footprint of its size fits (zone, water, obstacles, ≥ 10 m from other
+   * towers). Every tower is a one-lot block.
+   */
+  function towerField(zone: DistrictZone, plan: MegaPlan, rng: Rng): void {
+    let x0 = Infinity;
+    let x1 = -Infinity;
+    let z0 = Infinity;
+    let z1 = -Infinity;
+    for (const p of zone.polygon) {
+      x0 = Math.min(x0, p.x);
+      x1 = Math.max(x1, p.x);
+      z0 = Math.min(z0, p.z);
+      z1 = Math.max(z1, p.z);
+    }
+    const sites: (Vec2 & { r: number })[] = [];
+    for (let x = x0; x <= x1; x += 10) {
+      for (let z = z0; z <= z1; z += 10) {
+        if (zoneAt(x, z).id !== zone.id) continue;
+        sites.push({ x, z, r: Math.hypot(x - plan.peak.x, z - plan.peak.z) + rng.range(0, 6) });
+      }
+    }
+    sites.sort((a, b) => a.r - b.r);
+    const placed: Obb[] = [];
+    plan.tiers.forEach((tier, t) => {
+      const hs = Array.from({ length: tier.count }, () => rng.range(tier.h[0], tier.h[1])).sort(
+        (a, b) => b - a,
+      );
+      let k = 0;
+      for (const site of sites) {
+        if (k >= hs.length) break;
+        const h = hs[k] as number;
+        // The draft insets the lot by 4 % and the depth may be 15 % short: size for that.
+        const side = Math.max(rng.range(tier.size[0], tier.size[1]), h / (MAX_SLENDER * 0.8));
+        const o: Obb = {
+          x: site.x,
+          z: site.z,
+          hw: side / 2,
+          hd: (side * (t === 0 ? rng.range(0.95, 1) : rng.range(0.85, 1))) / 2,
+          rotY: zone.gridAngle,
+        };
+        if (placed.some((q) => obbOverlap(q, o, TOWER_GAP))) continue;
+        if (!accept(o, zone)) continue;
+        placed.push(o);
+        const blockId = blocks.length;
+        blocks.push({
+          id: blockId,
+          zoneId: zone.id,
+          district: zone.kind,
+          x: o.x,
+          z: o.z,
+          w: o.hw * 2,
+          d: o.hd * 2,
+          rotY: o.rotY,
+          buildingIds: [],
+        });
+        lotHash.insert(lots.length, obbBounds(o));
+        lots.push({ obb: o, zone, blockId, tower: { h, tier: t } });
+        k++;
+      }
+    });
   }
 
   // Riverside pavilions (매점, 펌프장): a thin row between the embankment and the highway corridor.
@@ -630,18 +720,32 @@ interface Draft {
 
 /** Archetype of each landmark tower. */
 const LANDMARK_ARCHETYPE: Record<Landmark['id'], Archetype> = {
-  'yongsan-apex': 'twinTower',
+  'yongsan-apex': 'setbackTower',
   'jamsil-blade': 'taperTower',
   'yeouido-gold': 'setbackTower',
   'namsan-mast': 'cylinderTower',
   palace: 'palaceHall',
 };
 
-/** Smallest lot side (m) that can hold a megatower. */
-const MEGA_LOT = 45;
+/** Height limit from MAX_SLENDER (with 2 % headroom) for a w × d footprint. */
+function slenderCap(w: number, d: number): number {
+  return MAX_SLENDER * 0.98 * Math.sqrt(w * d);
+}
+
+/** Clear gap kept between megacore towers (m). */
+const TOWER_GAP = 10;
 
 /** Hillside occupancy reaches its ridge floor at this terrain height (m). */
 const HILL_TOP = 120;
+
+const HIGHRISE_MIX: readonly (readonly [Archetype, number])[] = [
+  ['setbackTower', 30],
+  ['officeSlab', 20],
+  ['bracedTower', 15],
+  ['cantileverTower', 10],
+  ['cylinderTower', 15],
+  ['taperTower', 10],
+];
 
 const MEGA_BAG: Archetype[] = [
   'setbackTower',
@@ -653,7 +757,7 @@ const MEGA_BAG: Archetype[] = [
   'bracedTower',
   'bracedTower',
   'cantileverTower',
-  'twinTower',
+  'taperTower',
 ];
 
 function shuffle<T>(rng: Rng, arr: T[]): T[] {
@@ -757,56 +861,50 @@ function draftsFor(zone: DistrictZone, lots: Lot[], rng: Rng): Draft[] {
     const s = fitScale(w, d, jitter, ox, oz, lw, ld);
     w *= s;
     d *= s;
-    return { lot, archetype, w, d, h, ox, oz, jitter, ...extra };
+    const hh = extra.corp ? h : Math.min(h, slenderCap(w, d));
+    return { lot, archetype, w, d, h: hh, ox, oz, jitter, ...extra };
   };
 
   switch (zone.kind) {
     case 'megacore': {
       const plan = MEGA[zone.id];
-      const perBlock = new Map<number, number>();
-      let picked = 0;
       const peak = plan?.peak ?? zone.origin;
-      const dist = (l: Lot): number => Math.hypot(l.obb.x - peak.x, l.obb.z - peak.z);
-      const big = plan
-        ? lots
-            .filter((l) => Math.min(l.obb.hw, l.obb.hd) * 2 >= MEGA_LOT)
-            .sort((a, b) => dist(a) - dist(b))
-            .filter((l) => {
-              // At most 3 megatowers per block so every block keeps one low building (ratio rule).
-              const n = perBlock.get(l.blockId) ?? 0;
-              if (n >= 3 || picked >= plan.tops.length) return false;
-              perBlock.set(l.blockId, n + 1);
-              picked++;
-              return true;
-            })
-        : [];
       const bag = shuffle(rng, [...MEGA_BAG]);
-      const megaSet = new Set(big);
-      big.forEach((lot, i) => {
-        // The tallest tower carries the zone's landmark silhouette (SEOUL.md 4.5).
-        const lead = i === 0 && plan?.landmark;
-        const a: Archetype = lead
-          ? LANDMARK_ARCHETYPE[plan.landmark ?? 'yongsan-apex']
-          : (bag[i % bag.length] as Archetype);
-        const extra: Partial<Draft> = { corp: CORPS[i % CORPS.length] };
-        if (lead && plan.landmark) extra.landmark = plan.landmark;
-        drafts.push(make(lot, a, plan?.tops[i] ?? MEGA_MIN_H, extra));
-      });
+      let corp = 0;
       for (const lot of lots) {
-        if (megaSet.has(lot)) continue;
-        // Plaza / sunken square / ramp space, except next to megatowers (they need a podium).
-        if (!perBlock.has(lot.blockId) && rng.chance(0.3)) continue;
+        const tw = lot.tower;
+        if (!tw) continue;
+        const mega = tw.h >= MEGA_MIN_H;
+        const a: Archetype =
+          tw.tier === 0 && plan
+            ? LANDMARK_ARCHETYPE[plan.landmark]
+            : mega
+              ? (bag[corp % bag.length] as Archetype)
+              : weighted<Archetype>(rng, HIGHRISE_MIX);
+        const extra: Partial<Draft> = {};
+        if (mega) extra.corp = CORPS[corp++ % CORPS.length];
+        if (tw.tier === 0 && plan) extra.landmark = plan.landmark;
+        // Tower lots are sized for their tower: the footprint fills the lot.
+        const w = lot.obb.hw * 2 * 0.96;
+        const d = lot.obb.hd * 2 * 0.96;
+        drafts.push({ lot, archetype: a, w, d, h: tw.h, ox: 0, oz: 0, jitter: 0, ...extra });
+      }
+      for (const lot of lots) {
+        if (lot.tower) continue;
+        // Plazas and sunken squares between the towers.
+        if (rng.chance(0.3)) continue;
         const a = weighted<Archetype>(rng, [
-          ['setbackTower', 30],
-          ['officeSlab', 30],
+          ['officeSlab', 40],
+          ['setbackTower', 25],
           ['bracedTower', 15],
           ['cantileverTower', 10],
-          ['cylinderTower', 10],
-          ['taperTower', 5],
+          ['twinTower', 5],
+          ['cylinderTower', 5],
         ]);
-        // Heights fall off away from the peak.
-        const fall = 1 - 0.45 * clamp(dist(lot) / 700, 0, 1);
-        drafts.push(make(lot, a, Math.max(H.min * 0.6, rng.range(H.min, H.max) * fall)));
+        // Podium and mid-rise blocks, lower away from the peak.
+        const dist = Math.hypot(lot.obb.x - peak.x, lot.obb.z - peak.z);
+        const fall = 1 - 0.5 * clamp(dist / 700, 0, 1);
+        drafts.push(make(lot, a, rng.range(40, 110) * fall));
       }
       break;
     }
@@ -1021,7 +1119,11 @@ function applyBlockHeightRules(drafts: Draft[], rng: Rng): void {
     else byBlock.set(d.lot.blockId, [d]);
   }
   for (const list of byBlock.values()) {
-    const capOf = (d: Draft): number => (d.corp ? Infinity : d.lot.zone.heights.tallMax);
+    // Only megatowers (corp) may reach MEGA_MIN_H; everything stays within MAX_SLENDER.
+    const capOf = (d: Draft): number =>
+      d.corp
+        ? Infinity
+        : Math.min(d.lot.zone.heights.tallMax, MEGA_MIN_H - 1, slenderCap(d.w, d.d));
     for (const d of list) d.h = Math.min(d.h, capOf(d));
     if (list.length < 2) continue;
 
