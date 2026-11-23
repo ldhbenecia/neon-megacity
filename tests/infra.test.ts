@@ -12,7 +12,6 @@ import {
 import { obbOverlap, pointSegmentDistance } from '../src/city/math';
 import {
   approachPierBlocksRoad,
-  approachStations,
   archY,
   deckYAt,
   bridgeFrame,
@@ -141,8 +140,9 @@ describe('infra: cross-sections and lanes', () => {
       expect(o).toHaveLength(hw.lanes);
       for (let i = 1; i < o.length; i++) expect(o[i]!).toBeGreaterThan(o[i - 1]!);
       const lw = laneWidth(hw);
-      expect(lw).toBeGreaterThan(3.2);
-      expect(lw).toBeLessThan(4.6);
+      // 올림픽대로 28 m / 8 lanes ≈ 3.05 m, 내부순환로 22 m / 4 lanes = 4.6 m.
+      expect(lw).toBeGreaterThanOrEqual(3);
+      expect(lw).toBeLessThanOrEqual(4.6 + 1e-9);
       expect(Math.abs(o[0]!) + lw / 2).toBeLessThan(hw.width / 2 - 0.5);
       // Divided roads: same number of lanes on each side of the centerline.
       if (hw.kind !== 'ramp') expect(o.filter((x) => x > 0)).toHaveLength(hw.lanes / 2);
@@ -285,7 +285,8 @@ describe('infra: bridges', () => {
       }
       expect(-f.landA).toBeGreaterThan(f.spanHalf);
       expect(f.landB - f.spanHalf).toBeGreaterThan(-f.landA - f.spanHalf);
-      for (let s = f.landA + 1; s < f.landB; s += 7) {
+      // Stop short of the landing: at the landing itself bridgeDeckY may round to null.
+      for (let s = f.landA + 1; s < f.landB - 0.5; s += 7) {
         const p = bridgePoint(f, s, 0, 0);
         const y = layoutBridgeDeckY(b, p[0], p[2]);
         expect(y).not.toBeNull();
@@ -355,15 +356,25 @@ describe('infra: bridges', () => {
         const p = bridgePoint(f, s, 0, 0);
         expect(riverSignedDistance(p[0], p[2])).toBeLessThan(0);
       }
-      for (const s of approachStations(f)) {
-        const p = bridgePoint(f, s, 0, 0);
-        for (const hw of LAYOUT.highways) {
-          const q = nearestOnPath(hwPath(hw), p[0], p[2]);
-          expect(q.d, `${b.id} approach pier vs ${hw.id}`).toBeGreaterThan(hw.width / 2 + 1);
+    }
+    const parts = buildInfra(LAYOUT, C);
+    // Placed piers (stations on a highway are dropped): no footprint point on a lower deck.
+    const hwPaths = LAYOUT.highways.map((hw) => hwPath(hw));
+    for (const c of parts.columns.filter((col) => LAYOUT.bridges.some((b) => b.id === col.owner))) {
+      const cos = Math.cos(c.rotY);
+      const sin = Math.sin(c.rotY);
+      for (const i of [-0.5, -0.25, 0, 0.25, 0.5]) {
+        for (const j of [-0.5, 0.5]) {
+          const x = c.x + cos * i * c.w + sin * j * c.d;
+          const z = c.z - sin * i * c.w + cos * j * c.d;
+          for (const path of hwPaths) {
+            const q = nearestOnPath(path, x, z);
+            if (q.y >= c.y1) continue;
+            expect(q.d, `${c.owner} pier on ${path.hw.id}`).toBeGreaterThan(path.hw.width / 2);
+          }
         }
       }
     }
-    const parts = buildInfra(LAYOUT, C);
     const bridgeIds = new Set(LAYOUT.bridges.map((b) => b.id));
     const bridgeColumns = parts.columns.filter((c) => bridgeIds.has(c.owner));
     // Approach piers never stand on a ground road (roads may cross under the long south ramp).

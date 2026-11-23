@@ -63,8 +63,12 @@ const columnObb = (p: PillarSpec) => ({
   rotY: p.rotY,
 });
 
+/** Shortest column worth standing (m); lower decks rest on a slope or run into a portal. */
+const MIN_COLUMN_H = 5;
+
 /**
- * Pillar specs for every raised highway. Dropped: ramp pillars standing inside another deck at
+ * Pillar specs for every raised highway. Dropped: pillars whose column (foot to cap) would
+ * be MIN_COLUMN_H or shorter, ramp pillars standing inside another deck at
  * the same level (the parent's own pillars carry the junction), any pillar whose column would
  * pierce a lower deck, and pillars whose column overlaps one already accepted.
  */
@@ -92,7 +96,7 @@ export function pillarSpecs(
         colD: size.d,
         deckW: hw.width,
       };
-      let ok = true;
+      let ok = columnTop(spec) - (spec.footY - 1) > MIN_COLUMN_H;
       for (const o of paths) {
         if (o.hw.id === hw.id || o.hw.kind === 'atGrade') continue;
         const q = nearestOnPath(o, pl.x, pl.z);
