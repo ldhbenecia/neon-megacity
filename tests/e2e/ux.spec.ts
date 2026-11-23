@@ -20,16 +20,18 @@ async function waitMode(page: Page, mode: string): Promise<void> {
 type Metric = 'horizontal' | 'up' | 'distance' | 'zoom';
 
 /**
- * Waits (frame-driven, not wall-clock) until the camera has moved by `min` from `from` along a
- * metric. SwiftShader runs a few fps and dt is capped at 0.1 s, so fixed timeouts under-move.
+ * Waits (condition, not wall-clock) until the camera moved from `from` along a metric; this is
+ * the assertion itself. `amount` is metres, except for 'zoom': the orbit distance must drop below
+ * `amount` × the start distance. SwiftShader runs a few fps and dt is capped at 0.1 s, so fixed
+ * timeouts under-move. On timeout the error carries the start and current camera.
  */
 async function waitMoved(
   page: Page,
   from: Awaited<ReturnType<typeof cam>>,
   metric: Metric,
-  min: number,
+  amount: number,
 ): Promise<void> {
-  await page.waitForFunction(
+  const wait = page.waitForFunction(
     ({ from, metric, min }) => {
       const c = window.__hangang?.camera();
       if (!c) return false;
@@ -51,17 +53,27 @@ async function waitMoved(
       );
       return d1 < d0 * min;
     },
-    { from, metric, min },
+    { from, metric, min: amount },
     { timeout: 60_000 },
   );
+  try {
+    await wait;
+  } catch (err) {
+    const now = await cam(page).catch(() => null);
+    throw new Error(
+      `camera did not move ${metric} ${amount}: from ${JSON.stringify(from.position)} ` +
+        `to ${JSON.stringify(now?.position)}`,
+      { cause: err },
+    );
+  }
 }
 
-/** Holds `key` until the camera moved by `min` along `metric`, then releases it. */
-async function holdUntil(page: Page, key: string, metric: Metric, min: number): Promise<void> {
+/** Holds `key` until the camera moved by `amount` along `metric` (see waitMoved), then releases. */
+async function holdUntil(page: Page, key: string, metric: Metric, amount: number): Promise<void> {
   const from = await cam(page);
   await page.keyboard.down(key);
   try {
-    await waitMoved(page, from, metric, min);
+    await waitMoved(page, from, metric, amount);
   } finally {
     await page.keyboard.up(key);
   }
@@ -211,13 +223,10 @@ test.describe('camera rig', () => {
     const fz = a.target.z - a.position.z;
     const mx = b.position.x - a.position.x;
     const mz = b.position.z - a.position.z;
-    expect(Math.hypot(mx, mz)).toBeGreaterThan(20);
     expect((fx * mx + fz * mz) / Math.hypot(fx, fz) / Math.hypot(mx, mz)).toBeGreaterThan(0.95);
     expect(dist(b.position, b.target)).toBeCloseTo(dist(a.position, a.target), -1);
 
-    await holdUntil(page, 'e', 'up', 25);
-    await waitFrames(page, 5);
-    expect((await cam(page)).position.y).toBeGreaterThan(b.position.y + 20);
+    await holdUntil(page, 'e', 'up', 20);
   });
 
   test('wheel zooms smoothly toward the cursor', async ({ page }) => {
@@ -230,7 +239,6 @@ test.describe('camera rig', () => {
     await waitMoved(page, a, 'zoom', 0.8);
     await waitFrames(page, 10);
     const b = await cam(page);
-    expect(dist(b.position, b.target)).toBeLessThan(dist(a.position, a.target) * 0.8);
     expect(dist(b.position, mid.position)).toBeGreaterThan(1);
     expect(b.mode).toBe('orbit');
   });
@@ -244,7 +252,6 @@ test.describe('camera rig', () => {
     await waitMoved(page, a, 'distance', 50);
     const b = await cam(page);
     expect(dist(b.target, a.target)).toBeLessThan(1);
-    expect(dist(b.position, a.position)).toBeGreaterThan(50);
     expect(b.selected).toBeNull();
   });
 
@@ -278,9 +285,7 @@ test.describe('camera rig', () => {
     await page.keyboard.press('f');
     await waitMode(page, 'fly');
     await expect(page.locator('#hud')).toHaveAttribute('data-mode', 'fly');
-    const a = await cam(page);
-    await holdUntil(page, 'w', 'distance', 25);
-    expect(dist((await cam(page)).position, a.position)).toBeGreaterThan(20);
+    await holdUntil(page, 'w', 'distance', 20);
     await page.keyboard.press('f');
     await waitMode(page, 'orbit');
 
