@@ -150,7 +150,7 @@ function table(results: Result[]): string {
         `${s.calls}${warn(s.calls > BUDGET.calls)} | ${(s.triangles / 1e6).toFixed(2)} M${warn(s.triangles > BUDGET.triangles)} | ` +
         `${s.programs}${warn(s.programs > BUDGET.programs)} | ${s.textures}${warn(s.textures > BUDGET.textures)} | ` +
         `${mb(r.memory.geometryBytes)} | ${mb(r.memory.textureBytes)} | ` +
-        `${mb(r.memory.framebufferBytes)} (×${r.memory.samples}) | ${cpu.toFixed(2)} |`,
+        `${mb(r.memory.canvasBytes)} (×${r.memory.samples}) | ${cpu.toFixed(2)} |`,
     );
   }
   const stages = [...new Set(results.flatMap((r) => Object.keys(r.boot)))];
