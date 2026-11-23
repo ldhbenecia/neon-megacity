@@ -80,6 +80,9 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Bundle size
+        run: npm run size
+
       - name: Install Playwright Chromium
         if: steps.changes.outputs.docs_only != 'true'
         run: npx playwright install --with-deps chromium
