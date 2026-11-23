@@ -11,7 +11,7 @@ import {
   toLocal,
   type Obb,
 } from './math';
-import { highwaySamples } from './highways';
+import { bridgeDeckY, highwaySamples } from './highways';
 import { GridHash, boundsOverlap, segmentBounds, type Bounds } from './spatial';
 import type { BuildingFace, BuildingSpec, Layout, Ridge, Side, Tier, Vec2, Vec3 } from './types';
 
@@ -354,15 +354,8 @@ export function deckHeightAt(L: Layout, x: number, z: number): number | null {
     take(s.a.y + (s.b.y - s.a.y) * closestSegmentT(p, s.a, s.b));
   }
   for (const br of L.bridges) {
-    if (pointSegmentDistance(p, br.landA, br.landB) > br.width / 2) continue;
-    const mid = { x: (br.a.x + br.b.x) / 2, z: (br.a.z + br.b.z) / 2 };
-    const ax = br.landB.x - br.landA.x;
-    const az = br.landB.z - br.landA.z;
-    const len = Math.hypot(ax, az);
-    const s = Math.abs(((x - mid.x) * ax + (z - mid.z) * az) / len);
-    const spanHalf = Math.hypot(br.b.x - br.a.x, br.b.z - br.a.z) / 2;
-    const ramp = len / 2 - spanHalf;
-    take(s <= spanHalf ? br.deckY : br.deckY * Math.max(0, 1 - (s - spanHalf) / ramp));
+    const y = bridgeDeckY(br, x, z);
+    if (y !== null) take(y);
   }
   return best;
 }

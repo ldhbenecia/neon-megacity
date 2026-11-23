@@ -12,7 +12,15 @@ import {
   type Massing,
 } from './archetypes';
 import { ZONES, zoneAt, zoneById } from './districts';
-import { highwaySamples, makeBridges, makeHighways, onBridge } from './highways';
+import {
+  MAX_DECK_THICKNESS,
+  MIN_ROAD_CLEARANCE,
+  bridgeDeckY,
+  highwaySamples,
+  makeBridges,
+  makeHighways,
+  onBridge,
+} from './highways';
 import {
   clamp,
   closestSegmentT,
@@ -125,8 +133,10 @@ function clipLine(
   along: 'u' | 'v',
   t0: number,
   t1: number,
+  bridges: readonly Bridge[],
 ): { a: Vec2; b: Vec2 }[] {
   const runs: { a: Vec2; b: Vec2 }[] = [];
+  const half = zone.roadWidth / 2 + 1;
   let start: number | null = null;
   const at = (t: number): Vec2 =>
     along === 'v' ? gridToWorld(zone, fixed, t) : gridToWorld(zone, t, fixed);
@@ -134,7 +144,8 @@ function clipLine(
   for (let i = 0; i <= n + 1; i++) {
     const t = t0 + i * ROAD_STEP;
     const p = at(t);
-    const inside = i <= n && zoneAt(p.x, p.z).id === zone.id;
+    const inside =
+      i <= n && zoneAt(p.x, p.z).id === zone.id && !underLowDeck(bridges, p.x, p.z, half);
     if (inside && start === null) start = t;
     if (!inside && start !== null) {
       const end = t - ROAD_STEP;
@@ -143,6 +154,25 @@ function clipLine(
     }
   }
   return runs;
+}
+
+/**
+ * True where a road of half width `half` at (x, z) would pass under a bridge approach with less
+ * than MIN_ROAD_CLEARANCE (assuming the thickest allowed deck). Roads stop short of those spots.
+ */
+function underLowDeck(bridges: readonly Bridge[], x: number, z: number, half: number): boolean {
+  for (const br of bridges) {
+    // The road strip spans ±half around (x, z); check its centre and both edges along the
+    // bridge axis, where the approach deck is lowest on the landing side.
+    const ax = br.landB.x - br.landA.x;
+    const az = br.landB.z - br.landA.z;
+    const len = Math.hypot(ax, az);
+    for (const k of [0, -half, half]) {
+      const y = bridgeDeckY(br, x + (ax / len) * k, z + (az / len) * k, half);
+      if (y !== null && y - MAX_DECK_THICKNESS < MIN_ROAD_CLEARANCE) return true;
+    }
+  }
+  return false;
 }
 
 function buildRoads(seed: number, bridges: readonly Bridge[]): Road[] {
@@ -159,7 +189,7 @@ function buildRoads(seed: number, bridges: readonly Bridge[]): Road[] {
     const hill = zone.kind === 'hillside';
     // Lines of constant u run along v (for hillside: uphill, roughly north-south).
     for (let i = Math.floor(u0 / P); i <= Math.ceil(u1 / P); i++) {
-      for (const { a, b } of clipLine(zone, i * P, 'v', v0, v1)) {
+      for (const { a, b } of clipLine(zone, i * P, 'v', v0, v1, bridges)) {
         if (!hill) {
           push(zone.roadKind, a, b, zone.roadWidth, zone);
           continue;
@@ -178,7 +208,7 @@ function buildRoads(seed: number, bridges: readonly Bridge[]): Road[] {
               stair ? 'stair' : 'alley',
               gridToWorld(zone, i * P, s),
               gridToWorld(zone, i * P, e),
-              stair ? 3 : zone.roadWidth,
+              stair ? 2.5 : zone.roadWidth,
               zone,
             );
           }
@@ -187,7 +217,7 @@ function buildRoads(seed: number, bridges: readonly Bridge[]): Road[] {
       }
     }
     for (let j = Math.floor(v0 / Q); j <= Math.ceil(v1 / Q); j++) {
-      for (const { a, b } of clipLine(zone, j * Q, 'u', u0, u1)) {
+      for (const { a, b } of clipLine(zone, j * Q, 'u', u0, u1, bridges)) {
         push(zone.roadKind, a, b, zone.roadWidth, zone);
       }
     }
@@ -228,6 +258,9 @@ const SIDEWALK: Record<string, number> = {
 };
 
 const SANGGA_ALLEY = 5;
+/** Hillside lot occupancy: low slope + ridge floor (see draftsFor). */
+const HILL_OCCUPANCY_LOW = 0.8;
+const HILL_OCCUPANCY_TOP = 0.05;
 
 interface LotCell {
   /** Grid index inside the block. */
@@ -268,7 +301,10 @@ function lotGrid(
       return cells(3, 2, SANGGA_ALLEY);
     case 'apartment':
       return cells(Math.max(1, Math.floor(bw / 85)), 3);
-    default: // core (megatower lots), industrial, hillside
+    case 'hillside':
+      // 별계단동 is the densest quarter: 4 × 4 lots of ~11 m per 45 m block.
+      return cells(4, 4);
+    default: // core (megatower lots), industrial
       return cells(2, 2);
   }
 }
@@ -431,11 +467,14 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
           // Shrink the block to the lots that survived (corridors / river may have removed some).
           fitBlockToLots(block, lots.slice(before));
           blocks.push(block);
-          if (zone.kind === 'sangga') {
-            const e = toWorld(bw / 2, 0, zone.gridAngle);
+          // Mid-block alley, only along the lots that survived and only between two rows.
+          const fit = toLocal(block.x - c.x, block.z - c.z, zone.gridAngle);
+          if (zone.kind === 'sangga' && Math.abs(fit.z) + SANGGA_ALLEY / 2 < block.d / 2) {
+            const a = toWorld(fit.x - block.w / 2, 0, zone.gridAngle);
+            const b = toWorld(fit.x + block.w / 2, 0, zone.gridAngle);
             alleys.push({
-              a: { x: c.x - e.x, z: c.z - e.z },
-              b: { x: c.x + e.x, z: c.z + e.z },
+              a: { x: c.x + a.x, z: c.z + a.z },
+              b: { x: c.x + b.x, z: c.z + b.z },
               zone,
             });
           }
@@ -539,7 +578,8 @@ function footprint(rng: Rng, a: Archetype, lw: number, ld: number): { w: number;
       return { w: clamp(lw * 0.92, 8, 25), d: clamp(ld * 0.92, 8, 25) };
     case 'hillHouse': {
       const s = rng.range(6, 10);
-      return { w: Math.min(s * rng.range(0.9, 1.1), lw * 0.85), d: Math.min(s, ld * 0.85) };
+      // 6–10 m houses; lots are ~11 m, so neighbours keep a 2–3 m+ alley between them.
+      return { w: Math.min(s * rng.range(0.9, 1.1), lw * 0.8), d: Math.min(s, ld * 0.8) };
     }
     case 'warehouse':
       return { w: lw * rng.range(0.6, 0.9), d: ld * rng.range(0.6, 0.9) };
@@ -694,13 +734,13 @@ function draftsFor(zone: DistrictZone, lots: Lot[], rng: Rng): Draft[] {
       break;
     case 'hillside':
       for (const lot of lots) {
-        // Denser near the bottom of the slope, thinning toward the ridge.
+        // Packed near the bottom of the slope (~85 % of lots built), thinning toward the ridge.
         const up = clamp(
           (TERRAIN.hillStartZ - lot.obb.z) / (TERRAIN.hillStartZ - TERRAIN.hillEndZ),
           0,
           1,
         );
-        if (!rng.chance(0.55 * (1 - 0.45 * up))) continue;
+        if (!rng.chance(HILL_OCCUPANCY_LOW * Math.pow(1 - up, 2.2) + HILL_OCCUPANCY_TOP)) continue;
         drafts.push(make(lot, 'hillHouse', 2.7 * rng.int(2, 4)));
       }
       break;

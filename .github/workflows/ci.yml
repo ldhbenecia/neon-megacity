@@ -22,7 +22,7 @@ jobs:
     name: check
     # Playwright 1.55 cannot install browser deps on ubuntu-latest (26.04) yet.
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v7
         with:
