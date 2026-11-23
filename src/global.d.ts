@@ -30,6 +30,8 @@ interface HangangCamera {
   selected: number | null;
 }
 
+type HangangVec3 = { x: number; y: number; z: number };
+
 declare global {
   interface Window {
     /**
@@ -46,6 +48,14 @@ declare global {
       lod0Pending: number;
     };
     /** Only with `?stats`: frame counters and camera rig state (src/ux). */
-    __hangang?: { stats(): HangangStats; camera(): HangangCamera; memory(): HangangMemory };
+    __hangang?: {
+      stats(): HangangStats;
+      camera(): HangangCamera;
+      memory(): HangangMemory;
+      /** Pose of rig preset `key` (1..8) on the loaded layout. */
+      preset(key: number): { position: HangangVec3; target: HangangVec3 };
+      /** A viewport point (client px) whose click picks a building, nearest the center first. */
+      buildingPoint(): { x: number; y: number } | null;
+    };
   }
 }

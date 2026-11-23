@@ -289,7 +289,9 @@ test.describe('camera rig', () => {
   });
 
   test('clicking a building flies to it and shows the card; Esc clears it', async ({ page }) => {
-    await page.mouse.click(800, 450);
+    const at = await page.evaluate(() => window.__hangang?.buildingPoint() ?? null);
+    expect(at, 'no building under the central viewport').not.toBeNull();
+    await page.mouse.click(at!.x, at!.y);
     await waitMode(page, 'flight');
     await waitMode(page, 'orbit');
     const c = await cam(page);
@@ -305,13 +307,15 @@ test.describe('camera rig', () => {
     await page.keyboard.press('8');
     await waitMode(page, 'flight');
     await waitMode(page, 'orbit');
-    expect((await cam(page)).position.y).toBeGreaterThan(1800);
+    const top = await page.evaluate(() => window.__hangang!.preset(8).position);
+    expect(dist((await cam(page)).position, top)).toBeLessThan(2);
     await expect(page.locator('#hud-toast')).toContainText('탑다운');
     await page.keyboard.press('r');
     await waitMode(page, 'flight');
     await waitMode(page, 'orbit');
     const p = (await cam(page)).position;
-    expect(dist(p, { x: -420, y: 38, z: 300 })).toBeLessThan(2);
+    const home = await page.evaluate(() => window.__hangang!.preset(1).position);
+    expect(dist(p, home)).toBeLessThan(2);
   });
 
   test('F toggles fly mode, C toggles the cinematic and any input stops it', async ({ page }) => {

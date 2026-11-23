@@ -62,6 +62,11 @@ export function initUx(ctx: Ctx, opts: UxOptions): Ux {
       stats: (): FrameStats => perf.stats(),
       camera: (): RigDebug => rig.debug(),
       memory: () => estimateMemory(ctx),
+      preset: (key: number) => {
+        const { position, target } = rigPreset(key);
+        return { position, target };
+      },
+      buildingPoint: () => rig.buildingPoint(),
     };
   }
 
