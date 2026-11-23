@@ -176,13 +176,13 @@ export function solidBounds(s: Solid): { minX: number; minZ: number; maxX: numbe
   };
 }
 
-export function firstHit(L: Layout, v: Solid): Solid | null {
+export function firstHit(L: Layout, v: Solid, ignore?: (s: Solid) => boolean): Solid | null {
   const bb = solidBounds(v);
   const ids = buildingsInAabb(L, bb.minX - 2, bb.minZ - 2, bb.maxX + 2, bb.maxZ + 2);
   for (const id of ids) {
     const b = L.buildings[id];
     if (!b) continue;
-    for (const s of buildingSolids(b)) if (solidsOverlap(v, s)) return s;
+    for (const s of buildingSolids(b)) if (!ignore?.(s) && solidsOverlap(v, s)) return s;
   }
   return null;
 }

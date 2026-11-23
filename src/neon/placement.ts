@@ -205,7 +205,7 @@ interface Ctx {
   roadGap: (x: number, z: number) => number;
 }
 
-function roadGapIndex(L: Layout): (x: number, z: number) => number {
+export function roadGapIndex(L: Pick<Layout, 'roads'>): (x: number, z: number) => number {
   const cell = 64;
   const grid = new Map<string, Layout['roads']>();
   for (const r of L.roads) {
@@ -665,9 +665,8 @@ function placeRings(c: Ctx, b: BuildingSpec, rng: Rng, zone: number, budget: num
       tier: -10,
       stack: 0,
     };
-    // The ring wraps its own cylinder, so only other solids count as collisions.
-    const hit = firstHit(c.L, vol);
-    if (hit && !(hit.building === b.id && hit.tier === 0)) continue;
+    // The ring wraps its own tier-0 cylinder; every other solid is a collision.
+    if (firstHit(c.L, vol, (s) => s.building === b.id && s.tier === 0 && s.stack === 0)) continue;
     ys.push(y);
     placed++;
     const cell = pickCell(c, 'ring', rng);
@@ -804,7 +803,7 @@ export function placeSigns(
       placeCrown(c, b, rng, zone, cell, 2);
     } else if (a === 'apartmentSlab' && b.tags.complex) {
       const cell = cat.cells.findIndex((k) => k.kind === 'crown' && k.key === b.tags.complex);
-      placeCrown(c, b, rng, zone, cell >= 0 ? cell : pickCell(c, 'crown', rng), 1);
+      placeCrown(c, b, rng, zone, cell, 1);
     } else if ((tower || a === 'officeSlab') && b.h >= 40 && rng.chance(0.3)) {
       placeCrown(c, b, rng, zone, pickCell(c, 'crown', rng), 1);
     } else if (a === 'warehouse' && rng.chance(0.25)) {
