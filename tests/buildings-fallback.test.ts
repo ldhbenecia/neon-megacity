@@ -60,6 +60,16 @@ describe('unknown archetypes fall back to a base form', () => {
     }
   });
 
+  it('ignores Object prototype keys and keeps palace halls free of shop fronts', () => {
+    expect(baseArchetype(unknown(low, 'constructor'))).toBe('sangga');
+    expect(baseArchetype(unknown(tall, 'toString'))).toBe('officeSlab');
+    const hall = { ...unknown(low, 'palaceHall'), tags: { ...low.tags, storefront: false } };
+    const T = targets();
+    emitBuilding(hall, T, () => true);
+    const info = T.l0.build()!.getAttribute('aInfo');
+    for (let i = 0; i < info.count; i++) expect(info.getX(i) % 2).toBe(0);
+  });
+
   it('handles unknown district kinds', () => {
     const T = targets();
     const s = { ...low, district: 'somewhere' } as unknown as BuildingSpec;

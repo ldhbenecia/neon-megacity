@@ -58,7 +58,8 @@ const FALLBACK: Readonly<Record<string, BaseArchetype>> = {
 export function baseArchetype(spec: Pick<BuildingSpec, 'archetype' | 'h'>): BaseArchetype {
   const a: string = spec.archetype;
   if (BASE_SET.has(a)) return a as BaseArchetype;
-  return FALLBACK[a] ?? (spec.h >= LOD2_MIN_HEIGHT ? 'officeSlab' : 'sangga');
+  if (Object.hasOwn(FALLBACK, a)) return FALLBACK[a] as BaseArchetype;
+  return spec.h >= LOD2_MIN_HEIGHT ? 'officeSlab' : 'sangga';
 }
 
 export type BaseSpec = BuildingSpec & { archetype: BaseArchetype };

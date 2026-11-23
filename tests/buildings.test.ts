@@ -202,8 +202,8 @@ describe('chunks and LOD (4.4, 4.5)', () => {
     const corner = chunkIndex(-grid.halfX + 1, grid.halfZ - 1, grid);
     expect(corner).toEqual({ i: 0, j: nz - 1 });
     const c = chunkCenter(corner.i, corner.j, grid);
-    expect(Math.abs(c.x - -grid.halfX)).toBeLessThanOrEqual(grid.size * 0.75);
-    expect(Math.abs(c.z - grid.halfZ)).toBeLessThanOrEqual(grid.size * 0.75);
+    expect(c.x).toBeCloseTo(-grid.halfX + grid.size / 2, 9);
+    expect(c.z).toBeCloseTo((-grid.halfZ + (nz - 1) * grid.size + grid.halfZ) / 2, 9);
     for (const b of LAYOUT.buildings) {
       const k = chunkIndex(b.x, b.z, grid);
       expect(k.i).toBeGreaterThanOrEqual(0);
@@ -215,6 +215,10 @@ describe('chunks and LOD (4.4, 4.5)', () => {
 
   it('splits v2 and v3 map sizes into the planned chunk counts', () => {
     expect(chunkCount(1200, 256)).toBe(9);
+    expect(chunkCenter(8, 8, chunkGrid({ extentX: 2400, extentZ: 2400 }, 256)).x).toBeCloseTo(
+      1024,
+      9,
+    );
     expect(chunkCount(2000, 400)).toBe(10);
     expect(chunkCount(1300, 400)).toBe(7);
     const grid = chunkGrid({ extentX: 4000, extentZ: 2600 }, 400);

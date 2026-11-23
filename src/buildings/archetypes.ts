@@ -83,9 +83,10 @@ const ALL_SIDES: readonly Side[] = ['px', 'nx', 'pz', 'nz'];
 const tierStacks = (spec: BuildingSpec): Tier[][] =>
   spec.twin ? [spec.tiers, spec.twin] : [spec.tiers];
 
-function shopSides(spec: BuildingSpec, onStreet?: StreetTest): Set<Side> {
+// `raw` is the layout archetype: fallback forms must not inherit pavilion's forced shop front.
+function shopSides(spec: BaseSpec, raw: string, onStreet?: StreetTest): Set<Side> {
   const out = new Set<Side>();
-  if (!spec.tags.storefront && spec.archetype !== 'pavilion') return out;
+  if (!spec.tags.storefront && raw !== 'pavilion') return out;
   out.add(spec.front);
   if (!onStreet || !SHOP_ARCHETYPES.has(spec.archetype)) return out;
   for (const side of ALL_SIDES) {
@@ -209,7 +210,7 @@ export function emitBuilding(raw: BuildingSpec, T: Targets, onStreet?: StreetTes
     inL2: keepInLod2(spec),
     tower: TOWERS.has(spec.archetype),
     mega: spec.h >= 200,
-    shopSides: shopSides(spec, onStreet),
+    shopSides: shopSides(spec, raw.archetype, onStreet),
   };
   const levels: [GeoBuilder, 0 | 1 | 2][] = [
     [T.l0, 0],
