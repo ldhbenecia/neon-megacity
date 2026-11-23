@@ -125,7 +125,7 @@ export function createSky(): Sky {
     uLinearOut: { value: 0 },
   };
   const material = new THREE.ShaderMaterial({
-    name: 'RamhaSky',
+    name: 'HangangSky',
     uniforms: uniforms as unknown as Record<string, THREE.IUniform>,
     vertexShader: SKY_VERTEX,
     fragmentShader: SKY_FRAGMENT,
