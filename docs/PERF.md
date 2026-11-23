@@ -77,9 +77,12 @@ infra init 46–83 ms, first frame 31–79 ms. Canvas: 98.9 MB (`gl.SAMPLES` = 4
   two runs each: river 5.1 / 6.7 ms on main vs 6.7 / 6.5 ms, top-down 7.8 / 7.3 vs 7.9 / 7.2, i.e.
   within run-to-run noise on the M4; re-check on an integrated GPU. The alternative, compiling
   both variants at boot, keeps 52 programs alive (ceiling 50) for the same night frame times.
-- **Leaving the noon palette (open).** Booted at noon, the first jump to sunset or night still
-  stalls one frame for ~470 ms without any new program (sunset → night: 45 ms, noon → 15:00:
-  8 ms). Not a recompile; under investigation.
+- **Leaving the noon palette (fixed).** Booted at noon, the first jump to sunset or night
+  stalled one frame for ~500 ms with no new program: no link happened, but a CPU profile showed
+  ~300 ms in `getProgramInfoLog`. three's `checkShaderErrors` reads it on a program's first use,
+  and the driver blocks there. Main now turns the check off for users (kept in dev and under
+  automation, so e2e still fails on shader errors). M4, buildings, `webdriver` off: noon → night
+  505 → 17 ms, noon → sunset 522 → 25 ms.
 
 - **MSAA on the canvas while post-processing is on.** The scene renders into atmosphere's HDR
   target, and the canvas only receives the final full-screen pass, so `antialias: true` on the
