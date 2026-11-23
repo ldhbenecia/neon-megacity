@@ -7,9 +7,11 @@ import {
   HALF_X,
   HALF_Z,
   riverFrame,
+  riverNearest,
   riverOffset,
   riverSignedDistance,
   riverWidthAt,
+  riverZ,
 } from './river';
 import type {
   Bridge,
@@ -39,6 +41,7 @@ export const GANGBYEON_Y = 21;
  */
 export const OLYMPIC_OFFSET = 30;
 const OLYMPIC_Y = 0.3;
+const OLYMPIC_WIDTH = 28;
 /** 내부순환로 deck height. */
 const NAEBU_Y = 26;
 
@@ -208,9 +211,9 @@ const BRIDGE_DEFS: BridgeDef[] = [
 /** North approach length beyond the embankment (m): lands past 강변북로. */
 export const BRIDGE_LAND = 100;
 /**
- * South approach length beyond the embankment (m). 올림픽대로 lies 30 m out on straight banks but
- * up to ~75 m out on the inner side of a bend (see `bankPoint`); 180 m keeps a 12 m deck ≥ 5 m
- * above it there.
+ * Shortest south approach beyond the embankment (m). A bridge whose deck would not clear
+ * 올림픽대로 by MIN_ROAD_CLEARANCE where the road actually passes under it (it bends away from
+ * the bank on the inner side of a curve) gets a longer one (see `southRamp`).
  */
 export const BRIDGE_LAND_SOUTH = 180;
 /** Thickest deck slab the clearance guarantee assumes (m). Infra decks must not be thicker. */
@@ -241,6 +244,35 @@ export function bridgeDeckY(br: Bridge, x: number, z: number, margin = 0): numbe
   return Math.max(0, br.deckY * (1 - Math.min(1, over)));
 }
 
+/**
+ * South ramp length (beyond the bank) that keeps the deck ≥ MIN_ROAD_CLEARANCE above 올림픽대로
+ * where the road crosses the bridge axis.
+ */
+let olympicCache: Vec3[] | null = null;
+function olympicSamples(): Vec3[] {
+  olympicCache ??= highwaySamples(
+    { points: bankPoints(1, OLYMPIC_OFFSET, OLYMPIC_Y), closed: false },
+    4,
+  );
+  return olympicCache;
+}
+
+function southRamp(c: Vec2, south: Vec2, half: number, width: number, deckY: number): number {
+  const road = olympicSamples();
+  const roadHalf = OLYMPIC_WIDTH / 2;
+  let far = 0;
+  for (const p of road) {
+    const dx = p.x - c.x;
+    const dz = p.z - c.z;
+    const along = dx * south.x + dz * south.z - half;
+    const lateral = Math.abs(-dx * south.z + dz * south.x);
+    if (along > 0 && along < 600 && lateral < width / 2 + roadHalf) far = Math.max(far, along);
+  }
+  // deck (1 - (far + roadHalf) / L) - MAX_DECK_THICKNESS - road y ≥ MIN_ROAD_CLEARANCE
+  const keep = 1 - (MIN_ROAD_CLEARANCE + MAX_DECK_THICKNESS + OLYMPIC_Y) / deckY;
+  return Math.max(BRIDGE_LAND_SOUTH, Math.ceil((far + roadHalf) / keep) + 5);
+}
+
 export function makeBridges(): Bridge[] {
   return BRIDGE_DEFS.map((d) => {
     const half = riverWidthAt(d.x) / 2;
@@ -254,7 +286,7 @@ export function makeBridges(): Bridge[] {
       a: at(-half),
       b: at(half),
       landA: at(-half - BRIDGE_LAND),
-      landB: at(half + BRIDGE_LAND_SOUTH),
+      landB: at(half + southRamp(c, south, half, d.width, d.deckY)),
       deckY: d.deckY,
       width: d.width,
       lanes: d.lanes,
@@ -270,58 +302,54 @@ export function makeBridges(): Bridge[] {
 }
 
 /**
- * Point `outside` m beyond the bank at x (north: side -1). On the inner side of a bend the
- * normal offset lands closer to the channel, so it is pushed out until the true distance to the
- * embankment matches.
+ * Offset `k` along the normal at x that puts the point `outside` m beyond the bank. On the inner
+ * side of a bend the plain normal offset lands closer to the channel, so it is pushed out until
+ * the true distance to the embankment matches.
  */
-function bankPoint(x: number, side: -1 | 1, outside: number): Vec2 {
+function bankOffset(x: number, side: -1 | 1, outside: number): number {
   let k = riverWidthAt(x) / 2 + outside;
-  let p = riverOffset(x, side * k);
   for (let i = 0; i < 4; i++) {
+    const p = riverOffset(x, side * k);
     const err = outside - riverSignedDistance(p.x, p.z);
     if (err < 0.5) break;
     k += err;
-    p = riverOffset(x, side * k);
   }
-  return p;
+  return k;
 }
 
-/** Turn angle (radians) at b between segments a→b and b→c. */
-function turnAt(a: Vec2, b: Vec2, c: Vec2): number {
-  const ux = b.x - a.x;
-  const uz = b.z - a.z;
-  const vx = c.x - b.x;
-  const vz = c.z - b.z;
-  return Math.abs(Math.atan2(ux * vz - uz * vx, ux * vx + uz * vz));
+function bankPoint(x: number, side: -1 | 1, outside: number): Vec2 {
+  return riverOffset(x, side * bankOffset(x, side, outside));
 }
-
-/** Largest turn kept between successive bank points (~190 m minimum radius at 100 m spacing). */
-const MAX_TURN = (25 * Math.PI) / 180;
 
 /**
- * Points that follow a bank at `outside` m beyond it, every ~100 m. On the inner side of a bend
- * the offset points bunch up and can reverse; the sharpest corner is dropped until no turn
- * exceeds MAX_TURN. There the chord bows away from the river, so the clearance only grows.
+ * Points that follow a bank at `outside` m beyond it. Raw offsets every 25 m bunch up and
+ * reverse on the inner side of a bend, which folds the deck, so they are smoothed by neighbour
+ * averaging and pushed back out (away from the nearest centerline point) whenever smoothing
+ * pulls one closer than `outside`. Every 4th point is kept (~100 m apart).
  */
 function bankPoints(side: -1 | 1, outside: number, y: number): Vec3[] {
-  const pts: Vec3[] = [];
-  for (let x = -HALF_X - 150; x <= HALF_X + 150 + 1e-6; x += 100) {
-    const p = bankPoint(x, side, outside);
-    pts.push({ x: p.x, y, z: p.z });
+  let pts: Vec2[] = [];
+  for (let x = -HALF_X - 150; x <= HALF_X + 150 + 1e-6; x += 25)
+    pts.push(bankPoint(x, side, outside));
+  for (let iter = 0; iter < 160; iter++) {
+    const next = pts.map((p, i) => {
+      if (i === 0 || i === pts.length - 1) return p;
+      const a = pts[i - 1] as Vec2;
+      const b = pts[i + 1] as Vec2;
+      return { x: (a.x + 2 * p.x + b.x) / 4, z: (a.z + 2 * p.z + b.z) / 4 };
+    });
+    pts = next.map((p) => {
+      const n = riverNearest(p.x, p.z);
+      const want = riverWidthAt(n.cx) / 2 + outside;
+      if (n.d >= want) return p;
+      const c = { x: n.cx, z: riverZ(n.cx) };
+      const len = Math.hypot(p.x - c.x, p.z - c.z) || 1;
+      return { x: c.x + ((p.x - c.x) / len) * want, z: c.z + ((p.z - c.z) / len) * want };
+    });
   }
-  for (;;) {
-    let worst = -1;
-    let worstTurn = MAX_TURN;
-    for (let i = 1; i < pts.length - 1; i++) {
-      const t = turnAt(pts[i - 1] as Vec3, pts[i] as Vec3, pts[i + 1] as Vec3);
-      if (t > worstTurn) {
-        worstTurn = t;
-        worst = i;
-      }
-    }
-    if (worst < 0) return pts;
-    pts.splice(worst, 1);
-  }
+  return pts
+    .filter((_, i) => i % 4 === 0 || i === pts.length - 1)
+    .map((p) => ({ x: p.x, y, z: p.z }));
 }
 
 /** Point on 강변북로 near x. */
@@ -439,7 +467,7 @@ function hwDefs(): HwDef[] {
       kind: 'atGrade',
       points: bankPoints(1, OLYMPIC_OFFSET, OLYMPIC_Y),
       closed: false,
-      width: 28,
+      width: OLYMPIC_WIDTH,
       lanes: 8,
       pillarSpacing: 0,
     },

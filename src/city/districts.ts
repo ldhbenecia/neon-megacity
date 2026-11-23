@@ -428,7 +428,8 @@ const DEFS: ZoneDef[] = [
     pitch: [90, 90],
     roadWidth: 14,
     roadKind: 'street',
-    heights: H(30, 80, 0.4, 260),
+    // Tower row stays under MEGA_MIN_H (250): megatowers belong to the megacores.
+    heights: H(30, 80, 0.4, 245),
     coverage: 0.45,
     litScale: 1,
   },

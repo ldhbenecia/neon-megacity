@@ -78,11 +78,11 @@ describe('layout v3: determinism', () => {
       digest: digest(LAYOUT),
     }).toMatchInlineSnapshot(`
       {
-        "blocks": 1359,
-        "buildings": 6209,
-        "digest": "d5b86cf8",
-        "roads": 1272,
-        "slots": 4063,
+        "blocks": 1361,
+        "buildings": 6192,
+        "digest": "a405d258",
+        "roads": 1271,
+        "slots": 4062,
       }
     `);
   });
