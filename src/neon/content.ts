@@ -181,7 +181,12 @@ export const GENERIC_COLORS: readonly NeonName[] = [
 ];
 
 export function hasHanja(s: string): boolean {
-  return /[㐀-鿿豈-﫿]/u.test(s);
+  return Array.from(s).some((ch) => {
+    const c = ch.codePointAt(0) ?? 0;
+    return (
+      (c >= 0x3400 && c <= 0x4dbf) || (c >= 0x4e00 && c <= 0x9fff) || (c >= 0xf900 && c <= 0xfaff)
+    );
+  });
 }
 
 export function hasHangul(s: string): boolean {

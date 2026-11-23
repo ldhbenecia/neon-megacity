@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { LAYOUT } from '../src/city/layout';
 import { buildCatalog, glyphCenterV, glyphSlotY } from '../src/neon/catalog';
 import { hasHangul, hasHanja } from '../src/neon/content';
+import { HANJA, OLD_NAMES } from './forbiddenPatterns';
 
 const cat = buildCatalog(LAYOUT);
 const HIGH = new Set(['crown', 'ring', 'line', 'logo', 'koi']);
@@ -13,6 +14,7 @@ describe('neon copy rules', () => {
     for (const c of cat.cells) {
       expect(hasHanja(c.text)).toBe(false);
       expect(hasHanja(c.sub)).toBe(false);
+      expect(`${c.text} ${c.sub}`).not.toMatch(HANJA);
     }
   });
 
@@ -31,6 +33,7 @@ describe('neon copy rules', () => {
   it('never uses the old city names', () => {
     for (const c of cat.cells) {
       expect(`${c.text} ${c.sub}`).not.toMatch(/가람|GARAM/i);
+      expect(`${c.text} ${c.sub}`).not.toMatch(OLD_NAMES);
     }
   });
 });
