@@ -73,12 +73,22 @@ const SPANS: Record<BridgeShape, { len: number; min: number }> = {
   girder: { len: 70, min: 2 },
 };
 
+/** Shortest span `spans` may ask for (m); bounds the pier count for a bad layout value. */
+const MIN_SPAN = 10;
+
 /**
- * Number of pier-to-pier spans between the abutments, from the span length alone. The layout's
- * `spans` (arch spans, pylons or truss panels, per kind) is not a pier count and is not read.
+ * Pier-to-pier spans between the abutments: the layout's `spans`, clamped to 1..span/MIN_SPAN,
+ * or a count from the span length when it is not a finite number. 'arch' always has two (the
+ * builder draws two arches over one center pier).
  */
 export function spanCount(b: Bridge, f: BridgeFrame): number {
-  const { len, min } = SPANS[bridgeShape(b)];
+  const shape = bridgeShape(b);
+  const { len, min } = SPANS[shape];
+  if (shape === 'arch') return min;
+  if (Number.isFinite(b.spans)) {
+    const most = Math.max(1, Math.floor((2 * f.spanHalf) / MIN_SPAN));
+    return Math.min(most, Math.max(1, Math.round(b.spans)));
+  }
   return Math.max(min, Math.round((2 * f.spanHalf) / len));
 }
 
