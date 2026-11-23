@@ -1,12 +1,19 @@
 import * as THREE from 'three';
-import { buildingFaces, buildingTop } from '../city/layout';
+import { CITY, buildingFaces, buildingTop } from '../city/layout';
 import { pointSegmentDistance } from '../city/math';
 import { GridHash, segmentBounds } from '../city/spatial';
 import type { BuildingsApi, CityModuleInstance, Ctx, Road } from '../core/types';
 import { GeoBuilder } from './builder';
 import { emitBuilding, industrialStacks, type Targets } from './archetypes';
 import { createFacadeMaterial, createFacadeUniforms } from './facadeMaterial';
-import { LOD_DISTANCES, LOD_HYSTERESIS, chunkCenter, chunkIndex } from './params';
+import {
+  LOD_DISTANCES,
+  LOD_HYSTERESIS,
+  chunkCenter,
+  chunkGrid,
+  chunkIndex,
+  type ChunkGrid,
+} from './params';
 import {
   ROAD_Y,
   SIDEWALK_H,
@@ -35,14 +42,14 @@ interface Chunk {
   T: Targets;
 }
 
-function collectChunks(LAYOUT: Ctx['LAYOUT'], half: number): Chunk[] {
+function collectChunks(LAYOUT: Ctx['LAYOUT'], grid: ChunkGrid): Chunk[] {
   const chunks = new Map<string, Chunk>();
   const chunkAt = (x: number, z: number): Chunk => {
-    const { i, j } = chunkIndex(x, z, half);
+    const { i, j } = chunkIndex(x, z, grid);
     const key = `${i},${j}`;
     let c = chunks.get(key);
     if (!c) {
-      const o = chunkCenter(i, j, half);
+      const o = chunkCenter(i, j, grid);
       c = {
         i,
         j,
@@ -79,12 +86,11 @@ function collectChunks(LAYOUT: Ctx['LAYOUT'], half: number): Chunk[] {
 
 export function init(ctx: Ctx): CityModuleInstance {
   const { scene, LAYOUT, env, gui } = ctx;
-  const half = LAYOUT.extent / 2;
   const group = new THREE.Group();
   group.name = 'buildings';
   scene.add(group);
 
-  const chunks = collectChunks(LAYOUT, half);
+  const chunks = collectChunks(LAYOUT, chunkGrid(LAYOUT, CITY.chunkSize));
   // Low tier (CI SwiftShader): start at LOD1, so no LOD0 detail (trees, stairs, props) and no
   // interior-mapped windows; LOD2 takes over at the LOD1 distance.
   const low = env.quality === 'low';

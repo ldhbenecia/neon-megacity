@@ -27,6 +27,8 @@ import {
   OPPOSITE,
   scaleHex,
   windowStyle,
+  withBaseArchetype,
+  type BaseSpec,
 } from './params';
 import {
   band,
@@ -60,7 +62,7 @@ const TOWERS = new Set([
 ]);
 
 interface Bld {
-  spec: BuildingSpec;
+  spec: BaseSpec;
   rng: Rng;
   seed01: number;
   lit: number;
@@ -192,7 +194,8 @@ function crownStyle(b: Bld): Style {
   return glow(hex, pick < 0.45 ? 1.6 : 2.4);
 }
 
-export function emitBuilding(spec: BuildingSpec, T: Targets, onStreet?: StreetTest): void {
+export function emitBuilding(raw: BuildingSpec, T: Targets, onStreet?: StreetTest): void {
+  const spec = withBaseArchetype(raw);
   const rng = createRng(spec.seed);
   const wall = facadeHex(spec, rng);
   const b: Bld = {
@@ -888,7 +891,8 @@ function warehouseProps(g: GeoBuilder, b: Bld, rng: Rng): void {
   }
 }
 
-export function industrialStacks(spec: BuildingSpec, T: Targets): void {
+export function industrialStacks(raw: BuildingSpec, T: Targets): void {
+  const spec = withBaseArchetype(raw);
   if (spec.archetype !== 'warehouse') return;
   const rng = createRng(spec.seed ^ 0x5a5a);
   const t = spec.tiers[0];
