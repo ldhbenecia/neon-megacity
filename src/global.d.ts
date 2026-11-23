@@ -18,6 +18,7 @@ interface HangangMemory {
   textureBytes: number;
   /** Drawing buffer: color + depth, times MSAA samples. */
   framebufferBytes: number;
+  samples: number;
 }
 
 /** Camera rig state for e2e control tests. */

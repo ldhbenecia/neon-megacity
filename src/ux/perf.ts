@@ -110,7 +110,24 @@ export interface MemoryEstimate {
   geometryBytes: number;
   textureBytes: number;
   framebufferBytes: number;
+  /** MSAA samples of the canvas framebuffer (1 = none). */
+  samples: number;
 }
+
+// RGB is padded to 4 channels by most drivers, so it is not listed (falls back to 4).
+const CHANNELS = new Map<THREE.AnyPixelFormat, number>([
+  [THREE.RedFormat, 1],
+  [THREE.RedIntegerFormat, 1],
+  [THREE.AlphaFormat, 1],
+  [THREE.RGFormat, 2],
+  [THREE.RGIntegerFormat, 2],
+]);
+const MIPMAP_FILTERS = new Set<THREE.TextureFilter>([
+  THREE.NearestMipmapNearestFilter,
+  THREE.NearestMipmapLinearFilter,
+  THREE.LinearMipmapNearestFilter,
+  THREE.LinearMipmapLinearFilter,
+]);
 
 function textureBytes(tex: THREE.Texture): number {
   const img: unknown = tex.image;
@@ -128,13 +145,15 @@ function textureBytes(tex: THREE.Texture): number {
     };
     texels += width * height * depth;
   }
-  const bpp = tex.type === THREE.FloatType ? 16 : tex.type === THREE.HalfFloatType ? 8 : 4;
-  return texels * bpp * (tex.generateMipmaps && tex.minFilter !== THREE.LinearFilter ? 4 / 3 : 1);
+  const channel = tex.type === THREE.FloatType ? 4 : tex.type === THREE.HalfFloatType ? 2 : 1;
+  const mip = tex.generateMipmaps && MIPMAP_FILTERS.has(tex.minFilter) ? 4 / 3 : 1;
+  return texels * channel * (CHANNELS.get(tex.format) ?? 4) * mip;
 }
 
 /**
  * Bytes of geometry and textures reachable from the scene graph (plus scene.environment /
- * background). Render targets owned by post-processing are not reachable and not counted.
+ * background). Not counted: render targets owned by post-processing, and textures that only live
+ * in an `onBeforeCompile` closure (not on the material or its `uniforms`).
  */
 export function estimateMemory(ctx: Ctx): MemoryEstimate {
   const { scene, renderer } = ctx;
@@ -149,7 +168,9 @@ export function estimateMemory(ctx: Ctx): MemoryEstimate {
   const addTextures = (o: object): void => {
     for (const v of Object.values(o) as unknown[]) {
       const inner: unknown = v && typeof v === 'object' && 'value' in v ? v.value : v;
-      if (inner instanceof THREE.Texture) textures.add(inner as THREE.Texture);
+      for (const t of Array.isArray(inner) ? (inner as unknown[]) : [inner]) {
+        if (t instanceof THREE.Texture) textures.add(t as THREE.Texture);
+      }
     }
   };
   scene.traverse((obj) => {
@@ -174,10 +195,16 @@ export function estimateMemory(ctx: Ctx): MemoryEstimate {
   let texBytes = 0;
   for (const t of textures) texBytes += textureBytes(t);
   const size = renderer.getDrawingBufferSize(new THREE.Vector2());
-  const samples = renderer.getContext().getContextAttributes()?.antialias ? 4 : 1;
+  const gl = renderer.getContext();
+  const prev = renderer.getRenderTarget();
+  renderer.setRenderTarget(null);
+  const samples = Math.max(1, Number(gl.getParameter(gl.SAMPLES)));
+  renderer.setRenderTarget(prev);
   return {
     geometryBytes,
     textureBytes: texBytes,
+    // Color + depth/stencil, 4 bytes each, per sample.
     framebufferBytes: size.x * size.y * 8 * samples,
+    samples,
   };
 }
