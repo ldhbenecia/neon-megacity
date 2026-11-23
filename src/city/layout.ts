@@ -28,6 +28,7 @@ export { generateLayout, SKYLINE_PEAK, MEGA_MIN_H, RIVER_CLEARANCE } from './gen
 export { ZONES, zoneAt, zoneById, districtAt, bandEdgeZ, RIVERSIDE_HALF } from './districts';
 export {
   RIVER,
+  EMBANK_SLOPE,
   TERRAIN,
   riverZ,
   riverFrame,
