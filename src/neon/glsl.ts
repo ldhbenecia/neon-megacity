@@ -53,8 +53,6 @@ float flicker(float seed) {
 }
 `;
 
-export const FOG_VERTEX = /* glsl */ `#include <fog_vertex>`;
-
 export const EMISSIVE_TAIL = /* glsl */ `
   #include <tonemapping_fragment>
   #include <colorspace_fragment>

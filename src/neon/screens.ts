@@ -80,7 +80,7 @@ export function buildScreens(
         float neck = fill(sdCapsule(p, vec2(0.0, -0.5), vec2(0.0, -0.85), 0.11), px);
         float face = fill(sdEllipse(p - vec2(0.0, 0.02), vec2(0.27, 0.38)), px);
         col = mix(col, hue * 0.03, max(hair, shoulders));
-        col = mix(col, mix(hue, vec3(1.0), 0.55) * 0.55, neck * (1.0 - hair * 0.0));
+        col = mix(col, mix(hue, vec3(1.0), 0.55) * 0.55, neck);
         col = mix(col, mix(hue, vec3(1.0), 0.6) * 0.85, face);
         col += hue * 0.6 * hair * (1.0 - face) * smoothstep(0.25, 0.42, abs(p.x));
         float period = mix(4.0, 7.0, seed);

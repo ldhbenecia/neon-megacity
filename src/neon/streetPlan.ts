@@ -1,4 +1,5 @@
 import { districtAt, type Layout, type Road, type StreetSlot, type Vec2 } from '../city/layout';
+import { closestSegmentT } from '../city/math';
 import type { NeonName } from '../core/palette';
 import { createRng } from '../core/random';
 import { Anim, type FlatSign } from './placement';
@@ -63,12 +64,9 @@ export const LAMP = { height: 9, arm: 2.8, headDrop: 0.35 } as const;
 export const POOL_LIFT = 0.03;
 
 export function pointSegment(p: Vec2, a: Vec2, b: Vec2): { x: number; z: number; d: number } {
-  const abx = b.x - a.x;
-  const abz = b.z - a.z;
-  const len2 = abx * abx + abz * abz;
-  const t = len2 > 0 ? Math.min(1, Math.max(0, ((p.x - a.x) * abx + (p.z - a.z) * abz) / len2)) : 0;
-  const x = a.x + abx * t;
-  const z = a.z + abz * t;
+  const t = closestSegmentT(p, a, b);
+  const x = a.x + (b.x - a.x) * t;
+  const z = a.z + (b.z - a.z) * t;
   return { x, z, d: Math.hypot(p.x - x, p.z - z) };
 }
 

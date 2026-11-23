@@ -4,6 +4,7 @@ import { type BuildingFace, type BuildingSpec, type Layout, type Tier } from '..
 import type { Catalog } from './catalog';
 import { CARGO_CROWN } from './content';
 import { firstHit, type Solid } from './solids';
+import { pointSegmentDistance } from '../city/math';
 
 export const Anim = { none: 0, flicker: 1, scroll: 2, broken: 3, fill: 4 } as const;
 export type AnimMode = (typeof Anim)[keyof typeof Anim];
@@ -226,11 +227,7 @@ export function roadGapIndex(L: Pick<Layout, 'roads'>): (x: number, z: number) =
   return (x, z) => {
     let best = Infinity;
     for (const r of grid.get(`${Math.floor(x / cell)},${Math.floor(z / cell)}`) ?? []) {
-      const abx = r.b.x - r.a.x;
-      const abz = r.b.z - r.a.z;
-      const l2 = abx * abx + abz * abz || 1;
-      const t = Math.min(1, Math.max(0, ((x - r.a.x) * abx + (z - r.a.z) * abz) / l2));
-      best = Math.min(best, Math.hypot(x - r.a.x - abx * t, z - r.a.z - abz * t) - r.width / 2);
+      best = Math.min(best, pointSegmentDistance({ x, z }, r.a, r.b) - r.width / 2);
     }
     return best;
   };
