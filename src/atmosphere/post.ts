@@ -28,6 +28,7 @@ import type { Ctx } from '../core/types';
 import { postEnabled } from '../core/gl';
 import { LENS, TIME_WRAP, bloomScaleFor, msaaSamplesFor, wrapTime } from './logic';
 import { HASH_GLSL } from './noise';
+import { shareBlurProgram } from './bloomBlur';
 
 // UnrealBloomPass.BlurDirectionX/Y exist in JS but not in the type definitions.
 const BLUR_X = new Vector2(1, 0);
@@ -182,6 +183,7 @@ export function createPost(ctx: Ctx): Post | null {
   sceneTarget.texture.name = 'atmosphere.sceneHDR';
 
   const bloom = new UnrealBloomPass(new Vector2(256, 256), 0.7, 0.42, 0.85);
+  shareBlurProgram(bloom);
   const bloomQuad = new FullScreenQuad();
   const blackClear = new Color(0, 0, 0);
   const oldClear = new Color();
