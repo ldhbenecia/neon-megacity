@@ -194,7 +194,7 @@ function crownStyle(b: Bld): Style {
   const pick = seeded01(b.spec.seed + 7);
   const hex =
     pick < 0.5 ? NEON.neonCyan.hex : pick < 0.8 ? NEON.neonAmber.hex : NEON.neonOrange.hex;
-  return glow(hex, 1.2 + 0.3 * seeded01(b.spec.seed + 8));
+  return glow(hex, 1.3 + 0.3 * seeded01(b.spec.seed + 8));
 }
 
 export function emitBuilding(raw: BuildingSpec, T: Targets, onStreet?: StreetTest): void {
