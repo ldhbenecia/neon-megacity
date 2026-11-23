@@ -220,8 +220,9 @@ export function riverBeyondBounds(x: number, z: number): { lo: number; hi: numbe
   if (!c) return { lo: -Infinity, hi: Infinity };
   const dLo = Math.max(0, c.d - c.off);
   const dHi = c.d + c.off;
-  // The nearest centerline point lies within dHi of x along the axis.
-  const w = widthRange(x - dHi, x + dHi);
+  // Segments within dHi + 120 m of x decide the signed distance (farther ones are ≥ dHi − 120
+  // beyond the bank, never below dLo − 180 ≥ lo since every width is ≥ 360 m).
+  const w = widthRange(x - dHi - 120, x + dHi + 120);
   return { lo: dLo - w.hi / 2, hi: dHi - w.lo / 2 };
 }
 
@@ -237,8 +238,48 @@ export function riverCenterDistance(x: number, z: number): number {
 
 /** Signed distance to the channel edge (embankment): < 0 inside the channel (park + water). */
 export function riverSignedDistance(x: number, z: number): number {
-  const { d, cx } = riverNearest(x, z);
-  return d - riverWidthAt(cx) / 2;
+  return bankScan(x, z).f;
+}
+
+/** Half width at every centerline sample (the width is linear in x, so it lerps along a segment). */
+const SAMPLE_HALF = SAMPLES.map((p) => riverWidthAt(p.x) / 2);
+const MAX_HALF = Math.max(...SAMPLE_HALF);
+const MIN_HALF = Math.min(...SAMPLE_HALF);
+
+/**
+ * Signed distance beyond the embankment, f = min over segments of (distance − half width at the
+ * segment's closest point), and that point's x. Taking the minimum keeps f continuous where the
+ * nearest centerline point jumps between segments of different width. A segment at |dx| ≥ f +
+ * MAX_HALF cannot lower f, which bounds the scan.
+ */
+function bankScan(x: number, z: number): { f: number; cx: number } {
+  const p = { x, z };
+  const n = SAMPLES.length - 1;
+  const i0 = sampleIndex(x);
+  let best = riverDistanceUpperBound(x, z) - MIN_HALF;
+  let cx = x;
+  const visit = (i: number): void => {
+    const a = SAMPLES[i] as Vec2;
+    const b = SAMPLES[i + 1] as Vec2;
+    const t = closestSegmentT(p, a, b);
+    const qx = a.x + (b.x - a.x) * t;
+    const d = Math.hypot(x - qx, z - (a.z + (b.z - a.z) * t));
+    const ha = SAMPLE_HALF[i] as number;
+    const f = d - (ha + ((SAMPLE_HALF[i + 1] as number) - ha) * t);
+    if (f <= best) {
+      best = f;
+      cx = qx;
+    }
+  };
+  for (let i = i0; i < n; i++) {
+    if ((SAMPLES[i] as Vec2).x - x - MAX_HALF > best) break;
+    visit(i);
+  }
+  for (let i = i0 - 1; i >= 0; i--) {
+    if (x - (SAMPLES[i + 1] as Vec2).x - MAX_HALF > best) break;
+    visit(i);
+  }
+  return { f: best, cx };
 }
 
 /** True when (x, z) is north of the river centerline. */
@@ -294,12 +335,10 @@ export function waterSignedDistance(x: number, z: number): number {
   return Math.min(riverSignedDistance(x, z), sideChannelDistance(SAETGANG, x, z));
 }
 
-const MAX_HALF_WIDTH = Math.max(...CONTROL.map((c) => c[2])) / 2;
-
 /** True when (x, z) is at least `margin` m outside every water edge (cheap far from water). */
 export function waterClear(x: number, z: number, margin: number): boolean {
   if (sideChannelDistance(SAETGANG, x, z) < margin) return false;
-  if (riverDistanceLowerBound(x, z) - MAX_HALF_WIDTH >= margin) return true;
+  if (riverDistanceLowerBound(x, z) - MAX_HALF >= margin) return true;
   return riverSignedDistance(x, z) >= margin;
 }
 
@@ -417,8 +456,7 @@ export function terrainHeight(x: number, z: number): number {
 export function surfaceHeight(x: number, z: number): number {
   const isl = islandAt(x, z);
   if (isl && isl.kind !== 'land') return isl.y;
-  const { d: dc, cx } = riverNearest(x, z);
-  const d = dc - riverWidthAt(cx) / 2;
+  const { f: d, cx } = bankScan(x, z);
   const ds = sideChannelDistance(SAETGANG, x, z);
   if (ds < 0) {
     const t = clamp(-ds / EMBANK_SLOPE, 0, 1);

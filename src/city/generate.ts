@@ -112,7 +112,7 @@ const MEGA: Record<string, MegaPlan> = {
     tiers: [
       { count: 1, h: [430, 430], size: [56, 62] },
       { count: 4, h: [300, 360], size: [40, 44] },
-      { count: 18, h: [120, 240], size: [24, 30] },
+      { count: 18, h: [120, 220], size: [22, 28] },
     ],
     landmark: 'yeouido-gold',
   },
@@ -196,7 +196,10 @@ function clipLine(
     const t = t0 + i * ROAD_STEP;
     const p = at(t);
     const inside =
-      i <= n && zoneAt(p.x, p.z).id === zone.id && !underLowDeck(bridges, p.x, p.z, half);
+      i <= n &&
+      zoneAt(p.x, p.z).id === zone.id &&
+      waterClear(p.x, p.z, half) &&
+      !underLowDeck(bridges, p.x, p.z, half);
     if (inside && start === null) start = t;
     if (!inside && start !== null) {
       const end = t - ROAD_STEP;
@@ -262,7 +265,7 @@ function buildRoads(seed: number, bridges: readonly Bridge[], named: readonly Na
     let start: number | null = null;
     for (let k = 0; k <= n + 1; k++) {
       const p = at(Math.min(1, k / n));
-      const ok = k <= n && !underLowDeck(others, p.x, p.z, half);
+      const ok = k <= n && waterClear(p.x, p.z, half) && !underLowDeck(others, p.x, p.z, half);
       if (ok && start === null) start = Math.min(1, k / n);
       if (!ok && start !== null) {
         const end = Math.max(start, (k - 1) / n);
@@ -420,7 +423,8 @@ function lotGrid(
     case 'sangga':
       return cells(3, 2, SANGGA_ALLEY);
     case 'apartment':
-      return cells(Math.max(1, Math.floor(bw / 85)), 3);
+      // One slab row per ~90 m of depth so rows keep 0.8–1.0 × height apart (ART_DIRECTION 4.2).
+      return cells(Math.max(1, Math.floor(bw / 85)), Math.max(1, Math.floor(bd / 90)));
     case 'hillside':
       // 별계단동 is the densest quarter: 4 × 4 lots of ~11 m per 45 m block.
       return cells(4, 4);
@@ -1031,11 +1035,15 @@ function draftsFor(zone: DistrictZone, lots: Lot[], rng: Rng): Draft[] {
           drafts.push(make(lot, 'sangga', 4.2 + 3.3 * rng.int(1, 2)));
           continue;
         }
-        // Rows are spaced by the lot depth; taller zones get taller slabs (SEOUL.md 4.2).
-        const fTop = Math.floor(H.tallMax / 2.8);
-        const floors = rng.chance(H.tallShare)
-          ? Math.min(fTop, Math.round(rng.int(fMin, fMax) * 1.2))
+        // Taller zones get taller slabs (SEOUL.md 4.2), but rows stay ≥ 0.8 × height apart:
+        // the lot depth minus the slab depth (≈ 13 m) is the gap to the next row.
+        const gap = lot.obb.hd * 2 - 13;
+        const fGap = Math.floor(gap / 0.8 / 2.8);
+        const fTop = Math.min(Math.floor(H.tallMax / 2.8), fGap);
+        const want = rng.chance(H.tallShare)
+          ? Math.round(rng.int(fMin, fMax) * 1.2)
           : rng.int(fMin, fMax);
+        const floors = Math.max(5, Math.min(fTop, want));
         drafts.push(make(lot, 'apartmentSlab', floors * 2.8));
       }
       break;
@@ -1340,7 +1348,12 @@ function buildSlots(
     for (const id of hash.query(obbBounds(probe))) {
       if (obbOverlap(footprints[id] as Obb, probe)) return false;
     }
-    return Math.abs(p.x) < HALF_X && Math.abs(p.z) < HALF_Z;
+    // Park strips (둔치) are fine; open water, 샛강 included, is not.
+    return (
+      Math.abs(p.x) < HALF_X &&
+      Math.abs(p.z) < HALF_Z &&
+      surfaceHeight(p.x, p.z) > RIVER.waterY + 0.5
+    );
   };
   const add = (kind: SlotKind, p: Vec2, rotY: number): void => {
     if (!free(p)) return;

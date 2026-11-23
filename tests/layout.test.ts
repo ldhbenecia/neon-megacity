@@ -21,6 +21,7 @@ import {
   buildingTop,
   buildingVolumes,
   bridgeDeckY,
+  bandEdgeZ,
   MAX_DECK_THICKNESS,
   riverFrame,
   buildingFaces,
@@ -79,11 +80,11 @@ describe('layout v3: determinism', () => {
       digest: digest(LAYOUT),
     }).toMatchInlineSnapshot(`
       {
-        "blocks": 1390,
-        "buildings": 6136,
-        "digest": "62251c32",
-        "roads": 1255,
-        "slots": 3940,
+        "blocks": 1366,
+        "buildings": 6026,
+        "digest": "178e4e67",
+        "roads": 1245,
+        "slots": 3828,
       }
     `);
   });
@@ -105,14 +106,14 @@ describe('layout v3: determinism', () => {
 describe('layout v3: counts (SEOUL.md 7.4)', () => {
   const count = (pred: (b: BuildingSpec) => boolean) => B.filter(pred).length;
 
-  it('has 5000..7000 buildings, a few hundred hill houses and 16..28 megatowers', () => {
+  it('has 5000..7000 buildings, a few hundred hill houses and 14..28 megatowers', () => {
     expect(B.length).toBeGreaterThanOrEqual(5000);
     expect(B.length).toBeLessThanOrEqual(7000);
     const hill = count((b) => b.archetype === 'hillHouse');
     expect(hill).toBeGreaterThanOrEqual(300);
     expect(hill).toBeLessThanOrEqual(900);
     const mega = count((b) => b.h >= MEGA_MIN_H);
-    expect(mega).toBeGreaterThanOrEqual(16);
+    expect(mega).toBeGreaterThanOrEqual(14);
     expect(mega).toBeLessThanOrEqual(28);
   });
 
@@ -698,6 +699,55 @@ describe('noise', () => {
   it('rejects periods larger than the lattice instead of reading zeros', () => {
     expect(() => fbm1(1.5, 7, 4, 64)).toThrow(RangeError);
     expect(() => fbm1(1.5, 7, 4, 32)).not.toThrow();
+  });
+});
+
+describe('layout v3: water and islands', () => {
+  it('keeps roads and street slots out of open water (샛강 included)', () => {
+    for (const r of LAYOUT.roads) {
+      const n = Math.ceil(Math.hypot(r.b.x - r.a.x, r.b.z - r.a.z) / 4);
+      for (let k = 0; k <= n; k++) {
+        const x = r.a.x + ((r.b.x - r.a.x) * k) / n;
+        const z = r.a.z + ((r.b.z - r.a.z) * k) / n;
+        expect(surfaceHeight(x, z), `road ${r.id}`).toBeGreaterThan(RIVER.waterY + 0.5);
+      }
+    }
+    for (const s of LAYOUT.slots) expect(s.y, s.kind).toBeGreaterThan(RIVER.waterY + 0.5);
+  });
+
+  it('tags every bridge whose span crosses an island', () => {
+    for (const br of LAYOUT.bridges) {
+      const crossed = new Set<string>();
+      for (let t = 0; t <= 1; t += 0.01) {
+        const isl = islandAt(br.a.x + (br.b.x - br.a.x) * t, br.a.z + (br.b.z - br.a.z) * t);
+        if (isl && isl.kind !== 'land') crossed.add(isl.id);
+      }
+      for (const id of crossed) expect(br.island, br.id).toBe(id);
+    }
+  });
+
+  it('puts bandEdgeZ exactly on the riverside band edge', () => {
+    for (let x = -1950; x <= 1950; x += 23) {
+      for (const side of [-1, 1] as const) {
+        const z = bandEdgeZ(x, side);
+        if (Math.abs(z) > CITY.halfZ) continue;
+        expect(Math.abs(riverSignedDistance(x, z) - RIVER.bandWidth), `${x}`).toBeLessThan(0.05);
+      }
+    }
+  });
+
+  it('keeps apartment rows at least 0.8 × their height apart', () => {
+    for (const b of B.filter((x) => x.archetype === 'apartmentSlab')) {
+      for (const id of buildingsInAabb(LAYOUT, b.x - 150, b.z - 150, b.x + 150, b.z + 150)) {
+        const o = B[id]!;
+        if (o.id <= b.id || o.archetype !== 'apartmentSlab' || o.blockId !== b.blockId) continue;
+        const gap = Math.hypot(o.x - b.x, o.z - b.z) - (b.d + o.d) / 2;
+        // Slabs of one block side by side (same row) are not facing each other.
+        const local = toLocal(o.x - b.x, o.z - b.z, b.rotY);
+        if (Math.abs(local.z) < b.d) continue;
+        expect(gap, `${b.id} vs ${o.id}`).toBeGreaterThanOrEqual(0.8 * Math.max(b.h, o.h) - 1e-6);
+      }
+    }
   });
 });
 

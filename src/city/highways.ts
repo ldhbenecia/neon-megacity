@@ -128,6 +128,7 @@ const BRIDGE_DEFS: BridgeDef[] = [
     structureH: 12,
     rail: true,
     normalX: -480,
+    island: 'nodeul',
   },
   {
     id: 'br-hangang',
@@ -599,6 +600,9 @@ export function makeHighways(bridges: readonly Bridge[]): Highway[] {
 
 /** Bridge frame helper for tests and infra: unit vector along the river at a bridge. */
 export function bridgeAlong(br: Bridge): Vec2 {
-  const x = (br.a.x + br.b.x) / 2;
-  return riverFrame(x).along;
+  // The bridge axis a→b turned 90°, so skewed bridges (한강철교) get their own frame.
+  const dx = br.b.x - br.a.x;
+  const dz = br.b.z - br.a.z;
+  const len = Math.hypot(dx, dz);
+  return { x: dz / len, z: -dx / len };
 }

@@ -14,8 +14,9 @@ import {
   riverFrame,
   riverOffset,
   riverBeyondBounds,
-  riverNearest,
+  riverSignedDistance,
   riverWidthAt,
+  riverZ,
 } from './river';
 import type { DistrictKind, DistrictZone, RoadKind, Vec2, ZoneHeights } from './types';
 
@@ -26,9 +27,22 @@ export function riversideHalfAt(x: number): number {
   return riverWidthAt(x) / 2 + RIVER.bandWidth;
 }
 
-/** Outer edge of the riverside band at x, on the north (-1) or south (+1) side. */
+/**
+ * z of the riverside band's outer edge on the vertical line at x, north (-1) or south (+1) of
+ * the centerline: where riverSignedDistance first reaches the band width (exact on bends too).
+ */
 export function bandEdgeZ(x: number, side: -1 | 1): number {
-  return riverOffset(x, side * riversideHalfAt(x)).z;
+  const inBand = (z: number): boolean => riverSignedDistance(x, z) < RIVER.bandWidth;
+  let lo = riverZ(x);
+  let hi = lo;
+  while (inBand(hi) && Math.abs(hi - lo) < 3000) hi += side * 10;
+  lo = hi - side * 10;
+  for (let i = 0; i < 30; i++) {
+    const mid = (lo + hi) / 2;
+    if (inBand(mid)) lo = mid;
+    else hi = mid;
+  }
+  return (lo + hi) / 2;
 }
 
 type Side = 'north' | 'south';
@@ -210,7 +224,7 @@ const DEFS: ZoneDef[] = [
     bank: { x0: -300, x1: -60, o0: 0, o1: 170 },
     gridAngle: riverAngle(-265),
     origin: riverOffset(-265, -(riverWidthAt(-265) / 2 + 60)),
-    pitch: [130, 90],
+    pitch: [130, 120],
     roadWidth: 10,
     roadKind: 'street',
     heights: H(70, 100),
@@ -306,7 +320,7 @@ const DEFS: ZoneDef[] = [
     polygon: rect(1300, 2000, -1000, 260),
     gridAngle: riverAngle(1650),
     origin: riverOffset(1650, -(riverWidthAt(1650) / 2 + 60)),
-    pitch: [130, 90],
+    pitch: [130, 120],
     roadWidth: 10,
     roadKind: 'street',
     heights: H(40, 90),
@@ -373,7 +387,7 @@ const DEFS: ZoneDef[] = [
     bank: { x0: -250, x1: 420, o0: 0, o1: 280 },
     gridAngle: riverAngle(90),
     origin: riverOffset(90, riverWidthAt(90) / 2 + 60),
-    pitch: [130, 90],
+    pitch: [130, 120],
     roadWidth: 10,
     roadKind: 'street',
     heights: H(70, 100, 0.1, 120),
@@ -390,7 +404,7 @@ const DEFS: ZoneDef[] = [
     bank: { x0: 420, x1: 900, o0: 0, o1: 250 },
     gridAngle: riverAngle(660),
     origin: riverOffset(660, riverWidthAt(660) / 2 + 60),
-    pitch: [130, 90],
+    pitch: [130, 120],
     roadWidth: 10,
     roadKind: 'street',
     heights: H(40, 70),
@@ -407,7 +421,7 @@ const DEFS: ZoneDef[] = [
     bank: { x0: 1150, x1: 1450, o0: 0, o1: 250 },
     gridAngle: riverAngle(1300),
     origin: riverOffset(1300, riverWidthAt(1300) / 2 + 60),
-    pitch: [130, 90],
+    pitch: [130, 120],
     roadWidth: 10,
     roadKind: 'street',
     heights: H(70, 100),
@@ -593,10 +607,7 @@ export function zoneAt(x: number, z: number): DistrictZone {
   const b = riverBeyondBounds(p.x, p.z);
   let exact: number | null = null;
   const beyond = (): number => {
-    if (exact === null) {
-      const n = riverNearest(p.x, p.z);
-      exact = n.d - riverWidthAt(n.cx) / 2;
-    }
+    exact ??= riverSignedDistance(p.x, p.z);
     return exact;
   };
   /** v ≤ t, deciding from the bounds when they do not straddle t. */
