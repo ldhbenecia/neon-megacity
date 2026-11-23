@@ -30,7 +30,7 @@ export const STREET_FALLBACK: CameraPose = { position: [-760, 6, -360], target: 
 
 /**
  * Eye-level shot down a sangga street, snapped onto the road center line nearest to
- * ART_DIRECTION 8.4 preset 3 so it stays on a road whatever the grid angle or zone ids are.
+ * ART_DIRECTION 8.4 preset 3 so it stays on a road whatever the grid angle is.
  */
 export function streetPose(roads: readonly Road[]): Pose | null {
   const want = { x: -760, z: -360 };

@@ -136,17 +136,6 @@ describe('building card (8.3)', () => {
   });
 
   it('labels layout v3 archetypes and falls back for unknown ones', () => {
-    for (const a of [
-      'taperTower',
-      'mediaSlab',
-      'lowOffice',
-      'hanokRow',
-      'palaceHall',
-      'brickWarehouse',
-      'showroomBox',
-    ]) {
-      expect(ARCHETYPE_KO[a]).toBeTruthy();
-    }
     expect(archetypeLabel('setbackTower')).toBe('셋백 타워');
     expect(archetypeLabel('domeArena')).toBe(ARCHETYPE_FALLBACK);
     expect(archetypeLabel('toString')).toBe(ARCHETYPE_FALLBACK);

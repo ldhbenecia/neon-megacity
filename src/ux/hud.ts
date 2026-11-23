@@ -1,16 +1,10 @@
-import {
-  LAYOUT,
-  type Archetype,
-  type BuildingSpec,
-  type DistrictKind,
-  type Layout,
-} from '../city/layout';
+import { LAYOUT, type BuildingSpec, type Layout } from '../city/layout';
 import { clockMinutes, formatClock } from '../core/clock';
 
 export type RigMode = 'orbit' | 'fly' | 'cinematic' | 'flight';
 
-// Keyed by string so layout versions may add archetypes or kinds before ux learns them.
-export const ARCHETYPE_KO: Readonly<Partial<Record<Archetype | (string & {}), string>>> = {
+// String keys: newer layouts may add archetypes or kinds before ux learns them.
+export const ARCHETYPE_KO: Readonly<Record<string, string>> = {
   setbackTower: '셋백 타워',
   cylinderTower: '원통 타워',
   bracedTower: '브레이싱 타워',
@@ -31,7 +25,7 @@ export const ARCHETYPE_KO: Readonly<Partial<Record<Archetype | (string & {}), st
   showroomBox: '쇼룸',
 };
 
-export const DISTRICT_KO: Readonly<Partial<Record<DistrictKind | (string & {}), string>>> = {
+export const DISTRICT_KO: Readonly<Record<string, string>> = {
   core: '도심',
   midtown: '업무지구',
   sangga: '상가',
@@ -52,8 +46,8 @@ export const DISTRICT_KO: Readonly<Partial<Record<DistrictKind | (string & {}), 
 export const ARCHETYPE_FALLBACK = '건물';
 export const DISTRICT_FALLBACK = '구역';
 
-const own = (table: object, key: string): string | undefined =>
-  Object.hasOwn(table, key) ? (table as Record<string, string>)[key] : undefined;
+const own = (table: Readonly<Record<string, string>>, key: string): string | undefined =>
+  Object.hasOwn(table, key) ? table[key] : undefined;
 
 export function archetypeLabel(archetype: string): string {
   return own(ARCHETYPE_KO, archetype) ?? ARCHETYPE_FALLBACK;
