@@ -5,7 +5,8 @@ import { createControls } from './controls';
 import { createHud, type Hud } from './hud';
 import { reducedMotion } from './loader';
 import { createPerf, estimateMemory, type FrameStats, type Perf } from './perf';
-import { camPose, DEFAULT_PRESET, rigPreset } from './presets';
+import { LAYOUT } from '../city/layout';
+import { camPose, DEFAULT_PRESET, rigPreset, safePose } from './presets';
 import { parseUxQuery } from './query';
 
 export { createLoader, nextFrame, type Loader } from './loader';
@@ -34,12 +35,16 @@ const POWER_S = 1.2;
 export function initUx(ctx: Ctx, opts: UxOptions): Ux {
   const q = parseUxQuery(window.location.search);
   const reduceMotion = reducedMotion();
-  const deterministic = opts.cam !== undefined || q.preset !== undefined;
+  const deterministic = q.pose !== undefined || opts.cam !== undefined || q.preset !== undefined;
   const hud = createHud({
     visible: q.hud,
     onDeselect: () => rig.select(null),
   });
-  const initial = opts.cam ? camPose(opts.cam) : rigPreset(q.preset ?? DEFAULT_PRESET);
+  const initial = q.pose
+    ? safePose(LAYOUT, q.pose)
+    : opts.cam
+      ? camPose(opts.cam)
+      : rigPreset(q.preset ?? DEFAULT_PRESET);
   const rig = createCameraRig(ctx, {
     initial,
     dollyIn: !deterministic,

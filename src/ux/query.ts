@@ -1,5 +1,9 @@
+import type { Pose } from './motion';
+
 export interface UxQuery {
   preset?: number;
+  /** `?pose=px,py,pz,tx,ty,tz` for screenshots of arbitrary spots; ignored unless 6 numbers. */
+  pose?: Pose;
   hud: boolean;
   stats: boolean;
   debug: boolean;
@@ -23,6 +27,14 @@ export function parseUxQuery(search: string, presetCount = 8): UxQuery {
   if (raw !== null && /^\d+$/.test(raw.trim())) {
     const n = Number(raw);
     if (n >= 1 && n <= presetCount) out.preset = n;
+  }
+  const pose = params
+    .get('pose')
+    ?.split(',')
+    .map((v) => (v.trim() === '' ? NaN : Number(v)));
+  if (pose?.length === 6 && pose.every(Number.isFinite)) {
+    const [px, py, pz, tx, ty, tz] = pose as [number, number, number, number, number, number];
+    out.pose = { position: { x: px, y: py, z: pz }, target: { x: tx, y: ty, z: tz } };
   }
   return out;
 }

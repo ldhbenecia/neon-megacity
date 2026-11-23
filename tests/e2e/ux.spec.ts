@@ -221,6 +221,17 @@ test('?hud=0 starts hidden', async ({ page }) => {
   await expect(page.locator('#hud')).toHaveClass(/is-hidden/);
 });
 
+test('?pose= sets the initial camera pose', async ({ page }) => {
+  await page.goto(app('nogui&stats&pose=300,400,700,0,80,0'));
+  await waitForCity(page);
+  const c = await cam(page);
+  expect(c.mode).toBe('orbit');
+  expect(c.position.x).toBeCloseTo(300, 0);
+  expect(c.position.y).toBeCloseTo(400, 0);
+  expect(c.position.z).toBeCloseTo(700, 0);
+  expect(c.target.z).toBeCloseTo(0, 0);
+});
+
 test.describe('camera rig', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto(app('nogui&stats&cam=overview&time=0.0'));

@@ -97,6 +97,23 @@ describe('adaptive DPR (11)', () => {
 });
 
 describe('parseUxQuery', () => {
+  it('parses ?pose= only when it has 6 finite numbers', () => {
+    expect(parseUxQuery('?pose=1,2,3,4,5,6').pose).toEqual({
+      position: { x: 1, y: 2, z: 3 },
+      target: { x: 4, y: 5, z: 6 },
+    });
+    expect(parseUxQuery('?pose=-10.5, 20 ,3,4,5,6').pose?.position.x).toBe(-10.5);
+    for (const bad of [
+      '1,2,3,4,5',
+      '1,2,3,4,5,6,7',
+      '1,2,x,4,5,6',
+      '1,,3,4,5,6',
+      'Infinity,2,3,4,5,6',
+    ]) {
+      expect(parseUxQuery(`?pose=${bad}`).pose, bad).toBeUndefined();
+    }
+  });
+
   it('defaults', () => {
     expect(parseUxQuery('')).toEqual({ hud: true, stats: false, debug: false });
   });
