@@ -89,35 +89,41 @@ const dist = (a: { x: number; y: number; z: number }, b: { x: number; y: number;
   Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 const orbit = (c: Awaited<ReturnType<typeof cam>>): number => dist(c.position, c.target);
 
-test('boot skeleton paints before JS and is removed after power-on', async ({ page }) => {
-  const ctx = await page.context().browser()?.newContext();
-  if (ctx) {
-    const noJs = await ctx.newPage();
-    await noJs.route('**/*.js', (r) => r.abort());
-    await noJs.goto('./');
-    await expect(noJs.locator('#boot .boot-neon')).toHaveText('한강');
-    await expect(noJs.locator('#boot .boot-skyline > span')).toHaveCount(28);
-    await expect(noJs.locator('#boot .boot-pct')).toHaveText('000%');
-    await ctx.close();
-  }
+test.describe('full motion', () => {
+  // The only test with the default motion: dolly-in, power ramp and loader fade at full length.
+  test.use({ contextOptions: { reducedMotion: 'no-preference' } });
 
-  const errors = collectErrors(page);
-  const seen: number[] = [];
-  await page.exposeFunction('__bootProgress', (p: number) => seen.push(p));
-  await page.addInitScript(() => {
-    new MutationObserver(() => {
-      const p = document.getElementById('boot')?.dataset.progress;
-      const report = (window as unknown as { __bootProgress?: (n: number) => void }).__bootProgress;
-      if (p !== undefined && report) report(Number(p));
-    }).observe(document, { attributes: true, subtree: true, attributeFilter: ['data-progress'] });
+  test('boot skeleton paints before JS and is removed after power-on', async ({ page }) => {
+    const ctx = await page.context().browser()?.newContext();
+    if (ctx) {
+      const noJs = await ctx.newPage();
+      await noJs.route('**/*.js', (r) => r.abort());
+      await noJs.goto('./');
+      await expect(noJs.locator('#boot .boot-neon')).toHaveText('한강');
+      await expect(noJs.locator('#boot .boot-skyline > span')).toHaveCount(28);
+      await expect(noJs.locator('#boot .boot-pct')).toHaveText('000%');
+      await ctx.close();
+    }
+
+    const errors = collectErrors(page);
+    const seen: number[] = [];
+    await page.exposeFunction('__bootProgress', (p: number) => seen.push(p));
+    await page.addInitScript(() => {
+      new MutationObserver(() => {
+        const p = document.getElementById('boot')?.dataset.progress;
+        const report = (window as unknown as { __bootProgress?: (n: number) => void })
+          .__bootProgress;
+        if (p !== undefined && report) report(Number(p));
+      }).observe(document, { attributes: true, subtree: true, attributeFilter: ['data-progress'] });
+    });
+    await page.goto(app('nogui'));
+    await waitForCity(page);
+    await expect(page.locator('#boot')).toHaveCount(0);
+    expect(seen.length).toBeGreaterThan(3);
+    expect(seen.at(-1)).toBe(100);
+    expect(seen).toEqual([...seen].sort((a, b) => a - b));
+    expect(errors).toEqual([]);
   });
-  await page.goto(app('nogui'));
-  await waitForCity(page);
-  await expect(page.locator('#boot')).toHaveCount(0);
-  expect(seen.length).toBeGreaterThan(3);
-  expect(seen.at(-1)).toBe(100);
-  expect(seen).toEqual([...seen].sort((a, b) => a - b));
-  expect(errors).toEqual([]);
 });
 
 test('HUD: brand mark, clock, help sheet on ?, inline SVG favicon', async ({ page }) => {

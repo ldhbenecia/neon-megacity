@@ -3,7 +3,7 @@
 //   ?cam=<name>  preset camera pose
 //   ?rain=0..1   initial rain intensity
 //   ?nogui       hide the lil-gui panel
-//   ?quality=low software-GL mode for CI (see Quality)
+//   ?quality=low|high  render tier (low: software GL for CI, see Quality)
 
 import {
   CITY,

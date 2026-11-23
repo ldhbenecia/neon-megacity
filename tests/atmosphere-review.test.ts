@@ -47,8 +47,8 @@ describe('shader time and altitude', () => {
 });
 
 describe('height fog toggle', () => {
-  it('CPU fog mirrors follow ramhaFogHeight.w like the shader', () => {
-    const h = FOG_UNIFORMS.ramhaFogHeight.value;
+  it('CPU fog mirrors follow cityFogHeight.w like the shader', () => {
+    const h = FOG_UNIFORMS.cityFogHeight.value;
     h[3] = 0;
     expect(heightFogScale(400)).toBe(1);
     expect(fogFactor(0.001, 1000, 400)).toBeCloseTo(1 - Math.exp(-1), 9);

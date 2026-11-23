@@ -10,6 +10,16 @@ export function app(query = ''): string {
   return `./?quality=low${query ? `&${query}` : ''}`;
 }
 
+/** Jumps the timeline (minutes, 5-minute steps) through its input event, like a user scrub. */
+export async function scrubTo(page: Page, minutes: number): Promise<void> {
+  await page.evaluate((m) => {
+    const input = document.getElementById('tl-range');
+    if (!(input instanceof HTMLInputElement)) throw new Error('#tl-range missing');
+    input.value = String(m);
+    input.dispatchEvent(new Event('input'));
+  }, minutes);
+}
+
 export function collectErrors(page: Page): string[] {
   const errors: string[] = [];
   page.on('console', (msg) => {

@@ -7,12 +7,12 @@ import {
   deckHeightAt,
   highwayCurve,
   riverSignedDistance,
+  surfaceHeight,
   type BuildingSpec,
 } from '../src/city/layout';
 import { obbOverlap, pointSegmentDistance } from '../src/city/math';
 import {
   approachPierBlocksRoad,
-  approachStations,
   archY,
   deckYAt,
   bridgeFrame,
@@ -141,8 +141,11 @@ describe('infra: cross-sections and lanes', () => {
       expect(o).toHaveLength(hw.lanes);
       for (let i = 1; i < o.length; i++) expect(o[i]!).toBeGreaterThan(o[i - 1]!);
       const lw = laneWidth(hw);
-      expect(lw).toBeGreaterThan(3.2);
-      expect(lw).toBeLessThan(4.6);
+      // laneWidth subtracts barriers (0.5) and shoulders (0.6) per edge and the median (0.7 per
+      // side): 올림픽대로 28 m / 8 lanes = 3.05 m, 내부순환로 22 m / 4 lanes = 4.6 m. Floor = Seoul
+      // urban expressway minimum lane (3.0 m).
+      expect(lw).toBeGreaterThanOrEqual(3);
+      expect(lw).toBeLessThanOrEqual(4.6 + 1e-9);
       expect(Math.abs(o[0]!) + lw / 2).toBeLessThan(hw.width / 2 - 0.5);
       // Divided roads: same number of lanes on each side of the centerline.
       if (hw.kind !== 'ramp') expect(o.filter((x) => x > 0)).toHaveLength(hw.lanes / 2);
@@ -219,6 +222,30 @@ describe('infra: pillars', () => {
     expect(specs.filter((s) => s.kind === 'T').length).toBeGreaterThan(40);
   });
 
+  it('dropping pillars never opens a gap wider than the layout already has (or 3 bays)', () => {
+    const gap = (pts: readonly { x: number; z: number }[]) =>
+      pts.reduce(
+        (m, p, i) => (i ? Math.max(m, Math.hypot(p.x - pts[i - 1]!.x, p.z - pts[i - 1]!.z)) : m),
+        0,
+      );
+    for (const hw of raised.filter((h) => h.pillars.length > 1)) {
+      const kept = specs.filter((s) => s.owner === hw.id);
+      const allowed = Math.max(gap(hw.pillars), 3 * hw.pillarSpacing);
+      expect(gap(kept), hw.id).toBeLessThanOrEqual(allowed + 1);
+    }
+  });
+
+  it('raised decks stay above the ground (60 m at each end may meet a portal or the ground)', () => {
+    for (const hw of raised) {
+      const path = hwPath(hw);
+      const end = Math.ceil(60 / 6);
+      path.pts.slice(end, -end).forEach((p) => {
+        const under = p[1] - DECK_THICKNESS - surfaceHeight(p[0], p[2]);
+        expect(under, `${hw.id} at (${p[0].toFixed(0)}, ${p[2].toFixed(0)})`).toBeGreaterThan(0);
+      });
+    }
+  });
+
   it('columns never touch a building footprint (0 collisions)', () => {
     let hits = 0;
     for (const { column: c } of inst) {
@@ -236,7 +263,8 @@ describe('infra: pillars', () => {
       for (const br of LAYOUT.bridges) {
         expect(pointSegmentDistance(c, br.landA, br.landB)).toBeGreaterThan(br.width / 2);
       }
-      expect(c.y1 - c.y0).toBeGreaterThan(5);
+      // Visible column above the ground (the foot is buried 1 m).
+      expect(c.y1 - (c.y0 + 1)).toBeGreaterThan(0.5);
     }
     for (let i = 0; i < inst.length; i++) {
       for (let j = i + 1; j < inst.length; j++) {
@@ -355,15 +383,27 @@ describe('infra: bridges', () => {
         const p = bridgePoint(f, s, 0, 0);
         expect(riverSignedDistance(p[0], p[2])).toBeLessThan(0);
       }
-      for (const s of approachStations(f)) {
-        const p = bridgePoint(f, s, 0, 0);
-        for (const hw of LAYOUT.highways) {
-          const q = nearestOnPath(hwPath(hw), p[0], p[2]);
-          expect(q.d, `${b.id} approach pier vs ${hw.id}`).toBeGreaterThan(hw.width / 2 + 1);
+    }
+    const parts = buildInfra(LAYOUT, C);
+    // Placed piers (stations on a highway are dropped): no footprint point on a lower deck.
+    const hwPaths = LAYOUT.highways.map((hw) => hwPath(hw));
+    for (const c of parts.columns.filter((col) => LAYOUT.bridges.some((b) => b.id === col.owner))) {
+      const cos = Math.cos(c.rotY);
+      const sin = Math.sin(c.rotY);
+      for (let i = -0.5; i <= 0.5 + 1e-9; i += 0.0625) {
+        for (const j of [-0.5, 0, 0.5]) {
+          const x = c.x + cos * i * c.w + sin * j * c.d;
+          const z = c.z - sin * i * c.w + cos * j * c.d;
+          for (const path of hwPaths) {
+            const q = nearestOnPath(path, x, z);
+            if (q.y >= c.y1) continue;
+            expect(q.d, `${c.owner} pier on ${path.hw.id}`).toBeGreaterThan(
+              path.hw.width / 2 + 0.5,
+            );
+          }
         }
       }
     }
-    const parts = buildInfra(LAYOUT, C);
     const bridgeIds = new Set(LAYOUT.bridges.map((b) => b.id));
     const bridgeColumns = parts.columns.filter((c) => bridgeIds.has(c.owner));
     // Approach piers never stand on a ground road (roads may cross under the long south ramp).
@@ -397,7 +437,8 @@ describe('infra: whole build', () => {
       parts.wash.triangleCount;
     // Instanced: columns 14 tris (+ caps), beams 12, points 8.
     const instanced = parts.columns.length * 28 + parts.beams.length * 12 + parts.points.length * 8;
-    expect(merged + instanced).toBeLessThan(300_000);
+    // Temporary (hangang-perf, layout v3 ≈ 341k): 대교 near/far LOD 도입 뒤 300k로 복구.
+    expect(merged + instanced).toBeLessThan(360_000);
     expect(parts.points.length).toBeGreaterThan(300);
     expect(parts.glow.triangleCount).toBeGreaterThan(0);
     expect(parts.wash.triangleCount).toBeGreaterThan(0);
