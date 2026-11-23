@@ -1,9 +1,16 @@
-import { zoneById, type Archetype, type BuildingSpec } from '../city/layout';
+import {
+  LAYOUT,
+  type Archetype,
+  type BuildingSpec,
+  type DistrictKind,
+  type Layout,
+} from '../city/layout';
 import { clockMinutes, formatClock } from '../core/clock';
 
 export type RigMode = 'orbit' | 'fly' | 'cinematic' | 'flight';
 
-export const ARCHETYPE_KO: Record<Archetype, string> = {
+// Keyed by string so layout versions may add archetypes or kinds before ux learns them.
+export const ARCHETYPE_KO: Readonly<Partial<Record<Archetype | (string & {}), string>>> = {
   setbackTower: '셋백 타워',
   cylinderTower: '원통 타워',
   bracedTower: '브레이싱 타워',
@@ -15,7 +22,47 @@ export const ARCHETYPE_KO: Record<Archetype, string> = {
   hillHouse: '산동네 주택',
   warehouse: '창고',
   pavilion: '강변 매점',
+  taperTower: '테이퍼 타워',
+  mediaSlab: '미디어 슬래브',
+  lowOffice: '저층 업무',
+  hanokRow: '기와 상가',
+  palaceHall: '전각',
+  brickWarehouse: '벽돌 창고',
+  showroomBox: '쇼룸',
 };
+
+export const DISTRICT_KO: Readonly<Partial<Record<DistrictKind | (string & {}), string>>> = {
+  core: '도심',
+  midtown: '업무지구',
+  sangga: '상가',
+  hillside: '산동네',
+  apartment: '아파트 단지',
+  industrial: '공업지역',
+  riverside: '강변',
+  megacore: '고층 중심',
+  corridor: '간선 업무축',
+  oldtown: '옛 도심',
+  palace: '궁궐',
+  brick: '벽돌 창고가',
+  nightlife: '유흥가',
+  showroom: '쇼룸 거리',
+  park: '공원',
+};
+
+export const ARCHETYPE_FALLBACK = '건물';
+export const DISTRICT_FALLBACK = '구역';
+
+const own = (table: object, key: string): string | undefined =>
+  Object.hasOwn(table, key) ? (table as Record<string, string>)[key] : undefined;
+
+export function archetypeLabel(archetype: string): string {
+  return own(ARCHETYPE_KO, archetype) ?? ARCHETYPE_FALLBACK;
+}
+
+export function zoneLabel(L: Pick<Layout, 'districts'>, zoneId: string, kind: string): string {
+  const name = L.districts.find((z) => z.id === zoneId)?.name;
+  return name || own(DISTRICT_KO, kind) || DISTRICT_FALLBACK;
+}
 
 export interface CardInfo {
   zone: string;
@@ -26,13 +73,8 @@ export interface CardInfo {
   archetype: string;
 }
 
-export function buildingCard(b: BuildingSpec): CardInfo {
-  let zone: string = b.district;
-  try {
-    zone = zoneById(b.zoneId).name;
-  } catch {
-    // zoneById throws for ids outside ZONES; the district kind is the fallback label.
-  }
+export function buildingCard(b: BuildingSpec, L: Pick<Layout, 'districts'> = LAYOUT): CardInfo {
+  const zone = zoneLabel(L, b.zoneId, b.district);
   const sub: string[] = [];
   if (b.tags.corp) sub.push(b.tags.corp);
   if (b.tags.complex) sub.push(b.tags.dong ? `${b.tags.complex} ${b.tags.dong}동` : b.tags.complex);
@@ -44,7 +86,7 @@ export function buildingCard(b: BuildingSpec): CardInfo {
     sub: sub.join(' · '),
     height: `${Math.round(b.h + b.spireH)} m`,
     floors: `${b.floors}층`,
-    archetype: ARCHETYPE_KO[b.archetype],
+    archetype: archetypeLabel(b.archetype),
   };
 }
 

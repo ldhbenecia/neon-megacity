@@ -2,7 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { LAYOUT } from '../src/city/layout';
 import { RAIN_STEPS, rainStep } from '../src/ux/controls';
 import { AdaptiveDpr } from '../src/ux/dpr';
-import { ARCHETYPE_KO, buildingCard } from '../src/ux/hud';
+import {
+  ARCHETYPE_FALLBACK,
+  ARCHETYPE_KO,
+  DISTRICT_FALLBACK,
+  DISTRICT_KO,
+  archetypeLabel,
+  buildingCard,
+  zoneLabel,
+} from '../src/ux/hud';
 import {
   activeSegment,
   createProgress,
@@ -115,6 +123,35 @@ describe('building card (8.3)', () => {
     expect(card.floors).toBe(`${b.floors}층`);
     expect(card.archetype).toBe(ARCHETYPE_KO[b.archetype]);
     expect(card.zone.length).toBeGreaterThan(0);
+  });
+
+  it('labels layout v3 archetypes and falls back for unknown ones', () => {
+    for (const a of [
+      'taperTower',
+      'mediaSlab',
+      'lowOffice',
+      'hanokRow',
+      'palaceHall',
+      'brickWarehouse',
+      'showroomBox',
+    ]) {
+      expect(ARCHETYPE_KO[a]).toBeTruthy();
+    }
+    expect(archetypeLabel('setbackTower')).toBe('셋백 타워');
+    expect(archetypeLabel('domeArena')).toBe(ARCHETYPE_FALLBACK);
+    expect(archetypeLabel('toString')).toBe(ARCHETYPE_FALLBACK);
+  });
+
+  it('falls back from zone name to district kind to a generic label', () => {
+    const L = { districts: [{ ...LAYOUT.districts[0]!, id: 'z1', name: '여의도' }] };
+    expect(zoneLabel(L, 'z1', 'megacore')).toBe('여의도');
+    expect(zoneLabel(L, 'unknown', 'nightlife')).toBe(DISTRICT_KO.nightlife);
+    expect(zoneLabel(L, 'unknown', 'spaceport')).toBe(DISTRICT_FALLBACK);
+    const b = { ...LAYOUT.buildings[0]!, zoneId: 'gone', district: 'spaceport', archetype: 'x' };
+    // @ts-expect-error simulates a newer layout whose kinds ux does not know yet
+    const card = buildingCard(b, L);
+    expect(card.zone).toBe(DISTRICT_FALLBACK);
+    expect(card.archetype).toBe(ARCHETYPE_FALLBACK);
   });
 });
 

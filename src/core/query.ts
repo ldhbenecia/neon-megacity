@@ -4,18 +4,18 @@
 //   ?rain=0..1   initial rain intensity
 //   ?nogui       hide the lil-gui panel
 
-import { LAYOUT, type Road } from '../city/layout';
+import { CITY, LAYOUT, type Road } from '../city/layout';
 
 /**
  * OrbitControls limits applied by main.ts. Every camera preset must satisfy them,
  * otherwise controls.update() silently moves the camera on the first frame.
  * The camera always looks down at (or level with) its target: polar angle is
  * measured from +Y, so maxPolarAngle just under PI/2 keeps it above the horizon.
- * maxDistance covers the 2400 m map from the topdown preset (ART_DIRECTION 8.1: 2600).
+ * maxDistance covers the whole map from the topdown preset (ART_DIRECTION 8.1).
  */
 export const CAMERA_LIMITS = {
   minDistance: 20,
-  maxDistance: 2600,
+  maxDistance: CITY.extent + 200,
   maxPolarAngle: Math.PI * 0.495,
 } as const;
 
@@ -29,14 +29,14 @@ type Pose = CameraPose;
 export const STREET_FALLBACK: CameraPose = { position: [-760, 6, -360], target: [-700, 1, -470] };
 
 /**
- * Eye-level shot down a 등불가 (sangga) street, snapped onto the road center line nearest to
- * ART_DIRECTION 8.4 preset 3 so it stays on a road whatever the grid angle is.
+ * Eye-level shot down a sangga street, snapped onto the road center line nearest to
+ * ART_DIRECTION 8.4 preset 3 so it stays on a road whatever the grid angle or zone ids are.
  */
 export function streetPose(roads: readonly Road[]): Pose | null {
   const want = { x: -760, z: -360 };
   let best: { road: Road; t: number; d: number } | null = null;
   for (const road of roads) {
-    if (road.zoneId !== 'sangga-n' || road.kind !== 'street') continue;
+    if (road.district !== 'sangga' || road.kind !== 'street') continue;
     const dx = road.b.x - road.a.x;
     const dz = road.b.z - road.a.z;
     const len2 = dx * dx + dz * dz;
