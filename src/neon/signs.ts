@@ -43,7 +43,7 @@ export function buildFlatSigns(
       s.kind === 'ad' || s.kind === 'tent'
         ? 1.6
         : s.kind === 'crown'
-          ? 3
+          ? 1.5
           : neonHdr(s.color, (s.seed % 97) / 97) * 0.75;
     iAnim.set([s.anim, (s.seed % 9973) / 9973, s.zone, hdr], i * 4);
   });
