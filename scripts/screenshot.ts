@@ -28,9 +28,13 @@ const ANIMATION_MS = 3000;
 const VIEWPORT = { width: 1600, height: 900 };
 
 async function waitPowered(page: Page): Promise<void> {
-  await page.waitForFunction(() => window.__city?.powered === true, undefined, {
-    timeout: 90_000,
-  });
+  await page.waitForFunction(
+    () => window.__city?.powered === true && window.__city.lod0Pending === 0,
+    undefined,
+    {
+      timeout: 90_000,
+    },
+  );
 }
 
 async function bootSkeleton(browser: Browser, file: string): Promise<void> {
@@ -100,6 +104,7 @@ async function hudSelected(browser: Browser, file: string): Promise<void> {
       return (
         cam?.selected != null &&
         cam.mode === 'orbit' &&
+        window.__city?.lod0Pending === 0 &&
         document.getElementById('hud-card')?.hidden === false
       );
     },

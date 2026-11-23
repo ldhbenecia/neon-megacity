@@ -33,6 +33,20 @@ export interface PointInstance {
   color: RGB;
 }
 
+/** Fine bridge parts drawn only near the camera (rails, posts, lane paint, hangers, web members). */
+export interface DetailParts {
+  steel: MeshData;
+  glow: MeshData;
+  markings: MeshData;
+}
+
+/** One bridge's detail, toggled as a unit by distance LOD. */
+export interface BridgeDetail extends DetailParts {
+  id: string;
+  /** Span center on the deck (world). */
+  center: V3;
+}
+
 /** Everything infra draws, grouped by material (one draw call each). */
 export interface InfraParts {
   /** Asphalt / concrete / dark underside (vertex colors). */
@@ -48,6 +62,7 @@ export interface InfraParts {
   points: PointInstance[];
   columns: ColumnInstance[];
   beams: BeamInstance[];
+  bridgeDetail: BridgeDetail[];
 }
 
 export function createParts(): InfraParts {
@@ -60,6 +75,7 @@ export function createParts(): InfraParts {
     points: [],
     columns: [],
     beams: [],
+    bridgeDetail: [],
   };
 }
 

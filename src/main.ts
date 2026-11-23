@@ -167,7 +167,7 @@ async function boot(): Promise<void> {
   timer.connect(document);
   // cpu: moving average of each module's update() in ms, read by `npm run perf`.
   const cpu: Record<string, number> = {};
-  const cityState = { ready: true, frames: 0, powered: false, cpu };
+  const cityState = { ready: true, frames: 0, powered: false, cpu, lod0Pending: 0 };
   let bootGone = false;
   const frame = (timestamp?: number): void => {
     timer.update(timestamp);
@@ -190,6 +190,7 @@ async function boot(): Promise<void> {
     // The boot overlay is removed once and never comes back: stop querying after that.
     bootGone ||= !document.getElementById('boot');
     cityState.powered = ux.powered && bootGone;
+    cityState.lod0Pending = ctx.buildings?.lod0Pending() ?? 0;
     window.__city = cityState;
   };
   // Modules registered resize handlers during init: sync them to the current size once.

@@ -178,3 +178,12 @@ function at(f: Frame, l: number, y: number): V3 {
     f.p[2] + f.lat[2] * l + f.up[2] * y,
   ];
 }
+
+/** Accepts geometry and keeps none: lets builders skip parts that will not be drawn. */
+export class DiscardMeshData extends MeshData {
+  override vertex(): number {
+    return 0;
+  }
+
+  override tri(): void {}
+}

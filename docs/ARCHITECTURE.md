@@ -85,6 +85,19 @@ They exist for deterministic screenshots, e2e tests and debugging.
 
 Numbers are clamped to 0..1; invalid values are ignored.
 
+`src/ux/query.ts` (`parseUxQuery`, applied by `src/ux/index.ts`) adds ux-only hooks:
+
+| param                        | effect                                                                         |
+| ---------------------------- | ------------------------------------------------------------------------------ |
+| `?pose=px,py,pz,tx,ty,tz`    | initial camera position and target; wins over `?cam` and `?preset` (see below) |
+| `?preset=1..8`               | rig preset (number keys)                                                       |
+| `?hud=0`, `?stats`, `?debug` | hide the HUD, show the perf overlay and `window.__hangang`, show lil-gui       |
+
+`?pose=` is used only with 6 finite numbers whose distance is within `CAMERA_LIMITS`
+(20..maxDistance m). It then goes through `safePose` (outside buildings, above ground, within
+`maxPolarAngle`, so keep the target below the camera for an exact pose) and is dropped if that
+pulls it out of the distance limits. Like `?cam`, it disables the intro dolly and idle cinematic.
+
 `env.quality === 'low'` is the CI tier (SwiftShader renders the full city at a few fps). Quality
 branches are owned by perf and stay minimal: DPR 0.5 and no MSAA (ux/main), no shadow map and one
 lazy 64 px PMREM bake (lighting), no post chain, rain, clouds or searchlights (atmosphere; fog and

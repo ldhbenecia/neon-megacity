@@ -189,11 +189,12 @@ function shell(
   g.cap(o.pts, top, plain(b.roof, 0.92));
 }
 
+// Coloured, just above the palette bloom threshold: white crowns burned out the skyline.
 function crownStyle(b: Bld): Style {
   const pick = seeded01(b.spec.seed + 7);
   const hex =
-    pick < 0.45 ? NEON.neonWhite.hex : pick < 0.8 ? NEON.neonCyan.hex : NEON.neonOrange.hex;
-  return glow(hex, pick < 0.45 ? 1.6 : 2.4);
+    pick < 0.5 ? NEON.neonCyan.hex : pick < 0.8 ? NEON.neonAmber.hex : NEON.neonOrange.hex;
+  return glow(hex, 1.3 + 0.3 * seeded01(b.spec.seed + 8));
 }
 
 export function emitBuilding(raw: BuildingSpec, T: Targets, onStreet?: StreetTest): void {
@@ -235,7 +236,7 @@ export function emitBuilding(raw: BuildingSpec, T: Targets, onStreet?: StreetTes
       const topTier = tiers[tiers.length - 1];
       if (topTier && b.mega) {
         const o = tierOutline(topTier, spec.rotY, lv === 0 ? 48 : 16);
-        band(g, o, topTier.y1 - 3.2, 2.4, 0.35, crownStyle(b));
+        band(g, o, topTier.y1 - 2.6, 1.2, 0.35, crownStyle(b));
       }
     }
     if (spec.spireH > 0) spire(g, b);

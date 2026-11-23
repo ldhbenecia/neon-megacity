@@ -1,8 +1,10 @@
 // Infra module (ART_DIRECTION 2.3, 2.5, 13.1): elevated highways, ramps, pillars, sound walls
 // and the three bridges, plus their static lights. Publishes ctx.infra (InfraApi).
 //
-// Draw calls (8, budget 12): concrete, steel, lane paint, glow lines, uplight wash (merged
-// meshes) + pillar columns, pillar beams, light points (InstancedMesh). No real lights.
+// Draw calls (11, budget 12): concrete, steel, lane paint, glow lines, uplight wash (merged
+// meshes) + pillar columns, pillar beams, light points (InstancedMesh) + bridge detail steel,
+// glow and paint (BatchedMesh, one instance per bridge, hidden by distance LOD; not built for
+// quality 'low'). No real lights.
 import * as THREE from 'three';
 import { deckHeightAt, highwayCurve } from '../city/layout';
 import { MATERIAL } from '../core/palette';
@@ -10,7 +12,9 @@ import { EMISSIVE_FOG_DENSITY_SCALE, applyEmissiveFog } from '../core/shaders/em
 import type { CityModuleInstance, Ctx, InfraApi } from '../core/types';
 import { buildInfra } from './build';
 import { infraColors } from './colors';
-import type { MeshData } from './mesh';
+import { bridgeDetailOn } from './lod';
+import type { MeshData, V3 } from './mesh';
+import type { BridgeDetail, DetailParts } from './parts';
 import { DECK_THICKNESS } from './profile';
 
 function toGeometry(m: MeshData): THREE.BufferGeometry {
@@ -69,9 +73,56 @@ function emissiveBasic(params: THREE.MeshBasicMaterialParameters): THREE.MeshBas
   return m;
 }
 
+const DETAIL_KEYS = ['steel', 'glow', 'markings'] as const satisfies readonly (keyof DetailParts)[];
+
+interface DetailLod {
+  /** One BatchedMesh per DETAIL_KEYS entry; materials are shared with the base meshes. */
+  meshes: THREE.BatchedMesh[];
+  /** Per bridge: center, current state and its instance id in each mesh (-1 = no geometry). */
+  bridges: { center: V3; on: boolean; ids: number[] }[];
+}
+
+function buildDetail(
+  list: readonly BridgeDetail[],
+  materials: Record<(typeof DETAIL_KEYS)[number], THREE.Material>,
+): DetailLod | null {
+  if (list.length === 0) return null;
+  const bridges = list.map((d) => ({ center: d.center, on: true, ids: [] as number[] }));
+  const meshes = DETAIL_KEYS.map((key, k) => {
+    const datas = list.map((d) => d[key]);
+    const vertices = datas.reduce((n, m) => n + m.vertexCount, 0);
+    const indices = datas.reduce((n, m) => n + m.indices.length, 0);
+    const batch = new THREE.BatchedMesh(
+      list.length,
+      Math.max(1, vertices),
+      Math.max(1, indices),
+      materials[key],
+    );
+    batch.name = `infra-detail-${key}`;
+    datas.forEach((m, i) => {
+      let id = -1;
+      if (m.vertexCount > 0) {
+        const g = toGeometry(m);
+        id = batch.addInstance(batch.addGeometry(g));
+        g.dispose();
+      }
+      const entry = bridges[i];
+      if (entry) entry.ids[k] = id;
+    });
+    batch.computeBoundingSphere();
+    if (key === 'steel') {
+      batch.castShadow = true;
+      batch.receiveShadow = true;
+    }
+    if (key === 'markings') batch.receiveShadow = true;
+    return batch;
+  });
+  return { meshes, bridges };
+}
+
 export function init(ctx: Ctx): CityModuleInstance {
   const L = ctx.LAYOUT;
-  const parts = buildInfra(L, infraColors());
+  const parts = buildInfra(L, infraColors(), ctx.env.quality !== 'low');
 
   const group = new THREE.Group();
   group.name = 'infra';
@@ -187,7 +238,15 @@ export function init(ctx: Ctx): CityModuleInstance {
     im.receiveShadow = true;
   }
 
+  // Empty for quality 'low' (buildInfra skipped the detail), so no BatchedMesh is created.
+  const detail = buildDetail(parts.bridgeDetail, {
+    steel: steel.material as THREE.Material,
+    glow: glowMat,
+    markings: paintMat,
+  });
+
   group.add(concrete, steel, paint, columns, beams, glow, wash, points);
+  if (detail) group.add(...detail.meshes);
   ctx.scene.add(group);
 
   const curves = new Map<string, THREE.CatmullRomCurve3>();
@@ -209,6 +268,21 @@ export function init(ctx: Ctx): CityModuleInstance {
   const emissive = [glowMat, washMat, pointMat];
   return {
     update() {
+      if (detail) {
+        const cam = ctx.camera.position;
+        for (const b of detail.bridges) {
+          const dx = cam.x - b.center[0];
+          const dy = cam.y - b.center[1];
+          const dz = cam.z - b.center[2];
+          const on = bridgeDetailOn(b.on, dx * dx + dy * dy + dz * dz);
+          if (on === b.on) continue;
+          b.on = on;
+          detail.meshes.forEach((m, k) => {
+            const id = b.ids[k] ?? -1;
+            if (id >= 0) m.setVisibleAt(id, on);
+          });
+        }
+      }
       const gain = ctx.env.neonGain * ctx.env.powerOn * settings.gain;
       for (const m of emissive) m.color.setScalar(gain);
     },
@@ -217,6 +291,7 @@ export function init(ctx: Ctx): CityModuleInstance {
       for (const g of geometries) g.dispose();
       for (const m of materials) m.dispose();
       for (const im of [columns, beams, points]) im.dispose();
+      detail?.meshes.forEach((m) => m.dispose());
       folder.destroy();
       if (ctx.infra === api) delete ctx.infra;
     },

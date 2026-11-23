@@ -81,7 +81,15 @@ function straightHighway(pts: { x: number; z: number }[], y: number, width: numb
 }
 
 function expectFinite(parts: InfraParts): void {
-  for (const m of [parts.concrete, parts.steel, parts.markings, parts.glow, parts.wash]) {
+  const detail = parts.bridgeDetail.flatMap((d) => [d.steel, d.glow, d.markings]);
+  for (const m of [
+    parts.concrete,
+    parts.steel,
+    parts.markings,
+    parts.glow,
+    parts.wash,
+    ...detail,
+  ]) {
     for (const arr of [m.positions, m.normals, m.colors]) {
       expect(arr.every(Number.isFinite)).toBe(true);
     }
@@ -253,6 +261,41 @@ describe('infra fallback: bridge kinds', () => {
     buildBridge(arch, a, C);
     buildBridge(withLower, b, C);
     expect(b).toEqual(a);
+  });
+});
+
+describe('infra fallback: deck rings near slope breaks', () => {
+  it('keeps consistent winding when an abutment lands a hair off a 6 m station', () => {
+    for (const d of [0.003, 0.027, 0.4, 0.97, 3]) {
+      const half = 192 + d;
+      const b = makeBridge(-200, { ...CASES[0]!, half, landA: half + 100, landB: half + 256 });
+      const parts = createParts();
+      buildBridge(b, parts, C);
+      const m = parts.concrete;
+      const v = (i: number) => [
+        m.positions[i * 3]!,
+        m.positions[i * 3 + 1]!,
+        m.positions[i * 3 + 2]!,
+      ];
+      let bad = 0;
+      for (let t = 0; t < m.indices.length; t += 3) {
+        const [p, q, r] = [v(m.indices[t]!), v(m.indices[t + 1]!), v(m.indices[t + 2]!)];
+        const e1 = [q[0]! - p[0]!, q[1]! - p[1]!, q[2]! - p[2]!];
+        const e2 = [r[0]! - p[0]!, r[1]! - p[1]!, r[2]! - p[2]!];
+        const fn = [
+          e1[1]! * e2[2]! - e1[2]! * e2[1]!,
+          e1[2]! * e2[0]! - e1[0]! * e2[2]!,
+          e1[0]! * e2[1]! - e1[1]! * e2[0]!,
+        ];
+        const l = Math.hypot(fn[0]!, fn[1]!, fn[2]!);
+        if (l < 1e-9) continue;
+        const i = m.indices[t]! * 3;
+        const dotN =
+          (fn[0]! * m.normals[i]! + fn[1]! * m.normals[i + 1]! + fn[2]! * m.normals[i + 2]!) / l;
+        if (dotN <= 0.5) bad++;
+      }
+      expect(bad, `abutment ${d} m past a station`).toBe(0);
+    }
   });
 });
 
