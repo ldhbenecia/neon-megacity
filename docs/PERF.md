@@ -81,8 +81,13 @@ infra init 46–83 ms, first frame 31–79 ms. Canvas: 98.9 MB (`gl.SAMPLES` = 4
   stalled one frame for ~500 ms with no new program: no link happened, but a CPU profile showed
   ~300 ms in `getProgramInfoLog`. three's `checkShaderErrors` reads it on a program's first use,
   and the driver blocks there. Main now turns the check off for users (kept in dev and under
-  automation, so e2e still fails on shader errors). M4, buildings, `webdriver` off: noon → night
-  505 → 17 ms, noon → sunset 522 → 25 ms.
+  automation and with `?debug`, so e2e still fails on shader errors). M4, buildings, preset 2:
+  noon → night 505 → 17 ms, noon → sunset 522 → 25 ms (worst of 30 frames after a timeline
+  input event). `npm run perf` cannot show this: Playwright sets `navigator.webdriver`, which keeps
+  the check on; the numbers came from a probe launched with
+  `--disable-blink-features=AutomationControlled`. On GPUs where linking itself is slow
+  (`KHR_parallel_shader_compile`), the first use may still wait inside three's uniform and
+  attribute lookups; re-measure on an integrated GPU.
 
 - **MSAA on the canvas while post-processing is on.** The scene renders into atmosphere's HDR
   target, and the canvas only receives the final full-screen pass, so `antialias: true` on the
