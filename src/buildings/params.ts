@@ -25,8 +25,48 @@ export interface WindowStyle {
   winH: number;
 }
 
+const BASE_ARCHETYPES = [
+  'setbackTower',
+  'cylinderTower',
+  'bracedTower',
+  'cantileverTower',
+  'twinTower',
+  'officeSlab',
+  'sangga',
+  'apartmentSlab',
+  'hillHouse',
+  'warehouse',
+  'pavilion',
+] as const;
+
+/** Archetypes this module has dedicated geometry for. */
+export type BaseArchetype = Extract<Archetype, (typeof BASE_ARCHETYPES)[number]>;
+
+// Base forms map to themselves; archetypes from newer layouts without geometry yet draw as the
+// closest base form (SEOUL.md 4.3). A Map, so prototype keys like 'constructor' never match.
+const BASE_OF = new Map<string, BaseArchetype>([
+  ...BASE_ARCHETYPES.map((a) => [a, a] as const),
+  ['taperTower', 'setbackTower'],
+  ['mediaSlab', 'officeSlab'],
+  ['lowOffice', 'officeSlab'],
+  ['hanokRow', 'sangga'],
+  ['palaceHall', 'pavilion'],
+  ['brickWarehouse', 'sangga'],
+  ['showroomBox', 'sangga'],
+]);
+
+export function baseArchetype(spec: Pick<BuildingSpec, 'archetype' | 'h'>): BaseArchetype {
+  return BASE_OF.get(spec.archetype) ?? (spec.h >= LOD2_MIN_HEIGHT ? 'officeSlab' : 'sangga');
+}
+
+export type BaseSpec = BuildingSpec & { archetype: BaseArchetype };
+
+export function withBaseArchetype(spec: BuildingSpec): BaseSpec {
+  return { ...spec, archetype: baseArchetype(spec) };
+}
+
 export function windowStyle(
-  archetype: Archetype,
+  archetype: BaseArchetype,
   role: 'front' | 'side' | 'back' | 'south' | 'north' | 'gable',
   seed: number,
 ): WindowStyle {
@@ -128,32 +168,44 @@ export function faceRole(
   return 'side';
 }
 
-export const CHUNK_SIZE = 256;
 export const LOD_DISTANCES = [0, 380, 1100] as const;
 export const LOD_HYSTERESIS = 0.1;
 export const LOD2_MIN_HEIGHT = 40;
 
-export function chunkIndex(x: number, z: number, half = 1200): { i: number; j: number } {
-  const n = chunksPerAxis(half);
-  const idx = (v: number): number =>
-    Math.min(n - 1, Math.max(0, Math.floor((v + half) / CHUNK_SIZE)));
-  return { i: idx(x), j: idx(z) };
+export interface ChunkGrid {
+  halfX: number;
+  halfZ: number;
+  size: number;
 }
 
-// 2400 / 256 = 9.375: the 96 m remainder joins the outer chunks so at most 81 chunks exist.
-export function chunksPerAxis(half = 1200): number {
-  return Math.max(1, Math.floor((2 * half) / CHUNK_SIZE));
+export function chunkGrid(layout: { extentX: number; extentZ: number }, size: number): ChunkGrid {
+  return { halfX: layout.extentX / 2, halfZ: layout.extentZ / 2, size };
 }
 
-function chunkSpan(k: number, half: number): [number, number] {
-  const n = chunksPerAxis(half);
-  const lo = -half + k * CHUNK_SIZE;
-  return [lo, k === n - 1 ? half : lo + CHUNK_SIZE];
+// The remainder joins the outer chunk when under half a chunk (v2: 2400 / 256 = 9.375 → 9),
+// otherwise it becomes its own short chunk (v3: 2600 / 400 = 6.5 → 7).
+export function chunkCount(half: number, size: number): number {
+  return Math.max(1, Math.round((2 * half) / size));
 }
 
-export function chunkCenter(i: number, j: number, half = 1200): { x: number; z: number } {
-  const [x0, x1] = chunkSpan(i, half);
-  const [z0, z1] = chunkSpan(j, half);
+function chunkAxis(v: number, half: number, size: number): number {
+  const n = chunkCount(half, size);
+  return Math.min(n - 1, Math.max(0, Math.floor((v + half) / size)));
+}
+
+export function chunkIndex(x: number, z: number, grid: ChunkGrid): { i: number; j: number } {
+  return { i: chunkAxis(x, grid.halfX, grid.size), j: chunkAxis(z, grid.halfZ, grid.size) };
+}
+
+function chunkSpan(k: number, half: number, size: number): [number, number] {
+  const n = chunkCount(half, size);
+  const lo = -half + k * size;
+  return [lo, k === n - 1 ? half : lo + size];
+}
+
+export function chunkCenter(i: number, j: number, grid: ChunkGrid): { x: number; z: number } {
+  const [x0, x1] = chunkSpan(i, grid.halfX, grid.size);
+  const [z0, z1] = chunkSpan(j, grid.halfZ, grid.size);
   return { x: (x0 + x1) / 2, z: (z0 + z1) / 2 };
 }
 

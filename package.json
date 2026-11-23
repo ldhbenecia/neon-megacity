@@ -14,7 +14,8 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "shots": "tsx scripts/screenshot.ts",
-    "perf": "tsx scripts/perf.ts"
+    "perf": "tsx scripts/perf.ts",
+    "size": "tsx scripts/bundle-size.ts"
   },
   "keywords": [],
   "author": "",
