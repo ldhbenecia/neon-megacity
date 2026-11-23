@@ -176,11 +176,14 @@ function deckPath(
   to: number,
   y: (s: number) => number,
 ): V3[] {
-  // Rounded to the millimetre so a break point never lands a hair away from a 6 m station.
+  // Break points (ends, abutments where the ramp slope starts) win over 6 m stations near them:
+  // a station a few centimetres from a slope break makes a sliver ring whose sides flip.
   const r = (s: number): number => Math.round(s * 1000) / 1000;
-  const stations = new Set<number>([r(from), r(to)]);
-  for (let s = Math.ceil(from / 6) * 6; s < to; s += 6) stations.add(r(s));
-  for (const k of [-f.spanHalf, f.spanHalf]) if (k > from && k < to) stations.add(r(k));
+  const breaks = [from, to, ...[-f.spanHalf, f.spanHalf].filter((k) => k > from && k < to)];
+  const stations = new Set<number>(breaks.map(r));
+  for (let s = Math.ceil(from / 6) * 6; s < to; s += 6) {
+    if (breaks.every((k) => Math.abs(s - k) >= 1 || r(s) === r(k))) stations.add(r(s));
+  }
   return [...stations].sort((p, q) => p - q).map((s) => bridgePoint(f, s, 0, y(s)));
 }
 
