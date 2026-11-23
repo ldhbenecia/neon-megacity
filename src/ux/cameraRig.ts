@@ -43,7 +43,7 @@ export interface CameraRig {
   setFly(on: boolean): void;
   select(id: number | null, fly?: boolean): void;
   debug(): RigDebug;
-  buildingPoint(): { x: number; y: number } | null;
+  buildingPoint(): { x: number; y: number; id: number } | null;
   dispose(): void;
 }
 
@@ -808,7 +808,12 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
       const cx = r.left + r.width / 2;
       const cy = r.top + r.height / 2;
       pts.sort((a, b) => Math.hypot(a.x - cx, a.y - cy) - Math.hypot(b.x - cx, b.y - cy));
-      return pts.find((p) => pickAt(p.x, p.y)?.kind === 'building') ?? null;
+      for (const p of pts) {
+        if (document.elementFromPoint(p.x, p.y) !== canvas) continue;
+        const hit = pickAt(p.x, p.y);
+        if (hit?.kind === 'building') return { ...p, id: hit.id };
+      }
+      return null;
     },
     dispose() {
       window.removeEventListener('wheel', onWheel, { capture: true });

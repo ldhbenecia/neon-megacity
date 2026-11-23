@@ -6,7 +6,7 @@ import { createHud, type Hud } from './hud';
 import { reducedMotion } from './loader';
 import { createPerf, estimateMemory, type FrameStats, type Perf } from './perf';
 import { LAYOUT } from '../city/layout';
-import { camPose, DEFAULT_PRESET, rigPreset, safePose } from './presets';
+import { camPose, DEFAULT_PRESET, rigPreset, rigPresets, safePose } from './presets';
 import { parseUxQuery, poseInLimits } from './query';
 
 export { createLoader, nextFrame, type Loader } from './loader';
@@ -63,8 +63,11 @@ export function initUx(ctx: Ctx, opts: UxOptions): Ux {
       camera: (): RigDebug => rig.debug(),
       memory: () => estimateMemory(ctx),
       preset: (key: number) => {
+        if (!Number.isInteger(key) || key < 1 || key > rigPresets().length) {
+          throw new RangeError(`no rig preset ${key}`);
+        }
         const { position, target } = rigPreset(key);
-        return { position, target };
+        return { position: { ...position }, target: { ...target } };
       },
       buildingPoint: () => rig.buildingPoint(),
     };

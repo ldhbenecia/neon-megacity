@@ -52,10 +52,10 @@ declare global {
       stats(): HangangStats;
       camera(): HangangCamera;
       memory(): HangangMemory;
-      /** Pose of rig preset `key` (1..8) on the loaded layout. */
+      /** Copy of rig preset `key`'s pose on the loaded layout; throws outside 1..8. */
       preset(key: number): { position: HangangVec3; target: HangangVec3 };
-      /** A viewport point (client px) whose click picks a building, nearest the center first. */
-      buildingPoint(): { x: number; y: number } | null;
+      /** Uncovered canvas point (client px) whose click picks building `id`, center first. */
+      buildingPoint(): { x: number; y: number; id: number } | null;
     };
   }
 }

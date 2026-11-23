@@ -295,7 +295,7 @@ test.describe('camera rig', () => {
     await waitMode(page, 'flight');
     await waitMode(page, 'orbit');
     const c = await cam(page);
-    expect(c.selected).not.toBeNull();
+    expect(c.selected).toBe(at!.id);
     await expect(page.locator('#hud-card')).toBeVisible();
     await expect(page.locator('#hud-card [data-field="name"]')).not.toBeEmpty();
     await page.keyboard.press('Escape');
