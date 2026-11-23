@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type * as THREE from 'three';
-import { CITY, LAYOUT, sideNormal, type BuildingSpec } from '../src/city/layout';
+import { CITY, LAYOUT, sideNormal, type BuildingSpec, type Road } from '../src/city/layout';
 import { GeoBuilder } from '../src/buildings/builder';
 import {
   MAX_HALF_INT,
@@ -29,7 +29,13 @@ import {
   stairSteps,
   windowStyle,
 } from '../src/buildings/params';
-import { buildRoads, buildSidewalks, paveRect, puddleData } from '../src/buildings/roads';
+import {
+  buildRoads,
+  buildSidewalks,
+  crossingHalf,
+  paveRect,
+  puddleData,
+} from '../src/buildings/roads';
 import { alleyRetaining, stair } from '../src/buildings/street';
 import { rectOutline, shoelace, circleOutline } from '../src/buildings/shapes';
 import { WINDOW_LIT } from '../src/core/palette';
@@ -381,5 +387,30 @@ describe('roads and sidewalks', () => {
     const out = paveRect(block, [{ x: 0, z: 0, w: 120, d: 10, rotY: 0.3 }], 2)!;
     expect(out.x1).toBeCloseTo(62, 6);
     expect(paveRect(block, [], 4)).toBeNull();
+  });
+});
+
+describe('road crossings', () => {
+  const road = (ax: number, az: number, bx: number, bz: number, width: number): Road => ({
+    id: 0,
+    kind: 'street',
+    a: { x: ax, z: az },
+    b: { x: bx, z: bz },
+    width,
+    district: 'sangga',
+    zoneId: 'test',
+  });
+
+  it('keeps markings clear of a perpendicular road by its half width', () => {
+    expect(crossingHalf(road(0, 0, 100, 0, 10), road(50, -50, 50, 50, 12))).toBeCloseTo(7, 9);
+  });
+
+  it('widens the clear span for diagonal crossings', () => {
+    const r = road(0, 0, 100, 0, 10);
+    const diag = road(0, -50, 100, 50, 12);
+    const s = Math.SQRT1_2;
+    expect(crossingHalf(r, diag)).toBeCloseTo((6 + 5 * s) / s + 1, 9);
+    expect(crossingHalf(r, diag)).toBeGreaterThan(crossingHalf(r, road(50, -50, 50, 50, 12)));
+    expect(crossingHalf(r, road(0, -1, 100, 1, 12))).toBeLessThan(40);
   });
 });

@@ -5,17 +5,18 @@ import { SIDEWALK } from '../city/generate';
 import { toLocal } from '../city/math';
 import { GridHash, segmentBounds, type Bounds } from '../city/spatial';
 import type { Block, BuildingSpec, Layout, Road } from '../city/types';
+import { ROAD } from './colors';
 import { mergeIntervals } from './params';
 
 export const ROAD_Y = 0.03;
 export const SIDEWALK_H = 0.15;
 
-const ASPHALT = 0x16181a;
-const ALLEY = 0x24262a;
-const MARK_WHITE = 0x9a9c98;
-const MARK_YELLOW = 0x9a7a2a;
-const PAVEMENT = 0x2c2e30;
-const CURB = 0x3c3e3e;
+const ASPHALT = ROAD.asphalt;
+const ALLEY = ROAD.alley;
+const MARK_WHITE = ROAD.markWhite;
+const MARK_YELLOW = ROAD.markYellow;
+const PAVEMENT = ROAD.pavement;
+const CURB = ROAD.curb;
 
 class FlatBuilder {
   pos: number[] = [];
@@ -67,6 +68,19 @@ function crossT(a: Road['a'], b: Road['a'], c: Road['a'], d: Road['a']): number 
   return t;
 }
 
+/**
+ * Length of road `r` covered by crossing road `o` (each side of the crossing point). At an angle θ
+ * the other road's width spans w / sin θ along `r`, and `r`'s own half width adds hw · cot θ.
+ */
+export function crossingHalf(r: Road, o: Road): number {
+  const rl = Math.hypot(r.b.x - r.a.x, r.b.z - r.a.z) || 1;
+  const ol = Math.hypot(o.b.x - o.a.x, o.b.z - o.a.z) || 1;
+  const cross = ((r.b.x - r.a.x) * (o.b.z - o.a.z) - (r.b.z - r.a.z) * (o.b.x - o.a.x)) / (rl * ol);
+  const sin = Math.max(0.25, Math.abs(cross));
+  const cos = Math.sqrt(Math.max(0, 1 - sin * sin));
+  return (o.width / 2 + (r.width / 2) * cos) / sin + 1;
+}
+
 function strip(
   B: FlatBuilder,
   r: Road,
@@ -112,7 +126,7 @@ export function buildRoads(L: Layout): THREE.BufferGeometry {
       const o = roads[id];
       if (!o || o === r || o.kind === 'alley') continue;
       const t = crossT(r.a, r.b, o.a, o.b);
-      if (t !== null) crossings.push({ t, half: o.width / 2 + 1 });
+      if (t !== null) crossings.push({ t, half: crossingHalf(r, o) });
     }
     const iv = mergeIntervals(crossings, len);
     const free: [number, number][] = [];
