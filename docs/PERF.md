@@ -1,0 +1,77 @@
+# Performance
+
+Budget: `docs/ART_DIRECTION.md` 11. This file records measured numbers; update the snapshot table in
+every PR that changes performance, with before / after numbers in the PR body.
+
+## How to measure
+
+```sh
+npm run perf -- <label>                  # real GPU (Metal ANGLE), builds first
+npm run perf -- <label> --no-build --only=탑다운
+npm run perf -- <label> --quality=low    # the CI tier
+npm run perf -- <label> --swiftshader    # software GL, slow
+```
+
+`scripts/perf.ts` serves `dist/` on :4175 and opens headless Chromium at 1600×900, device scale 2
+(the app caps DPR at 1.5, so 2400×1350 pixels). For each preset 1, 2, 3, 5, 8 × time 0.0, 0.78,
+0.5 it boots a fresh page with `?stats`, waits for `__city.powered` and 60 warm-up frames, then:
+
+| column             | source                                                                                                          |
+| ------------------ | --------------------------------------------------------------------------------------------------------------- |
+| frame ms, fps      | `requestAnimationFrame` intervals over 240 frames, vsync off (`--disable-gpu-vsync --disable-frame-rate-limit`) |
+| calls, tris        | `renderer.info.render` over one whole frame (post passes included, `autoReset = false`)                         |
+| programs, textures | `renderer.info.programs.length`, `info.memory.textures`                                                         |
+| geo MB, tex MB     | `__hangang.memory()`: buffers and textures reachable from the scene graph (post targets not included)           |
+| update ms          | `__city.cpu`: moving average of each module's `update()` (main), summed                                         |
+| boot stages        | `performance.mark('boot:<stage>')` from the loader; a stage includes its `nextFrame()` (two rAF)                |
+| JS gzip            | `dist/assets/*.js`, gzip level 9                                                                                |
+
+Results also go to `perf-results/<label>.json` (gitignored). fps above 60 only says how much
+headroom is left: on a real display rAF is capped by vsync.
+
+## Snapshot: main 9614778 (lighting, infra, atmosphere, ux; terrain, buildings, neon are stubs)
+
+Apple M4 (Metal ANGLE), 2400×1350, full quality.
+
+| scenario               | frame ms (mean / p95) | fps | calls | tris   | programs | textures | geo MB | tex MB |
+| ---------------------- | --------------------- | --- | ----- | ------ | -------- | -------- | ------ | ------ |
+| 1 강변 히어로 · night  | 4.1 / 5.8             | 242 | 25    | 0.15 M | 28       | 19       | 6.7    | 3.3    |
+| 1 강변 히어로 · sunset | 3.7 / 5.0             | 272 | 25    | 0.15 M | 30       | 21       | 6.7    | 3.3    |
+| 1 강변 히어로 · noon   | 3.8 / 5.3             | 263 | 23    | 0.15 M | 30       | 21       | 6.7    | 3.3    |
+| 2 코어 상공 · night    | 3.9 / 5.4             | 255 | 25    | 0.15 M | 28       | 19       | 6.7    | 3.3    |
+| 2 코어 상공 · noon     | 3.6 / 5.2             | 275 | 23    | 0.15 M | 30       | 21       | 6.7    | 3.3    |
+| 3 등불가 거리 · night  | 4.1 / 5.9             | 241 | 25    | 0.15 M | 28       | 19       | 6.7    | 3.3    |
+| 5 별계단동 · night     | 4.0 / 5.2             | 250 | 26    | 0.15 M | 28       | 19       | 6.7    | 3.3    |
+| 8 탑다운 · night       | 4.6 / 5.9             | 219 | 25    | 0.14 M | 28       | 19       | 6.7    | 3.3    |
+| 8 탑다운 · noon        | 4.2 / 5.3             | 240 | 23    | 0.14 M | 30       | 21       | 6.7    | 3.3    |
+
+Other scenarios are within ±0.3 ms of these. Module `update()` total: ≤ 0.06 ms in every scenario.
+Boot to interactive (`loader.done()`): 370–510 ms; lighting init (4 PMREM bakes) 44–76 ms,
+infra init 44–57 ms, first frame 31–46 ms. JS bundle: 243.2 KB gzip.
+
+## Against the budget (ART_DIRECTION 11)
+
+| item                    | budget (target / ceiling) | now                         | note                                             |
+| ----------------------- | ------------------------- | --------------------------- | ------------------------------------------------ |
+| draw calls              | ≤ 220 / 300               | 23–26                       | buildings 90 + neon 60 still to come             |
+| triangles               | ≤ 1.2 M / 2.0 M           | 0.15 M                      |                                                  |
+| shader programs         | ≤ 35 / 50                 | 28–30                       | **already close to the target with 3 modules**   |
+| textures                | ≤ 24 / 40                 | 19–21                       | **close to the target**; post targets count here |
+| GPU memory              | ≤ 200 MB / 320 MB         | ~10 MB scene + 99 MB canvas | canvas = 2400×1350 × 8 B × 4 MSAA samples        |
+| module update CPU       | ≤ 1.5 / 3 ms              | ≤ 0.06 ms                   |                                                  |
+| boot → interactive (M1) | ≤ 3 s / 10 s              | 0.4–0.5 s                   |                                                  |
+| JS gzip                 | ≤ 260 / 400 KB            | 243.2 KB                    | **close to the target**                          |
+
+## Findings and candidates
+
+- **MSAA on the canvas while post-processing is on.** The scene renders into atmosphere's HDR
+  target, and the canvas only receives the final full-screen pass, so `antialias: true` on the
+  canvas costs 74 MB (3 of the 4 samples) and a resolve per frame for nothing. Candidate fix:
+  create the renderer without canvas MSAA when post is active (MSAA on the HDR target instead).
+- **Programs and textures.** 28–30 programs and 19–21 textures before buildings and neon arrive.
+  Modules should share materials and `onBeforeCompile` variants. The low tier (no post, rain,
+  clouds, searchlights, shadows) has 12 programs and 3 textures, so those features account for
+  16–18 programs and 16–18 textures.
+- **Cold shader cache.** The first run after a build showed first-frame 0.5–0.9 s (shaders linked
+  at the first draw); warm runs are 30–46 ms. Re-check once buildings and neon add programs.
+- **JS bundle.** 243 KB gzip, 17 KB under the target with half the modules still stubs.
