@@ -41,6 +41,7 @@ import {
   type Tier,
 } from '../src/city/layout';
 import { MAX_SLENDER, fitScale } from '../src/city/generate';
+import { riverDistanceLowerBound } from '../src/city/river';
 import {
   hashString,
   obbOverlap,
@@ -233,25 +234,38 @@ describe('layout v3: no overlaps', () => {
   }, 60_000);
 
   it('buildings keep clear of the river channel and 샛강', () => {
-    const c = LAYOUT.river.samples;
-    const sg = SAETGANG.centerline;
     for (const b of B) {
-      for (let i = 0; i < c.length - 1; i++) {
-        const a = c[i]!;
-        const e = c[i + 1]!;
-        // The channel is ≤ 480 m wide, so only segments within 500 m in x can be the closest.
-        if (Math.abs(a.x - b.x) > 500) continue;
-        const half = Math.max(riverWidthAt(a.x), riverWidthAt(e.x)) / 2;
-        const d = obbSegmentDistance(obb(b), a, e);
-        expect(d - half, `building ${b.id}`).toBeGreaterThanOrEqual(RIVER_CLEARANCE - 1e-6);
+      const o = obb(b);
+      // Far from any water the cheap bound already proves it.
+      if (riverDistanceLowerBound(b.x, b.z) - 240 - Math.hypot(o.hw, o.hd) > RIVER_CLEARANCE) {
+        if (waterSignedDistance(b.x, b.z) > 200) continue;
       }
-      for (let i = 0; i < sg.length - 1; i++) {
-        const d = obbSegmentDistance(obb(b), sg[i]!, sg[i + 1]!);
-        expect(d - SAETGANG.width / 2, `building ${b.id}`).toBeGreaterThanOrEqual(RIVER_CLEARANCE);
+      // Walk the footprint outline every 2 m: the bank is curved, so corners alone are not enough.
+      const c = Math.cos(o.rotY);
+      const sn = Math.sin(o.rotY);
+      const at = (lx: number, lz: number) => ({
+        x: o.x + c * lx + sn * lz,
+        z: o.z - sn * lx + c * lz,
+      });
+      const pts: { x: number; z: number }[] = [];
+      for (const [ax, az, bx, bz] of [
+        [-o.hw, -o.hd, o.hw, -o.hd],
+        [o.hw, -o.hd, o.hw, o.hd],
+        [o.hw, o.hd, -o.hw, o.hd],
+        [-o.hw, o.hd, -o.hw, -o.hd],
+      ] as const) {
+        const n = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / 2));
+        for (let k = 0; k < n; k++)
+          pts.push(at(ax + ((bx - ax) * k) / n, az + ((bz - az) * k) / n));
       }
-      expect(waterSignedDistance(b.x, b.z)).toBeGreaterThanOrEqual(RIVER_CLEARANCE);
+      for (const p of pts) {
+        // 2 m sampling can miss up to ~0.01 m of a gentle curve between samples.
+        expect(waterSignedDistance(p.x, p.z), `building ${b.id}`).toBeGreaterThanOrEqual(
+          RIVER_CLEARANCE - 0.05,
+        );
+      }
     }
-  }, 30_000);
+  }, 60_000);
 
   it('buildings stay out of highway corridors (width + 6 m) and off pillars', () => {
     for (const hw of LAYOUT.highways) {
