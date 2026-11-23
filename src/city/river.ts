@@ -371,7 +371,8 @@ export const MOUNTAINS: readonly Mountain[] = [
   { id: 'bugak', name: '북악산', peak: { x: -200, z: -1180 }, height: 205, radius: 320 },
   { id: 'inwang', name: '인왕산', peak: { x: -470, z: -1015 }, height: 200, radius: 240 },
   { id: 'achasan', name: '아차산', peak: { x: 1615, z: -740 }, height: 170, radius: 260 },
-  { id: 'wausan', name: '와우산', peak: { x: -1010, z: -560 }, height: 40, radius: 180 },
+  // North of 강변북로 (which runs ~ z -490 here), under the 홍대 alleys.
+  { id: 'wausan', name: '와우산', peak: { x: -1010, z: -700 }, height: 40, radius: 150 },
 ];
 
 export const TERRAIN = {

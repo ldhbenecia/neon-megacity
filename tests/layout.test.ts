@@ -21,6 +21,7 @@ import {
   buildingTop,
   buildingVolumes,
   bridgeDeckY,
+  MAX_DECK_THICKNESS,
   riverFrame,
   buildingFaces,
   buildingsInAabb,
@@ -78,11 +79,11 @@ describe('layout v3: determinism', () => {
       digest: digest(LAYOUT),
     }).toMatchInlineSnapshot(`
       {
-        "blocks": 1361,
-        "buildings": 6192,
-        "digest": "a405d258",
+        "blocks": 1359,
+        "buildings": 6186,
+        "digest": "7fc5a711",
         "roads": 1271,
-        "slots": 4062,
+        "slots": 4065,
       }
     `);
   });
@@ -708,6 +709,50 @@ describe('layout v3: highway curves', () => {
       for (let i = 1; i < s.length; i++)
         len += Math.hypot(s[i]!.x - s[i - 1]!.x, s[i]!.z - s[i - 1]!.z);
       expect(len, hw.id).toBeGreaterThan(200);
+    }
+  });
+
+  it('keeps elevated decks above the ground (slab underside ≥ 5 m over the terrain)', () => {
+    for (const hw of LAYOUT.highways.filter((h) => h.kind !== 'atGrade')) {
+      for (const p of highwaySamples(hw, 6)) {
+        if (Math.abs(p.x) > CITY.halfX || Math.abs(p.z) > CITY.halfZ) continue;
+        const under = p.y - MAX_DECK_THICKNESS - terrainHeight(p.x, p.z);
+        // Ramp ends sit on their parent deck, which this test covers anyway.
+        if (hw.kind === 'ramp' && p.y < 1) continue;
+        expect(under, `${hw.id} at ${Math.round(p.x)},${Math.round(p.z)}`).toBeGreaterThanOrEqual(
+          5,
+        );
+      }
+    }
+  });
+
+  it('lets ramps leave their parent decks instead of running inside another deck', () => {
+    const others = LAYOUT.highways.map((h) => ({ h, s: highwaySamples(h, 6) }));
+    for (const ramp of LAYOUT.highways.filter((h) => h.kind === 'ramp')) {
+      const s = highwaySamples(ramp, 6);
+      let len = 0;
+      const total = s.reduce(
+        (acc, p, i) => (i ? acc + Math.hypot(p.x - s[i - 1]!.x, p.z - s[i - 1]!.z) : 0),
+        0,
+      );
+      let buried = 0;
+      for (let i = 0; i < s.length; i++) {
+        const p = s[i]!;
+        if (i) len += Math.hypot(p.x - s[i - 1]!.x, p.z - s[i - 1]!.z);
+        // The first and last 60 m merge with the parent deck by design.
+        if (len < 60 || total - len < 60) continue;
+        const inside = others.some(
+          ({ h, s: o }) =>
+            h !== ramp &&
+            o.some(
+              (q) =>
+                Math.hypot(q.x - p.x, q.z - p.z) < (h.width + ramp.width) / 2 &&
+                Math.abs(q.y - p.y) < 4,
+            ),
+        );
+        if (inside) buried++;
+      }
+      expect(buried, ramp.id).toBe(0);
     }
   });
 

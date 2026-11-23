@@ -352,12 +352,6 @@ function bankPoints(side: -1 | 1, outside: number, y: number): Vec3[] {
     .map((p) => ({ x: p.x, y, z: p.z }));
 }
 
-/** Point on 강변북로 near x. */
-function gangbyeonAt(x: number): Vec3 {
-  const p = bankPoint(x, -1, GANGBYEON_OFFSET);
-  return { x: p.x, y: GANGBYEON_Y, z: p.z };
-}
-
 function bezierPoints(p0: Vec3, p1: Vec3, p2: Vec3, p3: Vec3, n = 12): Vec3[] {
   return Array.from({ length: n }, (_, i) => {
     const t = i / (n - 1);
@@ -396,45 +390,70 @@ const NAEBU_E: Vec3[] = [
   v3(900, -410),
 ];
 
+/** Control point of `parent` nearest to world x, with the unit direction to the next one. */
+function parentAt(parent: readonly Vec3[], x: number): { p: Vec3; dir: Vec2 } {
+  let k = 0;
+  for (let i = 1; i < parent.length - 1; i++) {
+    if (Math.abs((parent[i] as Vec3).x - x) < Math.abs((parent[k] as Vec3).x - x)) k = i;
+  }
+  const p = parent[k] as Vec3;
+  const n = parent[k + 1] as Vec3;
+  const len = Math.hypot(n.x - p.x, n.z - p.z);
+  return { p, dir: { x: (n.x - p.x) / len, z: (n.z - p.z) / len } };
+}
+
 /**
- * West ramp: leaves 강변북로 alongside it (like the v2 interchange ramps), drifts out to the
- * north over ~200 m while climbing, then swings up to the start of 내부순환로.
+ * Cubic ramp from a point on a parent deck to a point on another, tangent to both. `out` pushes
+ * the first / last third sideways (left of travel when positive) so the ramp leaves the parent
+ * deck's footprint quickly instead of running inside it.
  */
-/**
- * West ramp: leaves 강변북로 tangent to it at one of its own control points and swings north
- * into the start of 내부순환로 (one cubic, tangent to both decks).
- */
-function rampWest(): Vec3[] {
-  const parent = bankPoints(-1, GANGBYEON_OFFSET, GANGBYEON_Y);
-  const k = parent.reduce(
-    (b, p, i) => (Math.abs(p.x + 1800) < Math.abs((parent[b] as Vec3).x + 1800) ? i : b),
-    0,
-  );
-  const p0 = parent[k] as Vec3;
-  const next = parent[k + 1] as Vec3;
-  const gl = Math.hypot(next.x - p0.x, next.z - p0.z);
-  const end = NAEBU_W[0] as Vec3;
-  const dir = NAEBU_W[1] as Vec3;
-  const nl = Math.hypot(dir.x - end.x, dir.z - end.z);
+function tangentRamp(
+  a: Vec3,
+  da: Vec2,
+  outA: number,
+  b: Vec3,
+  db: Vec2,
+  outB: number,
+  reach: number,
+): Vec3[] {
+  const left = (d: Vec2): Vec2 => ({ x: d.z, z: -d.x });
+  const la = left(da);
+  const lb = left(db);
   return bezierPoints(
-    p0,
-    { x: p0.x + ((next.x - p0.x) / gl) * 130, y: 0, z: p0.z + ((next.z - p0.z) / gl) * 130 },
-    { x: end.x - ((dir.x - end.x) / nl) * 130, y: 0, z: end.z - ((dir.z - end.z) / nl) * 130 },
-    end,
+    a,
+    { x: a.x + da.x * reach + la.x * outA, y: 0, z: a.z + da.z * reach + la.z * outA },
+    { x: b.x - db.x * reach + lb.x * outB, y: 0, z: b.z - db.z * reach + lb.z * outB },
+    b,
     16,
   );
 }
 
+const gangbyeonPoints = (): Vec3[] => bankPoints(-1, GANGBYEON_OFFSET, GANGBYEON_Y);
+
+/** West ramp: off 강변북로 to its north (left of eastbound travel), up into 내부순환로. */
+function rampWest(): Vec3[] {
+  const { p, dir } = parentAt(gangbyeonPoints(), -1800);
+  const end = NAEBU_W[0] as Vec3;
+  const nx = (NAEBU_W[1] as Vec3).x - end.x;
+  const nz = (NAEBU_W[1] as Vec3).z - end.z;
+  const nl = Math.hypot(nx, nz);
+  return tangentRamp(p, dir, 80, end, { x: nx / nl, z: nz / nl }, 0, 110);
+}
+
+/** East ramp: from the end of 내부순환로 down onto 강변북로 eastbound, joining from its north. */
 function rampEast(): Vec3[] {
   const start = NAEBU_E[NAEBU_E.length - 1] as Vec3;
   const prev = NAEBU_E[NAEBU_E.length - 2] as Vec3;
-  const post = gangbyeonAt(1000);
-  const end = gangbyeonAt(1090);
-  return bezierPoints(
+  const sl = Math.hypot(start.x - prev.x, start.z - prev.z);
+  const { p, dir } = parentAt(gangbyeonPoints(), 1250);
+  return tangentRamp(
     start,
-    { x: start.x + (start.x - prev.x) * 0.6, y: 0, z: start.z + (start.z - prev.z) * 0.6 },
-    { ...post, z: post.z - 20 },
-    end,
+    { x: (start.x - prev.x) / sl, z: (start.z - prev.z) / sl },
+    0,
+    p,
+    dir,
+    80,
+    110,
   );
 }
 
