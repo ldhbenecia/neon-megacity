@@ -747,6 +747,8 @@ function draftsFor(zone: DistrictZone, lots: Lot[], rng: Rng): Draft[] {
     case 'riverside':
       for (const lot of lots) drafts.push(make(lot, 'pavilion', rng.range(3, 8)));
       break;
+    default:
+      throw new Error(`layout v2 generator does not support zone kind ${zone.kind}`);
   }
   return drafts;
 }
@@ -1100,6 +1102,7 @@ function makeRidges(seed: number): Ridge[] {
       fog: 0.35,
       baseY: -50,
       seed: rng.int(1, 1e6),
+      peaks: [],
     },
     {
       id: 'ridge-mid',
@@ -1110,6 +1113,7 @@ function makeRidges(seed: number): Ridge[] {
       fog: 0.6,
       baseY: -50,
       seed: rng.int(1, 1e6),
+      peaks: [],
     },
     {
       id: 'ridge-far',
@@ -1120,6 +1124,7 @@ function makeRidges(seed: number): Ridge[] {
       fog: 0.8,
       baseY: -50,
       seed: rng.int(1, 1e6),
+      peaks: [],
     },
   ];
 }
@@ -1170,8 +1175,16 @@ export function generateLayout(seed = 2077): Layout {
   return {
     seed,
     extent: EXTENT,
+    extentX: EXTENT,
+    extentZ: EXTENT,
     districts: [...ZONES],
-    river: { ...RIVER, centerline: RIVER.centerline.map((p) => ({ ...p })) },
+    river: {
+      ...RIVER,
+      centerline: RIVER.centerline.map((p) => ({ ...p })),
+      widths: [...RIVER.widths],
+      parkWidths: [...RIVER.parkWidths],
+      samples: RIVER.samples.map((p) => ({ ...p })),
+    },
     bridges,
     highways,
     ridges: makeRidges(seed),
@@ -1179,5 +1192,9 @@ export function generateLayout(seed = 2077): Layout {
     blocks: usedBlocks,
     buildings,
     slots,
+    islands: [],
+    mountains: [],
+    namedRoads: [],
+    landmarks: [],
   };
 }

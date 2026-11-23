@@ -10,6 +10,8 @@ import type { Layout } from './types';
 export const CITY = {
   /** Play area edge length (m); the map spans [-half, half] on X and Z. */
   extent: EXTENT,
+  extentX: EXTENT,
+  extentZ: EXTENT,
   half: MAP_HALF,
   /** Default layout seed. */
   seed: 2077,
@@ -26,6 +28,7 @@ export { generateLayout, SKYLINE_PEAK, MEGA_MIN_H, RIVER_CLEARANCE } from './gen
 export { ZONES, zoneAt, zoneById, districtAt, bandEdgeZ, RIVERSIDE_HALF } from './districts';
 export {
   RIVER,
+  EMBANK_SLOPE,
   TERRAIN,
   riverZ,
   riverFrame,

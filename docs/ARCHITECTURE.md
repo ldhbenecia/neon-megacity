@@ -41,6 +41,7 @@ Only the owner writes a field; everyone else reads it. Types and comments live i
 | `sunDirection`, `sunElevation` | lighting   | unit vector toward the sun, and its y                                   |
 | `dayFactor`, `nightFactor`     | lighting   | 0..1 smooth blend, sum to 1                                             |
 | `horizonColor`, `skyColor`     | lighting   | sky colors (palette)                                                    |
+| `horizonAntiColor`             | lighting   | horizon away from the sun (optional; set in lighting init)              |
 | `neonGain`                     | lighting   | sign brightness multiplier: night 1.0, sunset 0.7, day 0.3              |
 | `windowLitRatio`               | lighting   | city-wide lit window ratio; buildings applies per-district factors      |
 | `rain`                         | atmosphere | 0..1 rain intensity this frame, eased toward `rainTarget`               |
@@ -55,6 +56,19 @@ advance `timeOfDay` while locked, so the two never write it in the same frame.
 
 Colors and tuning numbers come from `src/core/palette.ts` (`paletteAt(t)`, `NEON`, `WINDOW_LIT`, `MATERIAL`, …);
 do not hard-code hex values in modules. Emissive materials use `applyEmissiveFog` from `src/core/shaders/emissiveFog.ts`.
+
+### Renderer and scene state owned by lighting
+
+Besides its `env` fields, lighting owns a few pieces of shared renderer / scene state. Others read them, never write them.
+
+| state                                                      | meaning                                                                                                                                                                    |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scene.environment`                                        | PMREM environment map (teal dome + neon panel band), baked once per palette key at init (4 bakes). `MeshStandardMaterial`s get it free                                     |
+| `scene.environmentIntensity`                               | palette `envMapIntensity` (night 0.6 → day 1.0)                                                                                                                            |
+| `renderer.toneMappingExposure`                             | palette `toneMappingExposure × env.powerOn`                                                                                                                                |
+| `renderer.shadowMap` (`type`, `autoUpdate`, `needsUpdate`) | `autoUpdate = false`; lighting sets `needsUpdate` when the shadow frustum moves or the sun moves ≥ 0.5° (≤ 1 Hz). Others set `castShadow` / `receiveShadow` on meshes only |
+
+The only moon disc is drawn by lighting's sky dome; atmosphere draws stars (and clouds) over it.
 
 ## URL query hooks
 
