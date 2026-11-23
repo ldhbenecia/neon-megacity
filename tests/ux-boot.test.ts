@@ -98,11 +98,13 @@ describe('adaptive DPR (11)', () => {
 
 describe('parseUxQuery', () => {
   it('parses ?pose= only when it has 6 finite numbers', () => {
-    expect(parseUxQuery('?pose=1,2,3,4,5,6').pose).toEqual({
-      position: { x: 1, y: 2, z: 3 },
+    expect(parseUxQuery('?pose=100,200,300,4,5,6').pose).toEqual({
+      position: { x: 100, y: 200, z: 300 },
       target: { x: 4, y: 5, z: 6 },
     });
-    expect(parseUxQuery('?pose=-10.5, 20 ,3,4,5,6').pose?.position.x).toBe(-10.5);
+    expect(parseUxQuery('?pose=-10.5, 200 ,300,4,5,6').pose?.position.x).toBe(-10.5);
+    expect(parseUxQuery('?pose=0,100,0,0,95,0').pose, 'closer than minDistance').toBeUndefined();
+    expect(parseUxQuery('?pose=0,3000,0,0,0,0').pose, 'beyond maxDistance').toBeUndefined();
     for (const bad of [
       '1,2,3,4,5',
       '1,2,3,4,5,6,7',

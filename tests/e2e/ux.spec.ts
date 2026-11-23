@@ -229,6 +229,8 @@ test('?pose= sets the initial camera pose', async ({ page }) => {
   expect(c.position.x).toBeCloseTo(300, 0);
   expect(c.position.y).toBeCloseTo(400, 0);
   expect(c.position.z).toBeCloseTo(700, 0);
+  expect(c.target.x).toBeCloseTo(0, 0);
+  expect(c.target.y).toBeCloseTo(80, 0);
   expect(c.target.z).toBeCloseTo(0, 0);
 });
 
