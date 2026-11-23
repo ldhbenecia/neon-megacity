@@ -1,6 +1,3 @@
-// Entry point. Owns renderer / camera / controls / loop and wires modules.
-// Module contract: see docs/ARCHITECTURE.md and src/core/types.ts.
-// Boot UX (loader, camera rig, HUD) lives in src/ux/; feature work never edits this file.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import GUI from 'lil-gui';
@@ -14,15 +11,10 @@ import * as buildings from './buildings/index';
 import * as infra from './infra/index';
 import * as neon from './neon/index';
 import * as atmosphere from './atmosphere/index';
-import { createLoader, initUx } from './ux/index';
+import { createLoader, initUx, nextFrame, parseUxQuery } from './ux/index';
 
-/**
- * Boot progress weights (ART_DIRECTION 9.2); all stages sum to 100:
- * setup (renderer, camera, layout) 5 + modules 77 + shader warm-up 15 + first frame 3.
- */
 const BOOT_WEIGHTS = { setup: 5, compile: 15, firstFrame: 3 } as const;
 
-/** Init and update order (ART_DIRECTION 13.1) with boot progress weights (9.2). */
 const MODULES: readonly (readonly [name: string, weight: number, module: CityModule])[] = [
   ['lighting', 8, lighting],
   ['terrain', 8, terrain],
@@ -33,112 +25,166 @@ const MODULES: readonly (readonly [name: string, weight: number, module: CityMod
 ];
 
 const query = parseQuery(window.location.search);
+const quality = query.quality ?? 'high';
 const loader = createLoader();
-loader.stage('setup', BOOT_WEIGHTS.setup);
 
-const container = document.getElementById('app');
-if (!container) throw new Error('#app container missing');
+async function boot(): Promise<void> {
+  loader.stage('setup', BOOT_WEIGHTS.setup);
+  await nextFrame();
 
-const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-// Exposure is owned by lighting (palette toneMappingExposure × env.powerOn).
-renderer.toneMappingExposure = NIGHT.toneMappingExposure;
-// Shadow map type/update policy is owned by the lighting module.
-renderer.shadowMap.enabled = true;
-container.appendChild(renderer.domElement);
+  const container = document.getElementById('app');
+  if (!container) throw new Error('#app container missing');
 
-const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.5, 8000);
+  const renderer = new THREE.WebGLRenderer({
+    antialias: quality === 'high',
+    powerPreference: 'high-performance',
+  });
+  // Pixel ratio is owned by ux/perf (adaptive, capped at 1.5).
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  // Exposure is owned by lighting (palette toneMappingExposure × env.powerOn).
+  renderer.toneMappingExposure = NIGHT.toneMappingExposure;
+  container.appendChild(renderer.domElement);
 
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-controls.dampingFactor = 0.06;
-controls.minDistance = CAMERA_LIMITS.minDistance;
-controls.maxDistance = CAMERA_LIMITS.maxDistance;
-controls.maxPolarAngle = CAMERA_LIMITS.maxPolarAngle; // never go below the horizon
-controls.screenSpacePanning = false; // right-drag pans along the ground plane
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.5, 8000);
 
-const gui = new GUI({ title: 'City Controls' });
-gui.close();
-if (query.nogui) gui.hide();
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.minDistance = CAMERA_LIMITS.minDistance;
+  controls.maxDistance = CAMERA_LIMITS.maxDistance;
+  controls.maxPolarAngle = CAMERA_LIMITS.maxPolarAngle;
+  controls.screenSpacePanning = false;
 
-const resizeHandlers: ((w: number, h: number) => void)[] = [];
-/** Shared context handed to every module. Initial env values are night palette defaults. */
-const ctx: Ctx = {
-  THREE,
-  scene,
-  camera,
-  renderer,
-  controls,
-  gui,
-  CITY,
-  LAYOUT,
-  env: {
-    timeOfDay: query.time ?? 0.9, // 0 = midnight, 0.25 = 6am, 0.5 = noon, 0.75 = 6pm
-    timeLocked: query.time !== undefined,
-    sunDirection: new THREE.Vector3(0, -1, 0),
-    sunElevation: -1,
-    dayFactor: 0,
-    nightFactor: 1,
-    horizonColor: new THREE.Color(NIGHT.horizonColor),
-    skyColor: new THREE.Color(NIGHT.skyColor),
-    neonGain: NIGHT.neonGain,
-    windowLitRatio: NIGHT.windowLitRatio,
-    rain: query.rain ?? 0.35,
-    wetness: 0.55,
-    fogColor: new THREE.Color(NIGHT.fogColor),
-    fogDensity: NIGHT.fogDensity,
-    powerOn: 1,
-    selectedBuilding: null,
-  },
-  render: () => renderer.render(scene, camera),
-  onResize: (fn) => {
-    resizeHandlers.push(fn);
-  },
-};
+  // lil-gui is the developer panel: only with ?debug (and never with ?nogui). Regular users get
+  // the ux controls (time scrubber, weather, camera) instead.
+  const gui = new GUI({ title: 'City Controls' });
+  gui.close();
+  if (query.nogui || !parseUxQuery(window.location.search).debug) gui.hide();
 
-const ux = initUx(ctx, query.cam ? { preset: query.cam } : {});
+  const resizeHandlers: ((w: number, h: number) => void)[] = [];
+  const resize = (): void => {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w, h);
+    for (const fn of resizeHandlers) fn(w, h);
+  };
+  // Registered right away: boot is async, the window may resize or rotate during compile.
+  window.addEventListener('resize', resize);
 
-// Order matters: lighting computes env first, others consume it in the same frame.
-const modules: CityModuleInstance[] = [];
-for (const [name, weight, mod] of MODULES) {
-  loader.stage(name, weight);
+  const ctx: Ctx = {
+    THREE,
+    scene,
+    camera,
+    renderer,
+    controls,
+    gui,
+    CITY,
+    LAYOUT,
+    env: {
+      timeOfDay: query.time ?? 0.9,
+      timeLocked: query.time !== undefined,
+      quality,
+      sunDirection: new THREE.Vector3(0, -1, 0),
+      sunElevation: -1,
+      dayFactor: 0,
+      nightFactor: 1,
+      horizonColor: new THREE.Color(NIGHT.horizonColor),
+      skyColor: new THREE.Color(NIGHT.skyColor),
+      neonGain: NIGHT.neonGain,
+      windowLitRatio: NIGHT.windowLitRatio,
+      rain: query.rain ?? 0.35,
+      rainTarget: query.rain ?? 0.35,
+      wetness: 0.55,
+      fogColor: new THREE.Color(NIGHT.fogColor),
+      fogDensity: NIGHT.fogDensity,
+      // Dark until the loader hands over (9.3); ux ramps it to 1.
+      powerOn: 0,
+      selectedBuilding: null,
+    },
+    render: () => renderer.render(scene, camera),
+    onResize: (fn) => {
+      resizeHandlers.push(fn);
+    },
+  };
+
+  const ux = initUx(ctx, {
+    ...(query.cam ? { cam: query.cam } : {}),
+    resize,
+  });
+  loader.detail('buildings', `건물 ${LAYOUT.buildings.length.toLocaleString('ko-KR')}동 조립 완료`);
+
+  // Order matters: lighting computes env first, others consume it in the same frame.
+  const modules: (readonly [name: string, instance: CityModuleInstance])[] = [];
+  for (const [name, weight, mod] of MODULES) {
+    loader.stage(name, weight);
+    await nextFrame();
+    try {
+      modules.push([name, mod.init(ctx)]);
+    } catch (err) {
+      loader.fail(name, err);
+      throw err;
+    }
+  }
+
+  loader.stage('compile', BOOT_WEIGHTS.compile);
+  await nextFrame();
   try {
-    modules.push(mod.init(ctx));
+    // The post chain (atmosphere) renders into an HDR target, a different program variant than the
+    // canvas: when it publishes `scene.userData.compile`, that warms up exactly what will be drawn.
+    const compileScene = (scene.userData as { compile?: () => void }).compile;
+    if (compileScene) compileScene();
+    else await renderer.compileAsync(scene, camera);
   } catch (err) {
-    loader.fail(name, err);
+    loader.fail('compile', err);
     throw err;
   }
+
+  loader.stage('first-frame', BOOT_WEIGHTS.firstFrame);
+
+  const timer = new THREE.Timer();
+  timer.connect(document);
+  // cpu: moving average of each module's update() in ms, read by `npm run perf`.
+  const cpu: Record<string, number> = {};
+  const cityState = { ready: true, frames: 0, powered: false, cpu };
+  let bootGone = false;
+  const frame = (timestamp?: number): void => {
+    timer.update(timestamp);
+    const raw = timer.getDelta();
+    const dt = Math.min(raw, 0.1);
+    const t = timer.getElapsed();
+
+    ux.frameStart();
+    ux.beforeUpdate(dt, t);
+    for (const [name, m] of modules) {
+      const start = performance.now();
+      m.update?.(dt, t);
+      cpu[name] = (cpu[name] ?? 0) * 0.95 + (performance.now() - start) * 0.05;
+    }
+    ux.afterUpdate(dt, t);
+    ctx.render();
+    ux.frameEnd(raw);
+
+    cityState.frames++;
+    // The boot overlay is removed once and never comes back: stop querying after that.
+    bootGone ||= !document.getElementById('boot');
+    cityState.powered = ux.powered && bootGone;
+    window.__city = cityState;
+  };
+  // Modules registered resize handlers during init: sync them to the current size once.
+  resize();
+  frame();
+  await nextFrame();
+
+  ux.powerOn();
+  renderer.setAnimationLoop(frame);
+  await loader.done();
 }
-loader.stage('compile', BOOT_WEIGHTS.compile);
-renderer.compile(scene, camera);
-loader.stage('first-frame', BOOT_WEIGHTS.firstFrame);
 
-window.addEventListener('resize', () => {
-  const w = window.innerWidth;
-  const h = window.innerHeight;
-  camera.aspect = w / h;
-  camera.updateProjectionMatrix();
-  renderer.setSize(w, h);
-  for (const fn of resizeHandlers) fn(w, h);
-});
-
-const timer = new THREE.Timer();
-timer.connect(document);
-let frames = 0;
-renderer.setAnimationLoop((timestamp) => {
-  timer.update(timestamp);
-  const dt = Math.min(timer.getDelta(), 0.1);
-  const t = timer.getElapsed();
-
-  ux.beforeUpdate(dt, t);
-  for (const m of modules) m.update?.(dt, t);
-  ux.afterUpdate(dt, t);
-
-  ctx.render();
-  frames++;
-  if (frames === 1) loader.done();
-  window.__city = { ready: true, frames };
+// Any failure (no WebGL, setup errors) turns the loader red instead of hanging on it.
+// loader.fail is idempotent, so stages that already reported are not logged twice.
+boot().catch((err: unknown) => {
+  loader.fail('boot', err);
 });

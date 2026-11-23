@@ -3,8 +3,10 @@
 //   ?cam=<name>  preset camera pose
 //   ?rain=0..1   initial rain intensity
 //   ?nogui       hide the lil-gui panel
+//   ?quality=low software-GL mode for CI (see Quality)
 
 import { LAYOUT, type Road } from '../city/layout';
+import type { Quality } from './types';
 
 /**
  * OrbitControls limits applied by main.ts. Every camera preset must satisfy them,
@@ -29,14 +31,14 @@ type Pose = CameraPose;
 export const STREET_FALLBACK: CameraPose = { position: [-760, 6, -360], target: [-700, 1, -470] };
 
 /**
- * Eye-level shot down a 등불가 (sangga) street, snapped onto the road center line nearest to
+ * Eye-level shot down a sangga street, snapped onto the road center line nearest to
  * ART_DIRECTION 8.4 preset 3 so it stays on a road whatever the grid angle is.
  */
 export function streetPose(roads: readonly Road[]): Pose | null {
   const want = { x: -760, z: -360 };
   let best: { road: Road; t: number; d: number } | null = null;
   for (const road of roads) {
-    if (road.zoneId !== 'sangga-n' || road.kind !== 'street') continue;
+    if (road.district !== 'sangga' || road.kind !== 'street') continue;
     const dx = road.b.x - road.a.x;
     const dz = road.b.z - road.a.z;
     const len2 = dx * dx + dz * dz;
@@ -91,6 +93,7 @@ export interface QueryOptions {
   time?: number;
   cam?: CameraPreset;
   rain?: number;
+  quality?: Quality;
   nogui: boolean;
 }
 
@@ -114,5 +117,7 @@ export function parseQuery(search: string): QueryOptions {
   if (rain !== undefined) opts.rain = rain;
   const cam = params.get('cam');
   if (isPreset(cam)) opts.cam = cam;
+  const quality = params.get('quality');
+  if (quality === 'low' || quality === 'high') opts.quality = quality;
   return opts;
 }

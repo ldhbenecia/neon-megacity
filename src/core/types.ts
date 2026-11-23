@@ -9,15 +9,27 @@ import type { BuildingFace, BuildingSpec, Layout } from '../city/types';
 export type * from '../city/types';
 
 /**
+ * Render quality tier. 'low' (`?quality=low`) is for software GL (CI SwiftShader): DPR 0.5, no MSAA,
+ * no shadows, one lazy 64 px PMREM bake, no post chain, rain, clouds or searchlights, flat water.
+ */
+export type Quality = 'high' | 'low';
+
+/**
  * Environment state shared by all modules. Each field has exactly one owner that writes it;
  * everyone else only reads. Owners write during their own `update`, so in frame order
  * (lighting → terrain → buildings → infra → neon → atmosphere) later modules see this frame's value.
  */
 export interface Env {
-  /** 0..1, 0 = midnight, 0.5 = noon. Owner: lighting. Initial value comes from `?time`. */
+  /**
+   * 0..1, 0 = midnight, 0.5 = noon. Owner: lighting. Initial value comes from `?time`.
+   * Exception: while `timeLocked` is true, ux writes it from the timeline scrubber; lighting
+   * does not advance it while locked, so the two never write in the same frame.
+   */
   timeOfDay: number;
   /** When true (e.g. `?time=` was given), lighting must not advance `timeOfDay`. Owner: ux (set at boot). */
   timeLocked: boolean;
+  /** Render quality tier from `?quality=` (default 'high'). Owner: ux (set at boot, never changes). */
+  quality: Quality;
   /** Unit vector from the ground toward the sun. Owner: lighting. */
   sunDirection: THREE.Vector3;
   /** sin(sun elevation) == sunDirection.y. Owner: lighting. */
@@ -28,12 +40,23 @@ export interface Env {
   /** Sky horizon / zenith colors (palette 3.1). Owner: lighting. */
   horizonColor: THREE.Color;
   skyColor: THREE.Color;
+  /**
+   * Horizon color away from the sun (palette `horizonAntiSun`; teal at sunset, = horizonColor at
+   * night and noon). Created and written by lighting during its init, so it is undefined only
+   * before lighting runs. Owner: lighting.
+   */
+  horizonAntiColor?: THREE.Color;
   /** Emissive brightness multiplier for signs: night 1.0, sunset 0.7, day 0.3 (palette). Owner: lighting. */
   neonGain: number;
   /** City-wide lit-window ratio 0..1 (night median 0.32); buildings multiplies per district. Owner: lighting. */
   windowLitRatio: number;
   /** 0..1 rain intensity. Owner: atmosphere. Initial value comes from `?rain`. */
   rain: number;
+  /**
+   * 0..1 rain intensity the user asked for (weather buttons; initial value from `?rain`).
+   * Owner: ux. Atmosphere eases `rain` toward it.
+   */
+  rainTarget: number;
   /** 0..1 surface wetness (rises with rain, decays to 0.55). Owner: atmosphere. */
   wetness: number;
   /** Final fog color after rain / scattering adjustments. Owner: atmosphere (base value from palette). */

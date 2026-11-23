@@ -1,0 +1,216 @@
+import { WINDOW_LIT } from '../core/palette';
+import { createRng } from '../core/random';
+import { sideNormal } from '../city/math';
+import type { Archetype, BuildingSpec, DistrictKind, Side } from '../city/types';
+
+// Shader type ids decoded in facadeMaterial.ts.
+export const FACADE = {
+  plain: 0,
+  curtain: 1,
+  punched: 2,
+  aptSouth: 3,
+  aptCorridor: 4,
+  emissive: 5,
+  dong: 6,
+  corrugated: 7,
+  awning: 8,
+} as const;
+
+export type FacadeType = (typeof FACADE)[keyof typeof FACADE];
+
+export interface WindowStyle {
+  type: FacadeType;
+  cellW: number;
+  winW: number;
+  winH: number;
+}
+
+export function windowStyle(
+  archetype: Archetype,
+  role: 'front' | 'side' | 'back' | 'south' | 'north' | 'gable',
+  seed: number,
+): WindowStyle {
+  switch (archetype) {
+    case 'setbackTower':
+    case 'cylinderTower':
+    case 'bracedTower':
+    case 'cantileverTower':
+    case 'twinTower':
+      return { type: FACADE.curtain, cellW: 1.5, winW: 1.4, winH: 2.4 };
+    case 'officeSlab':
+      return seed % 2 === 0
+        ? { type: FACADE.curtain, cellW: 1.5, winW: 1.4, winH: 2.4 }
+        : { type: FACADE.punched, cellW: 2.4, winW: 1.8, winH: 1.6 };
+    case 'sangga':
+      if (role === 'side') return { type: FACADE.plain, cellW: 3, winW: 0, winH: 0 };
+      return role === 'back'
+        ? { type: FACADE.punched, cellW: 4.2, winW: 1.2, winH: 1.2 }
+        : { type: FACADE.punched, cellW: 2.6, winW: 1.6, winH: 1.6 };
+    case 'apartmentSlab':
+      if (role === 'south') return { type: FACADE.aptSouth, cellW: 6, winW: 2.6, winH: 2 };
+      if (role === 'north') return { type: FACADE.aptCorridor, cellW: 3, winW: 0.9, winH: 0.9 };
+      return { type: FACADE.plain, cellW: 3, winW: 0, winH: 0 };
+    case 'hillHouse':
+      return { type: FACADE.punched, cellW: 2.6, winW: 0.9, winH: 1.1 };
+    case 'warehouse':
+      return { type: FACADE.corrugated, cellW: 4, winW: 3, winH: 0.8 };
+    case 'pavilion':
+      return { type: FACADE.plain, cellW: 3, winW: 0, winH: 0 };
+  }
+}
+
+export function fitCells(width: number, target: number): { count: number; cellW: number } {
+  const count = Math.max(1, Math.round(width / target));
+  return { count, cellW: width / count };
+}
+
+export const NIGHT_MEDIAN_LIT = 0.32;
+
+export function districtLitFactor(d: DistrictKind): number {
+  const n = WINDOW_LIT.night;
+  const r =
+    d === 'core' || d === 'sangga' || d === 'apartment' || d === 'hillside' || d === 'midtown'
+      ? n[d]
+      : ([0.1, 0.16] as const);
+  return (r[0] + r[1]) / 2 / NIGHT_MEDIAN_LIT;
+}
+
+export function bandLevels(
+  y0: number,
+  y1: number,
+  windowStart: number,
+  floorH: number,
+  every: number,
+): number[] {
+  const out: number[] = [];
+  const step = floorH * every;
+  for (let y = windowStart + step; y < y1 - floorH * 1.5; y += step) {
+    if (y > y0 + 1.5) out.push(y);
+  }
+  return out;
+}
+
+export function finOffsets(width: number, spacing: number): number[] {
+  const usable = width - 2;
+  if (usable <= 0) return [];
+  const n = Math.floor(usable / spacing) + 1;
+  const start = -((n - 1) * spacing) / 2;
+  return Array.from({ length: n }, (_, i) => start + i * spacing);
+}
+
+export function braceLevels(y0: number, y1: number, bay = 16): number[] {
+  const h = y1 - y0;
+  const n = Math.max(1, Math.round(h / bay));
+  return Array.from({ length: n + 1 }, (_, i) => y0 + (h * i) / n);
+}
+
+export function columnOffsets(width: number, maxSpan = 24): number[] {
+  const n = Math.max(1, Math.ceil(width / maxSpan));
+  return Array.from({ length: n + 1 }, (_, i) => -width / 2 + (width * i) / n);
+}
+
+export const sideNormalXZ: (side: Side, rotY: number) => { x: number; z: number } = sideNormal;
+
+export const OPPOSITE: Record<Side, Side> = { px: 'nx', nx: 'px', pz: 'nz', nz: 'pz' };
+
+export function faceRole(
+  spec: Pick<BuildingSpec, 'archetype' | 'front' | 'rotY' | 'w' | 'd'>,
+  side: Side,
+): 'front' | 'side' | 'back' | 'south' | 'north' | 'gable' {
+  if (spec.archetype === 'apartmentSlab') {
+    const longIsX = spec.w >= spec.d;
+    const isLong = longIsX ? side === 'pz' || side === 'nz' : side === 'px' || side === 'nx';
+    if (!isLong) return 'gable';
+    return sideNormalXZ(side, spec.rotY).z >= 0 ? 'south' : 'north';
+  }
+  if (side === spec.front) return 'front';
+  if (side === OPPOSITE[spec.front]) return 'back';
+  return 'side';
+}
+
+export const CHUNK_SIZE = 256;
+export const LOD_DISTANCES = [0, 380, 1100] as const;
+export const LOD_HYSTERESIS = 0.1;
+export const LOD2_MIN_HEIGHT = 40;
+
+export function chunkIndex(x: number, z: number, half = 1200): { i: number; j: number } {
+  const n = chunksPerAxis(half);
+  const idx = (v: number): number =>
+    Math.min(n - 1, Math.max(0, Math.floor((v + half) / CHUNK_SIZE)));
+  return { i: idx(x), j: idx(z) };
+}
+
+// 2400 / 256 = 9.375: the 96 m remainder joins the outer chunks so at most 81 chunks exist.
+export function chunksPerAxis(half = 1200): number {
+  return Math.max(1, Math.floor((2 * half) / CHUNK_SIZE));
+}
+
+function chunkSpan(k: number, half: number): [number, number] {
+  const n = chunksPerAxis(half);
+  const lo = -half + k * CHUNK_SIZE;
+  return [lo, k === n - 1 ? half : lo + CHUNK_SIZE];
+}
+
+export function chunkCenter(i: number, j: number, half = 1200): { x: number; z: number } {
+  const [x0, x1] = chunkSpan(i, half);
+  const [z0, z1] = chunkSpan(j, half);
+  return { x: (x0 + x1) / 2, z: (z0 + z1) / 2 };
+}
+
+// Mirrors THREE.LOD.update without hysteresis.
+export function lodLevel(distance: number): 0 | 1 | 2 {
+  if (distance >= LOD_DISTANCES[2]) return 2;
+  if (distance >= LOD_DISTANCES[1]) return 1;
+  return 0;
+}
+
+export function keepInLod2(spec: Pick<BuildingSpec, 'h' | 'archetype'>): boolean {
+  return spec.h >= LOD2_MIN_HEIGHT;
+}
+
+export function cylinderSegments(level: 0 | 1 | 2): number {
+  return level === 0 ? 48 : level === 1 ? 16 : 8;
+}
+
+export function seeded01(seed: number): number {
+  return createRng(seed).next();
+}
+
+export function mixHex(a: number, b: number, t: number): number {
+  const ch = (s: number): number => {
+    const x = (a >> s) & 255;
+    const y = (b >> s) & 255;
+    return Math.round(x + (y - x) * t) & 255;
+  };
+  return (ch(16) << 16) | (ch(8) << 8) | ch(0);
+}
+
+export function scaleHex(a: number, k: number): number {
+  const ch = (s: number): number => Math.min(255, Math.round(((a >> s) & 255) * k));
+  return (ch(16) << 16) | (ch(8) << 8) | ch(0);
+}
+
+export function stairSteps(
+  length: number,
+  rise: number,
+  tread = 0.3,
+): { n: number; riser: number } {
+  const n = Math.max(1, Math.round(length / tread));
+  return { n, riser: rise / n };
+}
+
+export function mergeIntervals(
+  crossings: readonly { t: number; half: number }[],
+  length: number,
+): [number, number][] {
+  const iv = crossings
+    .map((c): [number, number] => [c.t - c.half / length, c.t + c.half / length])
+    .sort((p, q) => p[0] - q[0]);
+  const out: [number, number][] = [];
+  for (const [a, b] of iv) {
+    const last = out[out.length - 1];
+    if (last && a <= last[1]) last[1] = Math.max(last[1], b);
+    else out.push([a, b]);
+  }
+  return out;
+}

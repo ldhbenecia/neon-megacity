@@ -1,16 +1,21 @@
 import { defineConfig, devices } from '@playwright/test';
 import { SWIFTSHADER_ARGS } from './tests/e2e/helpers';
 
-const PORT = 4173;
+// E2E_PORT lets several local worktrees run e2e at the same time.
+const PORT = Number(process.env.E2E_PORT ?? 4173);
 
 export default defineConfig({
   testDir: 'tests/e2e',
-  timeout: 60_000,
+  timeout: process.env.CI ? 360_000 : 90_000,
+  // UI text (clock, HUD) updates in the frame loop; one SwiftShader frame on a CI runner can take
+  // seconds, so the 5 s default is too tight there.
+  expect: { timeout: process.env.CI ? 30_000 : 5_000 },
   retries: process.env.CI ? 1 : 0,
+  workers: process.env.CI ? 2 : undefined,
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
   use: {
     baseURL: `http://localhost:${PORT}/`,
-    viewport: { width: 1280, height: 720 },
+    viewport: process.env.CI ? { width: 960, height: 540 } : { width: 1280, height: 720 },
     trace: 'retain-on-failure',
   },
   projects: [

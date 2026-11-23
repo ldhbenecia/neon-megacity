@@ -23,7 +23,7 @@ Read `docs/ARCHITECTURE.md` before editing. Summary:
 - `src/city/layout.ts` (layout v2, types in `src/city/types.ts`) is the single source of truth for zones, river, bridges, highways, roads and building specs/tiers. Never place objects using hard-coded coordinates that bypass it.
 - `ctx.env` fields have a single owner (see ARCHITECTURE.md and `src/core/types.ts`). Only the owner writes a field; everyone else reads it.
 - `env.timeLocked` is set at boot when `?time=` is given; lighting must then not advance `env.timeOfDay`.
-- URL query hooks (`src/core/query.ts`): `?time=0..1`, `?cam=overview|street|core|topdown|skyline` (poses via `cameraPreset(name)`), `?rain=0..1`, `?nogui`.
+- URL query hooks (`src/core/query.ts`): `?time=0..1`, `?cam=overview|street|core|topdown|skyline` (poses via `cameraPreset(name)`), `?rain=0..1`, `?nogui`, `?quality=low` (CI tier, `env.quality`).
 - `window.__city = { ready, frames }` is updated every frame; e2e tests and the screenshot script wait on it. Don't remove it.
 - Colors and exposure constants come from `src/core/palette.ts`; visual targets are in `docs/ART_DIRECTION.md`.
 
@@ -43,7 +43,10 @@ Read `docs/ARCHITECTURE.md` before editing. Summary:
 - Pure logic (layout, time-of-day math, placement) lives in side-effect-free functions with unit tests in `tests/`.
 - Use only current three r0.187 APIs. No deprecated APIs (`Clock` → `Timer`, `outputEncoding` → `outputColorSpace`, `mergeBufferGeometries` → `mergeGeometries`, set `colorSpace` on color textures).
 - No external asset files or CDNs: all textures are procedural (canvas / shaders).
-- No real brands, logos, or names/characters/places from existing games or anime. Invent fictional names.
+- 실제 서울 지리(지명, 대교, 지역구, 산)는 사용한다. 실존 브랜드·기업 로고·상호 금지. 실존 건물은 복제하지 않고 실루엣만 연상. 기존 게임·애니메이션의 이름·캐릭터·장소 금지. 한자 금지. (`docs/SEOUL.md`)
+- 코드 주석은 코드만으로 알 수 없는 필수 정보만 쓴다.
+- 고층 미디어(거대 스크린, 링 광고판, 옥상 크라운, 가상 기업 로고)는 영어, 저층 간판은 한글로 쓴다. 아파트 단지명은 고층이어도 한글로 쓴다.
+- `env.quality`를 읽는 품질 분기 코드는 어느 모듈 폴더에 있든 성능 작업을 맡은 쪽이 소유한다. 필드 값 자체는 ux가 부팅 때 쓴다.
 - Performance budget: 60fps on a laptop. Prefer `InstancedMesh`, merged geometry, texture atlases, and shader-uniform animation over per-object CPU work. ≤ 8 real PointLights total.
 - Deterministic randomness only via `createRng` from `src/core/random.ts`.
 - Dispose GPU resources you create in `dispose()`.
@@ -52,7 +55,7 @@ Read `docs/ARCHITECTURE.md` before editing. Summary:
 
 - Conventional commits (`feat:`, `fix:`, `refactor:`, `chore:`, `docs:`); one logical change per commit. Type/scope in English, subject and body in Korean (e.g. `ci: CI 워크플로 추가`). PR titles follow the same format.
 - Visual changes are verified with screenshots (`npm run shots -- <label>`, script `scripts/screenshot.ts`, output in `screenshots/<label>/`, gitignored), not by reading code alone.
-- CI (`.github/workflows/ci.yml`) runs format:check, lint, typecheck, unit tests, build and e2e on every PR and push to main.
+- CI (`.github/workflows/ci.yml`) runs format:check, lint, typecheck, unit tests and build on every PR and push to main. e2e also runs, except on PRs that change only docs (`docs/**`, `*.md`). e2e boots with `?quality=low` because CI has no GPU (SwiftShader); one scenario runs at full quality to check the performance budget. In e2e, wait on frames or conditions (`waitFrames`, `holdUntil`, `waitMode`), never on wall-clock time.
 - Autofix (`autofix.yml`) pushes `style: 린트 및 포맷 자동 수정` commits as github-actions[bot] to same-repo PR branches, then dispatches CI for them. Pull before pushing again.
 - Pages (`pages.yml`) deploys `main` after CI passes on it (`workflow_run`) to https://ldhbenecia.github.io/neon-megacity/ with `BASE_PATH=/neon-megacity/`; locally `base` stays `./`.
 - Never force-push, never rewrite history, never read `.env` or credentials.

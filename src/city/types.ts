@@ -1,4 +1,4 @@
-// Layout-only data types (layout v2, see docs/ART_DIRECTION.md 2.6).
+// Layout-only data types (layout v2, see docs/ART_DIRECTION.md 2.6; v3 fields from docs/SEOUL.md 7.1).
 // Re-exported from src/core/types.ts. Every field is produced by src/city/layout.ts;
 // feature modules only read them.
 //
@@ -20,8 +20,23 @@ export interface Vec3 {
   z: number;
 }
 
+/** v2 kinds plus the v3 Seoul kinds (docs/SEOUL.md 4.3); v2 layouts only produce the first seven. */
 export type DistrictKind =
-  'core' | 'midtown' | 'sangga' | 'hillside' | 'apartment' | 'industrial' | 'riverside';
+  | 'core'
+  | 'midtown'
+  | 'sangga'
+  | 'hillside'
+  | 'apartment'
+  | 'industrial'
+  | 'riverside'
+  | 'megacore'
+  | 'corridor'
+  | 'oldtown'
+  | 'palace'
+  | 'brick'
+  | 'nightlife'
+  | 'showroom'
+  | 'park';
 
 export type RoadKind = 'arterial' | 'street' | 'alley' | 'stair';
 
@@ -47,6 +62,21 @@ export interface DistrictZone {
   /** Width of the zone's grid roads (m) and their kind. */
   roadWidth: number;
   roadKind: RoadKind;
+  /** Name shown in English UI: romanized for real places in v3 (e.g. 'YEOUIDO'). */
+  nameEn: string;
+  /** Height band (m): most buildings in [min, max], `tallShare` of them up to `tallMax`. */
+  heights: ZoneHeights;
+  /** Built-area ratio target (0..1). */
+  coverage: number;
+  /** Multiplier on env.windowLitRatio for this zone. */
+  litScale: number;
+}
+
+export interface ZoneHeights {
+  min: number;
+  max: number;
+  tallShare: number;
+  tallMax: number;
 }
 
 export interface River {
@@ -63,12 +93,75 @@ export interface River {
   parkY: number;
   /** Riverside district band outside each bank (m). */
   bandWidth: number;
+  /** Bank-to-bank width at each centerline point (v3 varies it; v2 = `width` everywhere). */
+  widths: number[];
+  /** Park strip width at each centerline point (v2 = `parkWidth` everywhere). */
+  parkWidths: number[];
+  /** Dense resampling of the centerline for v3 distance queries (v2: a copy of the centerline; v2 queries still use `centerline`). */
+  samples: Vec2[];
 }
 
-export type BridgeKind = 'arch' | 'truss' | 'doubleDeck';
+export type IslandId = 'yeouido' | 'bamseom' | 'nodeul' | 'seorae' | 'seonyu';
+export type IslandKind = 'land' | 'marsh' | 'culture' | 'park';
+
+export interface Island {
+  id: IslandId;
+  name: string;
+  kind: IslandKind;
+  polygon: Vec2[];
+  /** Ground height of the island top. */
+  y: number;
+}
+
+export interface Mountain {
+  id: string;
+  name: string;
+  peak: Vec2;
+  /** Peak terrain height (real elevation × 0.6, SEOUL.md 5.1). */
+  height: number;
+  radius: number;
+}
+
+export interface NamedRoad {
+  id: string;
+  /** Real road name (Korean), e.g. '테헤란로'. */
+  name: string;
+  points: Vec2[];
+  width: number;
+}
+
+export type LandmarkId =
+  'namsan-mast' | 'jamsil-blade' | 'yongsan-apex' | 'yeouido-gold' | 'palace';
+
+export interface Landmark {
+  id: LandmarkId;
+  /** Building that carries the landmark, or null for non-building landmarks (mast, palace). */
+  buildingId: number | null;
+  x: number;
+  z: number;
+  h: number;
+}
+
+/** v2 kinds plus the v3 kinds (SEOUL.md 3.3). Renderers must draw unknown kinds as a plain girder. */
+export type BridgeKind =
+  'arch' | 'truss' | 'doubleDeck' | 'deckArch' | 'tiedArch' | 'girder' | 'cableStayed';
+
+export type BridgeMotif =
+  | 'cyanRib'
+  | 'whiteArch'
+  | 'redArch'
+  | 'textRail'
+  | 'railTruss'
+  | 'fountain'
+  | 'orangeChord'
+  | 'subwayDeck'
+  | 'redBand'
+  | 'ringPylon';
 
 export interface Bridge {
   id: string;
+  /** Display name (Korean); v3 uses the real bridge name. */
+  name: string;
   kind: BridgeKind;
   /** Abutments on the north (a) and south (b) bank edges; the span a→b is perpendicular to the river. */
   a: Vec2;
@@ -88,6 +181,13 @@ export interface Bridge {
   lanes: number;
   /** Arch crown height for 'arch', truss height for 'truss' (m above the deck). */
   structureH: number;
+  /** Spans between the abutments (piers = spans - 1), for every kind. */
+  spans: number;
+  rail: boolean;
+  /** Island the span crosses. */
+  island?: IslandId;
+  /** Lighting motif: infra draws the static part, neon the animated part. */
+  motif: BridgeMotif;
 }
 
 export type HighwayKind = 'elevated' | 'atGrade' | 'ramp';
@@ -108,6 +208,14 @@ export interface Highway {
   corridorHalf: number;
 }
 
+export interface RidgePeak {
+  /** Bearing from the map center, radians (rotY convention). */
+  angle: number;
+  height: number;
+  /** Angular half width (radians). */
+  width: number;
+}
+
 export interface Ridge {
   id: 'ridge-near' | 'ridge-mid' | 'ridge-far';
   radius: number;
@@ -119,6 +227,8 @@ export interface Ridge {
   fog: number;
   /** Bottom of the vertical strip. */
   baseY: number;
+  /** Named peaks stamped onto the profile (v3); empty in v2. */
+  peaks: RidgePeak[];
 }
 
 export interface Road {
@@ -238,6 +348,9 @@ export interface BuildingSpec {
     complex?: string;
     corp?: string;
     name: string;
+    /** Wall side covered by a full-height media screen (v3 'corridor'). */
+    mediaFace?: Side;
+    landmark?: LandmarkId;
   };
 }
 
@@ -278,8 +391,11 @@ export interface StreetSlot {
 
 export interface Layout {
   seed: number;
-  /** Play area edge length (2400). The map spans [-extent/2, extent/2] on X and Z. */
+  /** max(extentX, extentZ), kept for v2 callers. */
   extent: number;
+  /** Play area size on X and Z (v2: 2400 × 2400). The map spans [-extentX/2, extentX/2] etc. */
+  extentX: number;
+  extentZ: number;
   districts: DistrictZone[];
   river: River;
   bridges: Bridge[];
@@ -290,4 +406,9 @@ export interface Layout {
   /** Index = id. */
   buildings: BuildingSpec[];
   slots: StreetSlot[];
+  /** v3 additions; empty in v2. */
+  islands: Island[];
+  mountains: Mountain[];
+  namedRoads: NamedRoad[];
+  landmarks: Landmark[];
 }
