@@ -105,7 +105,7 @@ export interface EnvMaps {
   dispose(): void;
 }
 
-export function createEnvMaps(renderer: THREE.WebGLRenderer): EnvMaps {
+export function createEnvMaps(renderer: THREE.WebGLRenderer, size = 256): EnvMaps {
   const pmrem = new THREE.PMREMGenerator(renderer);
   const cache = new Map<EnvKey, THREE.WebGLRenderTarget>();
 
@@ -128,7 +128,7 @@ export function createEnvMaps(renderer: THREE.WebGLRenderer): EnvMaps {
     const panelGeo = buildPanels(key);
     const panelMat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
     scene.add(new THREE.Mesh(domeGeo, domeMat), new THREE.Mesh(panelGeo, panelMat));
-    const target = pmrem.fromScene(scene, 0.02, 0.1, DOME_RADIUS * 2);
+    const target = pmrem.fromScene(scene, 0.02, 0.1, DOME_RADIUS * 2, { size });
     domeGeo.dispose();
     domeMat.dispose();
     panelGeo.dispose();

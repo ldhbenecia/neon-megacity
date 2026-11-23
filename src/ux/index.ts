@@ -68,7 +68,6 @@ export function initUx(ctx: Ctx, opts: UxOptions): Ux {
     powerOn() {
       ctx.env.powerOn = 0;
       power = { t: 0 };
-      if (!deterministic) hud.showHint();
     },
     beforeUpdate(dt, t) {
       if (power) {
@@ -78,6 +77,9 @@ export function initUx(ctx: Ctx, opts: UxOptions): Ux {
         if (x >= 1) {
           power = null;
           powered = true;
+          // The hint's 7 s start once the city is lit: on a slow device the ramp itself can take
+          // seconds, and the user would otherwise never see the hint.
+          if (!deterministic) hud.showHint();
         }
       }
       rig.update(dt, t);
