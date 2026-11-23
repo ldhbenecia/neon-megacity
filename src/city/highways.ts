@@ -3,7 +3,14 @@
 // evaluate exactly the same path from the same control points.
 import { CatmullRomCurve3, Vector3 } from 'three';
 import { pointSegmentDistance } from './math';
-import { HALF_X, HALF_Z, riverFrame, riverOffset, riverSignedDistance, riverWidthAt } from './river';
+import {
+  HALF_X,
+  HALF_Z,
+  riverFrame,
+  riverOffset,
+  riverSignedDistance,
+  riverWidthAt,
+} from './river';
 import type {
   Bridge,
   BridgeKind,

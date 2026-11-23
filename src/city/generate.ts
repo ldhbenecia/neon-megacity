@@ -695,7 +695,7 @@ function footprint(rng: Rng, a: Archetype, lw: number, ld: number): { w: number;
     case 'pavilion':
       return { w: lw, d: ld };
     case 'mediaSlab': {
-      const d = Math.min(ld * f, lw * f / 2);
+      const d = Math.min(ld * f, (lw * f) / 2);
       return { w: lw * f, d };
     }
     case 'hanokRow':
@@ -757,9 +757,6 @@ function draftsFor(zone: DistrictZone, lots: Lot[], rng: Rng): Draft[] {
     d *= s;
     return { lot, archetype, w, d, h, ox, oz, jitter, ...extra };
   };
-  /** Zone height: [min, max], `tallShare` of draws stretched up to `tallMax`. */
-  const zoneH = (): number =>
-    rng.chance(H.tallShare) ? rng.range(H.max, H.tallMax) : rng.range(H.min, H.max);
 
   switch (zone.kind) {
     case 'megacore': {
@@ -786,8 +783,10 @@ function draftsFor(zone: DistrictZone, lots: Lot[], rng: Rng): Draft[] {
       big.forEach((lot, i) => {
         // The tallest tower carries the zone's landmark silhouette (SEOUL.md 4.5).
         const lead = i === 0 && plan?.landmark;
-        const a: Archetype = lead ? LANDMARK_ARCHETYPE[plan.landmark ?? 'yongsan-apex'] : (bag[i % bag.length] as Archetype);
-        const extra: Partial<Draft> = { corp: CORPS[i % CORPS.length] as string };
+        const a: Archetype = lead
+          ? LANDMARK_ARCHETYPE[plan.landmark ?? 'yongsan-apex']
+          : (bag[i % bag.length] as Archetype);
+        const extra: Partial<Draft> = { corp: CORPS[i % CORPS.length] };
         if (lead && plan.landmark) extra.landmark = plan.landmark;
         drafts.push(make(lot, a, plan?.tops[i] ?? MEGA_MIN_H, extra));
       });
@@ -888,7 +887,9 @@ function draftsFor(zone: DistrictZone, lots: Lot[], rng: Rng): Draft[] {
           ['officeSlab', 30],
           ['setbackTower', 20],
         ]);
-        drafts.push(make(lot, a, a === 'showroomBox' ? rng.range(H.min, H.max) : rng.range(30, H.tallMax)));
+        drafts.push(
+          make(lot, a, a === 'showroomBox' ? rng.range(H.min, H.max) : rng.range(30, H.tallMax)),
+        );
       }
       break;
     case 'midtown':
@@ -1018,8 +1019,7 @@ function applyBlockHeightRules(drafts: Draft[], rng: Rng): void {
     else byBlock.set(d.lot.blockId, [d]);
   }
   for (const list of byBlock.values()) {
-    const capOf = (d: Draft): number =>
-      d.corp ? Infinity : d.lot.zone.heights.tallMax;
+    const capOf = (d: Draft): number => (d.corp ? Infinity : d.lot.zone.heights.tallMax);
     for (const d of list) d.h = Math.min(d.h, capOf(d));
     if (list.length < 2) continue;
 
@@ -1368,7 +1368,8 @@ function makeRidges(seed: number): Ridge[] {
 function makeLandmarks(buildings: readonly BuildingSpec[]): Landmark[] {
   const out: Landmark[] = [];
   for (const b of buildings) {
-    if (b.tags.landmark) out.push({ id: b.tags.landmark, buildingId: b.id, x: b.x, z: b.z, h: b.h });
+    if (b.tags.landmark)
+      out.push({ id: b.tags.landmark, buildingId: b.id, x: b.x, z: b.z, h: b.h });
   }
   const namsan = MOUNTAINS.find((m) => m.id === 'namsan');
   if (namsan) {

@@ -14,7 +14,6 @@ import {
   riverFrame,
   riverOffset,
   riverNearest,
-  riverSignedDistance,
   riverWidthAt,
 } from './river';
 import type { DistrictKind, DistrictZone, RoadKind, Vec2, ZoneHeights } from './types';
@@ -431,7 +430,8 @@ const DEFS: ZoneDef[] = [
     heights: H(30, 80, 0.4, 260),
     coverage: 0.45,
     litScale: 1,
-  },  {
+  },
+  {
     id: 'cheongdam',
     kind: 'showroom',
     name: '압구정·청담',
@@ -549,24 +549,22 @@ const BANK_OF = new Map<string, BankStrip>(
 /** All zones, in classification order. The riverside band comes first. */
 export const ZONES: readonly DistrictZone[] = [
   riversideZone,
-  ...DEFS.map(
-    (d): DistrictZone => ({
-      id: d.id,
-      kind: d.kind,
-      name: d.name,
-      nameEn: d.nameEn,
-      polygon: d.polygon,
-      gridAngle: d.gridAngle,
-      origin: d.origin,
-      roadPitch: d.pitch[0],
-      roadPitchV: d.pitch[1],
-      roadWidth: d.roadWidth,
-      roadKind: d.roadKind,
-      heights: d.heights,
-      coverage: d.coverage,
-      litScale: d.litScale,
-    }),
-  ),
+  ...DEFS.map((d): DistrictZone => ({
+    id: d.id,
+    kind: d.kind,
+    name: d.name,
+    nameEn: d.nameEn,
+    polygon: d.polygon,
+    gridAngle: d.gridAngle,
+    origin: d.origin,
+    roadPitch: d.pitch[0],
+    roadPitchV: d.pitch[1],
+    roadWidth: d.roadWidth,
+    roadKind: d.roadKind,
+    heights: d.heights,
+    coverage: d.coverage,
+    litScale: d.litScale,
+  })),
 ];
 
 const NORTH = ZONES.filter((z) => SIDE_OF.get(z.id) === 'north');

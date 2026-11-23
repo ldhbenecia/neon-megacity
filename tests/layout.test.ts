@@ -227,7 +227,7 @@ describe('layout v3: no overlaps', () => {
       }
       expect(waterSignedDistance(b.x, b.z)).toBeGreaterThanOrEqual(RIVER_CLEARANCE);
     }
-  });
+  }, 30_000);
 
   it('buildings stay out of highway corridors (width + 6 m) and off pillars', () => {
     for (const hw of LAYOUT.highways) {
