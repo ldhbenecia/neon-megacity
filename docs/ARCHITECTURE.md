@@ -88,8 +88,9 @@ Numbers are clamped to 0..1; invalid values are ignored.
 `env.quality === 'low'` is the CI tier (SwiftShader renders the full city at a few fps). Quality
 branches are owned by perf and stay minimal: DPR 0.5 and no MSAA (ux/main), no shadow map and one
 lazy 64 px PMREM bake (lighting), no post chain, rain, clouds or searchlights (atmosphere; fog and
-stars stay). All e2e specs use it through `app()` in `tests/e2e/helpers.ts`, except one
-full-quality budget check in `perf.spec.ts` (overview at noon, shadow pass included).
+stars stay), flat river water without noise normals (terrain). All e2e specs use it through
+`app()` in `tests/e2e/helpers.ts`, except one full-quality budget check in `perf.spec.ts`
+(overview at noon, shadow pass included).
 
 ## Test hook: `window.__city`
 
@@ -135,7 +136,7 @@ Pure queries: `terrainHeight`, `surfaceHeight`, `riverSignedDistance`, `building
 
 | workflow                        | trigger                                                   | what it does                                                                                                                                                                                               |
 | ------------------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `.github/workflows/ci.yml`      | pull_request, push to main, dispatch                      | format:check, lint, typecheck, unit tests, build, Playwright e2e (report uploaded on failure)                                                                                                              |
+| `.github/workflows/ci.yml`      | pull_request, push to main, dispatch                      | format:check, lint, typecheck, unit tests, build, Playwright e2e (report uploaded on failure); e2e is skipped when a PR (or a dispatch on a PR branch) only changes `docs/**` or `*.md`                    |
 | `.github/workflows/autofix.yml` | pull_request (same-repo only)                             | `lint:fix` + `format`; if anything changed, commits `style: 린트 및 포맷 자동 수정` as github-actions[bot], pushes to the PR branch and dispatches `ci.yml` for it (GITHUB_TOKEN pushes do not trigger CI) |
 | `.github/workflows/pages.yml`   | CI succeeded on a push to main (`workflow_run`), dispatch | checks out the commit CI tested, builds with `BASE_PATH=/neon-megacity/` and deploys `dist/` to GitHub Pages                                                                                               |
 

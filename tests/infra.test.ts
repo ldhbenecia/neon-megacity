@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  BRIDGE_LAND,
-  BRIDGE_LAND_SOUTH,
   LAYOUT,
   MIN_ROAD_CLEARANCE,
   bridgeDeckY as layoutBridgeDeckY,
@@ -27,7 +25,7 @@ import { infraColors } from '../src/infra/colors';
 import { deckRings, hwPath, nearestOnPath, ringsCovering, runs } from '../src/infra/highways';
 import { MeshData, cross, dot, frameAt, framesAlong, norm, sub, type V3 } from '../src/infra/mesh';
 import type { ColumnInstance } from '../src/infra/parts';
-import { pillarInstances, pillarSpecs } from '../src/infra/pillars';
+import { pillarInstances, pillarKind, pillarSpecs } from '../src/infra/pillars';
 import {
   DECK_THICKNESS,
   barrierEdges,
@@ -213,7 +211,11 @@ describe('infra: pillars', () => {
     const total = raised.reduce((n, hw) => n + hw.pillars.length, 0);
     expect(specs.length).toBeGreaterThan(total * 0.9);
     expect(specs.length).toBeLessThanOrEqual(total);
-    expect(specs.filter((s) => s.kind === 'Y').length).toBeGreaterThan(20);
+    // Every highway pillarKind maps to 'Y' (v2: hw-ring) actually gets Y pillars.
+    for (const hw of raised.filter((h) => h.pillars.length > 0 && pillarKind(h) === 'Y')) {
+      const ys = specs.filter((s) => s.owner === hw.id && s.kind === 'Y');
+      expect(ys.length, hw.id).toBeGreaterThan(hw.pillars.length * 0.5);
+    }
     expect(specs.filter((s) => s.kind === 'T').length).toBeGreaterThan(40);
   });
 
@@ -274,10 +276,15 @@ describe('infra: bridges', () => {
   it('deck profile matches the layout bridgeDeckY within 1 cm, landings included', () => {
     for (const b of LAYOUT.bridges) {
       const f = bridgeFrame(b);
-      expect(f.spanHalf).toBeCloseTo(120, 6);
-      // Asymmetric approaches: north lands at BRIDGE_LAND, south at BRIDGE_LAND_SOUTH.
-      expect(-f.landA).toBeCloseTo(BRIDGE_LAND, 3);
-      expect(f.landB).toBeCloseTo(BRIDGE_LAND_SOUTH, 3);
+      // Landings lie on the bridge axis, beyond the abutments; the south ramp is the longer one.
+      const ax = b.b.x - b.a.x;
+      const az = b.b.z - b.a.z;
+      for (const land of [b.landA, b.landB]) {
+        const off = (ax * (land.z - b.a.z) - az * (land.x - b.a.x)) / Math.hypot(ax, az);
+        expect(Math.abs(off), `${b.id} landing off the axis`).toBeLessThan(1e-6);
+      }
+      expect(-f.landA).toBeGreaterThan(f.spanHalf);
+      expect(f.landB - f.spanHalf).toBeGreaterThan(-f.landA - f.spanHalf);
       for (let s = f.landA + 1; s < f.landB; s += 7) {
         const p = bridgePoint(f, s, 0, 0);
         const y = layoutBridgeDeckY(b, p[0], p[2]);
@@ -324,9 +331,13 @@ describe('infra: bridges', () => {
     for (const p of r) for (const v of p) expect(Number.isFinite(v)).toBe(true);
   });
 
-  it('arch A crowns at y 48 and gets cyan points every 6 m', () => {
-    const a = LAYOUT.bridges.find((b) => b.kind === 'arch')!;
-    expect(archY(60, 0, 120, a.deckY - 1, a.deckY + a.structureH)).toBeCloseTo(48, 9);
+  it('arch ribs crown at mid span and get cyan points every 6 m', () => {
+    expect(archY(60, 0, 120, 11, 48)).toBeCloseTo(48, 9);
+    expect(archY(0, 0, 120, 11, 48)).toBeCloseTo(11, 9);
+    // ART_DIRECTION 2.3: the v2 arch bridge crowns at 48 m (layout v3 has no 'arch' kind).
+    for (const a of LAYOUT.bridges.filter((b) => b.kind === 'arch')) {
+      expect(a.deckY + a.structureH, a.id).toBe(48);
+    }
     const pts: V3[] = [];
     for (let i = 0; i <= 32; i++) pts.push([i * 4, archY(i * 4, 0, 128, 11, 48), 0]);
     const r = resample(pts, 6);
@@ -353,7 +364,8 @@ describe('infra: bridges', () => {
       }
     }
     const parts = buildInfra(LAYOUT, C);
-    const bridgeColumns = parts.columns.filter((c) => c.owner.startsWith('bridge'));
+    const bridgeIds = new Set(LAYOUT.bridges.map((b) => b.id));
+    const bridgeColumns = parts.columns.filter((c) => bridgeIds.has(c.owner));
     // Approach piers never stand on a ground road (roads may cross under the long south ramp).
     for (const c of bridgeColumns) expect(approachPierBlocksRoad(c, LAYOUT.roads)).toBe(false);
     expect(bridgeColumns.length).toBeGreaterThanOrEqual(8);
