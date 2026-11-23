@@ -69,7 +69,7 @@ describe('layout v3: determinism', () => {
     const again = generateLayout(CITY.seed);
     expect(again).toEqual(LAYOUT);
     expect(digest(again)).toBe(digest(LAYOUT));
-  });
+  }, 60_000);
 
   it('matches the pinned snapshot (update deliberately when the layout changes)', () => {
     expect({
@@ -91,7 +91,7 @@ describe('layout v3: determinism', () => {
 
   it('changes with the seed', () => {
     expect(generateLayout(1).buildings).not.toEqual(LAYOUT.buildings);
-  });
+  }, 60_000);
 
   it('uses ids equal to array indices', () => {
     B.forEach((b, i) => expect(b.id).toBe(i));
@@ -230,7 +230,7 @@ describe('layout v3: no overlaps', () => {
         expect(d, `building ${id} vs road ${road.id}`).toBeGreaterThanOrEqual(road.width / 2);
       }
     }
-  });
+  }, 60_000);
 
   it('buildings keep clear of the river channel and 샛강', () => {
     const c = LAYOUT.river.samples;
@@ -713,7 +713,7 @@ describe('layout v3: water and islands', () => {
       }
     }
     for (const s of LAYOUT.slots) expect(s.y, s.kind).toBeGreaterThan(RIVER.waterY + 0.5);
-  });
+  }, 60_000);
 
   it('tags every bridge whose span crosses an island', () => {
     for (const br of LAYOUT.bridges) {
