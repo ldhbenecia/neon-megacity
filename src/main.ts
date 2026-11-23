@@ -25,6 +25,7 @@ const MODULES: readonly (readonly [name: string, weight: number, module: CityMod
 ];
 
 const query = parseQuery(window.location.search);
+const debug = parseUxQuery(window.location.search).debug;
 const quality = query.quality ?? 'high';
 const loader = createLoader();
 
@@ -44,6 +45,10 @@ async function boot(): Promise<void> {
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   // Exposure is owned by lighting (palette toneMappingExposure × env.powerOn).
   renderer.toneMappingExposure = NIGHT.toneMappingExposure;
+  // three's shader error check reads the program info log on a program's first use, which blocks
+  // on the driver: a ~500 ms stall the first time the timeline leaves noon (M4, Metal). Kept in
+  // dev, under automation (e2e, screenshots) and with ?debug, so shader errors stay diagnosable.
+  renderer.debug.checkShaderErrors = import.meta.env.DEV || navigator.webdriver || debug;
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
@@ -60,7 +65,7 @@ async function boot(): Promise<void> {
   // the ux controls (time scrubber, weather, camera) instead.
   const gui = new GUI({ title: 'City Controls' });
   gui.close();
-  if (query.nogui || !parseUxQuery(window.location.search).debug) gui.hide();
+  if (query.nogui || !debug) gui.hide();
 
   const resizeHandlers: ((w: number, h: number) => void)[] = [];
   const resize = (): void => {
