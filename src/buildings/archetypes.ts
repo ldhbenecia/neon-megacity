@@ -1,6 +1,6 @@
 import { createRng, type Rng } from '../core/random';
 import { MATERIAL, NEON } from '../core/palette';
-import { terrainHeight } from '../city/layout';
+import { baseKind, terrainHeight } from '../city/layout';
 import type { BuildingSpec, Side, Tier } from '../city/types';
 import {
   UNIT_CONE8,
@@ -506,7 +506,7 @@ function roofMechanical(g: GeoBuilder, b: Bld, rng: Rng): void {
     }
     if (
       r > 20 &&
-      (rng.chance(0.005) || (spec.district === 'core' && seeded01(spec.seed + 99) < 0.04))
+      (rng.chance(0.005) || (baseKind(spec.district) === 'core' && seeded01(spec.seed + 99) < 0.04))
     ) {
       crane(g, t, spec.rotY, rng);
     }
