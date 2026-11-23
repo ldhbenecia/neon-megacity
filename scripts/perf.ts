@@ -3,12 +3,12 @@
 // Boots the production build in headless Chromium on the real GPU (Metal ANGLE) for each scenario
 // and prints a markdown table (docs/PERF.md) plus perf-results/<label>.json.
 import { execSync } from 'node:child_process';
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { gzipSync } from 'node:zlib';
 import { chromium, type Browser } from '@playwright/test';
 import { preview } from 'vite';
 import { SWIFTSHADER_ARGS, collectErrors } from '../tests/e2e/helpers';
+import { bundleGzip } from './bundle';
 
 const PRESETS = [
   [1, '강변 히어로'],
@@ -119,16 +119,6 @@ async function measure(browser: Browser, name: string, query: string): Promise<R
     cpu: result.cpu,
     errors,
   };
-}
-
-function bundleGzip(): { file: string; raw: number; gzip: number }[] {
-  const dir = resolve('dist/assets');
-  return readdirSync(dir)
-    .filter((f) => f.endsWith('.js'))
-    .map((f) => {
-      const buf = readFileSync(resolve(dir, f));
-      return { file: f, raw: buf.length, gzip: gzipSync(buf, { level: 9 }).length };
-    });
 }
 
 const mb = (b: number): string => (b / 1024 / 1024).toFixed(1);
