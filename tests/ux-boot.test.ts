@@ -125,6 +125,16 @@ describe('building card (8.3)', () => {
     expect(card.zone.length).toBeGreaterThan(0);
   });
 
+  it('has a specific label for every archetype and district kind the layout uses', () => {
+    for (const a of new Set(LAYOUT.buildings.map((b) => b.archetype))) {
+      expect(archetypeLabel(a), a).not.toBe(ARCHETYPE_FALLBACK);
+    }
+    for (const z of LAYOUT.districts) {
+      expect(zoneLabel({ districts: [] }, z.id, z.kind), z.kind).not.toBe(DISTRICT_FALLBACK);
+      expect(z.name, z.id).not.toBe('');
+    }
+  });
+
   it('labels layout v3 archetypes and falls back for unknown ones', () => {
     for (const a of [
       'taperTower',

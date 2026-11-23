@@ -4,18 +4,18 @@
 //   ?rain=0..1   initial rain intensity
 //   ?nogui       hide the lil-gui panel
 
-import { CITY, LAYOUT, type Road } from '../city/layout';
+import { LAYOUT, type Road } from '../city/layout';
 
 /**
  * OrbitControls limits applied by main.ts. Every camera preset must satisfy them,
  * otherwise controls.update() silently moves the camera on the first frame.
  * The camera always looks down at (or level with) its target: polar angle is
  * measured from +Y, so maxPolarAngle just under PI/2 keeps it above the horizon.
- * maxDistance covers the whole map from the topdown preset (ART_DIRECTION 8.1).
+ * maxDistance covers the 2400 m map from the topdown preset (ART_DIRECTION 8.1: 2600).
  */
 export const CAMERA_LIMITS = {
   minDistance: 20,
-  maxDistance: CITY.extent + 200,
+  maxDistance: 2600,
   maxPolarAngle: Math.PI * 0.495,
 } as const;
 

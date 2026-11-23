@@ -75,6 +75,13 @@ describe('CAMERA_PRESETS', () => {
     expect(cameraPreset('street')).not.toEqual(STREET_FALLBACK);
   });
 
+  it('snaps the street preset near ART_DIRECTION 8.4 preset 3', () => {
+    const [x, , z] = cameraPreset('street').position;
+    expect(
+      Math.hypot(x - STREET_FALLBACK.position[0], z - STREET_FALLBACK.position[2]),
+    ).toBeLessThan(150);
+  });
+
   const names = Object.keys(CAMERA_PRESETS) as CameraPreset[];
 
   it.each(names)('%s stays within the orbit limits', (name) => {
