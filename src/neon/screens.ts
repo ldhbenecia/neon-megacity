@@ -295,7 +295,7 @@ export function buildHolograms(
     vertexShader: /* glsl */ `
       ${COMMON_PARS}
       attribute vec4 iPos; attribute vec4 iRect; attribute vec4 iParam;
-      varying vec2 vUv; varying vec4 vRect; varying vec4 vParam; varying float vWorldY; varying float vPower;
+      varying vec2 vUv; varying vec4 vRect; varying vec4 vParam; varying float vWorldY; varying float vPower; varying float vFace;
       #include <fog_pars_vertex>
       void main() {
         float ang = uTime * iParam.x + iParam.z * 6.28;
@@ -309,20 +309,24 @@ export function buildHolograms(
         gl_Position = projectionMatrix * mvPosition;
         vUv = uv; vRect = iRect; vParam = iParam; vWorldY = world.y;
         vPower = powerOn(iParam.w, iParam.z * 30.0);
+        // Fade the edge-on plane of the cross so its mirrored copy never overlaps the readable one.
+        vec3 n0 = abs(position.x) < 1e-3 ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 0.0, 1.0);
+        vec3 n = vec3(c * n0.x + s * n0.z, 0.0, -s * n0.x + c * n0.z);
+        vFace = smoothstep(0.35, 0.85, abs(dot(normalize(cameraPosition - world), n)));
         #include <fog_vertex>
       }
     `,
     fragmentShader: /* glsl */ `
       ${COMMON_PARS}
       uniform sampler2D uAtlas; uniform vec3 uTint;
-      varying vec2 vUv; varying vec4 vRect; varying vec4 vParam; varying float vWorldY; varying float vPower;
+      varying vec2 vUv; varying vec4 vRect; varying vec4 vParam; varying float vWorldY; varying float vPower; varying float vFace;
       #include <fog_pars_fragment>
       void main() {
         vec3 tex = texture2D(uAtlas, vRect.xy + clamp(vUv, 0.01, 0.99) * vRect.zw).rgb;
         float lum = max(tex.r, max(tex.g, tex.b));
         float scan = 0.55 + 0.45 * step(0.5, fract(vWorldY / 0.4));
         vec3 col = mix(tex, uTint * lum, 0.35) * 3.0;
-        float a = vParam.y * scan * smoothstep(0.03, 0.25, lum) * vPower * uGain;
+        float a = vParam.y * scan * smoothstep(0.03, 0.25, lum) * vPower * uGain * vFace;
         gl_FragColor = vec4(col * a, 1.0);
         ${ADDITIVE_TAIL}
       }
