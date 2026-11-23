@@ -35,7 +35,8 @@ headroom is left: on a real display rAF is capped by vsync.
 
 ## Snapshot: main e2b7fef (lighting, infra, atmosphere, ux; terrain, buildings, neon are stubs)
 
-Apple M4 (Metal ANGLE), 2400×1350 (DPR 1.5 held for every run), full quality, canvas 4× MSAA.
+Apple M4 (Metal ANGLE), 2400×1350 (DPR 1.5 held for every run), full quality, canvas 4× MSAA
+(before #43; the canvas has no MSAA since).
 
 | scenario               | frame ms (mean / p95) | fps | calls | tris   | programs | textures | geo MB | tex MB |
 | ---------------------- | --------------------- | --- | ----- | ------ | -------- | -------- | ------ | ------ |
@@ -61,7 +62,7 @@ infra init 46–83 ms, first frame 31–79 ms. Canvas: 98.9 MB (`gl.SAMPLES` = 4
 | triangles               | ≤ 1.2 M / 2.0 M           | 0.15 M                      |                                                  |
 | shader programs         | ≤ 35 / 50                 | 28–30                       | **already close to the target with 3 modules**   |
 | textures                | ≤ 24 / 40                 | 19–21                       | **close to the target**; post targets count here |
-| GPU memory              | ≤ 200 MB / 320 MB         | ~10 MB scene + 99 MB canvas | canvas = 2400×1350 × 8 B × 4 MSAA samples        |
+| GPU memory              | ≤ 200 MB / 320 MB         | ~10 MB scene + 99 MB canvas | before #43; canvas now 24.7 MB (×1)              |
 | module update CPU       | ≤ 1.5 / 3 ms              | ≤ 0.06 ms                   |                                                  |
 | boot → interactive (M1) | ≤ 3 s / 10 s              | 0.4–0.5 s                   |                                                  |
 | JS gzip                 | ≤ 260 / 400 KB            | 243.2 KB                    | **close to the target**                          |
@@ -81,10 +82,11 @@ triangles, 61 calls), not fill.
 
 ## Top bottlenecks (real GPU)
 
-1. **GPU memory: ≥ 225 MB against the 200 MB target** (post-processing targets not counted). Geometry 122 MB, almost all buildings LOD0
-   (the low tier, which skips LOD0, has 29.8 MB), plus a 99 MB canvas with 4× MSAA that is wasted
-   while the post chain renders into its own HDR target. Next: no canvas MSAA when post is on;
-   build LOD0 only for chunks near the camera.
+1. **GPU memory: over the 200 MB target.** Geometry 122 MB, almost all buildings LOD0 (the low
+   tier, which skips LOD0, has 29.8 MB), canvas 24.7 MB since #43 (was 99 MB with 4× MSAA), plus
+   post targets that `__hangang.memory()` cannot reach (not measured; at DPR 1.5 the HDR scene
+   target alone is 2400×1350 × (8 B color + 4 B depth) ≈ 37 MB, then the bloom mips). Next: build
+   LOD0 only for chunks near the camera.
 2. **Shader programs: 37 against the target 35** (ceiling 50). Buildings adds 2 facade variants,
    shadows keep their variant at night (#31). Neon has not arrived yet. Next: shared materials
    and `onBeforeCompile` variants across modules; every new program needs a reason.
@@ -146,4 +148,6 @@ Check after each v3 PR with `npm run perf -- v3` on the heaviest presets (SEOUL.
 - **Cold shader cache.** An early run (whose GPU probe did not boot the app) showed first-frame
   0.5–0.9 s, later runs 31–79 ms; the OS shader cache likely explains it. Re-check once buildings
   and neon add programs.
-- **JS bundle.** 243 KB gzip, 17 KB under the target with half the modules still stubs.
+- **JS bundle.** 266.5 KB gzip on main after buildings, over the 260 KB target (`npm run size`
+  warns in CI). Candidate: load lil-gui (only shown with `?debug`) lazily; every module calls
+  `ctx.gui.addFolder` at init, so it needs a typed stand-in when the panel is off.
