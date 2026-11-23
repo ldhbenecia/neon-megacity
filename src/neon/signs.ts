@@ -34,7 +34,9 @@ export function buildFlatSigns(
         s.w,
         s.h,
         cell?.aspect ?? 1,
-        Math.max(1, cell?.chars ?? Array.from(cell?.text ?? 'x').length),
+        // Glyph count for the broken-glyph animation; negative marks vertical text (index by y).
+        Math.max(1, cell?.chars || Array.from(cell?.text ?? 'x').length) *
+          (s.kind === 'vtext' || s.kind === 'blade' ? -1 : 1),
       ],
       i * 4,
     );
@@ -108,8 +110,9 @@ export function buildFlatSigns(
         float on = vPower;
         if (mode > 0.5 && mode < 1.5) on *= flicker(vAnim.y * 100.0);
         if (mode > 2.5 && mode < 3.5 && uMotion > 0.5) {
-          float glyph = floor(q.x * vSize.w);
-          float target = floor(vAnim.y * vSize.w);
+          float glyphs = abs(vSize.w);
+          float glyph = floor((vSize.w < 0.0 ? q.y : q.x) * glyphs);
+          float target = floor(vAnim.y * glyphs);
           float rate = mix(0.5, 2.0, fract(vAnim.y * 7.0));
           if (glyph == target) on *= step(0.45, nHash(floor(uTime * rate * 2.0) + vAnim.y * 31.0));
         }
