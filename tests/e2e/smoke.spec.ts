@@ -45,6 +45,7 @@ test('noon is brighter than midnight', async ({ page }) => {
   // Booted at noon (checks the ?time=0.5 boot path renders a lit frame), then scrubbed to midnight.
   await page.goto(app('nogui&cam=overview&time=0.5'));
   await waitForCity(page);
+  await waitFrames(page, SETTLE_FRAMES);
   const noon = await canvasStats(page);
   await scrubTo(page, 0);
   await waitFrames(page, SETTLE_FRAMES);
