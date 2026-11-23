@@ -85,10 +85,13 @@ export function init(ctx: Ctx): CityModuleInstance {
   scene.add(group);
 
   const chunks = collectChunks(LAYOUT, half);
+  // Low tier (CI SwiftShader): start at LOD1, so no LOD0 detail (trees, stairs, props) and no
+  // interior-mapped windows; LOD2 takes over at the LOD1 distance.
+  const low = env.quality === 'low';
 
   const uniforms = createFacadeUniforms();
   const facade = createFacadeMaterial(uniforms, false);
-  const facadeNear = createFacadeMaterial(uniforms, true);
+  const facadeNear = low ? facade : createFacadeMaterial(uniforms, true);
   const geometries: THREE.BufferGeometry[] = [];
   const lods: THREE.LOD[] = [];
   const triangles = [0, 0, 0];
@@ -97,8 +100,9 @@ export function init(ctx: Ctx): CityModuleInstance {
     const lod = new THREE.LOD();
     lod.name = `chunk ${c.i},${c.j}`;
     lod.position.set(o.x, 0, o.z);
-    const levels = [c.T.l0, c.T.l1, c.T.l2];
-    levels.forEach((b, k) => {
+    const levels = low ? [c.T.l1, c.T.l2] : [c.T.l0, c.T.l1, c.T.l2];
+    levels.forEach((b, i) => {
+      const k = low ? i + 1 : i;
       const g = b.build();
       let obj: THREE.Object3D;
       if (g) {
@@ -112,7 +116,7 @@ export function init(ctx: Ctx): CityModuleInstance {
       } else {
         obj = new THREE.Object3D();
       }
-      lod.addLevel(obj, LOD_DISTANCES[k] ?? 0, LOD_HYSTERESIS);
+      lod.addLevel(obj, LOD_DISTANCES[i] ?? 0, LOD_HYSTERESIS);
     });
     lod.updateMatrix();
     lod.matrixAutoUpdate = false;
@@ -172,7 +176,7 @@ export function init(ctx: Ctx): CityModuleInstance {
       scene.remove(group);
       for (const g of geometries) g.dispose();
       facade.dispose();
-      facadeNear.dispose();
+      if (facadeNear !== facade) facadeNear.dispose();
       uniforms.uDigits.value.dispose();
       roadMat.dispose();
       walkMat.dispose();
