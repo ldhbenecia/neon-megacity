@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { EMISSIVE_FOG_FRAGMENT } from '../core/shaders/emissiveFog';
+import { EMISSIVE_FOG_FRAGMENT, FOG_UNIFORMS } from '../core/shaders/emissiveFog';
 
 export interface NeonUniforms {
   uTime: THREE.IUniform<number>;
@@ -91,6 +91,7 @@ export function neonMaterial(
   const m = new THREE.ShaderMaterial({
     uniforms: {
       ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
+      ...THREE.UniformsUtils.clone(FOG_UNIFORMS),
       ...shared,
       ...(opts.uniforms ?? {}),
     },
