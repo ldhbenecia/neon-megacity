@@ -148,8 +148,9 @@ function faceStyle(b: Bld, side: Side | null, len: number, tierIdx: number): Sty
   });
 }
 
-function cylStyle(b: Bld, o: Outline, tierIdx: number): Style {
-  const fit = fitCells(perimeter(o), 1.5);
+// Cells are fitted to the LOD0 outline at every LOD so cell ids (and lit hashes) survive LOD swaps.
+function cylStyle(b: Bld, t: Tier, tierIdx: number): Style {
+  const fit = fitCells(perimeter(tierOutline(t, b.spec.rotY, cylinderSegments(0))), 1.5);
   return style(FACADE.curtain, b.wall, {
     cellW: fit.cellW,
     cellH: b.spec.floorH,
@@ -171,7 +172,7 @@ function shell(
   plinthTop = t.y0,
 ): void {
   const cyl = t.shape === 'cylinder';
-  const cs = cyl ? cylStyle(b, o, tierIdx) : null;
+  const cs = cyl ? cylStyle(b, t, tierIdx) : null;
   const top = t.y1;
   if (plinthTop > t.y0 + 0.05) {
     const wallStyle = plain(MATERIAL.retainingWall, 0.9);
@@ -271,17 +272,19 @@ function detail(b: Bld, g: GeoBuilder): void {
       }
     });
   }
+  // Rooftop plant sits on a flat y1 and would poke through the sloped wedge glazing.
+  const flatRoof = roofTopKind(spec) !== 'wedge';
   switch (spec.archetype) {
     case 'officeSlab':
       fins(g, b);
-      roofMechanical(g, b, rng);
+      if (flatRoof) roofMechanical(g, b, rng);
       break;
     case 'setbackTower':
     case 'cylinderTower':
     case 'bracedTower':
     case 'cantileverTower':
     case 'twinTower':
-      roofMechanical(g, b, rng);
+      if (flatRoof) roofMechanical(g, b, rng);
       if (spec.archetype === 'cylinderTower') helipad(g, b);
       break;
     case 'sangga':
@@ -897,7 +900,8 @@ export function industrialStacks(spec: BuildingSpec, T: Targets): void {
   const h = rng.range(25, 50);
   const r = rng.range(1.2, 2);
   const body = plain(0x4a4c4a, 0.8);
-  for (const g of [T.l0, T.l1]) {
+  // Taller than the warehouse itself, so it must stay in LOD2 for the skyline.
+  for (const g of [T.l0, T.l1, T.l2]) {
     g.place(UNIT_CYL8, p.x, t.y0, p.z, r, h, r, 0, body);
     g.place(UNIT_CYL8, p.x, t.y0 + h - 5, p.z, r * 1.02, 2, r * 1.02, 0, plain(0x6a1a1a, 0.7));
     g.box(p.x, t.y0 + h, p.z, 0.6, 0.6, 0.6, 0, glow(NEON.neonRed.hex, 2.5));
