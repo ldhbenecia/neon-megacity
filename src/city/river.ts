@@ -305,11 +305,8 @@ export function waterClear(x: number, z: number, margin: number): boolean {
 
 export const RIVER: Readonly<River> = {
   centerline: CONTROL.map(([x, z]) => ({ x, z })),
-  /** Narrowest section; v3 widths vary, use `riverWidthAt(x)`. */
-  width: Math.min(...CONTROL.map((c) => c[2])),
   waterY: -4,
   bankY: 0,
-  parkWidth: Math.min(...CONTROL.map((c) => c[3])),
   parkY: -2,
   bandWidth: 60,
   widths: CONTROL.map((c) => c[2]),

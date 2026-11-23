@@ -19,8 +19,6 @@ import {
 } from './river';
 import type { DistrictKind, DistrictZone, RoadKind, Vec2, ZoneHeights } from './types';
 
-/** Half extent along x (kept for v2 callers; the map is not square). */
-export const MAP_HALF = HALF_X;
 const DEG = Math.PI / 180;
 
 /** Distance from the centerline to the outer edge of the riverside band at x. */

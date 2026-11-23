@@ -2,18 +2,15 @@
 // terrain, buildings, infra, neon and the camera all agree. Units: 1 = 1 m.
 // Coordinates: Y up, ground y = 0, north = -Z, east = +X, map centered at the origin.
 // Data types: ./types.ts. Generation: ./generate.ts. Pure queries: ./queries.ts.
-import { EXTENT, EXTENT_X, EXTENT_Z, generateLayout } from './generate';
+import { EXTENT_X, EXTENT_Z, generateLayout } from './generate';
 import { HALF_X, HALF_Z } from './river';
 import { HASH_CELL } from './spatial';
 import type { Layout } from './types';
 
 export const CITY = {
-  /** Longer side (kept for v2 callers). The map spans x ±halfX, z ±halfZ. */
-  extent: EXTENT,
+  /** The map spans x ±halfX, z ±halfZ. */
   extentX: EXTENT_X,
   extentZ: EXTENT_Z,
-  /** max(halfX, halfZ); bounds checks should use halfX / halfZ. */
-  half: Math.max(HALF_X, HALF_Z),
   halfX: HALF_X,
   halfZ: HALF_Z,
   seed: 2077,
@@ -71,8 +68,8 @@ export {
   highwaySamples,
   onBridge,
   bridgeDeckY,
-  BRIDGE_LAND,
-  BRIDGE_LAND_SOUTH,
+  BRIDGE_RAMP_NORTH,
+  BRIDGE_RAMP_SOUTH_MIN,
   MAX_DECK_THICKNESS,
   MIN_ROAD_CLEARANCE,
   GANGBYEON_OFFSET,

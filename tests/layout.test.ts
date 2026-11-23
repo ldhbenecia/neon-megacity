@@ -81,9 +81,9 @@ describe('layout v3: determinism', () => {
       {
         "blocks": 1390,
         "buildings": 6136,
-        "digest": "325e992e",
+        "digest": "62251c32",
         "roads": 1255,
-        "slots": 3934,
+        "slots": 3940,
       }
     `);
   });
@@ -698,6 +698,17 @@ describe('noise', () => {
   it('rejects periods larger than the lattice instead of reading zeros', () => {
     expect(() => fbm1(1.5, 7, 4, 64)).toThrow(RangeError);
     expect(() => fbm1(1.5, 7, 4, 32)).not.toThrow();
+  });
+});
+
+describe('layout v3: map grid', () => {
+  it('keeps the buildings chunk grid at 80 chunks or fewer (draw-call budget)', () => {
+    const nx = Math.ceil(CITY.extentX / CITY.chunkSize);
+    const nz = Math.ceil(CITY.extentZ / CITY.chunkSize);
+    expect(CITY.chunkSize).toBe(400);
+    expect(nx * nz).toBeLessThanOrEqual(80);
+    expect(LAYOUT.extentX).toBe(2 * CITY.halfX);
+    expect(LAYOUT.extentZ).toBe(2 * CITY.halfZ);
   });
 });
 

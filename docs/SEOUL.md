@@ -620,7 +620,7 @@ draw call은 청크 70개 × 재질 묶음으로 v2와 같은 수준(buildings 9
 - **대교 좌표**: OSM(Nominatim)으로 다시 잰 대교 중앙을 2.1 투영식으로 옮겨 3.1 제어점을 고쳤다. 대부분 3.1 표와 ±50 m 안이다. 월드컵대교(-1546, -466), 당산철교(-1194, -222), 영동대교(996, -20), 천호대교(1790, -240)만 크게 바뀌었다. 천호대교는 Nominatim 점이 광진교보다 서쪽으로 나와 순서를 지키려고 조금 동쪽에 뒀다.
 - **중심선**: 제어점 24개를 지나는 centripetal Catmull-Rom을 10 m 간격으로 샘플링한다. x가 단조 증가하므로 거리 질의는 x에서 바깥으로 훑다가 최단 거리를 넘으면 멈춘다(`riverNearest`).
 - **샛강과 섬**: 샛강은 폭 50 m 물길로, 여의도 남쪽에서 본류 남안과 양쪽 끝이 이어진다(섬 깊이 최대 360 m). 서래섬은 둔치와 같은 높이(y -2)다.
-- **진입로**: 북쪽 착지점은 제방 밖 100 m, 남쪽은 제방 밖 180 m다. 강변북로는 제방 밖 30 m, y 21이고 대교 북쪽 진입로 위를 지난다. 올림픽대로는 제방 밖 30 m 지상이다. 굽이 안쪽에서는 실제 제방 거리가 30 m가 되도록 바깥으로 밀어서 최대 약 75 m까지 나간다. 그래서 남쪽 진입로를 180 m로 늘리고 대교 상판을 최소 12 m로 올렸다.
+- **진입로**: 북쪽 착지점은 제방 밖 100 m, 남쪽은 최소 제방 밖 180 m이고 올림픽대로를 5 m 이상 넘도록 대교마다 늘린다. 교대는 대교 축이 실제 제방과 만나는 곳이다. 강변북로는 제방 밖 30 m, y 21이고 대교 북쪽 진입로 위를 지난다. 올림픽대로는 제방 밖 30 m 지상이다. 굽이 안쪽에서는 실제 제방 거리가 30 m가 되도록 바깥으로 밀어서 최대 약 75 m까지 나간다. 그래서 남쪽 진입로를 180 m로 늘리고 대교 상판을 최소 12 m로 올렸다.
 - **한강철교**는 한강대교와 나란하도록 x -480의 법선 방향으로 건넌다(그대로 수직이면 두 다리가 북안에서 겹친다). 철도 전용이라 진입 도로를 잇지 않는다.
 - **구역**:
   - 강을 넓힌 만큼 강가 동네가 좁아졌다. 원효대교 서쪽에서 강이 북쪽으로 꺾여 용산은 강과 남산 사이 띠가 됐고, 남산 공원 반경은 170 m로 줄였다. 홍대 중심(-990, -480)은 강변 띠 안에 들어가 구역을 북쪽으로 옮겼다.
@@ -628,7 +628,8 @@ draw call은 청크 70개 × 재질 묶음으로 v2와 같은 수준(buildings 9
   - 여의대로는 뺐다. 서강·마포 대교 진입로가 이미 여의도를 가르고 있다. 여의도 군집은 섬 서쪽 넓은 쪽(-1090)에 둔다.
 - **메가코어**: 용산·여의도는 블록 120 m에 2×2 lot(최소 45 m)이다. 결과는 용산 5동(600, 420, 380, 340, 300 m), 여의도 4동(430 m부터), 잠실 랜드마크 500 m 1동이다. 3.3의 계획보다 군집이 작다. 평면 1:6 압축 탓이며, 스크린샷을 보고 블록을 더 줄일지 정한다.
 - **결과(seed 2077)**: 건물 약 6200동(sangga 약 3600, officeSlab 약 930, hillHouse 500, 아파트 약 125), 생성 시간 약 1초(노트북 Node). 거리 소품 slot은 약 3850개(가로등 약 1600)로 v2의 2배다.
-- **호환**: `riverZ`, `riverFrame`, `riverSignedDistance`, `surfaceHeight`, `terrainHeight`, `EMBANK_SLOPE`, `TERRAIN.hillStartZ`, `BRIDGE_LAND(_SOUTH)`, `CITY.half`, 고가 id `hw-river-north`·`hw-south`는 이름을 유지한다. 의미가 바뀐 것도 있다. `RIVER.width`는 가장 좁은 폭, `BRIDGE_LAND`는 제방 기준 거리, `CITY.half`는 max(halfX, halfZ)다. 새 함수는 `riverWidthAt`, `parkWidthAt`, `riverOffset`, `riverNearest`, `waterSignedDistance`, `islandAt`, `riversideHalfAt`, `zoneSide`다.
+- **이름 정리**: `riverZ`, `riverFrame`, `riverSignedDistance`, `surfaceHeight`, `terrainHeight`, `EMBANK_SLOPE`, `TERRAIN.hillStartZ`, 고가 id `hw-river-north`·`hw-south`는 그대로 둔다. 의미가 바뀌는 옛 이름은 없앴다. 옛 의미로 쓰는 코드가 컴파일에서 걸리게 하려는 것이다. `CITY.half`·`CITY.extent`·`Layout.extent`는 `halfX/halfZ`·`extentX/extentZ`로, `RIVER.width`·`RIVER.parkWidth`는 `riverWidthAt(x)`·`parkWidthAt(x)`로, `BRIDGE_LAND(_SOUTH)`는 제방 기준 `BRIDGE_RAMP_NORTH`·`BRIDGE_RAMP_SOUTH_MIN`으로 바뀌었다. 각 모듈이 main에서 먼저 옮겨 갈 수 있도록 #44가 v2 값의 접근자를 먼저 넣는다. 새 함수는 `riverOffset`, `riverNearest`, `waterSignedDistance`, `islandAt`, `riversideHalfAt`, `zoneSide`다. `CITY.chunkSize`는 400(청크 70개 이하)이다.
+- **메가코어(관리자 검토 후)**: 격자 lot 대신 타워 필드로 채운다. 용산은 600 m 정점에 280~450 m 6동과 120~250 m 16동, 여의도는 430 m 정점에 300~360 m 4동과 120~240 m 18동, 잠실은 500 m에 150~300 m 10동이다. 모든 건물의 높이 대 폭(√(w·d)) 비는 10 이하다.
 
 ## 8. 불확실한 점과 열어 둔 결정
 

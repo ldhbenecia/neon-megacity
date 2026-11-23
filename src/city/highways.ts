@@ -37,7 +37,7 @@ export const GANGBYEON_OFFSET = 30;
 export const GANGBYEON_Y = 21;
 /**
  * 올림픽대로: centre this far outside the south embankment (m), at grade. The south approaches
- * pass over it (see BRIDGE_LAND_SOUTH).
+ * pass over it (see BRIDGE_RAMP_SOUTH_MIN).
  */
 export const OLYMPIC_OFFSET = 30;
 const OLYMPIC_Y = 0.3;
@@ -209,13 +209,13 @@ const BRIDGE_DEFS: BridgeDef[] = [
 ];
 
 /** North approach length beyond the embankment (m): lands past 강변북로. */
-export const BRIDGE_LAND = 100;
+export const BRIDGE_RAMP_NORTH = 100;
 /**
  * Shortest south approach beyond the embankment (m). A bridge whose deck would not clear
  * 올림픽대로 by MIN_ROAD_CLEARANCE where the road actually passes under it (it bends away from
  * the bank on the inner side of a curve) gets a longer one (see `southRamp`).
  */
-export const BRIDGE_LAND_SOUTH = 180;
+export const BRIDGE_RAMP_SOUTH_MIN = 180;
 /** Thickest deck slab the clearance guarantee assumes (m). Infra decks must not be thicker. */
 export const MAX_DECK_THICKNESS = 1.5;
 /** Minimum vertical clearance between a deck underside and a road or deck below it (m). */
@@ -273,7 +273,7 @@ function southRamp(c: Vec2, south: Vec2, half: number, width: number, deckY: num
   }
   // deck (1 - (far + roadHalf) / L) - MAX_DECK_THICKNESS - road y ≥ MIN_ROAD_CLEARANCE
   const keep = 1 - (MIN_ROAD_CLEARANCE + MAX_DECK_THICKNESS + OLYMPIC_Y) / deckY;
-  return Math.max(BRIDGE_LAND_SOUTH, Math.ceil((far + roadHalf) / keep) + 5);
+  return Math.max(BRIDGE_RAMP_SOUTH_MIN, Math.ceil((far + roadHalf) / keep) + 5);
 }
 
 /** Distance along `dir` from c (on the centerline) where the axis meets the embankment. */
@@ -302,7 +302,7 @@ export function makeBridges(): Bridge[] {
       kind: d.kind,
       a: at(-kA),
       b: at(kB),
-      landA: at(-kA - BRIDGE_LAND),
+      landA: at(-kA - BRIDGE_RAMP_NORTH),
       landB: at(kB + southRamp(c, south, kB, d.width, d.deckY)),
       deckY: d.deckY,
       width: d.width,

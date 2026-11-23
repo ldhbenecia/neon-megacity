@@ -82,14 +82,10 @@ export interface ZoneHeights {
 export interface River {
   /** Control points (SEOUL.md 3.1), x strictly increasing; the curve through them is `samples`. */
   centerline: Vec2[];
-  /** Narrowest bank-to-bank width (m). Widths vary: use `riverWidthAt(x)`. Includes the parks. */
-  width: number;
   /** Water surface y. */
   waterY: number;
   /** Top of the embankment (= ground). */
   bankY: number;
-  /** Narrowest park strip (m). Use `parkWidthAt(x)`. */
-  parkWidth: number;
   parkY: number;
   /** Riverside district band outside each bank (m). */
   bandWidth: number;
@@ -177,8 +173,8 @@ export interface Bridge {
   a: Vec2;
   b: Vec2;
   /**
-   * Where the approach ramps meet the ground (y = 0): BRIDGE_LAND (100 m) beyond the north bank,
-   * past 강변북로, and BRIDGE_LAND_SOUTH (180 m) beyond the south bank, past 올림픽대로. The deck
+   * Where the approach ramps meet the ground (y = 0): BRIDGE_RAMP_NORTH (100 m) beyond the north bank,
+   * past 강변북로, and at least BRIDGE_RAMP_SOUTH_MIN (180 m) beyond the south bank, past 올림픽대로. The deck
    * descends linearly from `deckY` at the abutment to 0 at the landing (see `bridgeDeckY`).
    */
   landA: Vec2;
@@ -409,8 +405,6 @@ export interface StreetSlot {
 
 export interface Layout {
   seed: number;
-  /** max(extentX, extentZ), kept for v2 callers. */
-  extent: number;
   /** Play area size on X and Z (v2: 2400 × 2400). The map spans [-extentX/2, extentX/2] etc. */
   extentX: number;
   extentZ: number;

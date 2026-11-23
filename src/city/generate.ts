@@ -70,10 +70,9 @@ import type {
   Vec2,
 } from './types';
 
-/** Play area size (m). `EXTENT` is the longer side, kept for v2 callers. */
+/** Play area size (m). */
 export const EXTENT_X = HALF_X * 2;
 export const EXTENT_Z = HALF_Z * 2;
-export const EXTENT = Math.max(EXTENT_X, EXTENT_Z);
 /** Skyline peak: the 용산 apex, the tallest tower of the city (SEOUL.md 4.5). */
 export const SKYLINE_PEAK: Vec2 = { x: -380, z: -80 };
 /** Megatower threshold. */
@@ -1534,7 +1533,6 @@ export function generateLayout(seed = 2077): Layout {
 
   return {
     seed,
-    extent: EXTENT,
     extentX: EXTENT_X,
     extentZ: EXTENT_Z,
     districts: [...ZONES],
