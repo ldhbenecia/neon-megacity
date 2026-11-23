@@ -31,6 +31,8 @@ const setSrgb = (c: Color, rgb: RGB, k = 1): Color =>
 
 export function init(ctx: Ctx): CityModuleInstance {
   const { scene, camera, gui, env } = ctx;
+  // Low tier (CI SwiftShader): no post chain, rain, clouds or searchlights. Fog and stars stay.
+  const low = env.quality === 'low';
 
   const settings = {
     fogScale: 1,
@@ -38,8 +40,8 @@ export function init(ctx: Ctx): CityModuleInstance {
     bloomScale: 1,
     lens: true,
     lensDrops: true,
-    clouds: true,
-    searchlights: true,
+    clouds: !low,
+    searchlights: !low,
     stars: true,
     autoQuality: true,
   };
@@ -55,7 +57,8 @@ export function init(ctx: Ctx): CityModuleInstance {
   const stars = createStars(ctx);
   const clouds = createClouds(ctx, searchlights.spots, searchlights.colors);
   const rain = createRain(ctx);
-  const post = createPost(ctx);
+  clouds.setVisible(settings.clouds);
+  const post = low ? null : createPost(ctx);
   const previousRender = ctx.render;
   if (post) ctx.render = () => post.render();
   // main's compile stage calls this instead of renderer.compile: the HDR target needs
@@ -154,7 +157,7 @@ export function init(ctx: Ctx): CityModuleInstance {
       env.wetness = stepWetness(env.wetness, r, dt);
 
       const below = rainAltitudeFade(camera.position.y);
-      rain.update(elapsed, r, env.fogColor, below);
+      rain.update(elapsed, low ? 0 : r, env.fogColor, below);
 
       stars.update(elapsed, settings.stars ? palette.stars * (1 - 0.6 * Math.min(1, r)) : 0);
 
