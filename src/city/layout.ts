@@ -13,9 +13,9 @@ export const CITY = {
   extentX: EXTENT,
   extentZ: EXTENT,
   half: MAP_HALF,
-  /** Half extents per axis. layout v3 makes the map 4000 × 2600 m; read these, not `half`. */
-  halfX: MAP_HALF,
-  halfZ: MAP_HALF,
+  /** Half extents per axis; read these instead of `half` (the v3 map is not square). */
+  halfX: EXTENT / 2,
+  halfZ: EXTENT / 2,
   seed: 2077,
   /** Spatial hash cell used by layout queries (m). */
   hashCell: HASH_CELL,

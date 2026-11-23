@@ -618,9 +618,14 @@ describe('axis accessors (layout v3 migration)', () => {
   it('exposes per-axis half extents and per-x river widths', () => {
     expect(CITY.halfX).toBe(LAYOUT.extentX / 2);
     expect(CITY.halfZ).toBe(LAYOUT.extentZ / 2);
-    for (const x of [-1000, 0, 700]) {
-      expect(riverWidthAt(x)).toBe(RIVER.width);
-      expect(parkWidthAt(x)).toBe(RIVER.parkWidth);
-    }
+    RIVER.centerline.forEach((p, i) => {
+      expect(riverWidthAt(p.x)).toBeCloseTo(RIVER.widths[i]!, 9);
+      expect(parkWidthAt(p.x)).toBeCloseTo(RIVER.parkWidths[i]!, 9);
+    });
+    // Between two points the width is their linear blend.
+    const a = RIVER.centerline[3]!;
+    const b = RIVER.centerline[4]!;
+    const mid = riverWidthAt((a.x + b.x) / 2);
+    expect(mid).toBeCloseTo((RIVER.widths[3]! + RIVER.widths[4]!) / 2, 9);
   });
 });
