@@ -1,8 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { MATERIAL, NEON } from '../core/palette';
-import { ADDITIVE_TAIL, COMMON_PARS, neonMaterial, type NeonUniforms } from './glsl';
-import { hdrColor, setInstanceAttributes, toInstanced } from './geom';
+import { hdrColor } from './geom';
 import { buildEmissiveSolids, type SolidInstance } from './signs';
 import { LAMP, type Pool, type StreetPlan } from './streetPlan';
 
@@ -88,74 +87,13 @@ function trs(
   return _m.clone().compose(_p.set(x, y, z), _q.setFromAxisAngle(UP, yaw), _s.set(sx, sy, sz));
 }
 
-function poolColor(p: Pool): [number, number, number] {
+export function poolColor(p: Pool): [number, number, number] {
   if (p.color === 'core') return hdrColor(MATERIAL.streetLightCore, p.strength);
   if (p.color === 'sodium') return hdrColor(MATERIAL.streetLightSodium, p.strength);
   return hdrColor(NEON[p.color].hex, p.strength);
 }
 
-function buildPools(shared: NeonUniforms, pools: readonly Pool[]): THREE.Mesh {
-  const n = pools.length;
-  const iPos = new Float32Array(n * 4);
-  const iColor = new Float32Array(n * 3);
-  pools.forEach((p, i) => {
-    iPos.set([p.x, p.y, p.z, p.radius], i * 4);
-    iColor.set(poolColor(p), i * 3);
-  });
-  const geo = setInstanceAttributes(
-    toInstanced(new THREE.PlaneGeometry(2, 2).rotateX(-Math.PI / 2)),
-    n,
-    {
-      iPos: { size: 4, data: iPos },
-      iColor: { size: 3, data: iColor },
-    },
-  );
-  const mat = neonMaterial(shared, {
-    additive: true,
-    vertexShader: /* glsl */ `
-      ${COMMON_PARS}
-      attribute vec4 iPos; attribute vec3 iColor;
-      varying vec2 vUv; varying vec3 vCol; varying float vFade;
-      #include <fog_pars_vertex>
-      void main() {
-        vec3 world = iPos.xyz + vec3(position.x * iPos.w, 0.0, position.z * iPos.w);
-        vec4 mvPosition = viewMatrix * vec4(world, 1.0);
-        gl_Position = projectionMatrix * mvPosition;
-        vUv = position.xz;
-        vCol = iColor;
-        vFade = 1.0 - smoothstep(200.0, 250.0, length(cameraPosition - iPos.xyz));
-        #include <fog_vertex>
-      }
-    `,
-    fragmentShader: /* glsl */ `
-      ${COMMON_PARS}
-      varying vec2 vUv; varying vec3 vCol; varying float vFade;
-      #include <fog_pars_fragment>
-      void main() {
-        if (vFade <= 0.0) discard;
-        float d = dot(vUv, vUv);
-        float a = exp(-d * 3.0) * (1.0 - smoothstep(0.75, 1.0, d));
-        float wetBoost = 1.0 + uWet * 0.6;
-        gl_FragColor = vec4(vCol * a * vFade * uNight * wetBoost * uPower, 1.0);
-        ${ADDITIVE_TAIL}
-      }
-    `,
-  });
-  mat.polygonOffset = true;
-  mat.polygonOffsetFactor = -1;
-  mat.polygonOffsetUnits = -1;
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.name = 'neon-light-pools';
-  mesh.frustumCulled = false;
-  mesh.renderOrder = 1;
-  return mesh;
-}
-
-export function buildStreet(
-  shared: NeonUniforms,
-  plan: StreetPlan,
-  solidMat: THREE.ShaderMaterial,
-): StreetMeshes {
+export function buildStreet(plan: StreetPlan, solidMat: THREE.ShaderMaterial): StreetMeshes {
   const group = new THREE.Group();
   group.name = 'neon-street';
   const disposables: { dispose(): void }[] = [];
@@ -281,10 +219,6 @@ export function buildStreet(
   const tentMesh = buildEmissiveSolids(tentGeometry(), solidMat, tents, 'pojangmacha-tents');
   group.add(tentMesh);
   disposables.push(tentMesh.geometry);
-
-  const pools = buildPools(shared, plan.pools);
-  group.add(pools);
-  disposables.push(pools.geometry, pools.material as THREE.Material);
 
   return {
     group,

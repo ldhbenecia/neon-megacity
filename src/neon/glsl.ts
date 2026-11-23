@@ -53,6 +53,39 @@ float flicker(float seed) {
 }
 `;
 
+// Vehicle frame from the packed path texture (traffic lights and bodies).
+export const PATH_PARS = /* glsl */ `
+uniform sampler2D uPath;
+attribute vec4 iPath;
+attribute vec4 iMotion;
+attribute vec2 iExtra;
+vec3 pathAt(float row, float u) {
+  int r = int(row + 0.5);
+  float n = texelFetch(uPath, ivec2(0, r), 0).w;
+  float f = clamp(u, 0.0, 1.0) * (n - 1.0);
+  float i = min(floor(f), n - 2.0);
+  vec3 a = texelFetch(uPath, ivec2(int(i), r), 0).xyz;
+  vec3 b = texelFetch(uPath, ivec2(int(i) + 1, r), 0).xyz;
+  return mix(a, b, f - i);
+}
+float wrapU(float u, float closed) { return closed > 0.5 ? fract(u) : clamp(u, 0.0, 1.0); }
+void vehicleFrame(out vec3 P, out vec3 F, out vec3 R, out float fade) {
+  float u = fract(iMotion.x + iMotion.y * uTime);
+  float ff = iPath.z;
+  fade = iPath.y > 0.5 ? 1.0 : smoothstep(0.0, ff, u) * smoothstep(1.0, 1.0 - ff, u);
+  float uu = iMotion.z > 0.0 ? u : 1.0 - u;
+  float n = texelFetch(uPath, ivec2(0, int(iPath.x + 0.5)), 0).w;
+  float du = 1.0 / max(n - 1.0, 1.0);
+  vec3 p0 = pathAt(iPath.x, wrapU(uu - du, iPath.y));
+  vec3 p1 = pathAt(iPath.x, wrapU(uu + du, iPath.y));
+  vec3 d = (p1 - p0) * iMotion.z;
+  F = length(d) > 1e-4 ? normalize(d) : vec3(1.0, 0.0, 0.0);
+  R = normalize(vec3(-F.z, 0.0, F.x));
+  P = pathAt(iPath.x, uu) + R * iMotion.w + vec3(0.0, iExtra.x, 0.0);
+  if (iPath.w > 0.5) P.y += sin(uTime * 0.8 + iExtra.y) * 1.2;
+}
+`;
+
 export const EMISSIVE_TAIL = /* glsl */ `
   #include <tonemapping_fragment>
   #include <colorspace_fragment>

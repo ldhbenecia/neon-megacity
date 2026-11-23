@@ -2,8 +2,9 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { NEON, type NeonName } from '../core/palette';
 import type { Catalog } from './catalog';
-import { ADDITIVE_TAIL, COMMON_PARS, EMISSIVE_TAIL, neonMaterial, type NeonUniforms } from './glsl';
+import { COMMON_PARS, EMISSIVE_TAIL, neonMaterial, type NeonUniforms } from './glsl';
 import { hdrColor, setInstanceAttributes, toInstanced } from './geom';
+import { GlowMode, glowMaterial } from './glow';
 import type { FlatSign } from './placement';
 
 export function neonHdr(name: NeonName, t: number): number {
@@ -265,50 +266,7 @@ export function buildHalos(shared: NeonUniforms, list: readonly HaloInstance[]):
     iPos: { size: 4, data: iPos },
     iColor: { size: 4, data: iColor },
   });
-  const mat = neonMaterial(shared, {
-    additive: true,
-    side: THREE.DoubleSide,
-    vertexShader: /* glsl */ `
-      ${COMMON_PARS}
-      attribute vec4 iPos; attribute vec4 iColor;
-      varying vec2 vUv; varying vec3 vCol; varying float vAlpha;
-      #include <fog_pars_vertex>
-      #if defined(USE_FOG) && defined(FOG_EXP2)
-        uniform float fogDensity;
-      #endif
-      void main() {
-        vec4 mvPosition = viewMatrix * vec4(iPos.xyz, 1.0);
-        float dist = -mvPosition.z;
-        float r = iPos.w * (1.0 + dist / 400.0);
-        // Pulled toward the camera so the disc does not clip into the wall behind the sign.
-        mvPosition.xyz *= max(0.2, 1.0 - min(r * 0.6, dist * 0.3) / max(dist, 1.0));
-        mvPosition.xy += position.xy * r;
-        gl_Position = projectionMatrix * mvPosition;
-        float fogE = 0.0;
-        #ifdef USE_FOG
-          #ifdef FOG_EXP2
-            fogE = 1.0 - exp(-pow(fogDensity * 0.55 * dist, 2.0));
-          #endif
-        #endif
-        vAlpha = (0.02 + fogE * 0.35) * powerOn(iColor.w, 3.0) * uGain;
-        vCol = iColor.rgb;
-        vUv = position.xy;
-        #include <fog_vertex>
-      }
-    `,
-    fragmentShader: /* glsl */ `
-      ${COMMON_PARS}
-      varying vec2 vUv; varying vec3 vCol; varying float vAlpha;
-      void main() {
-        float d = dot(vUv, vUv);
-        float a = exp(-d * 4.0) * (1.0 - smoothstep(0.7, 1.0, d));
-        gl_FragColor = vec4(vCol * a * vAlpha, 1.0);
-        #include <tonemapping_fragment>
-        #include <colorspace_fragment>
-      }
-    `,
-  });
-  mat.depthTest = true;
+  const mat = glowMaterial(shared, GlowMode.halo);
   const mesh = new THREE.Mesh(geo, mat);
   mesh.name = 'neon-halos';
   mesh.frustumCulled = false;
@@ -321,75 +279,31 @@ export interface DecalInstance {
   y: number;
   z: number;
   width: number;
+  /** Negative marks a round light pool of radius `width` (no camera stretch). */
   length: number;
   color: [number, number, number];
 }
 
 export function buildReflections(shared: NeonUniforms, list: readonly DecalInstance[]): THREE.Mesh {
   const n = list.length;
-  const iPos = new Float32Array(n * 3);
+  const iPos = new Float32Array(n * 4);
   const iSize = new Float32Array(n * 2);
-  const iColor = new Float32Array(n * 3);
+  const iColor = new Float32Array(n * 4);
   list.forEach((d, i) => {
-    iPos.set([d.x, d.y, d.z], i * 3);
+    iPos.set([d.x, d.y, d.z, 0], i * 4);
     iSize.set([d.width, d.length], i * 2);
-    iColor.set(d.color, i * 3);
+    iColor.set([...d.color, 0], i * 4);
   });
   const geo = setInstanceAttributes(
     toInstanced(new THREE.PlaneGeometry(1, 1).translate(0, 0.5, 0)),
     n,
     {
-      iPos: { size: 3, data: iPos },
+      iPos: { size: 4, data: iPos },
       iSize: { size: 2, data: iSize },
-      iColor: { size: 3, data: iColor },
+      iColor: { size: 4, data: iColor },
     },
   );
-  const mat = neonMaterial(shared, {
-    additive: true,
-    side: THREE.DoubleSide,
-    vertexShader: /* glsl */ `
-      ${COMMON_PARS}
-      attribute vec3 iPos; attribute vec2 iSize; attribute vec3 iColor;
-      varying vec2 vUv; varying vec3 vCol; varying float vFade; varying vec2 vWorld;
-      #include <fog_pars_vertex>
-      void main() {
-        vec2 toCam = cameraPosition.xz - iPos.xz;
-        float dist = length(toCam);
-        vec2 dir = dist > 1e-3 ? toCam / dist : vec2(0.0, 1.0);
-        vec2 side = vec2(-dir.y, dir.x);
-        float len = min(iSize.y, dist * 0.8);
-        vec2 xz = iPos.xz + side * position.x * iSize.x + dir * position.y * len;
-        vec3 world = vec3(xz.x, iPos.y, xz.y);
-        vec4 mvPosition = viewMatrix * vec4(world, 1.0);
-        gl_Position = projectionMatrix * mvPosition;
-        vUv = vec2(position.x, position.y);
-        vCol = iColor;
-        vFade = 1.0 - smoothstep(300.0, 400.0, dist);
-        vWorld = xz;
-        #include <fog_vertex>
-      }
-    `,
-    fragmentShader: /* glsl */ `
-      ${COMMON_PARS}
-      varying vec2 vUv; varying vec3 vCol; varying float vFade; varying vec2 vWorld;
-      #include <fog_pars_fragment>
-      float vnoise(vec2 p) {
-        vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
-        return mix(mix(nHash2(i), nHash2(i + vec2(1, 0)), f.x), mix(nHash2(i + vec2(0, 1)), nHash2(i + vec2(1, 1)), f.x), f.y);
-      }
-      void main() {
-        if (vFade <= 0.0) discard;
-        float across = exp(-vUv.x * vUv.x * 9.0);
-        float along = pow(1.0 - vUv.y, 1.4) * smoothstep(0.0, 0.08, vUv.y);
-        vec2 p = vWorld * 0.35 + vec2(0.0, uTime * 0.3 * 0.35);
-        float puddle = smoothstep(0.35, 0.75, vnoise(vWorld * 0.06));
-        float ripple = 0.6 + 0.4 * vnoise(p + vnoise(p * 2.3) * 0.8);
-        float a = uWet * 0.6 * mix(0.35, 1.0, puddle) * ripple * across * along * vFade * uGain * uNight;
-        gl_FragColor = vec4(vCol * a, 1.0);
-        ${ADDITIVE_TAIL}
-      }
-    `,
-  });
+  const mat = glowMaterial(shared, GlowMode.decal);
   mat.polygonOffset = true;
   mat.polygonOffsetFactor = -2;
   mat.polygonOffsetUnits = -2;
