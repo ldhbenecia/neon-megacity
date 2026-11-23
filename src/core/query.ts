@@ -25,8 +25,7 @@ export interface CameraPose {
 type Pose = CameraPose;
 
 /** Map-relative presets: the same framing whichever layout version is loaded. */
-// CITY.extent is the longer side of the map on every layout version.
-const TOPDOWN_Y = CITY.extent / 2 + 700;
+const TOPDOWN_Y = Math.max(CITY.extentX, CITY.extentZ) / 2 + 700;
 
 /**
  * OrbitControls limits applied by main.ts. Every camera preset must satisfy them,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { LAYOUT, SKYLINE_PEAK, buildingContaining, surfaceHeight } from '../src/city/layout';
+import { CITY, LAYOUT, SKYLINE_PEAK, buildingContaining, surfaceHeight } from '../src/city/layout';
 import { pointSegmentDistance } from '../src/city/math';
 import { PerspectiveCamera, Vector3 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -128,7 +128,7 @@ describe('CAMERA_PRESETS', () => {
 
   it('keeps the topdown preset inside maxDistance', () => {
     const [, y] = CAMERA_PRESETS.topdown.position;
-    expect(y).toBeGreaterThan(LAYOUT.extent / 2);
+    expect(y).toBeGreaterThan(Math.max(CITY.extentX, CITY.extentZ) / 2);
     expect(CAMERA_LIMITS.maxDistance).toBeGreaterThan(y);
   });
 
