@@ -1,6 +1,15 @@
 import { createRng, type Rng } from '../core/random';
 import type { NeonName } from '../core/palette';
-import { type BuildingFace, type BuildingSpec, type Layout, type Tier } from '../city/layout';
+import {
+  baseKind,
+  isUnbuilt,
+  type BaseKind,
+  type BuildingFace,
+  type BuildingSpec,
+  type DistrictKind,
+  type Layout,
+  type Tier,
+} from '../city/layout';
 import type { Catalog } from './catalog';
 import { CARGO_CROWN } from './content';
 import { firstHit, type Solid } from './solids';
@@ -161,39 +170,46 @@ const DARK: DistrictSigns = {
   holos: false,
 };
 
-// Districts missing here (newer layouts) fall back to MIDTOWN so they never go dark.
-const DISTRICT_SIGNS: ReadonlyMap<string, DistrictSigns> = new Map([
-  [
-    'riverside',
-    { zone: [0, 0.12], street: true, shops: false, tubes: false, vtext: true, holos: false },
-  ],
-  ['core', { ...MIDTOWN, zone: [0.12, 0.35] }],
-  ['megacore', { ...MIDTOWN, zone: [0.12, 0.35] }],
-  ['midtown', MIDTOWN],
-  ['corridor', MIDTOWN],
-  ['showroom', { ...MIDTOWN, shops: true }],
-  ['sangga', SANGGA],
-  ['nightlife', SANGGA],
-  ['brick', SANGGA],
-  ['oldtown', SANGGA],
-  [
-    'industrial',
-    { zone: [0.5, 0.65], street: true, shops: false, tubes: false, vtext: true, holos: false },
-  ],
-  ['hillside', DARK],
-  ['palace', DARK],
-  ['park', DARK],
-  [
-    'apartment',
-    { zone: [0.8, 0.95], street: true, shops: false, tubes: false, vtext: false, holos: false },
-  ],
-] as const satisfies readonly (readonly [string, DistrictSigns])[]);
+// Keyed by the v2 base kind (src/city/kinds.ts); unbuilt kinds (palace, park) get DARK.
+const DISTRICT_SIGNS: Readonly<Record<Exclude<BaseKind, 'palace' | 'park'>, DistrictSigns>> = {
+  riverside: {
+    zone: [0, 0.12],
+    street: true,
+    shops: false,
+    tubes: false,
+    vtext: true,
+    holos: false,
+  },
+  core: { ...MIDTOWN, zone: [0.12, 0.35] },
+  midtown: MIDTOWN,
+  sangga: SANGGA,
+  industrial: {
+    zone: [0.5, 0.65],
+    street: true,
+    shops: false,
+    tubes: false,
+    vtext: true,
+    holos: false,
+  },
+  hillside: DARK,
+  apartment: {
+    zone: [0.8, 0.95],
+    street: true,
+    shops: false,
+    tubes: false,
+    vtext: false,
+    holos: false,
+  },
+};
 
-export function districtSigns(district: string): DistrictSigns {
-  return DISTRICT_SIGNS.get(district) ?? MIDTOWN;
+export function districtSigns(district: DistrictKind): DistrictSigns {
+  if (isUnbuilt(district)) return DARK;
+  const base = baseKind(district) as Exclude<BaseKind, 'palace' | 'park'> | undefined;
+  // Kinds newer than the shared table fall back to midtown so they never go dark.
+  return (base && DISTRICT_SIGNS[base]) ?? MIDTOWN;
 }
 
-export function zoneDelay(district: string, rng: Rng): number {
+export function zoneDelay(district: DistrictKind, rng: Rng): number {
   const [a, b] = districtSigns(district).zone;
   return rng.range(a, b);
 }
