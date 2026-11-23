@@ -51,9 +51,13 @@ function bridgePose(L: Layout): Pose {
   if (!br) return camPose('overview');
   const cx = (br.a.x + br.b.x) / 2;
   const cz = (br.a.z + br.b.z) / 2;
+  // Look down the deck past the north abutment (`a`), ~550 m ahead as on layout v2.
+  const ax = br.a.x - cx;
+  const az = br.a.z - cz;
+  const k = 550 / Math.hypot(ax, az);
   return {
     position: { x: cx, y: br.deckY + 4, z: cz },
-    target: { x: cx, y: br.deckY, z: -400 },
+    target: { x: cx + ax * k, y: br.deckY, z: cz + az * k },
   };
 }
 

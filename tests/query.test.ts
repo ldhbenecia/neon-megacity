@@ -10,8 +10,11 @@ import {
   type CameraPreset,
   cameraPreset,
   parseQuery,
+  streetAnchor,
   streetPose,
 } from '../src/core/query';
+
+const anchor = streetAnchor(LAYOUT.districts)!;
 
 describe('parseQuery', () => {
   it('returns defaults for an empty query', () => {
@@ -40,12 +43,15 @@ describe('parseQuery', () => {
 });
 
 describe('CAMERA_PRESETS', () => {
-  it('places the street camera on the center line of a sangga street, looking along it', () => {
+  it('places the street camera on the center line of an anchor-kind street, looking along it', () => {
+    expect(anchor).not.toBeNull();
     const { position, target } = CAMERA_PRESETS.street;
     const p = { x: position[0], z: position[2] };
     const road = LAYOUT.roads.find(
       (r) =>
-        r.kind === 'street' && r.zoneId === 'sangga-n' && pointSegmentDistance(p, r.a, r.b) < 1e-6,
+        r.kind === 'street' &&
+        r.district === anchor.kind &&
+        pointSegmentDistance(p, r.a, r.b) < 1e-6,
     );
     expect(road).toBeDefined();
     const dx = road!.b.x - road!.a.x;
@@ -77,15 +83,33 @@ describe('CAMERA_PRESETS', () => {
     for (const name of Object.keys(CAMERA_PRESETS) as CameraPreset[]) {
       expect(cameraPreset(name)).toEqual(CAMERA_PRESETS[name]);
     }
-    expect(streetPose([])).toBeNull();
+    expect(streetPose([], anchor)).toBeNull();
+    expect(streetPose(LAYOUT.roads, null)).toBeNull();
+    expect(streetAnchor([])).toBeNull();
     expect(cameraPreset('street')).not.toEqual(STREET_FALLBACK);
   });
 
-  it('snaps the street preset near ART_DIRECTION 8.4 preset 3', () => {
+  it('snaps the street preset near its anchor point', () => {
     const [x, , z] = cameraPreset('street').position;
+    // 160 m of road is kept ahead of the camera, which can pull it off the anchor.
+    expect(Math.hypot(x - anchor.want.x, z - anchor.want.z)).toBeLessThan(250);
+  });
+
+  it('prefers a nightlife zone origin over the sangga fallback point', () => {
+    const origin = { x: 1, z: 2 };
     expect(
-      Math.hypot(x - STREET_FALLBACK.position[0], z - STREET_FALLBACK.position[2]),
-    ).toBeLessThan(150);
+      streetAnchor([
+        { kind: 'sangga', origin: { x: 0, z: 0 } },
+        { kind: 'nightlife', origin },
+      ]),
+    ).toEqual({ kind: 'nightlife', want: origin });
+    expect(streetAnchor([{ kind: 'sangga', origin }])?.want).toEqual({ x: -760, z: -360 });
+  });
+
+  it('keeps the topdown preset inside maxDistance', () => {
+    const [, y] = CAMERA_PRESETS.topdown.position;
+    expect(y).toBeGreaterThan(LAYOUT.extent / 2);
+    expect(CAMERA_LIMITS.maxDistance).toBeGreaterThan(y);
   });
 
   const names = Object.keys(CAMERA_PRESETS) as CameraPreset[];
