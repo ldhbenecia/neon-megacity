@@ -49,8 +49,9 @@ export function init(ctx: Ctx): CityModuleInstance {
   const key = new THREE.DirectionalLight(0xffffff, 0);
   key.name = 'keyLight';
   // castShadow never toggles at runtime: flipping it changes every lit material's program variant
-  // (0.6–1.3 s stall with buildings on a day/night scrub). Night turns shadow.intensity to 0 and
-  // stops refreshing the map instead.
+  // (0.6–1.3 s stall with buildings on a day/night scrub). When sun shadows are off (setting,
+  // sunset, night) shadow.intensity goes to 0 and the map stops refreshing instead. Trade-off: lit
+  // materials keep sampling the map; pre-compiling both variants would exceed 50 programs.
   key.castShadow = !low;
   key.shadow.intensity = 0;
   key.shadow.mapSize.set(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
@@ -133,7 +134,7 @@ export function init(ctx: Ctx): CityModuleInstance {
     const shadowIntensity = sunShadow ? 1 : 0;
     if (shadowIntensity !== key.shadow.intensity) {
       key.shadow.intensity = shadowIntensity;
-      renderer.shadowMap.needsUpdate = sunShadow;
+      if (sunShadow) renderer.shadowMap.needsUpdate = true;
     }
     // Shadow frustum first, so the light target below already sits on this frame's frustum.
     if (sunShadow) updateShadowCamera(dt);

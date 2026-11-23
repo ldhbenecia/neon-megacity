@@ -72,7 +72,11 @@ infra init 46–83 ms, first frame 31–79 ms. Canvas: 98.9 MB (`gl.SAMPLES` = 4
   variant of every lit material. With buildings (#11), preset 2, M4: a timeline jump between night
   and day added 8 programs (35 → 43) and stalled one frame for 0.57–1.26 s, both directions.
   Lighting now keeps `castShadow` fixed and sets `shadow.intensity` to 0 at night: 0 new programs,
-  worst frame 16–18 ms for night → noon / sunset.
+  worst frame 16–18 ms for night → noon / sunset. Trade-off: at night lit materials still sample
+  the shadow map (PCF runs before the intensity mix). Steady-state night frames with buildings,
+  two runs each: river 5.1 / 6.7 ms on main vs 6.7 / 6.5 ms, top-down 7.8 / 7.3 vs 7.9 / 7.2, i.e.
+  within run-to-run noise on the M4; re-check on an integrated GPU. The alternative, compiling
+  both variants at boot, keeps 52 programs alive (ceiling 50) for the same night frame times.
 - **Leaving the noon palette (open).** Booted at noon, the first jump to sunset or night still
   stalls one frame for ~470 ms without any new program (sunset → night: 45 ms, noon → 15:00:
   8 ms). Not a recompile; under investigation.
