@@ -17,6 +17,9 @@ export default defineConfig({
     baseURL: `http://localhost:${PORT}/`,
     viewport: process.env.CI ? { width: 960, height: 540 } : { width: 1280, height: 720 },
     trace: 'retain-on-failure',
+    // Skips the cosmetic boot motion (dolly-in, idle cinematic, long power ramp and loader fade):
+    // several seconds per boot in SwiftShader. The boot-skeleton test opts back in.
+    contextOptions: { reducedMotion: 'reduce' },
   },
   projects: [
     {
