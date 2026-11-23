@@ -96,17 +96,17 @@ triangles, 61 calls), not fill.
 
 Same ART_DIRECTION 11 ceilings; v3 must fit them, not raise them. Per-module rules for v3:
 
-| item                      | rule for v3                                                                                                                                                |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| draw calls (buildings 90) | one draw per visible chunk × LOD × material. ~70 chunks of 400 m fit; adding a material per chunk does not                                                 |
-| buildings LOD0            | LOD distance measured to the chunk AABB, not its centre (SEOUL.md 2.1), so 400 m chunks keep the v2 LOD0 radius (380 m); LOD0 built lazily near the camera |
-| geometry memory           | ≤ 120 MB total (v2 is 122 MB; ×1.43 buildings would be ~175 MB)                                                                                            |
-| street slots              | one `InstancedMesh` per kind; street lights as emissive quads / shader, real `PointLight`s ≤ 8 in total; trees LOD0 only                                   |
-| infra triangles           | ≤ 300 k on screen; bridges get near / far LOD at 600 m (660 m back), low tier builds far only (temporary test limit 360 k until then)                      |
-| triangles on screen       | ≤ 1.2 M target at the top-down and river presets (v2: 0.36 M)                                                                                              |
-| layout generation         | ≤ 1 s in the browser on an M1-class laptop; otherwise precompute it at build time or move it to a Worker in parallel with PMREM bakes                      |
-| boot → interactive        | ≤ 3 s M1, ≤ 6 s Intel iGPU (v2 with buildings: 1.0–1.6 s on M4)                                                                                            |
-| low tier (`env.quality`)  | every new module adds its branch in the same PR: skip LOD0 / near meshes, props, per-pixel noise and post                                                  |
+| item                      | rule for v3                                                                                                                                                                                                                                        |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| draw calls (buildings 90) | one draw per visible chunk × LOD × material. ~70 chunks of 400 m fit; adding a material per chunk does not                                                                                                                                         |
+| buildings LOD0            | LOD distance measured to the chunk AABB, not its centre (SEOUL.md 2.1), so 400 m chunks keep the v2 LOD0 radius (380 m); LOD0 built lazily near the camera                                                                                         |
+| geometry memory           | ≤ 120 MB total (v2 is 122 MB; ×1.43 buildings would be ~175 MB)                                                                                                                                                                                    |
+| street slots              | one `InstancedMesh` per kind; street lights as emissive quads / shader, real `PointLight`s ≤ 8 in total; trees LOD0 only                                                                                                                           |
+| infra triangles           | ≤ 300 k on screen; bridge detail (`BRIDGE_LOD_NEAR` 600 m / `BRIDGE_LOD_FAR` 660 m, 3D distance to the deck centre) is off in the low tier; test limit 300 k, worst over a 100 m camera grid plus bridge centres and midpoints: v2 134 k, v3 285 k |
+| triangles on screen       | ≤ 1.2 M target at the top-down and river presets (v2: 0.36 M)                                                                                                                                                                                      |
+| layout generation         | ≤ 1 s in the browser on an M1-class laptop; otherwise precompute it at build time or move it to a Worker in parallel with PMREM bakes                                                                                                              |
+| boot → interactive        | ≤ 3 s M1, ≤ 6 s Intel iGPU (v2 with buildings: 1.0–1.6 s on M4)                                                                                                                                                                                    |
+| low tier (`env.quality`)  | every new module adds its branch in the same PR: skip LOD0 / near meshes, props, per-pixel noise and post                                                                                                                                          |
 
 Check after each v3 PR with `npm run perf -- v3` on the heaviest presets (SEOUL.md 7: overview and namsan) plus top-down.
 
