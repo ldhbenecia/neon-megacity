@@ -4,12 +4,14 @@ import {
   LAYOUT,
   RIVER,
   TERRAIN,
+  riverCenterDistance,
   riverFrame,
   riverSignedDistance,
   riverZ,
   ridgeHeight,
   terrainHeight,
   type Ridge,
+  type Vec2,
 } from '../city/layout';
 import { createRng } from '../core/random';
 
@@ -25,15 +27,106 @@ const NEAR_RIDGE: Ridge = (() => {
 export const GROUND_RADIUS = NEAR_RIDGE.radius - 10;
 export const OUTER_EXTENT = GROUND_RADIUS;
 
-const RIVER_X0 = Math.min(...RIVER.centerline.map((p) => p.x));
-const RIVER_X1 = Math.max(...RIVER.centerline.map((p) => p.x));
+export const MAP_HALF_X = CITY.extentX / 2;
+export const MAP_HALF_Z = CITY.extentZ / 2;
+
+const RIVER_X0 = Math.min(...RIVER.centerline.map((p) => p.x)) + 10;
+const RIVER_X1 = Math.max(...RIVER.centerline.map((p) => p.x)) - 10;
 const HILL_GRID_Z = TERRAIN.hillStartZ + 90;
 
-// Past the polyline ends, continues the analytic centerline so the river runs to the horizon.
+// Read back from the distance queries so a layout with a varying width needs no change here.
+// Clamped to the polyline: past its ends the river keeps its end width.
+export function channelHalfWidth(x: number): number {
+  const p = riverFrame(Math.min(RIVER_X1, Math.max(RIVER_X0, x))).p;
+  return riverCenterDistance(p.x, p.z) - riverSignedDistance(p.x, p.z);
+}
+
+// Past the polyline ends, continues the centerline so the river runs to the horizon. Switches on
+// the foot of the perpendicular, not on x, or a slanted end opens a seam across the banks.
 export function channelDistance(x: number, z: number): number {
-  if (x >= RIVER_X0 + 10 && x <= RIVER_X1 - 10) return riverSignedDistance(x, z);
   const f = riverFrame(x);
-  return Math.abs((z - riverZ(x)) * f.along.x) - RIVER.width / 2;
+  const dz = z - riverZ(x);
+  const foot = x + f.along.x * f.along.z * dz;
+  if (foot >= RIVER_X0 && foot <= RIVER_X1) return riverSignedDistance(x, z);
+  return Math.abs(dz * f.along.x) - channelHalfWidth(x);
+}
+
+function segmentHit(a: Vec2, b: Vec2, c: Vec2, d: Vec2): Vec2 | null {
+  const rx = b.x - a.x;
+  const rz = b.z - a.z;
+  const sx = d.x - c.x;
+  const sz = d.z - c.z;
+  const den = rx * sz - rz * sx;
+  if (Math.abs(den) < 1e-12) return null;
+  const t = ((c.x - a.x) * sz - (c.z - a.z) * sx) / den;
+  const u = ((c.x - a.x) * rz - (c.z - a.z) * rx) / den;
+  if (t <= 0 || t >= 1 || u <= 0 || u >= 1) return null;
+  return { x: a.x + rx * t, z: a.z + rz * t };
+}
+
+/**
+ * Offsets slices of a strip along their frame normals. Where a bend is tighter than the offset
+ * the row loops back over itself; the slices inside the loop collapse onto the crossing point so
+ * every row stays a simple curve and the strip never folds.
+ */
+export function stripRow(
+  xs: readonly number[],
+  offset: (x: number, i: number) => number,
+  window = 120,
+): Vec2[] {
+  const out: Vec2[] = [];
+  for (const [i, x] of xs.entries()) {
+    const f = riverFrame(x);
+    const k = offset(x, i);
+    const p = { x: f.p.x + f.south.x * k, z: f.p.z + f.south.z * k };
+    const last = out[i - 1];
+    if (last && (p.x - last.x) * f.along.x + (p.z - last.z) * f.along.z <= 0) {
+      out.push(last);
+      continue;
+    }
+    if (last) {
+      for (let s = i - 2; s >= Math.max(1, i - window); s--) {
+        const c = out[s - 1];
+        const d = out[s];
+        const hit = c && d ? segmentHit(last, p, c, d) : null;
+        if (hit) {
+          for (let m = s; m < i; m++) out[m] = hit;
+          break;
+        }
+      }
+    }
+    out.push(p);
+  }
+  return out;
+}
+
+// > 0 when the triangle faces up (three's winding: (c - b) x (a - b)).
+function upArea(a: Vec2, b: Vec2, c: Vec2): number {
+  return (c.z - b.z) * (a.x - b.x) - (c.x - b.x) * (a.z - b.z);
+}
+
+/**
+ * Pins both rows to the previous slice wherever the quad between them would face down, which
+ * happens where the two rows collapsed over different spans. `flip` mirrors the winding for a
+ * strip whose rows run the other way across the river. Mutates the rows.
+ */
+export function unfoldPair(a: Vec2[], b: Vec2[], flip: boolean): void {
+  const sign = flip ? -1 : 1;
+  for (let pass = 0; pass < 8; pass++) {
+    let changed = false;
+    for (let s = 0; s < a.length - 1; s++) {
+      const a0 = a[s];
+      const b0 = b[s];
+      const a1 = a[s + 1];
+      const b1 = b[s + 1];
+      if (!a0 || !b0 || !a1 || !b1) continue;
+      if (sign * upArea(a0, b0, a1) >= -1e-6 && sign * upArea(b0, b1, a1) >= -1e-6) continue;
+      a[s + 1] = a0;
+      b[s + 1] = b0;
+      changed = true;
+    }
+    if (!changed) return;
+  }
 }
 
 export type ChannelPart = 'bank' | 'embankment' | 'park' | 'parkEdge';
@@ -62,8 +155,8 @@ export function channelProfile(outer: number): ProfilePoint[] {
   ];
 }
 
-export function waterHalfWidth(): number {
-  return RIVER.width / 2 - RIVER.parkWidth - EMBANK_SLOPE * 0.5;
+export function waterHalfWidth(x: number): number {
+  return channelHalfWidth(x) - RIVER.parkWidth - EMBANK_SLOPE * 0.5;
 }
 
 export function gridAxis(
@@ -96,10 +189,11 @@ export function gridAxis(
 }
 
 export function groundAxes(): { xs: number[]; zs: number[] } {
-  const half = CITY.half + 40;
-  const xs = gridAxis(-half, half, 12, OUTER_EXTENT);
-  const north = gridAxis(-half, HILL_GRID_Z, 12, OUTER_EXTENT).filter((z) => z <= HILL_GRID_Z);
-  const south = gridAxis(HILL_GRID_Z, half, 24, OUTER_EXTENT).filter((z) => z > HILL_GRID_Z);
+  const hx = MAP_HALF_X + 40;
+  const hz = MAP_HALF_Z + 40;
+  const xs = gridAxis(-hx, hx, 12, OUTER_EXTENT);
+  const north = gridAxis(-hz, HILL_GRID_Z, 12, OUTER_EXTENT).filter((z) => z <= HILL_GRID_Z);
+  const south = gridAxis(HILL_GRID_Z, hz, 24, OUTER_EXTENT).filter((z) => z > HILL_GRID_Z);
   return { xs, zs: [...north, ...south] };
 }
 
@@ -180,7 +274,11 @@ export function groundVertex(x: number, z: number): { x: number; y: number; z: n
 // Must end exactly on ±OUTER_EXTENT or a gap opens at the strip ends.
 export function riverSliceXs(fine: number, coarse: number): number[] {
   const xs: number[] = [];
-  for (let x = -OUTER_EXTENT; x < OUTER_EXTENT; x += Math.abs(x) < CITY.half + 40 ? fine : coarse) {
+  for (
+    let x = -OUTER_EXTENT;
+    x < OUTER_EXTENT;
+    x += Math.abs(x) < MAP_HALF_X + 40 ? fine : coarse
+  ) {
     xs.push(x);
   }
   if (OUTER_EXTENT - (xs[xs.length - 1] ?? -Infinity) < 1) xs.pop();

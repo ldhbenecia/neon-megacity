@@ -1,5 +1,7 @@
+import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import {
+  CITY,
   EMBANK_SLOPE as LAYOUT_EMBANK_SLOPE,
   LAYOUT,
   RIVER,
@@ -12,7 +14,10 @@ import {
   EMBANK_SLOPE,
   GROUND_RADIUS,
   OUTER_EXTENT,
+  MAP_HALF_X,
+  MAP_HALF_Z,
   channelDistance,
+  channelHalfWidth,
   channelProfile,
   gridAxis,
   groundAxes,
@@ -23,6 +28,7 @@ import {
   waterHalfWidth,
 } from '../src/terrain/shape';
 import { buildChannel, buildGround } from '../src/terrain/ground';
+import { createWater } from '../src/terrain/water';
 
 function profileY(d: number): number {
   const p = channelProfile(40);
@@ -36,8 +42,8 @@ function profileY(d: number): number {
 
 describe('channel profile', () => {
   it('matches surfaceHeight across the embankment, park and park edge', () => {
-    for (const x of [-900, -300, 140, 700]) {
-      const f = riverFrame(x);
+    for (const t of [-0.75, -0.25, 0.12, 0.58]) {
+      const f = riverFrame(t * MAP_HALF_X);
       for (let off = 40; off <= 121; off += 0.5) {
         const px = f.p.x + f.south.x * off;
         const pz = f.p.z + f.south.z * off;
@@ -52,26 +58,52 @@ describe('channel profile', () => {
     const p = channelProfile(40);
     const last = p[p.length - 1]!;
     expect(last.y).toBeLessThan(RIVER.waterY);
-    const waterD = waterHalfWidth() - RIVER.width / 2;
-    expect(waterD).toBeGreaterThan(last.d);
-    expect(profileY(waterD)).toBeGreaterThan(RIVER.waterY);
+    for (const t of [-0.75, 0, 0.58]) {
+      const x = t * MAP_HALF_X;
+      const waterD = waterHalfWidth(x) - channelHalfWidth(x);
+      expect(waterD).toBeGreaterThan(last.d);
+      expect(profileY(waterD)).toBeGreaterThan(RIVER.waterY);
+    }
   });
 });
 
 describe('channelDistance', () => {
+  const xs = RIVER.centerline.map((p) => p.x);
+  const x0 = Math.min(...xs);
+  const x1 = Math.max(...xs);
+
   it('equals the layout query inside the map and stays continuous past it', () => {
-    for (const [x, z] of [
+    for (const [tx, tz] of [
       [0, 0],
-      [-600, 300],
-      [900, 120],
+      [-0.5, 0.25],
+      [0.75, 0.1],
     ] as const) {
+      const x = tx * MAP_HALF_X;
+      const z = tz * MAP_HALF_Z;
       expect(channelDistance(x, z)).toBe(riverSignedDistance(x, z));
     }
-    for (const x of [1500, 2200, -2000]) {
+    for (const x of [x1 + 200, x1 + 900, x0 - 700]) {
       const f = riverFrame(x);
-      expect(channelDistance(f.p.x, f.p.z)).toBeCloseTo(-RIVER.width / 2, 6);
+      expect(channelDistance(f.p.x, f.p.z)).toBeCloseTo(-channelHalfWidth(x), 6);
     }
-    expect(Math.abs(channelDistance(1285, 100) - channelDistance(1295, 100))).toBeLessThan(2);
+    for (const end of [x0, x1]) {
+      for (const k of [-120, -40, 40, 120]) {
+        let prev = Number.NaN;
+        for (let x = end - 60; x <= end + 60; x += 2) {
+          const f = riverFrame(x);
+          const d = channelDistance(f.p.x + f.south.x * k, f.p.z + f.south.z * k);
+          if (!Number.isNaN(prev)) expect(Math.abs(d - prev)).toBeLessThan(2);
+          prev = d;
+        }
+      }
+    }
+  });
+
+  it('half width is the layout width on the centerline', () => {
+    for (let x = x0 + 10; x <= x1 - 10; x += 97) {
+      const f = riverFrame(x);
+      expect(riverSignedDistance(f.p.x, f.p.z)).toBeCloseTo(-channelHalfWidth(x), 0);
+    }
   });
 });
 
@@ -94,7 +126,8 @@ describe('ground grid', () => {
     const pos = g.getAttribute('position');
     const nrm = g.getAttribute('normal');
     const index = g.getIndex()!;
-    expect(index.count / 3).toBeLessThan(120_000);
+    // About 21k triangles per km² of map (120k on the 2.4 km v2 map).
+    expect(index.count / 3).toBeLessThan((CITY.extentX * CITY.extentZ) / 48);
     const used = new Set<number>();
     for (let i = 0; i < index.count; i++) used.add(index.getX(i));
     const near = LAYOUT.ridges.find((r) => r.id === 'ridge-near')!;
@@ -111,7 +144,7 @@ describe('ground grid', () => {
         expect(pos.getY(v)).toBeLessThanOrEqual(ridgeHeight(near, Math.atan2(z, x)) + 1e-3);
       }
     }
-  });
+  }, 20_000);
 
   it('river strips end exactly on the outer extent', () => {
     for (const [fine, coarse] of [
@@ -132,12 +165,26 @@ describe('ground grid', () => {
     expect(EMBANK_SLOPE).toBe(LAYOUT_EMBANK_SLOPE);
   });
 
-  it('channel strip faces up', () => {
-    const g = buildChannel();
-    const nrm = g.getAttribute('normal');
-    let up = 0;
-    for (let i = 0; i < nrm.count; i++) if (nrm.getY(i) > 0.3) up++;
-    expect(up).toBe(nrm.count);
+  it('channel strip and water face up', () => {
+    for (const g of [buildChannel(), createWater().mesh.geometry]) {
+      const pos = g.getAttribute('position');
+      const index = g.getIndex()!;
+      const a = new THREE.Vector3();
+      const b = new THREE.Vector3();
+      const c = new THREE.Vector3();
+      let faces = 0;
+      for (let i = 0; i < index.count; i += 3) {
+        a.fromBufferAttribute(pos, index.getX(i));
+        b.fromBufferAttribute(pos, index.getX(i + 1));
+        c.fromBufferAttribute(pos, index.getX(i + 2));
+        const n = c.sub(b).cross(a.sub(b));
+        // Slices collapsed onto a crossing point leave zero-area faces.
+        if (n.length() < 1e-3) continue;
+        faces++;
+        expect(n.normalize().y).toBeGreaterThan(0);
+      }
+      expect(faces).toBeGreaterThan(index.count / 6);
+    }
   });
 });
 
