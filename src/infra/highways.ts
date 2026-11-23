@@ -311,7 +311,7 @@ function buildLamps(path: HwPath, rings: DeckRing[], parts: InfraParts, c: Infra
     if (!r || r.hidden || r.overlap) continue;
     const v = curve.getPointAt(s / length);
     const tv = curve.getTangentAt(s / length);
-    if (Math.abs(v.x) > CITY.half || Math.abs(v.z) > CITY.half) continue;
+    if (Math.abs(v.x) > CITY.halfX || Math.abs(v.z) > CITY.halfZ) continue;
     const f = frameAt([v.x, v.y, v.z], [tv.x, tv.y, tv.z]);
     const base: V3 = [v.x, v.y + BARRIER.h, v.z];
     const top: V3 = [v.x, v.y + poleH, v.z];
