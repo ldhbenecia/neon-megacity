@@ -3,17 +3,22 @@ import { fbm1 } from './noise';
 import { clamp, pointSegmentDistance, smoothstep } from './math';
 import type { River, Vec2 } from './types';
 
+const CENTERLINE: Vec2[] = Array.from({ length: 33 }, (_, i) => {
+  const x = -1300 + (2600 * i) / 32;
+  return { x, z: riverZ(x) };
+});
+
 export const RIVER: Readonly<River> = {
-  centerline: Array.from({ length: 33 }, (_, i) => {
-    const x = -1300 + (2600 * i) / 32;
-    return { x, z: riverZ(x) };
-  }),
+  centerline: CENTERLINE,
   width: 240,
   waterY: -4,
   bankY: 0,
   parkWidth: 40,
   parkY: -2,
   bandWidth: 60,
+  widths: CENTERLINE.map(() => 240),
+  parkWidths: CENTERLINE.map(() => 40),
+  samples: CENTERLINE,
 };
 
 /** Analytic river center z at x (the centerline polyline samples this). */

@@ -2,7 +2,7 @@
 // single classification function every other piece of the layout uses.
 import { clamp, pointInPolygon } from './math';
 import { RIVER, TERRAIN, riverSlope, riverZ } from './river';
-import type { DistrictKind, DistrictZone, RoadKind, Vec2 } from './types';
+import type { DistrictKind, DistrictZone, RoadKind, Vec2, ZoneHeights } from './types';
 
 export const MAP_HALF = 1200;
 const DEG = Math.PI / 180;
@@ -158,6 +158,58 @@ const DEFS: ZoneDef[] = [
   },
 ];
 
+/** v2 zone profile per kind (ART_DIRECTION 2.2). Informational: the v2 generator does not read it. */
+const V2_PROFILE: Partial<
+  Record<DistrictKind, { nameEn: string; heights: ZoneHeights; coverage: number }>
+> = {
+  core: {
+    nameEn: 'APEX',
+    heights: { min: 120, max: 245, tallShare: 0.1, tallMax: 520 },
+    coverage: 0.35,
+  },
+  midtown: {
+    nameEn: 'MIDTOWN',
+    heights: { min: 40, max: 140, tallShare: 0.15, tallMax: 210 },
+    coverage: 0.4,
+  },
+  sangga: {
+    nameEn: 'LANTERN ST',
+    heights: { min: 12, max: 32, tallShare: 0.1, tallMax: 70 },
+    coverage: 0.55,
+  },
+  apartment: {
+    nameEn: 'SAEBIT',
+    heights: { min: 42, max: 70, tallShare: 0, tallMax: 70 },
+    coverage: 0.25,
+  },
+  industrial: {
+    nameEn: 'LOGISTICS',
+    heights: { min: 10, max: 30, tallShare: 0, tallMax: 30 },
+    coverage: 0.45,
+  },
+  hillside: {
+    nameEn: 'STAR STEPS',
+    heights: { min: 6, max: 14, tallShare: 0, tallMax: 14 },
+    coverage: 0.6,
+  },
+  riverside: {
+    nameEn: 'RIVERSIDE',
+    heights: { min: 0, max: 8, tallShare: 0, tallMax: 8 },
+    coverage: 0.05,
+  },
+};
+
+function profile(kind: DistrictKind): {
+  nameEn: string;
+  heights: ZoneHeights;
+  coverage: number;
+  litScale: number;
+} {
+  const p = V2_PROFILE[kind];
+  if (!p) throw new Error(`no v2 profile for ${kind}`);
+  return { ...p, heights: { ...p.heights }, litScale: 1 };
+}
+
 function polygonFor(d: ZoneDef): Vec2[] {
   switch (d.area) {
     case 'hill':
@@ -185,6 +237,7 @@ const riversideZone: DistrictZone = {
   roadPitchV: 0,
   roadWidth: 0,
   roadKind: 'street',
+  ...profile('riverside'),
 };
 
 /** All zones. The riverside band comes first so it wins over its neighbours. */
@@ -201,6 +254,7 @@ export const ZONES: readonly DistrictZone[] = [
     roadPitchV: d.pitch[1],
     roadWidth: d.roadWidth,
     roadKind: d.roadKind,
+    ...profile(d.kind),
   })),
 ];
 

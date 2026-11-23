@@ -5,7 +5,7 @@ import { CatmullRomCurve3, Vector3 } from 'three';
 import { pointSegmentDistance } from './math';
 import { MAP_HALF, RIVERSIDE_HALF } from './districts';
 import { RIVER, riverFrame } from './river';
-import type { Bridge, BridgeKind, Highway, HighwayKind, Vec2, Vec3 } from './types';
+import type { Bridge, BridgeKind, BridgeMotif, Highway, HighwayKind, Vec2, Vec3 } from './types';
 
 /** Extra no-build margin around a highway deck: corridor = width + 6 m. */
 const CORRIDOR_MARGIN = 6;
@@ -23,7 +23,10 @@ export function ringDeckY(x: number, z: number): number {
 
 const BRIDGE_DEFS: {
   id: string;
+  name: string;
   kind: BridgeKind;
+  motif: BridgeMotif;
+  spans: number;
   x: number;
   deckY: number;
   lowerDeckY?: number;
@@ -31,11 +34,36 @@ const BRIDGE_DEFS: {
   lanes: number;
   structureH: number;
 }[] = [
-  { id: 'bridge-a', kind: 'arch', x: -520, deckY: 12, width: 28, lanes: 6, structureH: 36 },
-  { id: 'bridge-b', kind: 'truss', x: 140, deckY: 10, width: 24, lanes: 4, structureH: 14 },
+  {
+    id: 'bridge-a',
+    name: '아치교',
+    kind: 'arch',
+    motif: 'cyanRib',
+    spans: 2,
+    x: -520,
+    deckY: 12,
+    width: 28,
+    lanes: 6,
+    structureH: 36,
+  },
+  {
+    id: 'bridge-b',
+    name: '트러스교',
+    kind: 'truss',
+    motif: 'orangeChord',
+    spans: 1,
+    x: 140,
+    deckY: 10,
+    width: 24,
+    lanes: 4,
+    structureH: 14,
+  },
   {
     id: 'bridge-c',
+    name: '2층교',
     kind: 'doubleDeck',
+    motif: 'subwayDeck',
+    spans: 1,
     x: 760,
     deckY: 10,
     lowerDeckY: 4,
@@ -91,6 +119,7 @@ export function makeBridges(): Bridge[] {
     const half = RIVER.width / 2;
     const b: Bridge = {
       id: d.id,
+      name: d.name,
       kind: d.kind,
       a: at(-half),
       b: at(half),
@@ -100,6 +129,9 @@ export function makeBridges(): Bridge[] {
       width: d.width,
       lanes: d.lanes,
       structureH: d.structureH,
+      spans: d.spans,
+      rail: false,
+      motif: d.motif,
     };
     if (d.lowerDeckY !== undefined) b.lowerDeckY = d.lowerDeckY;
     return b;

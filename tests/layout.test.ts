@@ -70,7 +70,7 @@ describe('layout v2: determinism', () => {
       {
         "blocks": 936,
         "buildings": 4329,
-        "digest": "6a79d000",
+        "digest": "ed6e1dae",
         "roads": 1082,
         "slots": 1802,
       }
@@ -577,5 +577,37 @@ describe('noise', () => {
   it('rejects periods larger than the lattice instead of reading zeros', () => {
     expect(() => fbm1(1.5, 7, 4, 64)).toThrow(RangeError);
     expect(() => fbm1(1.5, 7, 4, 32)).not.toThrow();
+  });
+});
+
+describe('layout v3 fields on the v2 map', () => {
+  it('fills v3 fields with v2 defaults', () => {
+    expect(LAYOUT.extentX).toBe(LAYOUT.extent);
+    expect(LAYOUT.extentZ).toBe(LAYOUT.extent);
+    expect(LAYOUT.islands).toEqual([]);
+    expect(LAYOUT.mountains).toEqual([]);
+    expect(LAYOUT.namedRoads).toEqual([]);
+    expect(LAYOUT.landmarks).toEqual([]);
+    const r = LAYOUT.river;
+    expect(r.widths).toHaveLength(r.centerline.length);
+    expect(r.parkWidths).toHaveLength(r.centerline.length);
+    expect(r.widths.every((w) => w === r.width)).toBe(true);
+    expect(r.parkWidths.every((w) => w === r.parkWidth)).toBe(true);
+    expect(r.samples).toEqual(r.centerline);
+    expect(LAYOUT.ridges.every((g) => g.peaks.length === 0)).toBe(true);
+  });
+
+  it('gives every bridge and zone its v3 descriptors', () => {
+    for (const b of LAYOUT.bridges) {
+      expect(b.name.length).toBeGreaterThan(0);
+      expect(b.spans).toBeGreaterThanOrEqual(1);
+      expect(b.rail).toBe(false);
+    }
+    for (const z of LAYOUT.districts) {
+      expect(z.nameEn.length).toBeGreaterThan(0);
+      expect(z.heights.min).toBeLessThanOrEqual(z.heights.max);
+      expect(z.heights.max).toBeLessThanOrEqual(z.heights.tallMax);
+      expect(z.litScale).toBe(1);
+    }
   });
 });
