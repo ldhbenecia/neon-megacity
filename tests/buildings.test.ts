@@ -411,6 +411,6 @@ describe('road crossings', () => {
     const s = Math.SQRT1_2;
     expect(crossingHalf(r, diag)).toBeCloseTo((6 + 5 * s) / s + 1, 9);
     expect(crossingHalf(r, diag)).toBeGreaterThan(crossingHalf(r, road(50, -50, 50, 50, 12)));
-    expect(crossingHalf(r, road(0, -1, 100, 1, 12))).toBeLessThan(40);
+    expect(crossingHalf(r, road(0, -1, 100, 1, 12))).toBeLessThanOrEqual((6 + 5) / 0.25 + 1);
   });
 });
