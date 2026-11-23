@@ -98,6 +98,39 @@ describe.each(SEEDS)('seed %i', (seed) => {
     }
   });
 
+  it('builds every megacore tower tier as planned, with podiums between the towers', () => {
+    const band = (id: string, lo: number, hi: number) =>
+      B.filter((b) => b.zoneId === id && b.h >= lo && b.h < hi).length;
+    expect([
+      band('yongsan', 600, 601),
+      band('yongsan', 280, 451),
+      band('yongsan', 120, 251),
+    ]).toEqual([1, 6, 16]);
+    expect([
+      band('yeouido', 430, 431),
+      band('yeouido', 300, 361),
+      band('yeouido', 120, 221),
+    ]).toEqual([1, 4, 18]);
+    expect([band('jamsil', 500, 501), band('jamsil', 150, 301)]).toEqual([1, 10]);
+    for (const id of ['yongsan', 'yeouido', 'jamsil']) {
+      expect(band(id, 0, 120), `${id} podiums`).toBeGreaterThan(0);
+    }
+  });
+
+  it('lines the five riverside apartment strips with slab walls', () => {
+    const slabs = (id: string) =>
+      B.filter((b) => b.zoneId === id && b.archetype === 'apartmentSlab').length;
+    const min: Record<string, number> = {
+      'apt-ichon': 5,
+      'apt-banpo': 20,
+      'apt-apgu': 7,
+      'apt-jamsil': 7,
+      'apt-gwangjin': 25,
+    };
+    for (const [id, n] of Object.entries(min)) expect(slabs(id), id).toBeGreaterThanOrEqual(n);
+    expect(B.filter((b) => b.archetype === 'apartmentSlab').length).toBeGreaterThanOrEqual(80);
+  });
+
   it('keeps non-megatower heights under their zone caps (heights.tallMax)', () => {
     const cap = new Map(ZONES.map((z) => [z.id, z.heights.tallMax]));
     for (const b of B) {

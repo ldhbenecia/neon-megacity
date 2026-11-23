@@ -9,6 +9,7 @@ import {
   riverFrame,
   riverNearest,
   riverOffset,
+  bankPoint,
   riverSignedDistance,
   riverWidthAt,
   riverZ,
@@ -128,6 +129,7 @@ const BRIDGE_DEFS: BridgeDef[] = [
     structureH: 12,
     rail: true,
     normalX: -480,
+    island: 'nodeul',
   },
   {
     id: 'br-hangang',
@@ -316,26 +318,6 @@ export function makeBridges(): Bridge[] {
     if (d.island) b.island = d.island;
     return b;
   });
-}
-
-/**
- * Offset `k` along the normal at x that puts the point `outside` m beyond the bank. On the inner
- * side of a bend the plain normal offset lands closer to the channel, so it is pushed out until
- * the true distance to the embankment matches.
- */
-function bankOffset(x: number, side: -1 | 1, outside: number): number {
-  let k = riverWidthAt(x) / 2 + outside;
-  for (let i = 0; i < 4; i++) {
-    const p = riverOffset(x, side * k);
-    const err = outside - riverSignedDistance(p.x, p.z);
-    if (err < 0.5) break;
-    k += err;
-  }
-  return k;
-}
-
-function bankPoint(x: number, side: -1 | 1, outside: number): Vec2 {
-  return riverOffset(x, side * bankOffset(x, side, outside));
 }
 
 /**
@@ -599,6 +581,9 @@ export function makeHighways(bridges: readonly Bridge[]): Highway[] {
 
 /** Bridge frame helper for tests and infra: unit vector along the river at a bridge. */
 export function bridgeAlong(br: Bridge): Vec2 {
-  const x = (br.a.x + br.b.x) / 2;
-  return riverFrame(x).along;
+  // The bridge axis a→b turned 90°, so skewed bridges (한강철교) get their own frame.
+  const dx = br.b.x - br.a.x;
+  const dz = br.b.z - br.a.z;
+  const len = Math.hypot(dx, dz);
+  return { x: dz / len, z: -dx / len };
 }

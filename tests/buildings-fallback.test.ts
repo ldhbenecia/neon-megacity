@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { LAYOUT, type Archetype, type BuildingSpec } from '../src/city/layout';
 import { emitBuilding, industrialStacks } from '../src/buildings/archetypes';
-import { baseArchetype, withBaseArchetype } from '../src/buildings/params';
+import { baseArchetype, districtLitFactor, withBaseArchetype } from '../src/buildings/params';
 import { targets } from './buildings-helpers';
 
 // Archetypes a newer layout may emit before buildings has geometry for them.
@@ -68,5 +68,19 @@ describe('unknown archetypes fall back to a base form', () => {
     const s = { ...low, district: 'somewhere' } as unknown as BuildingSpec;
     emitBuilding(s, T);
     expect(T.l1.build()).not.toBeNull();
+  });
+});
+
+describe('v3 district kinds light like their v2 counterpart', () => {
+  it('gives v3 kinds the window lighting of their base kind', () => {
+    expect(districtLitFactor('megacore')).toBe(districtLitFactor('core'));
+    expect(districtLitFactor('corridor')).toBe(districtLitFactor('core'));
+    expect(districtLitFactor('oldtown')).toBe(districtLitFactor('sangga'));
+    expect(districtLitFactor('megacore')).toBeGreaterThan(districtLitFactor('industrial'));
+  });
+
+  it('keeps the palace and parks dark', () => {
+    expect(districtLitFactor('palace')).toBe(0);
+    expect(districtLitFactor('park')).toBe(0);
   });
 });

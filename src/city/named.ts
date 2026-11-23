@@ -1,7 +1,6 @@
 // Named arterials (SEOUL.md 5.3). They are laid before the zone grids and become arterial
 // `Road` segments; `NamedRoad` keeps the polyline and the real name for HUD and neon.
 import { TEHERAN } from './districts';
-import { riverOffset, riverWidthAt } from './river';
 import type { Bridge, NamedRoad, Vec2 } from './types';
 
 function landing(bridges: readonly Bridge[], id: string, side: 'north' | 'south'): Vec2 {
@@ -9,9 +8,6 @@ function landing(bridges: readonly Bridge[], id: string, side: 'north' | 'south'
   if (!br) throw new Error(`named road needs bridge ${id}`);
   return side === 'north' ? { ...br.landA } : { ...br.landB };
 }
-
-/** Point `k` m beyond the south bank at x. (여의대로 is left out: the bridge ramps already cut 여의도.) */
-const southOf = (x: number, k: number): Vec2 => riverOffset(x, riverWidthAt(x) / 2 + k);
 
 export function makeNamedRoads(bridges: readonly Bridge[]): NamedRoad[] {
   // 서울역 sits west of 남산 in reality; with the plan compressed 1:6 its projection (-282, -456)
@@ -51,14 +47,16 @@ export function makeNamedRoads(bridges: readonly Bridge[]): NamedRoad[] {
       id: 'rd-gangnam',
       name: '강남대로',
       width: 50,
-      points: [southOf(380, 75), TEHERAN[0], { x: 600, z: 1250 }],
+      // 한남대교 is not in v3; the avenue starts at the nearest landing (동호대교 south, 압구정).
+      points: [landing(bridges, 'br-dongho', 'south'), TEHERAN[0], { x: 600, z: 1250 }],
     },
     { id: 'rd-teheran', name: '테헤란로', width: 50, points: [TEHERAN[0], TEHERAN[1]] },
     {
       id: 'rd-yeongdong',
       name: '영동대로',
       width: 50,
-      points: [southOf(1010, 75), TEHERAN[1], { x: 1100, z: 800 }],
+      // 영동대교 is not in v3; the avenue starts at 청담대교's south landing next to it.
+      points: [landing(bridges, 'br-cheongdam', 'south'), TEHERAN[1], { x: 1100, z: 800 }],
     },
     {
       id: 'rd-banpo',

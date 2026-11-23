@@ -1,5 +1,6 @@
 import { WINDOW_LIT } from '../core/palette';
 import { createRng } from '../core/random';
+import { baseKind, isUnbuilt } from '../city/layout';
 import { sideNormal } from '../city/math';
 import { ZONES } from '../city/districts';
 import type { Archetype, BuildingSpec, DistrictKind, Side } from '../city/types';
@@ -118,27 +119,14 @@ export function fitCells(width: number, target: number): { count: number; cellW:
 
 export const NIGHT_MEDIAN_LIT = 0.32;
 
-type LitFamily = keyof typeof WINDOW_LIT.night;
-
-// v3 kinds borrow the night range of the v2 kind they resemble; the zone litScale then applies
-// the SEOUL.md 4.3 multiplier.
-const LIT_FAMILY: Partial<Record<DistrictKind, LitFamily>> = {
-  core: 'core',
-  midtown: 'midtown',
-  sangga: 'sangga',
-  apartment: 'apartment',
-  hillside: 'hillside',
-  megacore: 'core',
-  corridor: 'core',
-  showroom: 'midtown',
-  oldtown: 'sangga',
-  brick: 'sangga',
-  nightlife: 'sangga',
-};
-
-export function districtLitFactor(d: DistrictKind): number {
-  const fam = LIT_FAMILY[d];
-  const r = fam ? WINDOW_LIT.night[fam] : ([0.1, 0.16] as const);
+// v3 kinds light like their closest v2 kind; the palace and parks stay dark.
+export function districtLitFactor(kind: DistrictKind): number {
+  if (isUnbuilt(kind)) return 0;
+  const d = baseKind(kind);
+  const r =
+    d === 'core' || d === 'sangga' || d === 'apartment' || d === 'hillside' || d === 'midtown'
+      ? WINDOW_LIT.night[d]
+      : ([0.1, 0.16] as const);
   return (r[0] + r[1]) / 2 / NIGHT_MEDIAN_LIT;
 }
 
@@ -240,13 +228,6 @@ export function chunkCenter(i: number, j: number, grid: ChunkGrid): { x: number;
   const [x0, x1] = chunkSpan(i, grid.halfX, grid.size);
   const [z0, z1] = chunkSpan(j, grid.halfZ, grid.size);
   return { x: (x0 + x1) / 2, z: (z0 + z1) / 2 };
-}
-
-// Mirrors THREE.LOD.update without hysteresis.
-export function lodLevel(distance: number): 0 | 1 | 2 {
-  if (distance >= LOD_DISTANCES[2]) return 2;
-  if (distance >= LOD_DISTANCES[1]) return 1;
-  return 0;
 }
 
 export function keepInLod2(spec: Pick<BuildingSpec, 'h' | 'archetype'>): boolean {

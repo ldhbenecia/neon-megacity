@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { formatClock } from '../../src/core/clock';
 import { LOW_DPR } from '../../src/ux/perf';
-import { app, collectErrors, scrubTo, waitForCity, waitFrames } from './helpers';
+import { SETTLE_FRAMES, app, collectErrors, scrubTo, waitForCity, waitFrames } from './helpers';
 
 // Performance budget (ART_DIRECTION 11): counts only, headless fps means nothing.
 // The preset × time grid runs in the low tier (a floor: no shadow or post passes); one boot at
@@ -10,8 +10,6 @@ const LIMITS = { calls: 300, triangles: 2_000_000, programs: 50 } as const;
 const PRESETS = [1, 2, 3, 5] as const;
 /** Timeline minutes (the range steps by 5): 00:00, 18:45 (sunset, t = 0.781), 12:00. */
 const TIMES = [0, 1125, 720] as const;
-// Enough for the lazy PMREM bake and env key switch after a time change.
-const SETTLE_FRAMES = 12;
 
 type Hangang = NonNullable<Window['__hangang']>;
 type Stats = ReturnType<Hangang['stats']>;

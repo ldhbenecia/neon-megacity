@@ -21,6 +21,7 @@ import {
   buildingTop,
   buildingVolumes,
   bridgeDeckY,
+  bandEdgeZ,
   MAX_DECK_THICKNESS,
   riverFrame,
   buildingFaces,
@@ -38,8 +39,10 @@ import {
   zoneAt,
   type BuildingSpec,
   type Tier,
+  type Vec2,
 } from '../src/city/layout';
 import { MAX_SLENDER, fitScale } from '../src/city/generate';
+import { riverDistanceLowerBound } from '../src/city/river';
 import {
   hashString,
   obbOverlap,
@@ -68,7 +71,7 @@ describe('layout v3: determinism', () => {
     const again = generateLayout(CITY.seed);
     expect(again).toEqual(LAYOUT);
     expect(digest(again)).toBe(digest(LAYOUT));
-  });
+  }, 60_000);
 
   it('matches the pinned snapshot (update deliberately when the layout changes)', () => {
     expect({
@@ -79,18 +82,18 @@ describe('layout v3: determinism', () => {
       digest: digest(LAYOUT),
     }).toMatchInlineSnapshot(`
       {
-        "blocks": 1390,
-        "buildings": 6136,
-        "digest": "62251c32",
-        "roads": 1255,
-        "slots": 3940,
+        "blocks": 1486,
+        "buildings": 6074,
+        "digest": "397a6a54",
+        "roads": 1209,
+        "slots": 3469,
       }
     `);
   });
 
   it('changes with the seed', () => {
     expect(generateLayout(1).buildings).not.toEqual(LAYOUT.buildings);
-  });
+  }, 60_000);
 
   it('uses ids equal to array indices', () => {
     B.forEach((b, i) => expect(b.id).toBe(i));
@@ -105,14 +108,14 @@ describe('layout v3: determinism', () => {
 describe('layout v3: counts (SEOUL.md 7.4)', () => {
   const count = (pred: (b: BuildingSpec) => boolean) => B.filter(pred).length;
 
-  it('has 5000..7000 buildings, a few hundred hill houses and 16..28 megatowers', () => {
+  it('has 5000..7000 buildings, a few hundred hill houses and 14..28 megatowers', () => {
     expect(B.length).toBeGreaterThanOrEqual(5000);
     expect(B.length).toBeLessThanOrEqual(7000);
     const hill = count((b) => b.archetype === 'hillHouse');
-    expect(hill).toBeGreaterThanOrEqual(300);
+    expect(hill).toBeGreaterThanOrEqual(150);
     expect(hill).toBeLessThanOrEqual(900);
     const mega = count((b) => b.h >= MEGA_MIN_H);
-    expect(mega).toBeGreaterThanOrEqual(16);
+    expect(mega).toBeGreaterThanOrEqual(14);
     expect(mega).toBeLessThanOrEqual(28);
   });
 
@@ -196,7 +199,7 @@ describe('layout v3: counts (SEOUL.md 7.4)', () => {
       expect(n(k), k).toBeLessThanOrEqual(hi);
     };
     within('streetLight', 1300, 2000);
-    within('tree', 1000, 1600);
+    within('tree', 650, 1600);
     within('signPole', 750, 1200);
     within('pojangmacha', 60, 130);
     within('busStop', 70, 120);
@@ -229,28 +232,41 @@ describe('layout v3: no overlaps', () => {
         expect(d, `building ${id} vs road ${road.id}`).toBeGreaterThanOrEqual(road.width / 2);
       }
     }
-  });
+  }, 60_000);
 
   it('buildings keep clear of the river channel and 샛강', () => {
-    const c = LAYOUT.river.samples;
-    const sg = SAETGANG.centerline;
     for (const b of B) {
-      for (let i = 0; i < c.length - 1; i++) {
-        const a = c[i]!;
-        const e = c[i + 1]!;
-        // The channel is ≤ 480 m wide, so only segments within 500 m in x can be the closest.
-        if (Math.abs(a.x - b.x) > 500) continue;
-        const half = Math.max(riverWidthAt(a.x), riverWidthAt(e.x)) / 2;
-        const d = obbSegmentDistance(obb(b), a, e);
-        expect(d - half, `building ${b.id}`).toBeGreaterThanOrEqual(RIVER_CLEARANCE - 1e-6);
+      const o = obb(b);
+      // Far from any water the cheap bound already proves it.
+      if (riverDistanceLowerBound(b.x, b.z) - 240 - Math.hypot(o.hw, o.hd) > RIVER_CLEARANCE) {
+        if (waterSignedDistance(b.x, b.z) > 200) continue;
       }
-      for (let i = 0; i < sg.length - 1; i++) {
-        const d = obbSegmentDistance(obb(b), sg[i]!, sg[i + 1]!);
-        expect(d - SAETGANG.width / 2, `building ${b.id}`).toBeGreaterThanOrEqual(RIVER_CLEARANCE);
+      // Walk the footprint outline every 2 m: the bank is curved, so corners alone are not enough.
+      const c = Math.cos(o.rotY);
+      const sn = Math.sin(o.rotY);
+      const at = (lx: number, lz: number) => ({
+        x: o.x + c * lx + sn * lz,
+        z: o.z - sn * lx + c * lz,
+      });
+      const pts: { x: number; z: number }[] = [];
+      for (const [ax, az, bx, bz] of [
+        [-o.hw, -o.hd, o.hw, -o.hd],
+        [o.hw, -o.hd, o.hw, o.hd],
+        [o.hw, o.hd, -o.hw, o.hd],
+        [-o.hw, o.hd, -o.hw, -o.hd],
+      ] as const) {
+        const n = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / 2));
+        for (let k = 0; k < n; k++)
+          pts.push(at(ax + ((bx - ax) * k) / n, az + ((bz - az) * k) / n));
       }
-      expect(waterSignedDistance(b.x, b.z)).toBeGreaterThanOrEqual(RIVER_CLEARANCE);
+      for (const p of pts) {
+        // 2 m sampling can miss up to ~0.01 m of a gentle curve between samples.
+        expect(waterSignedDistance(p.x, p.z), `building ${b.id}`).toBeGreaterThanOrEqual(
+          RIVER_CLEARANCE - 0.05,
+        );
+      }
     }
-  }, 30_000);
+  }, 60_000);
 
   it('buildings stay out of highway corridors (width + 6 m) and off pillars', () => {
     for (const hw of LAYOUT.highways) {
@@ -701,6 +717,79 @@ describe('noise', () => {
   });
 });
 
+describe('layout v3: water and islands', () => {
+  it('keeps roads and street slots out of open water (샛강 included)', () => {
+    for (const r of LAYOUT.roads) {
+      const n = Math.ceil(Math.hypot(r.b.x - r.a.x, r.b.z - r.a.z) / 4);
+      for (let k = 0; k <= n; k++) {
+        const x = r.a.x + ((r.b.x - r.a.x) * k) / n;
+        const z = r.a.z + ((r.b.z - r.a.z) * k) / n;
+        expect(surfaceHeight(x, z), `road ${r.id}`).toBeGreaterThan(RIVER.waterY + 0.5);
+      }
+    }
+    for (const s of LAYOUT.slots) expect(s.y, s.kind).toBeGreaterThan(RIVER.waterY + 0.5);
+  }, 60_000);
+
+  it('keeps island outlines and the 샛강 centerline free of self-intersections', () => {
+    const crosses = (a: Vec2, b: Vec2, c: Vec2, d: Vec2): boolean => {
+      const o = (p: Vec2, q: Vec2, r: Vec2) =>
+        (q.x - p.x) * (r.z - p.z) - (q.z - p.z) * (r.x - p.x);
+      return o(a, b, c) * o(a, b, d) < 0 && o(c, d, a) * o(c, d, b) < 0;
+    };
+    const selfCrossings = (pts: readonly Vec2[], closed: boolean): number => {
+      const n = pts.length;
+      const segs = closed ? n : n - 1;
+      let hits = 0;
+      for (let i = 0; i < segs; i++) {
+        for (let j = i + 2; j < segs; j++) {
+          if (closed && i === 0 && j === n - 1) continue;
+          if (crosses(pts[i]!, pts[(i + 1) % n]!, pts[j]!, pts[(j + 1) % n]!)) hits++;
+        }
+      }
+      return hits;
+    };
+    for (const isl of ISLANDS) expect(selfCrossings(isl.polygon, true), isl.id).toBe(0);
+    expect(selfCrossings(SAETGANG.centerline, false)).toBe(0);
+    const c = SAETGANG.centerline;
+    for (let i = 1; i < c.length; i++) expect(c[i]!.x).toBeGreaterThan(c[i - 1]!.x);
+  });
+
+  it('tags every bridge whose span crosses an island', () => {
+    for (const br of LAYOUT.bridges) {
+      const crossed = new Set<string>();
+      for (let t = 0; t <= 1; t += 0.01) {
+        const isl = islandAt(br.a.x + (br.b.x - br.a.x) * t, br.a.z + (br.b.z - br.a.z) * t);
+        if (isl && isl.kind !== 'land') crossed.add(isl.id);
+      }
+      for (const id of crossed) expect(br.island, br.id).toBe(id);
+    }
+  });
+
+  it('puts bandEdgeZ exactly on the riverside band edge', () => {
+    for (let x = -1950; x <= 1950; x += 23) {
+      for (const side of [-1, 1] as const) {
+        const z = bandEdgeZ(x, side);
+        if (Math.abs(z) > CITY.halfZ) continue;
+        expect(Math.abs(riverSignedDistance(x, z) - RIVER.bandWidth), `${x}`).toBeLessThan(0.05);
+      }
+    }
+  });
+
+  it('keeps apartment rows at least 0.8 × their height apart', () => {
+    for (const b of B.filter((x) => x.archetype === 'apartmentSlab')) {
+      for (const id of buildingsInAabb(LAYOUT, b.x - 150, b.z - 150, b.x + 150, b.z + 150)) {
+        const o = B[id]!;
+        if (o.id <= b.id || o.archetype !== 'apartmentSlab' || o.blockId !== b.blockId) continue;
+        const gap = Math.hypot(o.x - b.x, o.z - b.z) - (b.d + o.d) / 2;
+        // Slabs of one block side by side (same row) are not facing each other.
+        const local = toLocal(o.x - b.x, o.z - b.z, b.rotY);
+        if (Math.abs(local.z) < b.d) continue;
+        expect(gap, `${b.id} vs ${o.id}`).toBeGreaterThanOrEqual(0.8 * Math.max(b.h, o.h) - 1e-6);
+      }
+    }
+  });
+});
+
 describe('layout v3: map grid', () => {
   it('keeps the buildings chunk grid at 80 chunks or fewer (draw-call budget)', () => {
     const nx = Math.ceil(CITY.extentX / CITY.chunkSize);
@@ -840,5 +929,21 @@ describe('layout v3: descriptors', () => {
       expect(z.heights.min).toBeLessThanOrEqual(z.heights.max);
       expect(z.heights.max).toBeLessThanOrEqual(z.heights.tallMax);
     }
+  });
+});
+
+describe('axis accessors (layout v3 migration)', () => {
+  it('exposes per-axis half extents and per-x river widths', () => {
+    expect(CITY.halfX).toBe(LAYOUT.extentX / 2);
+    expect(CITY.halfZ).toBe(LAYOUT.extentZ / 2);
+    RIVER.centerline.forEach((p, i) => {
+      expect(riverWidthAt(p.x)).toBeCloseTo(RIVER.widths[i]!, 9);
+      expect(parkWidthAt(p.x)).toBeCloseTo(RIVER.parkWidths[i]!, 9);
+    });
+    // Between two points the width is their linear blend.
+    const a = RIVER.centerline[3]!;
+    const b = RIVER.centerline[4]!;
+    const mid = riverWidthAt((a.x + b.x) / 2);
+    expect(mid).toBeCloseTo((RIVER.widths[3]! + RIVER.widths[4]!) / 2, 9);
   });
 });

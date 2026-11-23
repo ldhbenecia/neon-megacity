@@ -41,6 +41,7 @@ export {
   riversideHalfAt,
   TEHERAN,
 } from './districts';
+export { baseKind, isUnbuilt, type BaseKind } from './kinds';
 export {
   RIVER,
   EMBANK_SLOPE,

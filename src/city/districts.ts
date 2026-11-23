@@ -14,8 +14,9 @@ import {
   riverFrame,
   riverOffset,
   riverBeyondBounds,
-  riverNearest,
+  riverSignedDistance,
   riverWidthAt,
+  riverZ,
 } from './river';
 import type { DistrictKind, DistrictZone, RoadKind, Vec2, ZoneHeights } from './types';
 
@@ -26,9 +27,22 @@ export function riversideHalfAt(x: number): number {
   return riverWidthAt(x) / 2 + RIVER.bandWidth;
 }
 
-/** Outer edge of the riverside band at x, on the north (-1) or south (+1) side. */
+/**
+ * z of the riverside band's outer edge on the vertical line at x, north (-1) or south (+1) of
+ * the centerline: where riverSignedDistance first reaches the band width (exact on bends too).
+ */
 export function bandEdgeZ(x: number, side: -1 | 1): number {
-  return riverOffset(x, side * riversideHalfAt(x)).z;
+  const inBand = (z: number): boolean => riverSignedDistance(x, z) < RIVER.bandWidth;
+  let lo = riverZ(x);
+  let hi = lo;
+  while (inBand(hi) && Math.abs(hi - lo) < 3000) hi += side * 10;
+  lo = hi - side * 10;
+  for (let i = 0; i < 30; i++) {
+    const mid = (lo + hi) / 2;
+    if (inBand(mid)) lo = mid;
+    else hi = mid;
+  }
+  return (lo + hi) / 2;
 }
 
 type Side = 'north' | 'south';
@@ -206,11 +220,12 @@ const DEFS: ZoneDef[] = [
     name: '이촌',
     nameEn: 'ICHON',
     side: 'north',
-    polygon: bankStrip(-300, -60, 'north', 0, 170),
-    bank: { x0: -300, x1: -60, o0: 0, o1: 170 },
+    // East of the 용산 tower field (which needs the land up to x -110).
+    polygon: bankStrip(-110, 140, 'north', 0, 230),
+    bank: { x0: -110, x1: 140, o0: 0, o1: 230 },
     gridAngle: riverAngle(-265),
     origin: riverOffset(-265, -(riverWidthAt(-265) / 2 + 60)),
-    pitch: [130, 90],
+    pitch: [130, 120],
     roadWidth: 10,
     roadKind: 'street',
     heights: H(70, 100),
@@ -303,10 +318,11 @@ const DEFS: ZoneDef[] = [
     name: '광진',
     nameEn: 'GWANGJIN',
     side: 'north',
-    polygon: rect(1300, 2000, -1000, 260),
+    polygon: bankStrip(1300, 2000, 'north', 0, 300),
+    bank: { x0: 1300, x1: 2000, o0: 0, o1: 300 },
     gridAngle: riverAngle(1650),
     origin: riverOffset(1650, -(riverWidthAt(1650) / 2 + 60)),
-    pitch: [130, 90],
+    pitch: [130, 120],
     roadWidth: 10,
     roadKind: 'street',
     heights: H(40, 90),
@@ -369,11 +385,11 @@ const DEFS: ZoneDef[] = [
     name: '반포',
     nameEn: 'BANPO',
     side: 'south',
-    polygon: bankStrip(-250, 420, 'south', 0, 280),
-    bank: { x0: -250, x1: 420, o0: 0, o1: 280 },
+    polygon: bankStrip(-320, 440, 'south', 0, 300),
+    bank: { x0: -320, x1: 440, o0: 0, o1: 300 },
     gridAngle: riverAngle(90),
     origin: riverOffset(90, riverWidthAt(90) / 2 + 60),
-    pitch: [130, 90],
+    pitch: [130, 120],
     roadWidth: 10,
     roadKind: 'street',
     heights: H(70, 100, 0.1, 120),
@@ -386,11 +402,11 @@ const DEFS: ZoneDef[] = [
     name: '압구정',
     nameEn: 'APGUJEONG',
     side: 'south',
-    polygon: bankStrip(420, 900, 'south', 0, 250),
-    bank: { x0: 420, x1: 900, o0: 0, o1: 250 },
+    polygon: bankStrip(440, 1000, 'south', 0, 260),
+    bank: { x0: 440, x1: 1000, o0: 0, o1: 260 },
     gridAngle: riverAngle(660),
     origin: riverOffset(660, riverWidthAt(660) / 2 + 60),
-    pitch: [130, 90],
+    pitch: [130, 120],
     roadWidth: 10,
     roadKind: 'street',
     heights: H(40, 70),
@@ -403,11 +419,11 @@ const DEFS: ZoneDef[] = [
     name: '잠실 강변',
     nameEn: 'JAMSIL RIVERSIDE',
     side: 'south',
-    polygon: bankStrip(1150, 1450, 'south', 0, 250),
-    bank: { x0: 1150, x1: 1450, o0: 0, o1: 250 },
+    polygon: bankStrip(1120, 1480, 'south', 0, 260),
+    bank: { x0: 1120, x1: 1480, o0: 0, o1: 260 },
     gridAngle: riverAngle(1300),
     origin: riverOffset(1300, riverWidthAt(1300) / 2 + 60),
-    pitch: [130, 90],
+    pitch: [130, 120],
     roadWidth: 10,
     roadKind: 'street',
     heights: H(70, 100),
@@ -438,8 +454,8 @@ const DEFS: ZoneDef[] = [
     name: '압구정·청담',
     nameEn: 'CHEONGDAM',
     side: 'south',
-    polygon: bankStrip(480, 1150, 'south', 250, 430),
-    bank: { x0: 480, x1: 1150, o0: 250, o1: 430 },
+    polygon: bankStrip(480, 1150, 'south', 260, 430),
+    bank: { x0: 480, x1: 1150, o0: 260, o1: 430 },
     gridAngle: -10 * DEG,
     origin: { x: 700, z: 230 },
     pitch: [80, 80],
@@ -547,6 +563,11 @@ const BANK_OF = new Map<string, BankStrip>(
   DEFS.flatMap((d) => (d.bank ? [[d.id, d.bank] as const] : [])),
 );
 
+/** Bank strip of a zone (x range and offsets beyond the embankment), if it is one. */
+export function zoneBank(id: string): Readonly<BankStrip> | undefined {
+  return BANK_OF.get(id);
+}
+
 /** All zones, in classification order. The riverside band comes first. */
 export const ZONES: readonly DistrictZone[] = [
   riversideZone,
@@ -593,10 +614,7 @@ export function zoneAt(x: number, z: number): DistrictZone {
   const b = riverBeyondBounds(p.x, p.z);
   let exact: number | null = null;
   const beyond = (): number => {
-    if (exact === null) {
-      const n = riverNearest(p.x, p.z);
-      exact = n.d - riverWidthAt(n.cx) / 2;
-    }
+    exact ??= riverSignedDistance(p.x, p.z);
     return exact;
   };
   /** v ≤ t, deciding from the bounds when they do not straddle t. */

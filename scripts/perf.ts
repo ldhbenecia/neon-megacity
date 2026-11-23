@@ -3,12 +3,12 @@
 // Boots the production build in headless Chromium on the real GPU (Metal ANGLE) for each scenario
 // and prints a markdown table (docs/PERF.md) plus perf-results/<label>.json.
 import { execSync } from 'node:child_process';
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { gzipSync } from 'node:zlib';
 import { chromium, type Browser } from '@playwright/test';
 import { preview } from 'vite';
 import { SWIFTSHADER_ARGS, collectErrors } from '../tests/e2e/helpers';
+import { bundleGzip } from './bundle';
 
 const PRESETS = [
   [1, '강변 히어로'],
@@ -121,16 +121,6 @@ async function measure(browser: Browser, name: string, query: string): Promise<R
   };
 }
 
-function bundleGzip(): { file: string; raw: number; gzip: number }[] {
-  const dir = resolve('dist/assets');
-  return readdirSync(dir)
-    .filter((f) => f.endsWith('.js'))
-    .map((f) => {
-      const buf = readFileSync(resolve(dir, f));
-      return { file: f, raw: buf.length, gzip: gzipSync(buf, { level: 9 }).length };
-    });
-}
-
 const mb = (b: number): string => (b / 1024 / 1024).toFixed(1);
 const ms = (v: number | undefined): string => (v === undefined ? '-' : v.toFixed(0));
 const warn = (bad: boolean): string => (bad ? ' ⚠' : '');
@@ -150,7 +140,7 @@ function table(results: Result[]): string {
         `${s.calls}${warn(s.calls > BUDGET.calls)} | ${(s.triangles / 1e6).toFixed(2)} M${warn(s.triangles > BUDGET.triangles)} | ` +
         `${s.programs}${warn(s.programs > BUDGET.programs)} | ${s.textures}${warn(s.textures > BUDGET.textures)} | ` +
         `${mb(r.memory.geometryBytes)} | ${mb(r.memory.textureBytes)} | ` +
-        `${mb(r.memory.framebufferBytes)} (×${r.memory.samples}) | ${cpu.toFixed(2)} |`,
+        `${mb(r.memory.canvasBytes)} (×${r.memory.samples}) | ${cpu.toFixed(2)} |`,
     );
   }
   const stages = [...new Set(results.flatMap((r) => Object.keys(r.boot)))];
