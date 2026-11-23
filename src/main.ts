@@ -28,6 +28,17 @@ const query = parseQuery(window.location.search);
 const quality = query.quality ?? 'high';
 const loader = createLoader();
 
+/** Same test as atmosphere's `supportsHalfFloatTargets`, before the real context exists. */
+function halfFloatTargets(): boolean {
+  const gl = document.createElement('canvas').getContext('webgl2');
+  if (!gl) return false;
+  const ok = ['EXT_color_buffer_float', 'EXT_color_buffer_half_float'].some(
+    (name) => gl.getExtension(name) !== null,
+  );
+  gl.getExtension('WEBGL_lose_context')?.loseContext();
+  return ok;
+}
+
 async function boot(): Promise<void> {
   loader.stage('setup', BOOT_WEIGHTS.setup);
   await nextFrame();
@@ -36,7 +47,9 @@ async function boot(): Promise<void> {
   if (!container) throw new Error('#app container missing');
 
   const renderer = new THREE.WebGLRenderer({
-    antialias: quality === 'high',
+    // With half-float targets atmosphere renders into its own multisampled HDR target and only the
+    // final full-screen pass reaches the canvas: canvas MSAA would cost ~74 MB at 2400×1350.
+    antialias: quality === 'high' && !halfFloatTargets(),
     powerPreference: 'high-performance',
   });
   // Pixel ratio is owned by ux/perf (adaptive, capped at 1.5).
