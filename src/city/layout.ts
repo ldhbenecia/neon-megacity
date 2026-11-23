@@ -28,6 +28,7 @@ export const LAYOUT: Layout = generateLayout(CITY.seed);
 export * from './types';
 export { generateLayout, SKYLINE_PEAK, MEGA_MIN_H, RIVER_CLEARANCE } from './generate';
 export { ZONES, zoneAt, zoneById, districtAt, bandEdgeZ, RIVERSIDE_HALF } from './districts';
+export { baseKind, isUnbuilt, type BaseKind } from './kinds';
 export {
   RIVER,
   riverWidthAt,
