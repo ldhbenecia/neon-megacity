@@ -28,13 +28,29 @@ const args = process.argv.slice(2);
 const flags = new Set(args.filter((a) => a.startsWith('--')));
 const opt = (name: string): string | undefined =>
   args.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
+const KNOWN = ['--swiftshader', '--no-build', '--quality=', '--frames=', '--only='];
+const unknown = [...flags].filter(
+  (f) => !KNOWN.some((k) => (k.endsWith('=') ? f.startsWith(k) : f === k)),
+);
+const positional = args.filter((a) => !a.startsWith('--'));
+// `--only 탑다운` (space instead of =) would otherwise turn the value into the label.
+if (unknown.length || positional.length > 1) {
+  console.error(
+    `usage: npm run perf -- [label] ${KNOWN.map((k) => (k.endsWith('=') ? `[${k}…]` : `[${k}]`)).join(' ')}`,
+  );
+  process.exit(2);
+}
 const swiftshader = flags.has('--swiftshader');
 const quality = opt('quality');
 const frames = Number(opt('frames') ?? 240);
+if (!Number.isInteger(frames) || frames <= 0) {
+  console.error(`--frames must be a positive integer, got ${opt('frames')}`);
+  process.exit(2);
+}
 const only = opt('only');
-const label =
-  args.find((a) => !a.startsWith('--')) ?? new Date().toISOString().replace(/[:.]/g, '-');
+const label = (positional[0] ?? new Date().toISOString()).replace(/[^\p{L}\p{N}_.-]+/gu, '-');
 const PORT = 4175;
+const expectedDpr = quality === 'low' ? 0.5 : 1.5;
 const BASE = `http://localhost:${PORT}/`;
 // 1600×900 at DPR 2 (a retina laptop): the app caps it to 1.5.
 const VIEWPORT = { width: 1600, height: 900 };
@@ -53,7 +69,12 @@ interface Result {
   boot: Record<string, number>;
   frame: { mean: number; p50: number; p95: number; fps: number };
   stats: { calls: number; triangles: number; programs: number; textures: number; dpr: number };
-  memory: { geometryBytes: number; textureBytes: number; framebufferBytes: number };
+  memory: {
+    geometryBytes: number;
+    textureBytes: number;
+    framebufferBytes: number;
+    samples: number;
+  };
   cpu: Record<string, number>;
   errors: string[];
 }
@@ -119,17 +140,20 @@ const flag = (v: number, max: number): string => (v > max ? ' ⚠' : '');
 
 function table(results: Result[]): string {
   const rows = [
-    '| scenario | frame ms (mean / p95) | fps | calls | tris | programs | textures | geo MB | tex MB | update ms |',
-    '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+    '| scenario | frame ms (mean / p95) | fps | dpr | calls | tris | programs | textures | geo MB | tex MB | canvas MB | update ms |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
   ];
   for (const r of results) {
     const s = r.stats;
     const cpu = Object.values(r.cpu).reduce((a, b) => a + b, 0);
     rows.push(
       `| ${r.name} | ${r.frame.mean.toFixed(1)} / ${r.frame.p95.toFixed(1)} | ${r.frame.fps.toFixed(0)} | ` +
+        // Adaptive DPR may have stepped down during the run: the numbers are then not at 1.5.
+        `${s.dpr}${s.dpr !== expectedDpr ? ' ⚠' : ''} | ` +
         `${s.calls}${flag(s.calls, BUDGET.calls)} | ${(s.triangles / 1e6).toFixed(2)} M${flag(s.triangles, BUDGET.triangles)} | ` +
         `${s.programs}${flag(s.programs, BUDGET.programs)} | ${s.textures}${flag(s.textures, BUDGET.textures)} | ` +
-        `${mb(r.memory.geometryBytes)} | ${mb(r.memory.textureBytes)} | ${cpu.toFixed(2)} |`,
+        `${mb(r.memory.geometryBytes)} | ${mb(r.memory.textureBytes)} | ` +
+        `${mb(r.memory.framebufferBytes)} (×${r.memory.samples}) | ${cpu.toFixed(2)} |`,
     );
   }
   const stages = [...new Set(results.flatMap((r) => Object.keys(r.boot)))];
@@ -148,13 +172,21 @@ function table(results: Result[]): string {
 }
 
 async function main(): Promise<void> {
-  if (!flags.has('--no-build')) execSync('npx vite build', { stdio: 'inherit' });
-  const server = await preview({ preview: { port: PORT, strictPort: true }, logLevel: 'warn' });
+  if (!flags.has('--no-build')) {
+    const { BASE_PATH: _unused, ...env } = process.env;
+    execSync('npx vite build', { stdio: 'inherit', env });
+  }
+  // base './' as in dev and e2e: BASE below has no BASE_PATH prefix.
+  const server = await preview({
+    base: './',
+    preview: { port: PORT, strictPort: true },
+    logLevel: 'warn',
+  });
   const browser = await chromium.launch({ args: swiftshader ? SWIFTSHADER_ARGS : GPU_ARGS });
   const results: Result[] = [];
   try {
+    // Blank page, not the app: booting the city here would warm the shader cache for scenario 1.
     const probe = await browser.newPage();
-    await probe.goto(BASE);
     const gpu = await probe.evaluate(() => {
       const gl = document.createElement('canvas').getContext('webgl2');
       const ext = gl?.getExtension('WEBGL_debug_renderer_info');
