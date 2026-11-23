@@ -146,21 +146,23 @@ const CASES: Spec[] = [
 
 describe('infra fallback: bridge kinds', () => {
   it('keeps the v2 shapes and maps every other kind to girder', () => {
-    expect(LAYOUT.bridges.map(bridgeShape)).toEqual(LAYOUT.bridges.map((b) => b.kind));
+    const v2 = new Set<string>(['arch', 'truss', 'doubleDeck']);
+    for (const b of LAYOUT.bridges) expect(bridgeShape(b)).toBe(v2.has(b.kind) ? b.kind : 'girder');
+    for (const k of v2) expect(bridgeShape(makeBridge(0, { ...CASES[3]!, kind: k }))).toBe(k);
     for (const k of ['deckArch', 'tiedArch', 'girder', 'cableStayed', 'mystery', '']) {
       expect(bridgeShape(makeBridge(0, { ...CASES[0]!, kind: k }))).toBe('girder');
     }
   });
 
-  it('v2 piers stay where they were', () => {
-    const want: Record<string, number[]> = {
-      arch: [0],
-      truss: [-40, 40],
-      doubleDeck: [-80, -40, 0, 40, 80],
-    };
-    for (const b of LAYOUT.bridges) {
+  it('v2 piers stay where they were (240 m span, v2 span counts)', () => {
+    const want: [string, number, number[]][] = [
+      ['arch', 2, [0]],
+      ['truss', 3, [-40, 40]],
+      ['doubleDeck', 6, [-80, -40, 0, 40, 80]],
+    ];
+    for (const [kind, spans, exp] of want) {
+      const b = makeBridge(0, { ...CASES[3]!, kind, spans });
       const got = pierStations(b, bridgeFrame(b));
-      const exp = want[b.kind]!;
       expect(got).toHaveLength(exp.length);
       got.forEach((s, i) => expect(s).toBeCloseTo(exp[i]!, 9));
     }
@@ -182,10 +184,10 @@ describe('infra fallback: bridge kinds', () => {
     // Short span: the length fallback alone would give 1.
     const short = makeBridge(-200, { ...CASES[3]!, half: 30, landA: 60, landB: 90 });
     expect(spanCount({ ...short, spans: Number.POSITIVE_INFINITY }, bridgeFrame(short))).toBe(2);
-    const truss = LAYOUT.bridges.find((x) => x.kind === 'truss')!;
-    expect(spanCount({ ...truss, spans: 2 }, bridgeFrame(truss))).toBe(3);
-    const arch = LAYOUT.bridges.find((x) => x.kind === 'arch')!;
-    expect(spanCount({ ...arch, spans: 7 }, bridgeFrame(arch))).toBe(2);
+    const truss = makeBridge(0, { ...CASES[3]!, kind: 'truss', spans: 2 });
+    expect(spanCount(truss, bridgeFrame(truss))).toBe(3);
+    const arch = makeBridge(0, { ...CASES[3]!, kind: 'arch', spans: 7 });
+    expect(spanCount(arch, bridgeFrame(arch))).toBe(2);
   });
 
   it.each(CASES)('$kind builds a finite girder with evenly spaced river piers', (s) => {
@@ -244,7 +246,7 @@ describe('infra fallback: bridge kinds', () => {
   });
 
   it('arch ignores lowerDeckY, so no lower road runs through its center pier', () => {
-    const arch = LAYOUT.bridges.find((b) => b.kind === 'arch')!;
+    const arch: Bridge = { ...makeBridge(0, { ...CASES[3]!, kind: 'arch' }), structureH: 36 };
     const withLower: Bridge = { ...arch, lowerDeckY: 4 };
     expect(lowerDeckY(withLower)).toBeUndefined();
     const a = createParts();
