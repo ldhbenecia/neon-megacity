@@ -3,12 +3,13 @@ import { MATERIAL } from '../core/palette';
 import { terrainHeight } from '../city/layout';
 import type { Road, StreetSlot } from '../city/types';
 import { UNIT_ICO, type GeoBuilder, type V3 } from './builder';
+import { STREET } from './colors';
 import { seeded01, scaleHex, stairSteps } from './params';
 import { plain } from './shapes';
 
 export function tree(g: GeoBuilder, s: StreetSlot): void {
   const rng = createRng(s.seed);
-  const trunk = plain(0x1a1612, 0.9);
+  const trunk = plain(STREET.treeTrunk, 0.9);
   const leaf = plain(scaleHex(MATERIAL.tree, rng.range(0.9, 1.5)), 0.9);
   const h = rng.range(3.2, 4.5);
   g.box(s.x, s.y, s.z, 0.3, h + 1, 0.3, s.rotY, trunk);
@@ -43,8 +44,8 @@ export function stair(g: GeoBuilder, r: Road): void {
   const px = -dz;
   const pz = dx;
   const hw = r.width / 2;
-  const step = plain(0x343634, 0.8);
-  const riserS = plain(0x262828, 0.85);
+  const step = plain(STREET.stairTread, 0.8);
+  const riserS = plain(STREET.stairRiser, 0.85);
   const { n, riser } = stairSteps(len, yb - ya);
   const tread = len / n;
   const up: V3 = [0, 1, 0];
