@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { collectErrors, waitForCity, waitFrames } from './helpers';
+import { app, collectErrors, waitForCity, waitFrames } from './helpers';
 
 type Cam = NonNullable<Window['__hangang']>;
 
@@ -42,7 +42,7 @@ test('boot skeleton paints before JS and is removed after power-on', async ({ pa
       if (p !== undefined && report) report(Number(p));
     }).observe(document, { attributes: true, subtree: true, attributeFilter: ['data-progress'] });
   });
-  await page.goto('./?nogui');
+  await page.goto(app('nogui'));
   await waitForCity(page);
   await expect(page.locator('#boot')).toHaveCount(0);
   expect(seen.length).toBeGreaterThan(3);
@@ -52,7 +52,7 @@ test('boot skeleton paints before JS and is removed after power-on', async ({ pa
 });
 
 test('HUD: brand mark, clock, help sheet on ?, inline SVG favicon', async ({ page }) => {
-  await page.goto('./?nogui&time=0.25');
+  await page.goto(app('nogui&time=0.25'));
   await waitForCity(page);
   await expect(page.locator('.brand-name')).toHaveText(/한강\s*\/\/\s*HANGANG/);
   await expect(page.locator('#clock')).toHaveText('06:00');
@@ -71,24 +71,24 @@ test('HUD: brand mark, clock, help sheet on ?, inline SVG favicon', async ({ pag
 });
 
 test('first entry shows a controls hint that fades out', async ({ page }) => {
-  await page.goto('./?nogui');
+  await page.goto(app('nogui'));
   await waitForCity(page);
   await expect(page.locator('#hud-hint')).toBeVisible();
   await expect(page.locator('#hud-hint')).toBeHidden({ timeout: 15_000 });
 });
 
 test('lil-gui is a developer panel: hidden by default, shown with ?debug', async ({ page }) => {
-  await page.goto('./');
+  await page.goto(app());
   await waitForCity(page);
   await expect(page.locator('.lil-gui.lil-root')).toBeHidden();
-  await page.goto('./?debug');
+  await page.goto(app('debug'));
   await waitForCity(page);
   await expect(page.locator('.lil-gui.lil-root')).toBeVisible();
 });
 
 test.describe('city controls', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('./?stats&cam=overview&time=0.9');
+    await page.goto(app('stats&cam=overview&time=0.9'));
     await waitForCity(page);
   });
 
@@ -141,14 +141,14 @@ test.describe('city controls', () => {
 });
 
 test('?hud=0 starts hidden', async ({ page }) => {
-  await page.goto('./?nogui&hud=0');
+  await page.goto(app('nogui&hud=0'));
   await waitForCity(page);
   await expect(page.locator('#hud')).toHaveClass(/is-hidden/);
 });
 
 test.describe('camera rig', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('./?nogui&stats&cam=overview&time=0.0');
+    await page.goto(app('nogui&stats&cam=overview&time=0.0'));
     await waitForCity(page);
   });
 
