@@ -457,7 +457,7 @@ export interface Bridge {
   width: number;
   lanes: number;
   structureH: number;
-  /** Number of arch spans / pylons / truss panels depending on kind. */
+  /** Spans between the abutments (piers = spans - 1), for every kind. */
   spans: number;
   rail: boolean;
   /** Island id the span crosses (bamseom, nodeul, seonyu). */
@@ -472,6 +472,7 @@ export interface Bridge {
     | 'fountain'
     | 'orangeChord'
     | 'subwayDeck'
+    | 'redBand'
     | 'ringPylon';
 }
 
@@ -551,7 +552,8 @@ export interface Layout {
 }
 ```
 
-- `Archetype`에 `taperTower | mediaSlab | lowOffice | hanokRow | palaceHall | brickWarehouse | showroomBox`를 더한다. `BuildingSpec.tags`에 `mediaFace?: Side`, `landmark?: Landmark['id']`를 더한다.
+- (#20에서 확정) v2 값(`core`, `industrial`, `arch`)은 PR 3까지 유니언에 남긴다. `redBand`는 v2 2층교 하층 붉은 띠용이다. `spans`의 v2 값은 아치 2, 트러스 3, 2층 6이다.
+- `Archetype`에 `taperTower | mediaSlab | lowOffice | hanokRow | palaceHall | brickWarehouse | showroomBox`를 더한다(#20에는 넣지 않았다. ux `ARCHETYPE_KO`가 `Record<Archetype>`이라 ux 기본 표시 PR 뒤 PR 3에서 넣는다). `BuildingSpec.tags`에 `mediaFace?: Side`, `landmark?: Landmark['id']`를 더한다.
 - **호환 유지**: `riverZ(x)`, `riverFrame(x)`, `riverSignedDistance`, `isNorthOfRiver`, `terrainHeight`, `surfaceHeight`, `bandEdgeZ`, `zoneAt`, `bridgeDeckY`, `deckHeightAt`, `highwayCurve`는 이름과 시그니처를 유지한다(중심선이 x 단조라서 가능). 내부만 폴리라인 기반으로 바꾼다. `riverCenterDistance`는 `samples` 세그먼트를 `GridHash`로 찾아 O(1)에 가깝게 한다.
 - `CITY.extent`는 호환용으로 남기고 `CITY.extentX / extentZ / chunkSize = 400`을 추가한다.
 
