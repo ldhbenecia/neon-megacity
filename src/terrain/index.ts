@@ -9,7 +9,8 @@ export function init(ctx: Ctx): CityModuleInstance {
   const group = new THREE.Group();
   group.name = 'terrain';
 
-  // Roads, sidewalks and plazas laid at the same height must win over the ground.
+  // Roads, sidewalks and plazas laid at the same height must win over the ground. Units only:
+  // a slope factor grows to tens of metres at grazing angles and lets buried geometry show through.
   const groundGeo = buildGround();
   const groundMat = new THREE.MeshStandardMaterial({
     name: 'TerrainGround',
@@ -17,7 +18,7 @@ export function init(ctx: Ctx): CityModuleInstance {
     roughness: 0.93,
     metalness: 0,
     polygonOffset: true,
-    polygonOffsetFactor: 1,
+    polygonOffsetFactor: 0,
     polygonOffsetUnits: 4,
   });
   const ground = new THREE.Mesh(groundGeo, groundMat);
@@ -32,9 +33,9 @@ export function init(ctx: Ctx): CityModuleInstance {
     vertexColors: true,
     roughness: 0.85,
     metalness: 0,
-    // Ahead of the ground it overlaps (1, 4), behind roads and sidewalks at y = 0 (0).
+    // Ahead of the ground it overlaps (units 4), behind roads and sidewalks at y = 0 (0).
     polygonOffset: true,
-    polygonOffsetFactor: 1,
+    polygonOffsetFactor: 0,
     polygonOffsetUnits: 2,
   });
   const channel = new THREE.Mesh(channelGeo, channelMat);

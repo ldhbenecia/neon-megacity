@@ -176,6 +176,9 @@ export function createRidges(ridges: readonly Ridge[]): Ridges {
     fragmentShader: RIDGE_FRAGMENT,
     vertexColors: true,
     fog: false,
+    // The orbit target is not clamped: from outside the map the near rings must still hide the
+    // ground disc's edge.
+    side: THREE.DoubleSide,
   });
   const rings = new THREE.Mesh(ringGeo, ringMat);
   rings.name = 'ridge-rings';
