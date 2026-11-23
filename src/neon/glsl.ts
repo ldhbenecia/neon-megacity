@@ -102,5 +102,8 @@ export function neonMaterial(
     blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
     side: opts.side ?? THREE.FrontSide,
   });
+  // Transparent DoubleSide meshes are drawn in two passes (back, then front). Additive blending
+  // is order independent, so one pass gives the same image at half the draw and fill cost.
+  m.forceSinglePass = additive;
   return m;
 }
