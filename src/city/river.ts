@@ -298,8 +298,8 @@ export const TERRAIN = {
   /** v2 hill edge, kept for terrain's mesh refinement band until it follows MOUNTAINS. */
   hillStartZ: -650,
   /** Relative amplitude of the fbm detail on mountain slopes. */
-  detail: 0.12,
-  scale: 140,
+  detail: 0.28,
+  scale: 90,
   seed: 3301,
 } as const;
 
@@ -322,8 +322,11 @@ export function terrainHeight(x: number, z: number): number {
   for (const m of MOUNTAINS) {
     const d = Math.hypot(x - m.peak.x, z - m.peak.z);
     if (d >= m.radius) continue;
-    const b = bump(d / m.radius);
-    const n = fbm1((x + z * 0.7) / TERRAIN.scale + m.peak.x * 0.01, TERRAIN.seed);
+    // Steeper near the top than a plain bump; two crossing fbm strips carve spurs and gullies.
+    const b = Math.pow(bump(d / m.radius), 1.25);
+    const u = (x * 0.8 + z * 0.6) / TERRAIN.scale + m.peak.x * 0.01;
+    const v = (z * 0.8 - x * 0.6) / (TERRAIN.scale * 0.7) + m.peak.z * 0.01;
+    const n = 0.5 * fbm1(u, TERRAIN.seed) + 0.5 * fbm1(v, TERRAIN.seed + 17);
     h = Math.max(h, m.height * b * (1 + TERRAIN.detail * (2 * n - 1)));
   }
   return h;

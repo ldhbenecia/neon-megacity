@@ -78,8 +78,8 @@ describe('layout v3: determinism', () => {
     }).toMatchInlineSnapshot(`
       {
         "blocks": 1359,
-        "buildings": 6187,
-        "digest": "118f545d",
+        "buildings": 6209,
+        "digest": "d5b86cf8",
         "roads": 1272,
         "slots": 4063,
       }
