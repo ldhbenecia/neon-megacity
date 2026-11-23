@@ -1,6 +1,7 @@
 import { WINDOW_LIT } from '../core/palette';
 import { createRng } from '../core/random';
 import { sideNormal } from '../city/math';
+import { ZONES } from '../city/districts';
 import type { Archetype, BuildingSpec, DistrictKind, Side } from '../city/types';
 
 // Shader type ids decoded in facadeMaterial.ts.
@@ -14,6 +15,7 @@ export const FACADE = {
   dong: 6,
   corrugated: 7,
   awning: 8,
+  brick: 9,
 } as const;
 
 export type FacadeType = (typeof FACADE)[keyof typeof FACADE];
@@ -37,23 +39,21 @@ const BASE_ARCHETYPES = [
   'hillHouse',
   'warehouse',
   'pavilion',
+  'taperTower',
+  'mediaSlab',
+  'lowOffice',
+  'hanokRow',
+  'palaceHall',
+  'brickWarehouse',
+  'showroomBox',
 ] as const;
 
 /** Archetypes this module has dedicated geometry for. */
 export type BaseArchetype = Extract<Archetype, (typeof BASE_ARCHETYPES)[number]>;
 
-// Base forms map to themselves; archetypes from newer layouts without geometry yet draw as the
-// closest base form (SEOUL.md 4.3). A Map, so prototype keys like 'constructor' never match.
-const BASE_OF = new Map<string, BaseArchetype>([
-  ...BASE_ARCHETYPES.map((a) => [a, a] as const),
-  ['taperTower', 'setbackTower'],
-  ['mediaSlab', 'officeSlab'],
-  ['lowOffice', 'officeSlab'],
-  ['hanokRow', 'sangga'],
-  ['palaceHall', 'pavilion'],
-  ['brickWarehouse', 'sangga'],
-  ['showroomBox', 'sangga'],
-]);
+// Archetypes from newer layouts without geometry yet draw as a base form by height.
+// A Map, so prototype keys like 'constructor' never match.
+const BASE_OF = new Map<string, BaseArchetype>(BASE_ARCHETYPES.map((a) => [a, a] as const));
 
 export function baseArchetype(spec: Pick<BuildingSpec, 'archetype' | 'h'>): BaseArchetype {
   return BASE_OF.get(spec.archetype) ?? (spec.h >= LOD2_MIN_HEIGHT ? 'officeSlab' : 'sangga');
@@ -76,8 +76,10 @@ export function windowStyle(
     case 'bracedTower':
     case 'cantileverTower':
     case 'twinTower':
+    case 'taperTower':
       return { type: FACADE.curtain, cellW: 1.5, winW: 1.4, winH: 2.4 };
     case 'officeSlab':
+    case 'mediaSlab':
       return seed % 2 === 0
         ? { type: FACADE.curtain, cellW: 1.5, winW: 1.4, winH: 2.4 }
         : { type: FACADE.punched, cellW: 2.4, winW: 1.8, winH: 1.6 };
@@ -95,7 +97,17 @@ export function windowStyle(
     case 'warehouse':
       return { type: FACADE.corrugated, cellW: 4, winW: 3, winH: 0.8 };
     case 'pavilion':
+    case 'palaceHall':
+    case 'showroomBox':
       return { type: FACADE.plain, cellW: 3, winW: 0, winH: 0 };
+    case 'lowOffice':
+      return { type: FACADE.punched, cellW: 2.2, winW: 0.8, winH: 1.9 };
+    case 'hanokRow':
+      return role === 'front'
+        ? { type: FACADE.punched, cellW: 3, winW: 2.2, winH: 1.5 }
+        : { type: FACADE.plain, cellW: 3, winW: 0, winH: 0 };
+    case 'brickWarehouse':
+      return { type: FACADE.brick, cellW: 4.5, winW: 2.2, winH: 2.6 };
   }
 }
 
@@ -106,13 +118,34 @@ export function fitCells(width: number, target: number): { count: number; cellW:
 
 export const NIGHT_MEDIAN_LIT = 0.32;
 
+type LitFamily = keyof typeof WINDOW_LIT.night;
+
+// v3 kinds borrow the night range of the v2 kind they resemble; the zone litScale then applies
+// the SEOUL.md 4.3 multiplier.
+const LIT_FAMILY: Partial<Record<DistrictKind, LitFamily>> = {
+  core: 'core',
+  midtown: 'midtown',
+  sangga: 'sangga',
+  apartment: 'apartment',
+  hillside: 'hillside',
+  megacore: 'core',
+  corridor: 'core',
+  showroom: 'midtown',
+  oldtown: 'sangga',
+  brick: 'sangga',
+  nightlife: 'sangga',
+};
+
 export function districtLitFactor(d: DistrictKind): number {
-  const n = WINDOW_LIT.night;
-  const r =
-    d === 'core' || d === 'sangga' || d === 'apartment' || d === 'hillside' || d === 'midtown'
-      ? n[d]
-      : ([0.1, 0.16] as const);
+  const fam = LIT_FAMILY[d];
+  const r = fam ? WINDOW_LIT.night[fam] : ([0.1, 0.16] as const);
   return (r[0] + r[1]) / 2 / NIGHT_MEDIAN_LIT;
+}
+
+const ZONE_LIT = new Map(ZONES.map((z) => [z.id, z.litScale]));
+
+export function zoneLitScale(zoneId: string): number {
+  return ZONE_LIT.get(zoneId) ?? 1;
 }
 
 export function bandLevels(

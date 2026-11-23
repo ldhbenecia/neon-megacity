@@ -205,7 +205,7 @@ const FRAG_MAIN = /* glsl */ `
     float glyph = texture2D(uDigits, auv).r * inside;
     fAlbedo = mix(fAlbedo, uDong, glyph);
     fEmit = uDong * 0.9 * uNight * glyph;
-  } else if (fType > 7.5) {
+  } else if (fType > 7.5 && fType < 8.5) {
     float s = fpulse(f.x / 0.9, 0.0, 0.5, fwidth(f.x / 0.9));
     fAlbedo = mix(fAlbedo, vec3(0.42, 0.40, 0.36), s * 0.7);
     fRough = 0.7;
@@ -239,7 +239,8 @@ const FRAG_MAIN = /* glsl */ `
       fAlbedo *= 1.0 + 0.25 * (1.0 - mask);
       fAlbedo *= 1.0 - 0.45 * fpulse(c.y, 0.0, 0.3 / chh, fw.y);
     } else if (fType < 2.5 || fType > 6.5) {
-      float sill = fType > 6.5 ? chh - vWin.w - 0.8 : 0.9;
+      float corr = step(6.5, fType) * step(fType, 7.5);
+      float sill = corr > 0.5 ? chh - vWin.w - 0.8 : 0.9;
       float ax = 0.5 * (1.0 - vWin.z / cw);
       float ay = sill / chh;
       float by = (sill + vWin.w) / chh;
@@ -255,9 +256,22 @@ const FRAG_MAIN = /* glsl */ `
       float mull = fpulse(c.x, 0.5 - mw, 0.5 + mw, fw.x);
       float tr = fpulse(c.y, ay + (by - ay) * 0.72, ay + (by - ay) * 0.72 + 0.05 / chh, fw.y);
       mask *= 1.0 - 0.85 * max(mull, tr) * (1.0 - far);
-      if (fType > 6.5) {
+      if (corr > 0.5) {
         float rib = fpulse(f.x / 0.3, 0.0, 0.5, fwidth(f.x / 0.3));
         fAlbedo *= 0.8 + 0.25 * rib;
+      }
+      if (fType > 8.5) {
+        // Brick: round-arched window heads and running-bond courses in face metres.
+        float hw = 0.5 * vWin.z;
+        vec2 q = vec2((fr.x - 0.5) * cw, max(fr.y * chh - (sill + vWin.w - hw), 0.0));
+        mask *= 1.0 - smoothstep(hw - 0.04, hw + 0.04, length(q)) * (1.0 - far);
+        float row = floor(f.y / 0.075);
+        vec2 bc = vec2(f.x / 0.25 + 0.5 * mod(row, 2.0), f.y / 0.075);
+        vec2 bw = fwidth(bc);
+        float body = fpulse(bc.x, 0.05, 0.95, bw.x) * fpulse(bc.y, 0.12, 0.88, bw.y);
+        body = mix(body, 0.82, smoothstep(0.25, 0.9, max(bw.x, bw.y)));
+        float bh = fhash(floor(bc) + fSeed * 17.0);
+        fAlbedo *= mix(1.3, 0.82 + 0.3 * bh, body);
       }
     } else if (fType < 3.5) {
       float m1 = fpulse(c.x, 0.3 / 6.0, 2.9 / 6.0, fw.x) * fpulse(c.y, 0.25 / chh, 2.25 / chh, fw.y);
@@ -401,7 +415,7 @@ export function createFacadeMaterial(
       );
   };
   material.customProgramCacheKey = () =>
-    interior ? 'hangang-facade-near-v2' : 'hangang-facade-v2';
+    interior ? 'hangang-facade-near-v3' : 'hangang-facade-v3';
   material.userData.uLitRatio = uniforms.uLitRatio;
   return material;
 }
