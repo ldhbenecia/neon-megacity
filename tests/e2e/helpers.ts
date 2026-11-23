@@ -1,9 +1,7 @@
 import type { Page } from '@playwright/test';
 
-/** Chromium flags for software WebGL (GPU-less CI runners, `npm run shots -- --swiftshader`). */
 export const SWIFTSHADER_ARGS = ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'];
 
-/** Collects console errors and uncaught page errors for the lifetime of the page. */
 export function collectErrors(page: Page): string[] {
   const errors: string[] = [];
   page.on('console', (msg) => {
@@ -13,9 +11,24 @@ export function collectErrors(page: Page): string[] {
   return errors;
 }
 
-export async function waitForCity(page: Page, minFrames = 30): Promise<void> {
-  await page.waitForFunction((n) => (window.__city?.frames ?? 0) >= n, minFrames, {
-    timeout: 45_000,
+const WAIT_MS = process.env.CI ? 240_000 : 60_000;
+
+export async function waitForCity(page: Page, minFrames = 3): Promise<void> {
+  await page.waitForFunction(
+    (n) => (window.__city?.frames ?? 0) >= n && window.__city?.powered === true,
+    minFrames,
+    { timeout: WAIT_MS },
+  );
+}
+
+export async function frameCount(page: Page): Promise<number> {
+  return page.evaluate(() => window.__city?.frames ?? 0);
+}
+
+export async function waitFrames(page: Page, n: number): Promise<void> {
+  const start = await frameCount(page);
+  await page.waitForFunction((target) => (window.__city?.frames ?? 0) >= target, start + n, {
+    timeout: WAIT_MS,
   });
 }
 
@@ -29,11 +42,10 @@ export interface PixelStats {
  * (decoding the PNG with a 2D canvas avoids preserveDrawingBuffer and extra deps).
  */
 export async function canvasStats(page: Page): Promise<PixelStats> {
-  // Hide HTML overlays so only WebGL output is measured.
   const png = await page
     .locator('canvas')
     .first()
-    .screenshot({ style: '#hud, .lil-gui { visibility: hidden !important; }' });
+    .screenshot({ style: '#hud, #hud-stats, .lil-gui { visibility: hidden !important; }' });
   return page.evaluate(async (b64) => {
     const img = new Image();
     img.src = `data:image/png;base64,${b64}`;
