@@ -352,6 +352,6 @@ export function createWetMaterial(
         roughnessFactor = mix(dryR, wetR, uWet);`,
       );
   };
-  m.customProgramCacheKey = () => `ramha-wet-${name}`;
+  m.customProgramCacheKey = () => `hangang-wet-${name}`;
   return m;
 }

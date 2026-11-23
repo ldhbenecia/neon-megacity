@@ -400,7 +400,8 @@ export function createFacadeMaterial(
         '#include <emissivemap_fragment>\ntotalEmissiveRadiance += fEmit * uPower;',
       );
   };
-  material.customProgramCacheKey = () => (interior ? 'ramha-facade-near-v2' : 'ramha-facade-v2');
+  material.customProgramCacheKey = () =>
+    interior ? 'hangang-facade-near-v2' : 'hangang-facade-v2';
   material.userData.uLitRatio = uniforms.uLitRatio;
   return material;
 }

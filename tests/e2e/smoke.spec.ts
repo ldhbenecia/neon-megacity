@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { app, canvasStats, collectErrors, waitForCity } from './helpers';
+import { app, canvasStats, collectErrors, scrubTo, waitForCity, waitFrames } from './helpers';
 
 // Lighting draws the sky dome, so even with the other modules still stubbed the frame has a
 // time-of-day gradient. Flip back to false only if nothing renders at all.
@@ -37,8 +37,9 @@ test('noon is brighter than midnight', async ({ page }) => {
   await page.goto(app('nogui&cam=overview&time=0.0'));
   await waitForCity(page);
   const night = await canvasStats(page);
-  await page.goto(app('nogui&cam=overview&time=0.5'));
-  await waitForCity(page);
+  // One boot: the ?time=0.5 boot path is covered by the full-quality budget test.
+  await scrubTo(page, 720);
+  await waitFrames(page, 10);
   const noon = await canvasStats(page);
   expect(noon.mean).toBeGreaterThan(night.mean + 10);
 });
