@@ -70,6 +70,15 @@ export function stepWetness(wetness: number, rain: number, dt: number): number {
   return Math.max(WETNESS.dry, wetness - (span / WETNESS.fallSeconds) * dt);
 }
 
+/** Seconds for `env.rain` to cover ~95% of the gap to `env.rainTarget`. */
+export const RAIN_EASE_SECONDS = 4;
+
+export function stepRain(rain: number, target: number, dt: number): number {
+  const k = 1 - Math.exp((-3 * dt) / RAIN_EASE_SECONDS);
+  const next = rain + (target - rain) * k;
+  return Math.abs(target - next) < 1e-3 ? target : next;
+}
+
 export const RAIN = {
   maxDrops: 12000,
   box: 120,

@@ -1,4 +1,5 @@
-// env.rain is written only by the GUI: never overwrite the ?rain value from main.
+// env.rain eases toward ux-owned env.rainTarget. main seeds both from ?rain, so a ?rain boot
+// holds that exact value until the user picks another weather.
 import { Color, FogExp2, SRGBColorSpace, Vector3 } from 'three';
 import { NIGHT, paletteAt, type PaletteSample, type RGB } from '../core/palette';
 import { FOG_UNIFORMS } from '../core/shaders/emissiveFog';
@@ -13,6 +14,7 @@ import {
   rainAltitudeFade,
   searchlightLevelAt,
   stepQuality,
+  stepRain,
   stepWetness,
   sunScatterStrength,
   wetnessTarget,
@@ -65,7 +67,7 @@ export function init(ctx: Ctx): CityModuleInstance {
   const quality = createQualityState();
 
   const folder = gui.addFolder('Atmosphere');
-  folder.add(env, 'rain', 0, 1, 0.01).name('Rain').listen();
+  folder.add(env, 'rain', 0, 1, 0.01).name('Rain').listen().disable();
   folder.add(settings, 'fogScale', 0, 3, 0.01).name('Fog density ×');
   folder.add(settings, 'heightFog').name('Height fog');
   folder.add(settings, 'bloomScale', 0, 3, 0.01).name('Bloom ×');
@@ -126,6 +128,7 @@ export function init(ctx: Ctx): CityModuleInstance {
         paletteTime = env.timeOfDay;
         applyPalette();
       }
+      env.rain = stepRain(env.rain, env.rainTarget, dt);
       const r = env.rain;
 
       const f = computeFog(palette, r, settings.fogScale);

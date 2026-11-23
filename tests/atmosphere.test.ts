@@ -15,6 +15,7 @@ import {
   searchlightDirection,
   searchlightLevelAt,
   stepQuality,
+  stepRain,
   stepWetness,
   sunScatterStrength,
   wetnessTarget,
@@ -85,6 +86,16 @@ describe('fog', () => {
 });
 
 describe('rain and wetness', () => {
+  it('eases rain toward rainTarget over a few seconds and holds it once reached', () => {
+    let r = 0;
+    for (let t = 0; t < 1; t += 0.1) r = stepRain(r, 1, 0.1);
+    expect(r).toBeGreaterThan(0.3);
+    expect(r).toBeLessThan(0.8);
+    for (let t = 0; t < 10; t += 0.1) r = stepRain(r, 1, 0.1);
+    expect(r).toBe(1);
+    expect(stepRain(0.35, 0.35, 0.1)).toBe(0.35);
+  });
+
   it('never touches env.rain: wetness is a function of rain, not the reverse', () => {
     const env = { rain: 0.73, wetness: 0.55 };
     for (let i = 0; i < 100; i++) env.wetness = stepWetness(env.wetness, env.rain, 0.1);
