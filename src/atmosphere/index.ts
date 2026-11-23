@@ -56,7 +56,7 @@ export function init(ctx: Ctx): CityModuleInstance {
   const searchlights = createSearchlights(ctx);
   const stars = createStars(ctx);
   const clouds = createClouds(ctx, searchlights.spots, searchlights.colors);
-  const rain = createRain(ctx);
+  const rain = low ? null : createRain(ctx);
   clouds.setVisible(settings.clouds);
   const post = low ? null : createPost(ctx);
   const previousRender = ctx.render;
@@ -89,7 +89,7 @@ export function init(ctx: Ctx): CityModuleInstance {
       if (on) return;
       Object.assign(quality, createQualityState());
       post?.setTier(0);
-      rain.setTier(0);
+      rain?.setTier(0);
     });
   folder.add(quality, 'tier', 0, 2, 1).name('Quality tier (0 = full)').listen().disable();
   folder.close();
@@ -157,7 +157,7 @@ export function init(ctx: Ctx): CityModuleInstance {
       env.wetness = stepWetness(env.wetness, r, dt);
 
       const below = rainAltitudeFade(camera.position.y);
-      rain.update(elapsed, low ? 0 : r, env.fogColor, below);
+      rain?.update(elapsed, r, env.fogColor, below);
 
       stars.update(elapsed, settings.stars ? palette.stars * (1 - 0.6 * Math.min(1, r)) : 0);
 
@@ -184,7 +184,7 @@ export function init(ctx: Ctx): CityModuleInstance {
 
       if (settings.autoQuality && stepQuality(quality, dt)) {
         post?.setTier(quality.tier);
-        rain.setTier(quality.tier);
+        rain?.setTier(quality.tier);
       }
     },
     dispose() {
@@ -192,7 +192,7 @@ export function init(ctx: Ctx): CityModuleInstance {
       height[3] = 1;
       ctx.render = previousRender;
       post?.dispose();
-      rain.dispose();
+      rain?.dispose();
       clouds.dispose();
       stars.dispose();
       searchlights.dispose();

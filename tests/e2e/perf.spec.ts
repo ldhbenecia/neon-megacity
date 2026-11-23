@@ -1,4 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
+import { formatClock } from '../../src/core/clock';
+import { LOW_DPR } from '../../src/ux/perf';
 import { app, collectErrors, waitForCity, waitFrames } from './helpers';
 
 // Performance budget (ART_DIRECTION 11): counts only, headless fps means nothing.
@@ -10,7 +12,6 @@ const PRESETS = [1, 2, 3, 5] as const;
 const TIMES = [0, 1125, 720] as const;
 // Enough for the lazy PMREM bake and env key switch after a time change.
 const SETTLE_FRAMES = 12;
-const LOW_DPR = 0.5;
 
 type Hangang = NonNullable<Window['__hangang']>;
 type Stats = ReturnType<Hangang['stats']>;
@@ -30,9 +31,6 @@ function checkBudget(s: Stats, label: string): void {
   expect.soft(s.programs, `programs @ ${label}`).toBeLessThanOrEqual(LIMITS.programs);
 }
 
-const clock = (m: number): string =>
-  `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
-
 test.describe('performance budget', () => {
   test.describe.configure({ mode: 'parallel' });
 
@@ -46,7 +44,7 @@ test.describe('performance budget', () => {
   });
 
   for (const preset of PRESETS) {
-    test(`low: preset ${preset} @ ${TIMES.map(clock).join(', ')}`, async ({ page }) => {
+    test(`low: preset ${preset} @ ${TIMES.map(formatClock).join(', ')}`, async ({ page }) => {
       const errors = collectErrors(page);
       await page.goto(app(`nogui&stats&preset=${preset}&time=0&rain=0.35`));
       await waitForCity(page);
@@ -60,7 +58,7 @@ test.describe('performance budget', () => {
         }, minutes);
         await waitFrames(page, SETTLE_FRAMES);
         const s = await stats(page);
-        checkBudget(s, clock(minutes));
+        checkBudget(s, formatClock(minutes));
         expect.soft(s.dpr, 'low tier DPR').toBe(LOW_DPR);
       }
       expect(errors).toEqual([]);

@@ -44,8 +44,6 @@ async function boot(): Promise<void> {
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   // Exposure is owned by lighting (palette toneMappingExposure × env.powerOn).
   renderer.toneMappingExposure = NIGHT.toneMappingExposure;
-  // Shadow map type/update policy is owned by the lighting module.
-  renderer.shadowMap.enabled = quality === 'high';
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
