@@ -181,13 +181,55 @@ describe('isoRow on a bend tighter than the offset', () => {
     }
   });
 
-  it('returns a new array and leaves the outer side untouched', () => {
-    const r = row(0, -1);
-    for (let i = 0; i < r.length; i++) {
+  it('leaves its inputs alone and the outer side untouched', () => {
+    const before = JSON.stringify(slices);
+    const offset = slices.map(() => -halfW);
+    const target = slices.map(() => 0);
+    const { points, moved } = isoRow(slices, offset, target, dist);
+    expect(JSON.stringify(slices)).toBe(before);
+    expect(offset.every((v) => v === -halfW)).toBe(true);
+    expect(moved.some(Boolean)).toBe(false);
+    for (let i = 0; i < points.length; i++) {
       const f = slices[i]!;
-      expect(r[i]!.x).toBeCloseTo(f.p.x - f.south.x * halfW, 9);
-      expect(r[i]!.z).toBeCloseTo(f.p.z - f.south.z * halfW, 9);
+      expect(points[i]!.x).toBeCloseTo(f.p.x - f.south.x * halfW, 9);
+      expect(points[i]!.z).toBeCloseTo(f.p.z - f.south.z * halfW, 9);
     }
+  });
+
+  it('keeps the end slices where a strip starts or ends inside a fold', () => {
+    const mid = slices.findIndex((f) => f.p.x > 30);
+    for (const part of [slices.slice(mid), slices.slice(0, mid)]) {
+      const k = part.map(() => 160);
+      const { points } = isoRow(
+        part,
+        k,
+        part.map(() => 60),
+        dist,
+      );
+      for (const i of [0, part.length - 1]) {
+        const f = part[i]!;
+        expect(points[i]).toEqual({ x: f.p.x + f.south.x * 160, z: f.p.z + f.south.z * 160 });
+      }
+    }
+  });
+
+  it('does not collapse a run that only misses the target because the width changes', () => {
+    const line: StripSlice[] = Array.from({ length: 80 }, (_, i) => ({
+      p: { x: i * 8, z: 0 },
+      along: { x: 1, z: 0 },
+      south: { x: 0, z: 1 },
+    }));
+    // Width jumps by 10 m over 16 m while the offsets use the width at each slice's own x.
+    const w = (x: number): number => 100 + 10 * Math.min(1, Math.max(0, (x - 300) / 16));
+    const offset = line.map((f) => w(f.p.x));
+    const { points, moved } = isoRow(
+      line,
+      offset,
+      offset.map(() => 0),
+      (p) => p.z - w(p.x + 6),
+    );
+    expect(moved.some(Boolean)).toBe(false);
+    for (let i = 0; i < line.length; i++) expect(points[i]!.z).toBe(offset[i]);
   });
 
   it('strips between rows of different depth face up', () => {

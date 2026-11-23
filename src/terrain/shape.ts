@@ -12,7 +12,6 @@ import {
   type Ridge,
   type Vec2,
 } from '../city/layout';
-import * as LAYOUT_QUERIES from '../city/layout';
 import { createRng } from '../core/random';
 
 export { EMBANK_SLOPE };
@@ -34,22 +33,34 @@ const RIVER_X0 = Math.min(...RIVER.centerline.map((p) => p.x)) + 10;
 const RIVER_X1 = Math.max(...RIVER.centerline.map((p) => p.x)) - 10;
 const HILL_GRID_Z = TERRAIN.hillStartZ + 90;
 
-// Layout v3 has per-x widths; v2 has one width for the whole river. Looked up by name so this
-// builds against both until v3 is on main.
-function layoutQuery(name: string): ((x: number) => number) | null {
-  const f: unknown = (LAYOUT_QUERIES as Record<string, unknown>)[name];
-  return typeof f === 'function' ? (f as (x: number) => number) : null;
+// Linear in x between centerline points, as the layout's own width queries are.
+function controlAt(values: readonly number[], x: number): number {
+  const c = RIVER.centerline;
+  const n = Math.min(c.length, values.length);
+  const first = c[0];
+  const last = c[n - 1];
+  if (!first || !last || n === 0) return values[0] ?? 0;
+  if (x <= first.x) return values[0] ?? 0;
+  if (x >= last.x) return values[n - 1] ?? 0;
+  for (let i = 0; i < n - 1; i++) {
+    const x0 = c[i]?.x ?? 0;
+    const x1 = c[i + 1]?.x ?? 0;
+    if (x <= x1) {
+      const v0 = values[i] ?? 0;
+      const v1 = values[i + 1] ?? 0;
+      return v0 + ((v1 - v0) * (x - x0)) / (x1 - x0);
+    }
+  }
+  return values[n - 1] ?? 0;
 }
-const riverWidthAt = layoutQuery('riverWidthAt') ?? ((): number => RIVER.width);
-const parkWidthAt = layoutQuery('parkWidthAt') ?? ((): number => RIVER.parkWidth);
 
 /** Past the polyline ends the river keeps its end width. */
 export function channelHalfWidth(x: number): number {
-  return riverWidthAt(Math.min(RIVER_X1, Math.max(RIVER_X0, x))) / 2;
+  return controlAt(RIVER.widths, Math.min(RIVER_X1, Math.max(RIVER_X0, x))) / 2;
 }
 
 export function channelParkWidth(x: number): number {
-  return parkWidthAt(Math.min(RIVER_X1, Math.max(RIVER_X0, x)));
+  return controlAt(RIVER.parkWidths, Math.min(RIVER_X1, Math.max(RIVER_X0, x)));
 }
 
 const END_HALF_W0 = channelHalfWidth(RIVER_X0);
@@ -104,18 +115,31 @@ export function isoRow(
     raw.push(p);
     bad.push(Math.abs(dist(p) - t) > tol);
   }
-  const widen = (lo: number, hi: number): Run => {
+  const back = (i: number): boolean => {
+    const p = raw[i - 1];
+    const q = raw[i];
+    const f = slices[i];
+    return !!p && !!q && !!f && (q.x - p.x) * f.along.x + (q.z - p.z) * f.along.z < 0;
+  };
+  // Only a real fold collapses: the run crosses itself or steps backwards. A run that merely
+  // misses `target` (the width changing along x) keeps its plain offsets.
+  const widen = (lo: number, hi: number): Run | null => {
     const hit = selfCrossing(raw, lo, hi, reach);
-    return hit
-      ? { lo: Math.min(hit.a, lo), hi: Math.max(hit.b, hi), p: hit.p }
-      : { lo, hi, p: null };
+    let folded = !!hit;
+    for (let i = lo; i <= hi && !folded; i++) folded = back(i);
+    if (!folded) return null;
+    // The end slices stay put: strips must end exactly on the outer extent.
+    const l = Math.max(1, hit ? Math.min(hit.a, lo) : lo);
+    const h = Math.min(n - 1, hit ? Math.max(hit.b, hi) : hi);
+    return l < h ? { lo: l, hi: h, p: hit?.p ?? null } : null;
   };
   let runs: Run[] = [];
   for (let m = 0; m < n; m++) {
     if (!bad[m]) continue;
     let e = m;
     while (e < n && bad[e]) e++;
-    runs.push(widen(m, e));
+    const r = widen(m, e);
+    if (r) runs.push(r);
     m = e;
   }
   // Widened runs can overlap; merged ones are widened again until they settle.
@@ -125,9 +149,13 @@ export function isoRow(
     let changed = false;
     for (const r of runs) {
       const last = merged[merged.length - 1];
-      // A lone slice that passes between two bad runs is part of the same fold.
-      if (last && r.lo <= last.hi + 2) {
-        merged[merged.length - 1] = widen(last.lo, Math.max(last.hi, r.hi));
+      // A lone slice that passes between two folded runs is part of the same fold.
+      if (last && r.lo <= last.hi + 1) {
+        merged[merged.length - 1] = widen(last.lo, Math.max(last.hi, r.hi)) ?? {
+          lo: last.lo,
+          hi: Math.max(last.hi, r.hi),
+          p: null,
+        };
         changed = true;
       } else merged.push(r);
     }
