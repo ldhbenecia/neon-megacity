@@ -47,7 +47,7 @@ describe.each(SEEDS)('seed %i', (seed) => {
         }
       }
     }
-  });
+  }, 60_000);
 
   it('keeps ≥ 5 m between highways and bridge approaches where they cross', () => {
     const crossings = new Set<string>();

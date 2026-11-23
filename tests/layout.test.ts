@@ -20,6 +20,7 @@ import {
   buildingContaining,
   buildingTop,
   buildingVolumes,
+  bridgeDeckY,
   riverFrame,
   buildingFaces,
   buildingsInAabb,
@@ -677,6 +678,43 @@ describe('noise', () => {
   it('rejects periods larger than the lattice instead of reading zeros', () => {
     expect(() => fbm1(1.5, 7, 4, 64)).toThrow(RangeError);
     expect(() => fbm1(1.5, 7, 4, 32)).not.toThrow();
+  });
+});
+
+describe('layout v3: highway curves', () => {
+  it('never bend tighter than 3 × the deck width (decks would fold)', () => {
+    for (const hw of LAYOUT.highways) {
+      const s = highwaySamples(hw, 4);
+      let min = Infinity;
+      for (let i = 1; i < s.length - 1; i++) {
+        const a = s[i - 1]!;
+        const b = s[i]!;
+        const c = s[i + 1]!;
+        const ab = Math.hypot(b.x - a.x, b.z - a.z);
+        const bc = Math.hypot(c.x - b.x, c.z - b.z);
+        const ac = Math.hypot(c.x - a.x, c.z - a.z);
+        const cross = Math.abs((b.x - a.x) * (c.z - a.z) - (b.z - a.z) * (c.x - a.x));
+        if (cross < 1e-9) continue;
+        min = Math.min(min, (ab * bc * ac) / (2 * cross));
+      }
+      expect(min, hw.id).toBeGreaterThan(3 * hw.width);
+    }
+  });
+
+  it('gives the 내부순환로 ramps room to leave their parent deck', () => {
+    for (const hw of LAYOUT.highways.filter((h) => h.kind === 'ramp')) {
+      const s = highwaySamples(hw, 4);
+      let len = 0;
+      for (let i = 1; i < s.length; i++)
+        len += Math.hypot(s[i]!.x - s[i - 1]!.x, s[i]!.z - s[i - 1]!.z);
+      expect(len, hw.id).toBeGreaterThan(200);
+    }
+  });
+
+  it('keeps the deck at a bridge landing despite rounding', () => {
+    for (const br of LAYOUT.bridges) {
+      for (const l of [br.landA, br.landB]) expect(bridgeDeckY(br, l.x, l.z), br.id).not.toBeNull();
+    }
   });
 });
 

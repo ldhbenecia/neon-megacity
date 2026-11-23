@@ -236,7 +236,9 @@ export function bridgeDeckY(br: Bridge, x: number, z: number, margin = 0): numbe
   const rampA = Math.hypot(br.a.x - br.landA.x, br.a.z - br.landA.z);
   const rampB = Math.hypot(br.b.x - br.landB.x, br.b.z - br.landB.z);
   const over = s < 0 ? -s / rampA : (s - span) / rampB;
-  return over > 1 ? null : br.deckY * (1 - over);
+  // Exactly at a landing, rounding can give 1 + 1e-16; keep the deck there.
+  if (over > 1 + 1e-9) return null;
+  return Math.max(0, br.deckY * (1 - Math.min(1, over)));
 }
 
 export function makeBridges(): Bridge[] {
@@ -284,14 +286,42 @@ function bankPoint(x: number, side: -1 | 1, outside: number): Vec2 {
   return p;
 }
 
-/** Points that follow a bank at `outside` m beyond it, every ~100 m. */
+/** Turn angle (radians) at b between segments a→b and b→c. */
+function turnAt(a: Vec2, b: Vec2, c: Vec2): number {
+  const ux = b.x - a.x;
+  const uz = b.z - a.z;
+  const vx = c.x - b.x;
+  const vz = c.z - b.z;
+  return Math.abs(Math.atan2(ux * vz - uz * vx, ux * vx + uz * vz));
+}
+
+/** Largest turn kept between successive bank points (~190 m minimum radius at 100 m spacing). */
+const MAX_TURN = (25 * Math.PI) / 180;
+
+/**
+ * Points that follow a bank at `outside` m beyond it, every ~100 m. On the inner side of a bend
+ * the offset points bunch up and can reverse; the sharpest corner is dropped until no turn
+ * exceeds MAX_TURN. There the chord bows away from the river, so the clearance only grows.
+ */
 function bankPoints(side: -1 | 1, outside: number, y: number): Vec3[] {
   const pts: Vec3[] = [];
   for (let x = -HALF_X - 150; x <= HALF_X + 150 + 1e-6; x += 100) {
     const p = bankPoint(x, side, outside);
     pts.push({ x: p.x, y, z: p.z });
   }
-  return pts;
+  for (;;) {
+    let worst = -1;
+    let worstTurn = MAX_TURN;
+    for (let i = 1; i < pts.length - 1; i++) {
+      const t = turnAt(pts[i - 1] as Vec3, pts[i] as Vec3, pts[i + 1] as Vec3);
+      if (t > worstTurn) {
+        worstTurn = t;
+        worst = i;
+      }
+    }
+    if (worst < 0) return pts;
+    pts.splice(worst, 1);
+  }
 }
 
 /** Point on 강변북로 near x. */
@@ -320,12 +350,12 @@ const v3 = (x: number, z: number, y = NAEBU_Y): Vec3 => ({ x, y, z });
 
 /** 내부순환로 west leg: 성산대교 north end → 홍제 tunnel portal past the north edge. */
 const NAEBU_W: Vec3[] = [
-  v3(-1430, -760),
-  v3(-1340, -900),
-  v3(-1200, -1030),
-  v3(-1050, -1140),
-  v3(-930, -1260),
-  v3(-880, -1360),
+  v3(-1480, -880),
+  v3(-1390, -990),
+  v3(-1270, -1080),
+  v3(-1120, -1160),
+  v3(-990, -1240),
+  v3(-910, -1360),
 ];
 
 /** 내부순환로 east leg: 정릉 tunnel portal past the north edge → 성수 (강변북로). */
@@ -338,16 +368,32 @@ const NAEBU_E: Vec3[] = [
   v3(900, -410),
 ];
 
+/**
+ * West ramp: leaves 강변북로 alongside it (like the v2 interchange ramps), drifts out to the
+ * north over ~200 m while climbing, then swings up to the start of 내부순환로.
+ */
+/**
+ * West ramp: leaves 강변북로 tangent to it at one of its own control points and swings north
+ * into the start of 내부순환로 (one cubic, tangent to both decks).
+ */
 function rampWest(): Vec3[] {
-  const start = gangbyeonAt(-1620);
-  const pre = gangbyeonAt(-1540);
+  const parent = bankPoints(-1, GANGBYEON_OFFSET, GANGBYEON_Y);
+  const k = parent.reduce(
+    (b, p, i) => (Math.abs(p.x + 1800) < Math.abs((parent[b] as Vec3).x + 1800) ? i : b),
+    0,
+  );
+  const p0 = parent[k] as Vec3;
+  const next = parent[k + 1] as Vec3;
+  const gl = Math.hypot(next.x - p0.x, next.z - p0.z);
   const end = NAEBU_W[0] as Vec3;
   const dir = NAEBU_W[1] as Vec3;
+  const nl = Math.hypot(dir.x - end.x, dir.z - end.z);
   return bezierPoints(
-    start,
-    { ...pre, z: pre.z - 20 },
-    { x: end.x - (dir.x - end.x) * 0.6, y: 0, z: end.z - (dir.z - end.z) * 0.6 },
+    p0,
+    { x: p0.x + ((next.x - p0.x) / gl) * 130, y: 0, z: p0.z + ((next.z - p0.z) / gl) * 130 },
+    { x: end.x - ((dir.x - end.x) / nl) * 130, y: 0, z: end.z - ((dir.z - end.z) / nl) * 130 },
     end,
+    16,
   );
 }
 

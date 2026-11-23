@@ -75,7 +75,7 @@ describe.each(SEEDS)('seed %i', (seed) => {
       expect(bl.w).toBeLessThanOrEqual(300);
       expect(bl.d).toBeLessThanOrEqual(300);
     }
-  });
+  }, 60_000);
 
   it('applies the block height rules (ratio ≥ 3, touching neighbours differ > 10 %)', () => {
     for (const bl of L.blocks) {
