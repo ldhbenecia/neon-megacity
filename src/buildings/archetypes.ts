@@ -27,6 +27,7 @@ import {
   OPPOSITE,
   scaleHex,
   windowStyle,
+  baseArchetype,
   withBaseArchetype,
   type BaseSpec,
 } from './params';
@@ -892,9 +893,8 @@ function warehouseProps(g: GeoBuilder, b: Bld, rng: Rng): void {
   }
 }
 
-export function industrialStacks(raw: BuildingSpec, T: Targets): void {
-  const spec = withBaseArchetype(raw);
-  if (spec.archetype !== 'warehouse') return;
+export function industrialStacks(spec: BuildingSpec, T: Targets): void {
+  if (baseArchetype(spec) !== 'warehouse') return;
   const rng = createRng(spec.seed ^ 0x5a5a);
   const t = spec.tiers[0];
   if (!t || !rng.chance(0.3)) return;

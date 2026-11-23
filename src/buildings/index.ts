@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { CITY, buildingFaces, buildingTop } from '../city/layout';
+import { buildingFaces, buildingTop } from '../city/layout';
 import { pointSegmentDistance } from '../city/math';
 import { GridHash, segmentBounds } from '../city/spatial';
 import type { BuildingsApi, CityModuleInstance, Ctx, Road } from '../core/types';
@@ -85,7 +85,7 @@ function collectChunks(LAYOUT: Ctx['LAYOUT'], grid: ChunkGrid): Chunk[] {
 }
 
 export function init(ctx: Ctx): CityModuleInstance {
-  const { scene, LAYOUT, env, gui } = ctx;
+  const { scene, LAYOUT, CITY, env, gui } = ctx;
   const group = new THREE.Group();
   group.name = 'buildings';
   scene.add(group);

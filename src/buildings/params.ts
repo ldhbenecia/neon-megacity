@@ -42,24 +42,21 @@ const BASE_ARCHETYPES = [
 /** Archetypes this module has dedicated geometry for. */
 export type BaseArchetype = Extract<Archetype, (typeof BASE_ARCHETYPES)[number]>;
 
-const BASE_SET: ReadonlySet<string> = new Set(BASE_ARCHETYPES);
-
-// Archetypes from newer layouts without geometry yet draw as the closest base form (SEOUL.md 4.3).
-const FALLBACK: Readonly<Record<string, BaseArchetype>> = {
-  taperTower: 'setbackTower',
-  mediaSlab: 'officeSlab',
-  lowOffice: 'officeSlab',
-  hanokRow: 'sangga',
-  palaceHall: 'pavilion',
-  brickWarehouse: 'sangga',
-  showroomBox: 'sangga',
-};
+// Base forms map to themselves; archetypes from newer layouts without geometry yet draw as the
+// closest base form (SEOUL.md 4.3). A Map, so prototype keys like 'constructor' never match.
+const BASE_OF = new Map<string, BaseArchetype>([
+  ...BASE_ARCHETYPES.map((a) => [a, a] as const),
+  ['taperTower', 'setbackTower'],
+  ['mediaSlab', 'officeSlab'],
+  ['lowOffice', 'officeSlab'],
+  ['hanokRow', 'sangga'],
+  ['palaceHall', 'pavilion'],
+  ['brickWarehouse', 'sangga'],
+  ['showroomBox', 'sangga'],
+]);
 
 export function baseArchetype(spec: Pick<BuildingSpec, 'archetype' | 'h'>): BaseArchetype {
-  const a: string = spec.archetype;
-  if (BASE_SET.has(a)) return a as BaseArchetype;
-  if (Object.hasOwn(FALLBACK, a)) return FALLBACK[a] as BaseArchetype;
-  return spec.h >= LOD2_MIN_HEIGHT ? 'officeSlab' : 'sangga';
+  return BASE_OF.get(spec.archetype) ?? (spec.h >= LOD2_MIN_HEIGHT ? 'officeSlab' : 'sangga');
 }
 
 export type BaseSpec = BuildingSpec & { archetype: BaseArchetype };
