@@ -7,6 +7,7 @@ import {
   deckHeightAt,
   highwayCurve,
   riverSignedDistance,
+  surfaceHeight,
   type BuildingSpec,
 } from '../src/city/layout';
 import { obbOverlap, pointSegmentDistance } from '../src/city/math';
@@ -140,7 +141,9 @@ describe('infra: cross-sections and lanes', () => {
       expect(o).toHaveLength(hw.lanes);
       for (let i = 1; i < o.length; i++) expect(o[i]!).toBeGreaterThan(o[i - 1]!);
       const lw = laneWidth(hw);
-      // 올림픽대로 28 m / 8 lanes ≈ 3.05 m, 내부순환로 22 m / 4 lanes = 4.6 m.
+      // laneWidth subtracts barriers (0.5) and shoulders (0.6) per edge and the median (0.7 per
+      // side): 올림픽대로 28 m / 8 lanes = 3.05 m, 내부순환로 22 m / 4 lanes = 4.6 m. Floor = Seoul
+      // urban expressway minimum lane (3.0 m).
       expect(lw).toBeGreaterThanOrEqual(3);
       expect(lw).toBeLessThanOrEqual(4.6 + 1e-9);
       expect(Math.abs(o[0]!) + lw / 2).toBeLessThan(hw.width / 2 - 0.5);
@@ -219,6 +222,30 @@ describe('infra: pillars', () => {
     expect(specs.filter((s) => s.kind === 'T').length).toBeGreaterThan(40);
   });
 
+  it('dropping pillars never opens a gap wider than the layout already has (or 3 bays)', () => {
+    const gap = (pts: readonly { x: number; z: number }[]) =>
+      pts.reduce(
+        (m, p, i) => (i ? Math.max(m, Math.hypot(p.x - pts[i - 1]!.x, p.z - pts[i - 1]!.z)) : m),
+        0,
+      );
+    for (const hw of raised.filter((h) => h.pillars.length > 1)) {
+      const kept = specs.filter((s) => s.owner === hw.id);
+      const allowed = Math.max(gap(hw.pillars), 3 * hw.pillarSpacing);
+      expect(gap(kept), hw.id).toBeLessThanOrEqual(allowed + 1);
+    }
+  });
+
+  it('raised decks stay above the ground (60 m at each end may meet a portal or the ground)', () => {
+    for (const hw of raised) {
+      const path = hwPath(hw);
+      const end = Math.ceil(60 / 6);
+      path.pts.slice(end, -end).forEach((p) => {
+        const under = p[1] - DECK_THICKNESS - surfaceHeight(p[0], p[2]);
+        expect(under, `${hw.id} at (${p[0].toFixed(0)}, ${p[2].toFixed(0)})`).toBeGreaterThan(0);
+      });
+    }
+  });
+
   it('columns never touch a building footprint (0 collisions)', () => {
     let hits = 0;
     for (const { column: c } of inst) {
@@ -236,7 +263,8 @@ describe('infra: pillars', () => {
       for (const br of LAYOUT.bridges) {
         expect(pointSegmentDistance(c, br.landA, br.landB)).toBeGreaterThan(br.width / 2);
       }
-      expect(c.y1 - c.y0).toBeGreaterThan(5);
+      // Visible column above the ground (the foot is buried 1 m).
+      expect(c.y1 - (c.y0 + 1)).toBeGreaterThan(0.5);
     }
     for (let i = 0; i < inst.length; i++) {
       for (let j = i + 1; j < inst.length; j++) {
@@ -285,8 +313,7 @@ describe('infra: bridges', () => {
       }
       expect(-f.landA).toBeGreaterThan(f.spanHalf);
       expect(f.landB - f.spanHalf).toBeGreaterThan(-f.landA - f.spanHalf);
-      // Stop short of the landing: at the landing itself bridgeDeckY may round to null.
-      for (let s = f.landA + 1; s < f.landB - 0.5; s += 7) {
+      for (let s = f.landA + 1; s < f.landB; s += 7) {
         const p = bridgePoint(f, s, 0, 0);
         const y = layoutBridgeDeckY(b, p[0], p[2]);
         expect(y).not.toBeNull();
@@ -363,14 +390,16 @@ describe('infra: bridges', () => {
     for (const c of parts.columns.filter((col) => LAYOUT.bridges.some((b) => b.id === col.owner))) {
       const cos = Math.cos(c.rotY);
       const sin = Math.sin(c.rotY);
-      for (const i of [-0.5, -0.25, 0, 0.25, 0.5]) {
-        for (const j of [-0.5, 0.5]) {
+      for (let i = -0.5; i <= 0.5 + 1e-9; i += 0.0625) {
+        for (const j of [-0.5, 0, 0.5]) {
           const x = c.x + cos * i * c.w + sin * j * c.d;
           const z = c.z - sin * i * c.w + cos * j * c.d;
           for (const path of hwPaths) {
             const q = nearestOnPath(path, x, z);
             if (q.y >= c.y1) continue;
-            expect(q.d, `${c.owner} pier on ${path.hw.id}`).toBeGreaterThan(path.hw.width / 2);
+            expect(q.d, `${c.owner} pier on ${path.hw.id}`).toBeGreaterThan(
+              path.hw.width / 2 + 0.5,
+            );
           }
         }
       }
