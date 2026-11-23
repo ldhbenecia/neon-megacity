@@ -25,6 +25,7 @@ const MODULES: readonly (readonly [name: string, weight: number, module: CityMod
 ];
 
 const query = parseQuery(window.location.search);
+const quality = query.quality ?? 'high';
 const loader = createLoader();
 
 async function boot(): Promise<void> {
@@ -35,7 +36,7 @@ async function boot(): Promise<void> {
   if (!container) throw new Error('#app container missing');
 
   const renderer = new THREE.WebGLRenderer({
-    antialias: true,
+    antialias: quality === 'high',
     powerPreference: 'high-performance',
   });
   // Pixel ratio is owned by ux/perf (adaptive, capped at 1.5).
@@ -43,8 +44,6 @@ async function boot(): Promise<void> {
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   // Exposure is owned by lighting (palette toneMappingExposure × env.powerOn).
   renderer.toneMappingExposure = NIGHT.toneMappingExposure;
-  // Shadow map type/update policy is owned by the lighting module.
-  renderer.shadowMap.enabled = true;
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
@@ -87,6 +86,7 @@ async function boot(): Promise<void> {
     env: {
       timeOfDay: query.time ?? 0.9,
       timeLocked: query.time !== undefined,
+      quality,
       sunDirection: new THREE.Vector3(0, -1, 0),
       sunElevation: -1,
       dayFactor: 0,
@@ -132,7 +132,11 @@ async function boot(): Promise<void> {
   loader.stage('compile', BOOT_WEIGHTS.compile);
   await nextFrame();
   try {
-    await renderer.compileAsync(scene, camera);
+    // The post chain (atmosphere) renders into an HDR target, a different program variant than the
+    // canvas: when it publishes `scene.userData.compile`, that warms up exactly what will be drawn.
+    const compileScene = (scene.userData as { compile?: () => void }).compile;
+    if (compileScene) compileScene();
+    else await renderer.compileAsync(scene, camera);
   } catch (err) {
     loader.fail('compile', err);
     throw err;
