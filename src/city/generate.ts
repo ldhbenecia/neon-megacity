@@ -75,9 +75,7 @@ export const RIVER_CLEARANCE = 5;
 
 const zoneRng = (seed: number, key: string): Rng => createRng((seed ^ hashString(key)) >>> 0);
 
-// ---------------------------------------------------------------------------
-// Obstacles (capsules: segment + half width) that lots must not touch.
-
+/** Obstacle capsule (segment + half width) that lots must not touch. */
 interface Capsule {
   a: Vec2;
   b: Vec2;
@@ -99,9 +97,6 @@ class Obstacles {
     return false;
   }
 }
-
-// ---------------------------------------------------------------------------
-// Roads
 
 /** Local (u, v) in a zone's grid frame → world. */
 function gridToWorld(zone: DistrictZone, u: number, v: number): Vec2 {
@@ -238,9 +233,6 @@ function buildRoads(seed: number, bridges: readonly Bridge[]): Road[] {
   }
   return roads;
 }
-
-// ---------------------------------------------------------------------------
-// Lots
 
 interface Lot {
   obb: Obb;
@@ -515,9 +507,6 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
   }
   return { lots, blocks, alleys };
 }
-
-// ---------------------------------------------------------------------------
-// Buildings
 
 interface Draft {
   lot: Lot;
@@ -992,9 +981,7 @@ function buildSpecs(
   });
 }
 
-// ---------------------------------------------------------------------------
-// Street slots (ART_DIRECTION 6.2)
-
+/** Street slots (ART_DIRECTION 6.2). */
 function buildSlots(
   seed: number,
   roads: readonly Road[],
@@ -1018,7 +1005,7 @@ function buildSlots(
     if (!free(p)) return;
     slots.push({ kind, x: p.x, z: p.z, y: surfaceHeight(p.x, p.z), rotY, seed: rng.int(0, 1e9) });
   };
-  /** Points along a road at `offset` from its center line (side ±1). */
+  /** Point on a road at parameter t, `offset` from its center line (side ±1). */
   const along = (r: Road, t: number, side: number, offset: number): Vec2 => {
     const dx = r.b.x - r.a.x;
     const dz = r.b.z - r.a.z;
@@ -1087,8 +1074,6 @@ function buildSlots(
   }
   return slots;
 }
-
-// ---------------------------------------------------------------------------
 
 function makeRidges(seed: number): Ridge[] {
   const rng = zoneRng(seed, 'ridges');
