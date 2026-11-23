@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import GUI from 'lil-gui';
 import { CITY, LAYOUT } from './city/layout';
+import { postEnabled } from './core/gl';
 import { NIGHT } from './core/palette';
 import { CAMERA_LIMITS, parseQuery } from './core/query';
 import type { CityModule, CityModuleInstance, Ctx } from './core/types';
@@ -28,15 +29,20 @@ const query = parseQuery(window.location.search);
 const quality = query.quality ?? 'high';
 const loader = createLoader();
 
-/** Same test as atmosphere's `supportsHalfFloatTargets`, before the real context exists. */
-function halfFloatTargets(): boolean {
-  const gl = document.createElement('canvas').getContext('webgl2');
-  if (!gl) return false;
-  const ok = ['EXT_color_buffer_float', 'EXT_color_buffer_half_float'].some(
-    (name) => gl.getExtension(name) !== null,
-  );
-  gl.getExtension('WEBGL_lose_context')?.loseContext();
-  return ok;
+/**
+ * With post (see `postEnabled`) the scene renders into atmosphere's HDR target and only the final
+ * full-screen pass reaches the canvas, so canvas MSAA would cost ~74 MB at 2400×1350 for nothing.
+ * MSAA is fixed at context creation: start without it and recreate the (rare) renderer whose GPU
+ * cannot run post, checking the real context rather than a probe that may land on another GPU.
+ */
+function createRenderer(): THREE.WebGLRenderer {
+  const make = (antialias: boolean): THREE.WebGLRenderer =>
+    new THREE.WebGLRenderer({ antialias, powerPreference: 'high-performance' });
+  const renderer = make(false);
+  if (quality === 'low' || postEnabled(quality, renderer)) return renderer;
+  renderer.dispose();
+  renderer.forceContextLoss();
+  return make(true);
 }
 
 async function boot(): Promise<void> {
@@ -46,12 +52,7 @@ async function boot(): Promise<void> {
   const container = document.getElementById('app');
   if (!container) throw new Error('#app container missing');
 
-  const renderer = new THREE.WebGLRenderer({
-    // With half-float targets atmosphere renders into its own multisampled HDR target and only the
-    // final full-screen pass reaches the canvas: canvas MSAA would cost ~74 MB at 2400×1350.
-    antialias: quality === 'high' && !halfFloatTargets(),
-    powerPreference: 'high-performance',
-  });
+  const renderer = createRenderer();
   // Pixel ratio is owned by ux/perf (adaptive, capped at 1.5).
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;

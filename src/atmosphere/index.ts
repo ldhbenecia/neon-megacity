@@ -58,7 +58,7 @@ export function init(ctx: Ctx): CityModuleInstance {
   const clouds = createClouds(ctx, searchlights.spots, searchlights.colors);
   const rain = low ? null : createRain(ctx);
   clouds.setVisible(settings.clouds);
-  const post = low ? null : createPost(ctx);
+  const post = createPost(ctx);
   const previousRender = ctx.render;
   if (post) ctx.render = () => post.render();
   // main's compile stage calls this instead of renderer.compile: the HDR target needs
