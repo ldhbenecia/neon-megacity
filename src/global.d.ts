@@ -16,8 +16,8 @@ interface HangangStats {
 interface HangangMemory {
   geometryBytes: number;
   textureBytes: number;
-  /** Drawing buffer: color + depth, times MSAA samples. */
-  framebufferBytes: number;
+  /** Canvas drawing buffer only (color + depth, × MSAA samples); post targets are not included. */
+  canvasBytes: number;
   samples: number;
 }
 
