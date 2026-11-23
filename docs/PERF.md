@@ -26,28 +26,32 @@ npm run perf -- <label> --swiftshader    # software GL, slow
 | boot stages        | `performance.mark('boot:<stage>')` from the loader; a stage includes its `nextFrame()` (two rAF)                |
 | JS gzip            | `dist/assets/*.js`, gzip level 9                                                                                |
 
+Texture bytes use format × type per texel and add 1/3 only for mipmapped min filters. Not
+counted: post-processing render targets, and textures that only live in an `onBeforeCompile`
+closure instead of on the material or its `uniforms` (arrays of textures are counted).
+
 Results also go to `perf-results/<label>.json` (gitignored). fps above 60 only says how much
 headroom is left: on a real display rAF is capped by vsync.
 
-## Snapshot: main 9614778 (lighting, infra, atmosphere, ux; terrain, buildings, neon are stubs)
+## Snapshot: main e2b7fef (lighting, infra, atmosphere, ux; terrain, buildings, neon are stubs)
 
-Apple M4 (Metal ANGLE), 2400×1350, full quality.
+Apple M4 (Metal ANGLE), 2400×1350 (DPR 1.5 held for every run), full quality, canvas 4× MSAA.
 
 | scenario               | frame ms (mean / p95) | fps | calls | tris   | programs | textures | geo MB | tex MB |
 | ---------------------- | --------------------- | --- | ----- | ------ | -------- | -------- | ------ | ------ |
-| 1 강변 히어로 · night  | 4.1 / 5.8             | 242 | 25    | 0.15 M | 28       | 19       | 6.7    | 3.3    |
-| 1 강변 히어로 · sunset | 3.7 / 5.0             | 272 | 25    | 0.15 M | 30       | 21       | 6.7    | 3.3    |
-| 1 강변 히어로 · noon   | 3.8 / 5.3             | 263 | 23    | 0.15 M | 30       | 21       | 6.7    | 3.3    |
-| 2 코어 상공 · night    | 3.9 / 5.4             | 255 | 25    | 0.15 M | 28       | 19       | 6.7    | 3.3    |
-| 2 코어 상공 · noon     | 3.6 / 5.2             | 275 | 23    | 0.15 M | 30       | 21       | 6.7    | 3.3    |
-| 3 등불가 거리 · night  | 4.1 / 5.9             | 241 | 25    | 0.15 M | 28       | 19       | 6.7    | 3.3    |
-| 5 별계단동 · night     | 4.0 / 5.2             | 250 | 26    | 0.15 M | 28       | 19       | 6.7    | 3.3    |
-| 8 탑다운 · night       | 4.6 / 5.9             | 219 | 25    | 0.14 M | 28       | 19       | 6.7    | 3.3    |
-| 8 탑다운 · noon        | 4.2 / 5.3             | 240 | 23    | 0.14 M | 30       | 21       | 6.7    | 3.3    |
+| 1 강변 히어로 · night  | 4.3 / 6.4             | 231 | 25    | 0.15 M | 28       | 19       | 6.7    | 3.1    |
+| 1 강변 히어로 · sunset | 4.1 / 5.9             | 242 | 25    | 0.15 M | 30       | 21       | 6.7    | 3.1    |
+| 1 강변 히어로 · noon   | 3.7 / 5.1             | 272 | 23    | 0.15 M | 30       | 21       | 6.7    | 3.1    |
+| 2 코어 상공 · night    | 4.3 / 6.3             | 232 | 25    | 0.15 M | 28       | 19       | 6.7    | 3.1    |
+| 2 코어 상공 · noon     | 3.7 / 5.6             | 270 | 23    | 0.15 M | 30       | 21       | 6.7    | 3.1    |
+| 3 등불가 거리 · night  | 4.2 / 6.2             | 237 | 25    | 0.15 M | 28       | 19       | 6.7    | 3.1    |
+| 5 별계단동 · night     | 4.2 / 5.8             | 240 | 26    | 0.15 M | 28       | 19       | 6.7    | 3.1    |
+| 8 탑다운 · night       | 4.8 / 5.9             | 210 | 25    | 0.14 M | 28       | 19       | 6.7    | 3.1    |
+| 8 탑다운 · noon        | 4.2 / 5.7             | 237 | 23    | 0.14 M | 30       | 21       | 6.7    | 3.1    |
 
-Other scenarios are within ±0.3 ms of these. Module `update()` total: ≤ 0.06 ms in every scenario.
-Boot to interactive (`loader.done()`): 370–510 ms; lighting init (4 PMREM bakes) 44–76 ms,
-infra init 44–57 ms, first frame 31–46 ms. JS bundle: 243.2 KB gzip.
+The other 6 scenarios fall inside the same ranges. Module `update()` total: ≤ 0.07 ms everywhere.
+Boot to interactive (`loader.done()`): 353–621 ms; lighting init (4 PMREM bakes) 42–90 ms,
+infra init 46–83 ms, first frame 31–79 ms. Canvas: 98.9 MB (`gl.SAMPLES` = 4). JS: 243.2 KB gzip.
 
 ## Against the budget (ART_DIRECTION 11)
 
@@ -72,6 +76,7 @@ infra init 44–57 ms, first frame 31–46 ms. JS bundle: 243.2 KB gzip.
   Modules should share materials and `onBeforeCompile` variants. The low tier (no post, rain,
   clouds, searchlights, shadows) has 12 programs and 3 textures, so those features account for
   16–18 programs and 16–18 textures.
-- **Cold shader cache.** The first run after a build showed first-frame 0.5–0.9 s (shaders linked
-  at the first draw); warm runs are 30–46 ms. Re-check once buildings and neon add programs.
+- **Cold shader cache.** An early run (whose GPU probe did not boot the app) showed first-frame
+  0.5–0.9 s, later runs 31–79 ms; the OS shader cache likely explains it. Re-check once buildings
+  and neon add programs.
 - **JS bundle.** 243 KB gzip, 17 KB under the target with half the modules still stubs.
