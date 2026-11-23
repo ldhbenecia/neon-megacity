@@ -27,6 +27,36 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+          # Full history: the docs-only check below diffs against main.
+          fetch-depth: 0
+
+      # The job always runs (so a required check is never missing); only the slow e2e steps
+      # are skipped when a PR changes nothing but docs/** or *.md. Pushes to main always run e2e.
+      - name: Detect docs-only change
+        id: changes
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+        run: |
+          base=""
+          if [ "$EVENT" = pull_request ]; then
+            # HEAD is the PR merge commit: its first parent is the base branch tip.
+            base="HEAD^1"
+          elif [ "$EVENT" = workflow_dispatch ] && [ "$REF" != refs/heads/main ]; then
+            # No common ancestor: base stays empty and e2e runs (the safe side).
+            base="$(git merge-base origin/main HEAD || true)"
+          fi
+          docs_only=false
+          if [ -n "$base" ]; then
+            # --no-renames: a move from src/ into docs/ must list the old path too.
+            # quotePath=false: Hangul file names are printed as-is, not quoted.
+            files="$(git -c core.quotePath=false diff --name-only --no-renames "$base" HEAD)"
+            echo "$files"
+            if [ -n "$files" ] && ! grep -qvE '^docs/|\.md$' <<<"$files"; then
+              docs_only=true
+            fi
+          fi
+          echo "docs_only=$docs_only" | tee -a "$GITHUB_OUTPUT"
 
       - uses: actions/setup-node@v7
         with:
@@ -51,9 +81,11 @@ jobs:
         run: npm run build
 
       - name: Install Playwright Chromium
+        if: steps.changes.outputs.docs_only != 'true'
         run: npx playwright install --with-deps chromium
 
       - name: E2E tests
+        if: steps.changes.outputs.docs_only != 'true'
         run: npm run test:e2e
 
       - name: Upload Playwright report
