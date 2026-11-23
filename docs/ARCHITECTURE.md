@@ -88,8 +88,9 @@ Numbers are clamped to 0..1; invalid values are ignored.
 `env.quality === 'low'` is the CI tier (SwiftShader renders the full city at a few fps). Quality
 branches are owned by perf and stay minimal: DPR 0.5 and no MSAA (ux/main), no shadow map and one
 lazy 64 px PMREM bake (lighting), no post chain, rain, clouds or searchlights (atmosphere; fog and
-stars stay). All e2e specs use it through `app()` in `tests/e2e/helpers.ts`, except one
-full-quality budget check in `perf.spec.ts` (overview at noon, shadow pass included).
+stars stay), flat river water without noise normals (terrain). All e2e specs use it through
+`app()` in `tests/e2e/helpers.ts`, except one full-quality budget check in `perf.spec.ts`
+(overview at noon, shadow pass included).
 
 ## Test hook: `window.__city`
 

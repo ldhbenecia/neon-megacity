@@ -46,7 +46,8 @@ export interface Water {
   dispose(): void;
 }
 
-export function createWater(): Water {
+/** `ripples: false` (low quality tier) keeps the flat glossy surface without the noise normals. */
+export function createWater(ripples = true): Water {
   const hw = waterHalfWidth();
   const pos: number[] = [];
   const idx: number[] = [];
@@ -75,25 +76,27 @@ export function createWater(): Water {
     roughness: 0.08,
     metalness: 0,
   });
-  material.onBeforeCompile = (shader) => {
-    shader.uniforms.uTime = uTime;
-    shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec2 vWaterXZ;')
-      .replace(
-        '#include <project_vertex>',
-        '#include <project_vertex>\nvWaterXZ = (modelMatrix * vec4(transformed, 1.0)).xz;',
-      );
-    shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>\n${WATER_PARS}`)
-      .replace('#include <normal_fragment_maps>', WATER_NORMAL);
-  };
+  if (ripples) {
+    material.onBeforeCompile = (shader) => {
+      shader.uniforms.uTime = uTime;
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec2 vWaterXZ;')
+        .replace(
+          '#include <project_vertex>',
+          '#include <project_vertex>\nvWaterXZ = (modelMatrix * vec4(transformed, 1.0)).xz;',
+        );
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', `#include <common>\n${WATER_PARS}`)
+        .replace('#include <normal_fragment_maps>', WATER_NORMAL);
+    };
+  }
   const mesh = new THREE.Mesh(geometry, material);
   mesh.name = 'river-water';
   mesh.receiveShadow = true;
   return {
     mesh,
     update(elapsed) {
-      uTime.value = elapsed;
+      if (ripples) uTime.value = elapsed;
     },
     dispose() {
       geometry.dispose();
