@@ -33,7 +33,7 @@ import {
 import { buildChannel, buildGround } from '../src/terrain/ground';
 import { createWater } from '../src/terrain/water';
 
-function profileY(d: number, park = RIVER.parkWidth): number {
+function profileY(d: number, park: number): number {
   const p = channelProfile(40, park);
   for (let i = 0; i < p.length - 1; i++) {
     const a = p[i]!;
@@ -271,7 +271,7 @@ describe('ground grid', () => {
     const nrm = g.getAttribute('normal');
     const index = g.getIndex()!;
     // About 21k triangles per km² of map (120k on the 2.4 km v2 map).
-    expect(index.count / 3).toBeLessThan((CITY.extentX * CITY.extentZ) / 48);
+    expect(index.count / 3).toBeLessThan((2 * CITY.halfX * 2 * CITY.halfZ) / 48);
     const used = new Set<number>();
     for (let i = 0; i < index.count; i++) used.add(index.getX(i));
     const near = LAYOUT.ridges.find((r) => r.id === 'ridge-near')!;
@@ -312,7 +312,7 @@ describe('ground grid', () => {
   it('channel rows that share an edge coincide and the water edge tucks under the stone edge', () => {
     const ch = buildChannel().getAttribute('position');
     const w = createWater().mesh.geometry.getAttribute('position');
-    const prof = channelProfile(0).length;
+    const prof = channelProfile(0, 0).length;
     const per = prof * 2;
     expect(ch.count / per).toBe(w.count / 2);
     const xz = (attr: THREE.BufferAttribute | THREE.InterleavedBufferAttribute, i: number) => ({

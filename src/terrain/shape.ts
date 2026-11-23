@@ -4,6 +4,8 @@ import {
   LAYOUT,
   RIVER,
   TERRAIN,
+  parkWidthAt,
+  riverWidthAt,
   riverFrame,
   riverSignedDistance,
   riverZ,
@@ -26,41 +28,20 @@ const NEAR_RIDGE: Ridge = (() => {
 export const GROUND_RADIUS = NEAR_RIDGE.radius - 10;
 export const OUTER_EXTENT = GROUND_RADIUS;
 
-export const MAP_HALF_X = CITY.extentX / 2;
-export const MAP_HALF_Z = CITY.extentZ / 2;
+export const MAP_HALF_X = CITY.halfX;
+export const MAP_HALF_Z = CITY.halfZ;
 
-const RIVER_X0 = Math.min(...RIVER.centerline.map((p) => p.x)) + 10;
-const RIVER_X1 = Math.max(...RIVER.centerline.map((p) => p.x)) - 10;
+const RIVER_X0 = Math.min(...RIVER.samples.map((p) => p.x)) + 10;
+const RIVER_X1 = Math.max(...RIVER.samples.map((p) => p.x)) - 10;
 const HILL_GRID_Z = TERRAIN.hillStartZ + 90;
-
-// Linear in x between centerline points, as the layout's own width queries are.
-function controlAt(values: readonly number[], x: number): number {
-  const c = RIVER.centerline;
-  const n = Math.min(c.length, values.length);
-  const first = c[0];
-  const last = c[n - 1];
-  if (!first || !last || n === 0) return values[0] ?? 0;
-  if (x <= first.x) return values[0] ?? 0;
-  if (x >= last.x) return values[n - 1] ?? 0;
-  for (let i = 0; i < n - 1; i++) {
-    const x0 = c[i]?.x ?? 0;
-    const x1 = c[i + 1]?.x ?? 0;
-    if (x <= x1) {
-      const v0 = values[i] ?? 0;
-      const v1 = values[i + 1] ?? 0;
-      return v0 + ((v1 - v0) * (x - x0)) / (x1 - x0);
-    }
-  }
-  return values[n - 1] ?? 0;
-}
 
 /** Past the polyline ends the river keeps its end width. */
 export function channelHalfWidth(x: number): number {
-  return controlAt(RIVER.widths, Math.min(RIVER_X1, Math.max(RIVER_X0, x))) / 2;
+  return riverWidthAt(Math.min(RIVER_X1, Math.max(RIVER_X0, x))) / 2;
 }
 
 export function channelParkWidth(x: number): number {
-  return controlAt(RIVER.parkWidths, Math.min(RIVER_X1, Math.max(RIVER_X0, x)));
+  return parkWidthAt(Math.min(RIVER_X1, Math.max(RIVER_X0, x)));
 }
 
 const END_HALF_W0 = channelHalfWidth(RIVER_X0);
@@ -331,7 +312,7 @@ export interface ProfilePoint {
 }
 
 // Must match surfaceHeight; the stone edge sinks below waterY so the water plane cuts it cleanly.
-export function channelProfile(outer: number, parkWidth = RIVER.parkWidth): ProfilePoint[] {
+export function channelProfile(outer: number, parkWidth: number): ProfilePoint[] {
   const { bankY, parkY, waterY } = RIVER;
   const below = waterY - 0.8;
   const edgeD = -parkWidth - EMBANK_SLOPE * ((below - parkY) / (waterY - parkY));

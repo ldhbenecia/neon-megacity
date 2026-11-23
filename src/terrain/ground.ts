@@ -95,7 +95,7 @@ export function buildChannel(): THREE.BufferGeometry {
   const col: number[] = [];
   const idx: number[] = [];
   const profiles = xs.map((x) => channelProfile(bankReach(x), channelParkWidth(x)));
-  const profLen = channelProfile(0).length;
+  const profLen = profiles[0]?.length ?? 0;
   const perSlice = profLen * 2;
   const depths = Array.from({ length: profLen }, (_, j) => profiles.map((p) => p[j]?.d ?? 0));
   const rows = [...channelRows(c, depths, -1), ...channelRows(c, depths, 1)];
