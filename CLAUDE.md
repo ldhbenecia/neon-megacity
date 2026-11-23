@@ -43,7 +43,8 @@ Read `docs/ARCHITECTURE.md` before editing. Summary:
 - Pure logic (layout, time-of-day math, placement) lives in side-effect-free functions with unit tests in `tests/`.
 - Use only current three r0.187 APIs. No deprecated APIs (`Clock` → `Timer`, `outputEncoding` → `outputColorSpace`, `mergeBufferGeometries` → `mergeGeometries`, set `colorSpace` on color textures).
 - No external asset files or CDNs: all textures are procedural (canvas / shaders).
-- No real brands, logos, or names/characters/places from existing games or anime. Invent fictional names.
+- 실제 서울 지리(지명, 대교, 지역구, 산)는 사용한다. 실존 브랜드·기업 로고·상호 금지. 실존 건물은 복제하지 않고 실루엣만 연상. 기존 게임·애니메이션의 이름·캐릭터·장소 금지. 한자 금지. (`docs/SEOUL.md`)
+- 코드 주석은 코드만으로 알 수 없는 필수 정보만 쓴다.
 - Performance budget: 60fps on a laptop. Prefer `InstancedMesh`, merged geometry, texture atlases, and shader-uniform animation over per-object CPU work. ≤ 8 real PointLights total.
 - Deterministic randomness only via `createRng` from `src/core/random.ts`.
 - Dispose GPU resources you create in `dispose()`.
