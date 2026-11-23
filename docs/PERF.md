@@ -110,6 +110,40 @@ Same ART_DIRECTION 11 ceilings; v3 must fit them, not raise them. Per-module rul
 
 Check after each v3 PR with `npm run perf -- v3` on the heaviest presets (SEOUL.md 7: overview and namsan) plus top-down.
 
+## Shader programs: what splits them, and the budget per team
+
+`renderer.info.programs` (HUD `prog`, `npm run perf` column) counts compiled programs. three makes a
+new one for every distinct combination of:
+
+- shader source: every `ShaderMaterial` with its own GLSL string. Branch by attribute or uniform
+  (type id, colour, blink phase) inside one shader instead of near-copies.
+- `defines`: a define on some materials only (e.g. `BLINK`) doubles the program. UnrealBloomPass did
+  this with `KERNEL_PAIRS` per mip (5 programs; now one shared blur, `src/atmosphere/bloomBlur.ts`).
+- `onBeforeCompile` patches: shared only with the same `customProgramCacheKey`.
+- mesh kind: the same material on `InstancedMesh` and `Mesh` (USE_INSTANCING), or on `BatchedMesh`
+  (USE_BATCHING), is two programs.
+- built-in material flags: vertexColors, map, alphaTest, side, transparent, fog on / off,
+  receiveShadow (USE_SHADOWMAP), castShadow (adds a depth variant).
+- render target: with post on, the scene renders untonemapped into the HDR target; drawing one
+  material to both the canvas and the target compiles both variants.
+- day / night: swap uniforms, never materials or shadow flags (#31).
+- helpers that stay alive: a `PMREMGenerator` keeps its 3 programs until disposed (lighting now
+  disposes it after the boot bakes).
+
+Budget (ceiling 50 stays the CI gate; team total 45 leaves a reserve):
+
+| team                  | now (main, full quality) | allocation incl. v3 |
+| --------------------- | ------------------------ | ------------------- |
+| lighting              | 1                        | 2                   |
+| terrain               | 4                        | 4                   |
+| buildings             | 4                        | 6 (v3 archetypes)   |
+| infra                 | 6                        | 8 (bridge types)    |
+| atmosphere            | ~11                      | 12                  |
+| neon                  | (#46 pending)            | 8                   |
+| shadow depth variants | 3                        | 3                   |
+| reserve               |                          | 2                   |
+| **total**             | **29**                   | **45**              |
+
 ## Findings and candidates
 
 - **Day/night scrub stall (fixed).** Toggling the key light's `castShadow` changed the program
