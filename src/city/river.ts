@@ -8,16 +8,19 @@ const CENTERLINE: Vec2[] = Array.from({ length: 33 }, (_, i) => {
   return { x, z: riverZ(x) };
 });
 
+const WIDTH = 240;
+const PARK_WIDTH = 40;
+
 export const RIVER: Readonly<River> = {
   centerline: CENTERLINE,
-  width: 240,
+  width: WIDTH,
   waterY: -4,
   bankY: 0,
-  parkWidth: 40,
+  parkWidth: PARK_WIDTH,
   parkY: -2,
   bandWidth: 60,
-  widths: CENTERLINE.map(() => 240),
-  parkWidths: CENTERLINE.map(() => 40),
+  widths: CENTERLINE.map(() => WIDTH),
+  parkWidths: CENTERLINE.map(() => PARK_WIDTH),
   samples: CENTERLINE.map((p) => ({ ...p })),
 };
 
