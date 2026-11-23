@@ -48,7 +48,12 @@ export function init(ctx: Ctx): CityModuleInstance {
 
   const key = new THREE.DirectionalLight(0xffffff, 0);
   key.name = 'keyLight';
-  key.castShadow = false;
+  // castShadow never toggles at runtime: flipping it changes every lit material's program variant
+  // (0.6–1.3 s stall with buildings on a day/night scrub). When sun shadows are off (setting,
+  // sunset, night) shadow.intensity goes to 0 and the map stops refreshing instead. Trade-off: lit
+  // materials keep sampling the map; pre-compiling both variants would exceed 50 programs.
+  key.castShadow = !low;
+  key.shadow.intensity = 0;
   key.shadow.mapSize.set(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
   key.shadow.bias = -0.0004;
   key.shadow.radius = 1.5;
@@ -124,14 +129,15 @@ export function init(ctx: Ctx): CityModuleInstance {
     env.windowLitRatio = pal.windowLitRatio;
 
     const kl = keyLightAt(env.sunElevation, moonDir.y);
-    const castShadow =
+    const sunShadow =
       settings.shadows && kl.body === 'sun' && pal.shadows > 0.5 && env.sunElevation > 0.02;
-    if (castShadow !== key.castShadow) {
-      key.castShadow = castShadow;
-      renderer.shadowMap.needsUpdate = true;
+    const shadowIntensity = sunShadow ? 1 : 0;
+    if (shadowIntensity !== key.shadow.intensity) {
+      key.shadow.intensity = shadowIntensity;
+      if (sunShadow) renderer.shadowMap.needsUpdate = true;
     }
     // Shadow frustum first, so the light target below already sits on this frame's frustum.
-    if (castShadow) updateShadowCamera(dt);
+    if (sunShadow) updateShadowCamera(dt);
     const dir = kl.body === 'sun' ? env.sunDirection : moonDir;
     const center = lastShadowFrame ?? ORIGIN_FRAME;
     key.target.position.set(center.cx, 0, center.cz);
