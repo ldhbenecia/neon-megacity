@@ -1,6 +1,8 @@
 // v3 district kinds mapped onto the v2 kinds whose rendering rules (window light, signs, rooftop
 // props) already exist, so buildings and neon can fall back on one shared table. v2 kinds map
 // to themselves, which keeps the v2 city unchanged.
+// Callers check isUnbuilt(kind) first, then branch on baseKind(kind): palace and park have no
+// v2 rules to fall back on.
 import type { DistrictKind } from './types';
 
 /** v2 kinds plus the two v3 kinds that have no v2 equivalent. */
