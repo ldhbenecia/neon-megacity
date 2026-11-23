@@ -64,8 +64,7 @@ export function baseArchetype(spec: Pick<BuildingSpec, 'archetype' | 'h'>): Base
 export type BaseSpec = BuildingSpec & { archetype: BaseArchetype };
 
 export function withBaseArchetype(spec: BuildingSpec): BaseSpec {
-  const archetype = baseArchetype(spec);
-  return archetype === spec.archetype ? (spec as BaseSpec) : { ...spec, archetype };
+  return { ...spec, archetype: baseArchetype(spec) };
 }
 
 export function windowStyle(
@@ -181,10 +180,7 @@ export interface ChunkGrid {
   size: number;
 }
 
-export function chunkGrid(
-  layout: { extentX: number; extentZ: number },
-  size: number,
-): ChunkGrid {
+export function chunkGrid(layout: { extentX: number; extentZ: number }, size: number): ChunkGrid {
   return { halfX: layout.extentX / 2, halfZ: layout.extentZ / 2, size };
 }
 

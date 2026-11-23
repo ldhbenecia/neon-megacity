@@ -11,8 +11,10 @@ const targets = (): Targets => ({
 });
 
 // Archetypes a newer layout may emit before buildings has geometry for them.
-const unknown = (spec: BuildingSpec, archetype: string): BuildingSpec =>
-  ({ ...spec, archetype: archetype as Archetype }) as BuildingSpec;
+const unknown = (spec: BuildingSpec, archetype: string): BuildingSpec => ({
+  ...spec,
+  archetype: archetype as Archetype,
+});
 
 const NEW_ARCHETYPES = [
   'taperTower',
@@ -36,8 +38,9 @@ describe('unknown archetypes fall back to a base form', () => {
     expect(baseArchetype(unknown(tall, 'somethingElse'))).toBe('officeSlab');
     expect(baseArchetype(unknown(low, 'somethingElse'))).toBe('sangga');
     for (const b of LAYOUT.buildings) {
-      if (baseArchetype(b) === b.archetype) expect(withBaseArchetype(b)).toBe(b);
-      else expect(withBaseArchetype(b).archetype).toBe(baseArchetype(b));
+      const base = withBaseArchetype(b);
+      expect(base.archetype).toBe(baseArchetype(b));
+      expect({ ...base, archetype: b.archetype }).toEqual(b);
     }
   });
 

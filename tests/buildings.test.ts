@@ -11,7 +11,6 @@ import {
 } from '../src/buildings/archetypes';
 import {
   LOD_DISTANCES,
-  baseArchetype,
   bandLevels,
   braceLevels,
   chunkCenter,
