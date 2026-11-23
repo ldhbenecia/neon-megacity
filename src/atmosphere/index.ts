@@ -102,9 +102,9 @@ export function init(ctx: Ctx): CityModuleInstance {
   const tmp = new Color();
   const sunColor = new Color();
   const sunDir = new Vector3(0, 1, 0);
-  const height = FOG_UNIFORMS.ramhaFogHeight.value;
-  const sun = FOG_UNIFORMS.ramhaFogSun.value;
-  const sunCol = FOG_UNIFORMS.ramhaFogSunColor.value;
+  const height = FOG_UNIFORMS.cityFogHeight.value;
+  const sun = FOG_UNIFORMS.cityFogSun.value;
+  const sunCol = FOG_UNIFORMS.cityFogSunColor.value;
   const postSettings = { strength: 0, radius: 0, threshold: 0, lens: true, drops: 0 };
   const applyPalette = (): void => {
     setSrgb(dayLow, palette.hemiSky).lerp(setSrgb(tmp, palette.horizonColor), 0.5);

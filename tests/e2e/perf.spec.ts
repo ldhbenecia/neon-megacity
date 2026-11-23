@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { formatClock } from '../../src/core/clock';
 import { LOW_DPR } from '../../src/ux/perf';
-import { app, collectErrors, waitForCity, waitFrames } from './helpers';
+import { app, collectErrors, scrubTo, waitForCity, waitFrames } from './helpers';
 
 // Performance budget (ART_DIRECTION 11): counts only, headless fps means nothing.
 // The preset × time grid runs in the low tier (a floor: no shadow or post passes); one boot at
@@ -49,13 +49,7 @@ test.describe('performance budget', () => {
       await page.goto(app(`nogui&stats&preset=${preset}&time=0&rain=0.35`));
       await waitForCity(page);
       for (const minutes of TIMES) {
-        // Input event directly: the timeline sits inside the HUD, which may be collapsed.
-        await page.evaluate((m) => {
-          const input = document.getElementById('tl-range');
-          if (!(input instanceof HTMLInputElement)) throw new Error('#tl-range missing');
-          input.value = String(m);
-          input.dispatchEvent(new Event('input'));
-        }, minutes);
+        await scrubTo(page, minutes);
         await waitFrames(page, SETTLE_FRAMES);
         const s = await stats(page);
         checkBudget(s, formatClock(minutes));
