@@ -3,8 +3,10 @@
 //   ?cam=<name>  preset camera pose
 //   ?rain=0..1   initial rain intensity
 //   ?nogui       hide the lil-gui panel
+//   ?quality=low software-GL mode for CI (see Quality)
 
 import { LAYOUT, type Road } from '../city/layout';
+import type { Quality } from './types';
 
 /**
  * OrbitControls limits applied by main.ts. Every camera preset must satisfy them,
@@ -91,6 +93,7 @@ export interface QueryOptions {
   time?: number;
   cam?: CameraPreset;
   rain?: number;
+  quality?: Quality;
   nogui: boolean;
 }
 
@@ -114,5 +117,7 @@ export function parseQuery(search: string): QueryOptions {
   if (rain !== undefined) opts.rain = rain;
   const cam = params.get('cam');
   if (isPreset(cam)) opts.cam = cam;
+  const quality = params.get('quality');
+  if (quality === 'low' || quality === 'high') opts.quality = quality;
   return opts;
 }

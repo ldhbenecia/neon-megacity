@@ -31,6 +31,12 @@ describe('parseQuery', () => {
   it('accepts camera presets and the nogui flag', () => {
     expect(parseQuery('?cam=street&nogui')).toEqual({ cam: 'street', nogui: true });
   });
+
+  it('accepts quality=low|high only', () => {
+    expect(parseQuery('?quality=low').quality).toBe('low');
+    expect(parseQuery('?quality=high').quality).toBe('high');
+    expect(parseQuery('?quality=ultra').quality).toBeUndefined();
+  });
 });
 
 describe('CAMERA_PRESETS', () => {

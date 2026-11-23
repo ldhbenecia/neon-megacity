@@ -40,7 +40,8 @@ function setSrgb(color: THREE.Color, rgb: RGB, scale = 1): THREE.Color {
 export function init(ctx: Ctx): CityModuleInstance {
   const { scene, renderer, camera, controls, gui, env } = ctx;
 
-  renderer.shadowMap.enabled = true;
+  const low = env.quality === 'low';
+  renderer.shadowMap.enabled = !low;
   renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.shadowMap.autoUpdate = false;
   renderer.shadowMap.needsUpdate = true;
@@ -48,7 +49,7 @@ export function init(ctx: Ctx): CityModuleInstance {
   const settings = {
     dayMinutes: 8,
     paused: false,
-    shadows: true,
+    shadows: !low,
     exposureTrim: 1,
   };
 
@@ -70,7 +71,7 @@ export function init(ctx: Ctx): CityModuleInstance {
   // --- sky + environment
   const sky = createSky();
   scene.add(sky.mesh);
-  const envMaps = createEnvMaps(renderer);
+  const envMaps = createEnvMaps(renderer, low ? 64 : 256);
   let envKey: EnvKey | null = null;
 
   // --- scratch (no per-frame allocation)
@@ -186,15 +187,16 @@ export function init(ctx: Ctx): CityModuleInstance {
   folder.add(env, 'timeOfDay', 0, 1, 0.001).name('time of day').listen();
   folder.add(settings, 'dayMinutes', 1, 30, 0.5).name('day length (min)');
   folder.add(settings, 'paused').name('pause cycle');
-  folder.add(settings, 'shadows').name('sun shadows');
+  const shadowToggle = folder.add(settings, 'shadows').name('sun shadows');
+  if (low) shadowToggle.disable();
   folder.add(settings, 'exposureTrim', 0.5, 1.5, 0.01).name('exposure trim');
   for (const [label, time] of TIME_PRESETS) {
     folder.add({ go: () => (env.timeOfDay = time) }, 'go').name(label);
   }
   folder.close();
 
-  // Bake all four environment maps now (boot), never mid-session.
-  envMaps.bakeAll();
+  // Bake all four environment maps now (boot), never mid-session. Low quality bakes lazily.
+  if (!low) envMaps.bakeAll();
   // Populate env before the other modules init and read it.
   apply(0);
 
