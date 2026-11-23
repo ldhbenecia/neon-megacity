@@ -187,7 +187,8 @@ export function init(ctx: Ctx): CityModuleInstance {
   folder.add(env, 'timeOfDay', 0, 1, 0.001).name('time of day').listen();
   folder.add(settings, 'dayMinutes', 1, 30, 0.5).name('day length (min)');
   folder.add(settings, 'paused').name('pause cycle');
-  folder.add(settings, 'shadows').name('sun shadows');
+  const shadowToggle = folder.add(settings, 'shadows').name('sun shadows');
+  if (low) shadowToggle.disable();
   folder.add(settings, 'exposureTrim', 0.5, 1.5, 0.01).name('exposure trim');
   for (const [label, time] of TIME_PRESETS) {
     folder.add({ go: () => (env.timeOfDay = time) }, 'go').name(label);

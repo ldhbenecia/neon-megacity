@@ -10,7 +10,7 @@ export type * from '../city/types';
 
 /**
  * Render quality tier. 'low' (`?quality=low`) is for software GL (CI SwiftShader): DPR 0.5, no MSAA,
- * no shadows, no post-processing or rain, minimal PMREM bakes, shorter LOD / fade distances.
+ * no shadows, one lazy 64 px PMREM bake, no post chain, rain, clouds or searchlights.
  */
 export type Quality = 'high' | 'low';
 
