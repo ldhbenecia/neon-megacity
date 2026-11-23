@@ -128,15 +128,12 @@ function faceStyle(b: Bld, side: Side | null, len: number, tierIdx: number): Sty
   const shop = side !== null && b.shopSides.has(side);
   const role = shop && baseRole === 'side' ? 'front' : baseRole;
   const ws = windowStyle(spec.archetype, role, spec.seed);
-  if (
-    ws.type === FACADE.plain ||
-    (side === null && !(spec.archetype === 'cylinderTower') && len < 4)
-  ) {
+  if (ws.type === FACADE.plain || (side === null && len < 4)) {
     return plain(b.wall, 0.85);
   }
   const fit = fitCells(len, ws.cellW);
   return style(ws.type, b.wall, {
-    cellW: spec.archetype === 'cylinderTower' ? ws.cellW : fit.cellW,
+    cellW: fit.cellW,
     cellH: spec.archetype === 'warehouse' ? spec.h : spec.floorH,
     winW: ws.winW,
     winH: ws.winH,
@@ -215,10 +212,10 @@ export function emitBuilding(spec: BuildingSpec, T: Targets, onStreet?: StreetTe
     [T.l0, 0],
     [T.l1, 1],
   ];
+  if (spec.archetype === 'hillHouse') return hillHouse(b, T);
   if (b.inL2) levels.push([T.l2, 2]);
   else lowBox(b, T.l2);
 
-  if (spec.archetype === 'hillHouse') return hillHouse(b, T);
   const roofKind = roofTopKind(spec);
 
   const stacks = tierStacks(spec);
@@ -924,6 +921,8 @@ function hillHouse(b: Bld, T: Targets): void {
   }
   const plinth = maxT - spec.baseY > 0.4 ? Math.min(maxT + 0.2, t.y1 - 2.4) : t.y0;
   b.windowY = Math.max(spec.baseY, plinth);
+  // After windowY: LOD2 window rows must line up with the plinth like LOD0/1.
+  if (!b.inL2) lowBox(b, T.l2);
   const o = tierOutline(t, spec.rotY, 8);
   shell(T.l0, b, t, o, 0, plinth);
   shell(T.l1, b, t, o, 0, plinth);

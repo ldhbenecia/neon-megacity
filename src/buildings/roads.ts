@@ -290,7 +290,8 @@ export function puddleData(seed: number, N: number): Uint8Array {
 }
 
 export function puddleTexture(seed = 2077): THREE.DataTexture {
-  const N = 1024;
+  // Built on the main thread during init: 512² keeps boot cost down and still gives 16 px/m.
+  const N = 512;
   const data = puddleData(seed, N);
   const tex = new THREE.DataTexture(data, N, N, THREE.RGBAFormat);
   tex.wrapS = THREE.RepeatWrapping;
