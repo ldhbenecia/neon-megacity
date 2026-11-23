@@ -5,12 +5,24 @@ import { RIVER, bridgeDeckY, surfaceHeight, type Bridge, type Road } from '../ci
 import { obbSegmentDistance } from '../city/math';
 import type { InfraColors } from './colors';
 import type { HwPath } from './highways';
-import { MeshData, framesAlong, len, sub, type Frame, type RGB, type V3 } from './mesh';
+import {
+  DiscardMeshData,
+  MeshData,
+  framesAlong,
+  len,
+  sub,
+  type Frame,
+  type RGB,
+  type V3,
+} from './mesh';
 import type { ColumnInstance, DetailParts, InfraParts } from './parts';
-
-/** Bridge builders write the always-drawn parts into InfraParts and fine parts into `detail`. */
-type BridgeParts = InfraParts & { detail: DetailParts };
 import { DECK_THICKNESS, boxEdges, markingLines, slabEdges, slabLoop } from './profile';
+
+/**
+ * Bridge builders write the always-drawn parts (deck, piers, structural silhouette, lights) into
+ * InfraParts and the fine parts (rails, posts, lane paint, bracing) into `detail`.
+ */
+type BridgeParts = InfraParts & { detail: DetailParts };
 
 /** Lower road deck height of a double-deck bridge when the layout leaves it unset. */
 const LOWER_DECK_Y = 4;
@@ -390,7 +402,7 @@ function buildArch(
       for (let s = s0 + 6; s < s1 - 3; s += 6) {
         const ry = archY(s, s0, s1, springY, crownY) - 1.1;
         if (ry - b.deckY < 2) continue;
-        parts.detail.glow.beam(
+        parts.glow.beam(
           bridgePoint(f, s, l, b.deckY + 0.3),
           bridgePoint(f, s, l, ry),
           0.14,
@@ -436,8 +448,8 @@ function buildTruss(
     parts.steel.beam(P(-h + panel / 2, yt), P(h - panel / 2, yt), 0.9, 0.9, c.archSteel, f.v);
     for (let s = -h; s < h - 1e-6; s += panel) {
       const m = s + panel / 2;
-      parts.detail.steel.beam(P(s, yb), P(m, yt), 0.7, 0.7, c.archSteel, f.v);
-      parts.detail.steel.beam(P(m, yt), P(s + panel, yb), 0.7, 0.7, c.archSteel, f.v);
+      parts.steel.beam(P(s, yb), P(m, yt), 0.7, 0.7, c.archSteel, f.v);
+      parts.steel.beam(P(m, yt), P(s + panel, yb), 0.7, 0.7, c.archSteel, f.v);
     }
     // Orange line along the top chord crest.
     parts.glow.beam(
@@ -579,17 +591,23 @@ const BUILDERS: Record<
   girder: buildGirder,
 };
 
-/** `roads` (the layout's ground roads) and `highways`: what river and approach piers keep clear of. */
+/**
+ * `roads` (the layout's ground roads) and `highways`: what river and approach piers keep clear of.
+ * `withDetail` false skips the fine parts entirely (quality 'low').
+ */
 export function buildBridge(
   b: Bridge,
   out: InfraParts,
   c: InfraColors,
   roads: readonly Road[] = [],
   highways: readonly HwPath[] = [],
+  withDetail = true,
 ): BridgeFrame {
   const f = bridgeFrame(b);
-  const detail = { steel: new MeshData(), glow: new MeshData(), markings: new MeshData() };
-  out.bridgeDetail.push({ id: b.id, center: [f.mid[0], b.deckY, f.mid[2]], ...detail });
+  const sink = (): MeshData => (withDetail ? new MeshData() : new DiscardMeshData());
+  const detail = { steel: sink(), glow: sink(), markings: sink() };
+  if (withDetail)
+    out.bridgeDetail.push({ id: b.id, center: [f.mid[0], b.deckY, f.mid[2]], ...detail });
   const parts: BridgeParts = { ...out, detail };
   const shape = bridgeShape(b);
   const lowY = lowerDeckY(b);

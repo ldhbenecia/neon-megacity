@@ -6,7 +6,8 @@ import { buildHighways, hwPath } from './highways';
 import { createParts, type InfraParts } from './parts';
 import { pillarInstances, pillarSpecs } from './pillars';
 
-export function buildInfra(L: Layout, c: InfraColors): InfraParts {
+/** `bridgeDetail` false: no near-only bridge parts (quality 'low'). */
+export function buildInfra(L: Layout, c: InfraColors, bridgeDetail = true): InfraParts {
   const parts = createParts();
   // Curve sampling is shared by the deck builder and the pillar filters.
   const paths = L.highways.map((hw) => hwPath(hw));
@@ -16,6 +17,6 @@ export function buildInfra(L: Layout, c: InfraColors): InfraParts {
     parts.columns.push(column);
     parts.beams.push(...beams);
   }
-  for (const b of L.bridges) buildBridge(b, parts, c, L.roads, paths);
+  for (const b of L.bridges) buildBridge(b, parts, c, L.roads, paths, bridgeDetail);
   return parts;
 }

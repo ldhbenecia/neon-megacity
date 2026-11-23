@@ -122,7 +122,7 @@ function buildDetail(
 
 export function init(ctx: Ctx): CityModuleInstance {
   const L = ctx.LAYOUT;
-  const parts = buildInfra(L, infraColors());
+  const parts = buildInfra(L, infraColors(), ctx.env.quality !== 'low');
 
   const group = new THREE.Group();
   group.name = 'infra';
@@ -238,14 +238,12 @@ export function init(ctx: Ctx): CityModuleInstance {
     im.receiveShadow = true;
   }
 
-  const detail =
-    ctx.env.quality === 'low'
-      ? null
-      : buildDetail(parts.bridgeDetail, {
-          steel: steel.material as THREE.Material,
-          glow: glowMat,
-          markings: paintMat,
-        });
+  // Empty for quality 'low' (buildInfra skipped the detail), so no BatchedMesh is created.
+  const detail = buildDetail(parts.bridgeDetail, {
+    steel: steel.material as THREE.Material,
+    glow: glowMat,
+    markings: paintMat,
+  });
 
   group.add(concrete, steel, paint, columns, beams, glow, wash, points);
   if (detail) group.add(...detail.meshes);
@@ -274,8 +272,9 @@ export function init(ctx: Ctx): CityModuleInstance {
         const cam = ctx.camera.position;
         for (const b of detail.bridges) {
           const dx = cam.x - b.center[0];
+          const dy = cam.y - b.center[1];
           const dz = cam.z - b.center[2];
-          const on = bridgeDetailOn(b.on, dx * dx + dz * dz);
+          const on = bridgeDetailOn(b.on, dx * dx + dy * dy + dz * dz);
           if (on === b.on) continue;
           b.on = on;
           detail.meshes.forEach((m, k) => {

@@ -81,7 +81,15 @@ function straightHighway(pts: { x: number; z: number }[], y: number, width: numb
 }
 
 function expectFinite(parts: InfraParts): void {
-  for (const m of [parts.concrete, parts.steel, parts.markings, parts.glow, parts.wash]) {
+  const detail = parts.bridgeDetail.flatMap((d) => [d.steel, d.glow, d.markings]);
+  for (const m of [
+    parts.concrete,
+    parts.steel,
+    parts.markings,
+    parts.glow,
+    parts.wash,
+    ...detail,
+  ]) {
     for (const arr of [m.positions, m.normals, m.colors]) {
       expect(arr.every(Number.isFinite)).toBe(true);
     }

@@ -440,22 +440,37 @@ describe('infra: whole build', () => {
     const instanced = parts.columns.length * 28 + parts.beams.length * 12 + parts.points.length * 8;
     const detailTris = (d: BridgeDetail) =>
       d.steel.triangleCount + d.glow.triangleCount + d.markings.triangleCount;
-    // Worst case over a 100 m grid: every bridge whose detail could still be on (hysteresis edge).
+    // Worst case: every bridge whose detail could still be on (hysteresis edge), by horizontal
+    // distance (the runtime 3D distance is never shorter). Samples: a 100 m grid plus every
+    // bridge center and every midpoint between two centers, where two circles overlap most.
     const half = LAYOUT.extent / 2;
+    const samples: [number, number][] = [];
+    for (let x = -half; x <= half; x += 100)
+      for (let z = -half; z <= half; z += 100) samples.push([x, z]);
+    const centers = parts.bridgeDetail.map((d) => d.center);
+    for (const [i, a] of centers.entries()) {
+      samples.push([a[0], a[2]]);
+      for (const b of centers.slice(i + 1)) samples.push([(a[0] + b[0]) / 2, (a[2] + b[2]) / 2]);
+    }
     let worst = 0;
-    for (let x = -half; x <= half; x += 100) {
-      for (let z = -half; z <= half; z += 100) {
-        let near = 0;
-        for (const d of parts.bridgeDetail) {
-          if (Math.hypot(x - d.center[0], z - d.center[2]) < BRIDGE_LOD_FAR) near += detailTris(d);
-        }
-        worst = Math.max(worst, near);
+    for (const [x, z] of samples) {
+      let near = 0;
+      for (const d of parts.bridgeDetail) {
+        if (Math.hypot(x - d.center[0], z - d.center[2]) < BRIDGE_LOD_FAR) near += detailTris(d);
       }
+      worst = Math.max(worst, near);
     }
     expect(merged + instanced + worst).toBeLessThan(300_000);
     expect(parts.points.length).toBeGreaterThan(300);
     expect(parts.glow.triangleCount).toBeGreaterThan(0);
     expect(parts.wash.triangleCount).toBeGreaterThan(0);
+  });
+
+  it('quality low builds no bridge detail', () => {
+    const low = buildInfra(LAYOUT, C, false);
+    expect(low.bridgeDetail).toHaveLength(0);
+    expect(low.concrete.triangleCount).toBe(parts.concrete.triangleCount);
+    expect(low.steel.triangleCount).toBe(parts.steel.triangleCount);
   });
 
   it('every bridge has detail (rails, posts, paint), kept out of the base meshes', () => {
