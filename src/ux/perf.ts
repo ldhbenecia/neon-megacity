@@ -189,9 +189,7 @@ export function estimateMemory(ctx: Ctx): MemoryEstimate {
       if (m instanceof THREE.ShaderMaterial) addTextures(m.uniforms);
     }
   });
-  for (const t of [scene.environment, scene.background]) {
-    if (t instanceof THREE.Texture) textures.add(t);
-  }
+  addTextures([scene.environment, scene.background]);
   let texBytes = 0;
   for (const t of textures) texBytes += textureBytes(t);
   const size = renderer.getDrawingBufferSize(new THREE.Vector2());

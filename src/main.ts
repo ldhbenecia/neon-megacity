@@ -147,7 +147,7 @@ async function boot(): Promise<void> {
   const timer = new THREE.Timer();
   timer.connect(document);
   // cpu: moving average of each module's update() in ms, read by `npm run perf`.
-  const cpu: Record<string, number> = Object.fromEntries(modules.map(([name]) => [name, 0]));
+  const cpu: Record<string, number> = {};
   const cityState = { ready: true, frames: 0, powered: false, cpu };
   let bootGone = false;
   const frame = (timestamp?: number): void => {

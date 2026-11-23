@@ -63,19 +63,16 @@ const GPU_ARGS = [
   '--disable-frame-rate-limit',
 ];
 
+type Hangang = NonNullable<Window['__hangang']>;
+
 interface Result {
   name: string;
   query: string;
   boot: Record<string, number>;
   frame: { mean: number; p50: number; p95: number; fps: number };
   stats: { calls: number; triangles: number; programs: number; textures: number; dpr: number };
-  memory: {
-    geometryBytes: number;
-    textureBytes: number;
-    framebufferBytes: number;
-    samples: number;
-  };
-  cpu: Record<string, number>;
+  memory: ReturnType<Hangang['memory']>;
+  cpu: NonNullable<Window['__city']>['cpu'];
   errors: string[];
 }
 
@@ -136,7 +133,7 @@ function bundleGzip(): { file: string; raw: number; gzip: number }[] {
 
 const mb = (b: number): string => (b / 1024 / 1024).toFixed(1);
 const ms = (v: number | undefined): string => (v === undefined ? '-' : v.toFixed(0));
-const flag = (v: number, max: number): string => (v > max ? ' ⚠' : '');
+const warn = (bad: boolean): string => (bad ? ' ⚠' : '');
 
 function table(results: Result[]): string {
   const rows = [
@@ -149,9 +146,9 @@ function table(results: Result[]): string {
     rows.push(
       `| ${r.name} | ${r.frame.mean.toFixed(1)} / ${r.frame.p95.toFixed(1)} | ${r.frame.fps.toFixed(0)} | ` +
         // Adaptive DPR may have stepped down during the run: the numbers are then not at 1.5.
-        `${s.dpr}${s.dpr !== expectedDpr ? ' ⚠' : ''} | ` +
-        `${s.calls}${flag(s.calls, BUDGET.calls)} | ${(s.triangles / 1e6).toFixed(2)} M${flag(s.triangles, BUDGET.triangles)} | ` +
-        `${s.programs}${flag(s.programs, BUDGET.programs)} | ${s.textures}${flag(s.textures, BUDGET.textures)} | ` +
+        `${s.dpr}${warn(s.dpr !== expectedDpr)} | ` +
+        `${s.calls}${warn(s.calls > BUDGET.calls)} | ${(s.triangles / 1e6).toFixed(2)} M${warn(s.triangles > BUDGET.triangles)} | ` +
+        `${s.programs}${warn(s.programs > BUDGET.programs)} | ${s.textures}${warn(s.textures > BUDGET.textures)} | ` +
         `${mb(r.memory.geometryBytes)} | ${mb(r.memory.textureBytes)} | ` +
         `${mb(r.memory.framebufferBytes)} (×${r.memory.samples}) | ${cpu.toFixed(2)} |`,
     );
