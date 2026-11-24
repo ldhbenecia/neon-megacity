@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { LAYOUT } from '../src/city/layout';
+import { CAMERA_LIMITS } from '../src/core/query';
 import { RAIN_STEPS, rainStep } from '../src/ux/controls';
 import { AdaptiveDpr } from '../src/ux/dpr';
 import {
@@ -104,7 +105,9 @@ describe('parseUxQuery', () => {
     });
     expect(parseUxQuery('?pose=-10.5, 200 ,300,4,5,6').pose?.position.x).toBe(-10.5);
     expect(parseUxQuery('?pose=0,100,0,0,95,0').pose, 'closer than minDistance').toBeUndefined();
-    expect(parseUxQuery('?pose=0,3000,0,0,0,0').pose, 'beyond maxDistance').toBeUndefined();
+    const far = CAMERA_LIMITS.maxDistance + 100;
+    expect(parseUxQuery(`?pose=0,${far},0,0,0,0`).pose, 'beyond maxDistance').toBeUndefined();
+    expect(parseUxQuery(`?pose=0,${far - 200},0,0,0,0`).pose, 'inside maxDistance').toBeDefined();
     for (const bad of [
       '1,2,3,4,5',
       '1,2,3,4,5,6,7',
