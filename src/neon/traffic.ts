@@ -1,43 +1,12 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { MATERIAL, NEON } from '../core/palette';
-import { ADDITIVE_TAIL, COMMON_PARS, neonMaterial, type NeonUniforms } from './glsl';
+import { PATH_PARS, type NeonUniforms } from './glsl';
+import { GlowMode, glowMaterial } from './glow';
 import { toInstanced } from './geom';
 import { packPaths, type Path, type Vehicle } from './lanes';
 
 export const PATH_TEX_WIDTH = 512;
-
-const PATH_PARS = /* glsl */ `
-uniform sampler2D uPath;
-attribute vec4 iPath;
-attribute vec4 iMotion;
-attribute vec2 iExtra;
-vec3 pathAt(float row, float u) {
-  int r = int(row + 0.5);
-  float n = texelFetch(uPath, ivec2(0, r), 0).w;
-  float f = clamp(u, 0.0, 1.0) * (n - 1.0);
-  float i = min(floor(f), n - 2.0);
-  vec3 a = texelFetch(uPath, ivec2(int(i), r), 0).xyz;
-  vec3 b = texelFetch(uPath, ivec2(int(i) + 1, r), 0).xyz;
-  return mix(a, b, f - i);
-}
-float wrapU(float u, float closed) { return closed > 0.5 ? fract(u) : clamp(u, 0.0, 1.0); }
-void vehicleFrame(out vec3 P, out vec3 F, out vec3 R, out float fade) {
-  float u = fract(iMotion.x + iMotion.y * uTime);
-  float ff = iPath.z;
-  fade = iPath.y > 0.5 ? 1.0 : smoothstep(0.0, ff, u) * smoothstep(1.0, 1.0 - ff, u);
-  float uu = iMotion.z > 0.0 ? u : 1.0 - u;
-  float n = texelFetch(uPath, ivec2(0, int(iPath.x + 0.5)), 0).w;
-  float du = 1.0 / max(n - 1.0, 1.0);
-  vec3 p0 = pathAt(iPath.x, wrapU(uu - du, iPath.y));
-  vec3 p1 = pathAt(iPath.x, wrapU(uu + du, iPath.y));
-  vec3 d = (p1 - p0) * iMotion.z;
-  F = length(d) > 1e-4 ? normalize(d) : vec3(1.0, 0.0, 0.0);
-  R = normalize(vec3(-F.z, 0.0, F.x));
-  P = pathAt(iPath.x, uu) + R * iMotion.w + vec3(0.0, iExtra.x, 0.0);
-  if (iPath.w > 0.5) P.y += sin(uTime * 0.8 + iExtra.y) * 1.2;
-}
-`;
 
 function pathTexture(paths: readonly Path[]): THREE.DataTexture {
   const data = packPaths(paths, PATH_TEX_WIDTH);
@@ -155,80 +124,14 @@ function bodyGeometry(flying: boolean): THREE.BufferGeometry {
 }
 
 function lightMaterial(shared: NeonUniforms, pathTex: THREE.DataTexture): THREE.ShaderMaterial {
-  const head = new THREE.Color(MATERIAL.headlight).multiplyScalar(3.5);
-  const tail = new THREE.Color(MATERIAL.taillight).multiplyScalar(3.2);
-  const glowA = new THREE.Color(NEON.neonCyan.hex).multiplyScalar(1.6);
-  const glowB = new THREE.Color(NEON.neonOrange.hex).multiplyScalar(1.6);
-  return neonMaterial(shared, {
-    additive: true,
-    side: THREE.DoubleSide,
+  return glowMaterial(shared, GlowMode.vehicle, {
     uniforms: {
       uPath: { value: pathTex },
-      uHead: { value: head },
-      uTail: { value: tail },
-      uGlowA: { value: glowA },
-      uGlowB: { value: glowB },
+      uHead: { value: new THREE.Color(MATERIAL.headlight).multiplyScalar(3.5) },
+      uTail: { value: new THREE.Color(MATERIAL.taillight).multiplyScalar(3.2) },
+      uGlowA: { value: new THREE.Color(NEON.neonCyan.hex).multiplyScalar(1.6) },
+      uGlowB: { value: new THREE.Color(NEON.neonOrange.hex).multiplyScalar(1.6) },
     },
-    vertexShader: /* glsl */ `
-      ${COMMON_PARS}
-      ${PATH_PARS}
-      uniform vec3 uHead; uniform vec3 uTail; uniform vec3 uGlowA; uniform vec3 uGlowB;
-      attribute vec2 aCorner;
-      attribute float aKind;
-      varying vec3 vCol;
-      varying vec2 vCorner;
-      varying float vKind;
-      #include <fog_pars_vertex>
-      void main() {
-        vec3 P; vec3 F; vec3 R; float fade;
-        vehicleFrame(P, F, R, fade);
-        vec3 up = vec3(0.0, 1.0, 0.0);
-        vec3 world = P + F * position.x + up * position.y + R * position.z;
-        vec4 mvPosition = viewMatrix * vec4(world, 1.0);
-        vec3 toCam = normalize(cameraPosition - world);
-        float facing = dot(toCam, F);
-        float k = 1.0;
-        vec3 col;
-        if (aKind < 0.5) {
-          col = uHead * (0.25 + 0.75 * smoothstep(-0.2, 0.6, facing));
-        } else if (aKind < 1.5) {
-          col = uTail * (0.3 + 0.7 * smoothstep(-0.2, 0.6, -facing));
-        } else if (aKind < 2.5) {
-          col = uHead * 0.035 * uNight;
-        } else {
-          col = mix(uGlowA, uGlowB, step(0.5, fract(iExtra.y * 0.618)));
-        }
-        if (aKind < 1.5 || aKind > 2.5) {
-          float size = aKind > 2.5 ? 1.1 : (aKind < 0.5 ? 0.32 : 0.28);
-          k = clamp(-mvPosition.z / 90.0, 1.0, 7.0);
-          mvPosition.xy += aCorner * size * k;
-          col /= k;
-        }
-        vCol = col * fade * mix(0.35, 1.0, uNight);
-        vCorner = aCorner;
-        vKind = aKind;
-        gl_Position = projectionMatrix * mvPosition;
-        #include <fog_vertex>
-      }
-    `,
-    fragmentShader: /* glsl */ `
-      ${COMMON_PARS}
-      varying vec3 vCol;
-      varying vec2 vCorner;
-      varying float vKind;
-      #include <fog_pars_fragment>
-      void main() {
-        float a;
-        if (vKind > 1.5 && vKind < 2.5) {
-          a = (1.0 - vCorner.x) * (1.0 - vCorner.y * vCorner.y);
-        } else {
-          float d = dot(vCorner, vCorner);
-          a = exp(-d * 5.0) + 0.6 * exp(-d * 28.0);
-        }
-        gl_FragColor = vec4(vCol * a, 1.0);
-        ${ADDITIVE_TAIL}
-      }
-    `,
   });
 }
 

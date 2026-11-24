@@ -33,7 +33,7 @@ import {
   type HaloInstance,
   type SolidInstance,
 } from './signs';
-import { buildStreet } from './street';
+import { buildStreet, poolColor } from './street';
 import { planStreet, type StreetPlan } from './streetPlan';
 import { buildTraffic } from './traffic';
 
@@ -144,6 +144,9 @@ function decalList(
       color: signColor(SCREEN_HUES[s.hue] ?? 'neonCyan', 0.8),
       h: 0,
     });
+  }
+  for (const p of street.pools) {
+    out.push({ x: p.x, y: p.y, z: p.z, width: p.radius, length: -1, color: poolColor(p), h: 0 });
   }
   for (const st of street.stalls) {
     out.push({
@@ -302,7 +305,7 @@ export function init(ctx: Ctx): CityModuleInstance {
   }
   group.add(flats, tubeMesh, crossMesh, crossPoles, screens, rings, holos, halos, decals);
 
-  const streetMeshes = buildStreet(shared, street, solidMat);
+  const streetMeshes = buildStreet(street, solidMat);
   group.add(streetMeshes.group);
   disposables.push(streetMeshes);
 

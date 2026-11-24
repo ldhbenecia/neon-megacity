@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import { NEON } from '../core/palette';
 import type { Catalog } from './catalog';
-import { ADDITIVE_TAIL, COMMON_PARS, EMISSIVE_TAIL, neonMaterial, type NeonUniforms } from './glsl';
+import { COMMON_PARS, EMISSIVE_TAIL, neonMaterial, type NeonUniforms } from './glsl';
 import { setInstanceAttributes, toInstanced } from './geom';
+import { GlowMode, glowMaterial } from './glow';
 import type { Holo, Ring, Screen } from './placement';
 
 const lin = (hex: number): THREE.Color => new THREE.Color(hex);
@@ -288,52 +289,7 @@ export function buildHolograms(
     iRect: { size: 4, data: iRect },
     iParam: { size: 4, data: iParam },
   });
-  const mat = neonMaterial(shared, {
-    additive: true,
-    side: THREE.DoubleSide,
-    uniforms: { uAtlas: { value: atlas }, uTint: { value: lin(NEON.neonCyan.hex) } },
-    vertexShader: /* glsl */ `
-      ${COMMON_PARS}
-      attribute vec4 iPos; attribute vec4 iRect; attribute vec4 iParam;
-      varying vec2 vUv; varying vec4 vRect; varying vec4 vParam; varying float vWorldY; varying float vPower; varying float vFace;
-      #include <fog_pars_vertex>
-      void main() {
-        float ang = uTime * iParam.x + iParam.z * 6.28;
-        float c = cos(ang); float s = sin(ang);
-        vec3 p = position * iPos.w;
-        float period = mix(3.0, 7.0, iParam.z);
-        float jt = mod(uTime + iParam.z * 20.0, period);
-        float jitter = (jt < 0.12 && uMotion > 0.5) ? (nHash(floor(uTime * 20.0) + iParam.z) - 0.5) * 0.04 : 0.0;
-        vec3 world = iPos.xyz + vec3(c * p.x + s * p.z, p.y + jitter * iPos.w, -s * p.x + c * p.z);
-        vec4 mvPosition = viewMatrix * vec4(world, 1.0);
-        gl_Position = projectionMatrix * mvPosition;
-        vUv = uv; vRect = iRect; vParam = iParam; vWorldY = world.y;
-        vPower = powerOn(iParam.w, iParam.z * 30.0);
-        // Fade the edge-on plane of the cross so its mirrored copy never overlaps the readable one.
-        vec3 n0 = abs(position.x) < 1e-3 ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 0.0, 1.0);
-        vec3 n = vec3(c * n0.x + s * n0.z, 0.0, -s * n0.x + c * n0.z);
-        float facing = dot(normalize(cameraPosition - world), n);
-        vFace = smoothstep(0.35, 0.85, abs(facing)) * sign(facing);
-        #include <fog_vertex>
-      }
-    `,
-    fragmentShader: /* glsl */ `
-      ${COMMON_PARS}
-      uniform sampler2D uAtlas; uniform vec3 uTint;
-      varying vec2 vUv; varying vec4 vRect; varying vec4 vParam; varying float vWorldY; varying float vPower; varying float vFace;
-      #include <fog_pars_fragment>
-      void main() {
-        vec2 fuv = vec2(vFace < 0.0 ? 1.0 - vUv.x : vUv.x, vUv.y);
-        vec3 tex = texture2D(uAtlas, vRect.xy + clamp(fuv, 0.01, 0.99) * vRect.zw).rgb;
-        float lum = max(tex.r, max(tex.g, tex.b));
-        float scan = 0.55 + 0.45 * step(0.5, fract(vWorldY / 0.4));
-        vec3 col = mix(tex, uTint * lum, 0.35) * 3.0;
-        float a = vParam.y * scan * smoothstep(0.03, 0.25, lum) * vPower * uGain * abs(vFace);
-        gl_FragColor = vec4(col * a, 1.0);
-        ${ADDITIVE_TAIL}
-      }
-    `,
-  });
+  const mat = glowMaterial(shared, GlowMode.holo, { atlas, tint: lin(NEON.neonCyan.hex) });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.name = 'neon-holograms';
   mesh.frustumCulled = false;

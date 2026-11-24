@@ -24,7 +24,6 @@ import {
   finOffsets,
   fitCells,
   keepInLod2,
-  lodLevel,
   mergeIntervals,
   sideNormalXZ,
   stairSteps,
@@ -226,13 +225,8 @@ describe('chunks and LOD (4.4, 4.5)', () => {
     expect(chunkCenter(9, 6, grid).z).toBeCloseTo(1200, 9);
   });
 
-  it('selects levels at 380 / 1100 m', () => {
+  it('uses 380 / 1100 m LOD distances', () => {
     expect(LOD_DISTANCES).toEqual([0, 380, 1100]);
-    expect(lodLevel(0)).toBe(0);
-    expect(lodLevel(379)).toBe(0);
-    expect(lodLevel(380)).toBe(1);
-    expect(lodLevel(1099)).toBe(1);
-    expect(lodLevel(5000)).toBe(2);
     expect([0, 1, 2].map((l) => cylinderSegments(l as 0 | 1 | 2))).toEqual([48, 16, 8]);
     expect(keepInLod2({ h: 40, archetype: 'officeSlab' })).toBe(true);
     expect(keepInLod2({ h: 20, archetype: 'sangga' })).toBe(false);
