@@ -336,8 +336,9 @@ export function waterEdgeD(x: number): number {
 
 // --- 샛강 and the islands ---
 
-/** How far each side channel runs on past its mouths, through the main park into the water. */
-const MOUTH_RUN = 70;
+/** A side channel's mouth runs on until it is this far inside the main water edge (m). */
+const MOUTH_INTO_WATER = 15;
+const MOUTH_MAX_RUN = 200;
 
 export interface SideStrip {
   /** Centerline with both mouths run on into the main river. */
@@ -373,6 +374,14 @@ function chaikin(line: readonly Vec2[], passes = 2): Vec2[] {
   return pts;
 }
 
+function mouth(end: Vec2, dir: Vec2): Vec2 {
+  for (let k = 10; k <= MOUTH_MAX_RUN; k += 5) {
+    const p = { x: end.x + dir.x * k, z: end.z + dir.z * k };
+    if (channelDistance(p.x, p.z) < waterEdgeD(p.x) - MOUTH_INTO_WATER) return p;
+  }
+  throw new Error('terrain: side channel mouth never reaches the river');
+}
+
 function towardRiver(end: Vec2): Vec2 {
   let c = RIVER.samples[0] ?? end;
   for (const q of RIVER.samples) {
@@ -390,11 +399,7 @@ export const SIDE_STRIPS: readonly SideStrip[] = RIVER.channels.map((ch) => {
   const a = towardRiver(first);
   const b = towardRiver(last);
   return {
-    line: chaikin([
-      { x: first.x + a.x * MOUTH_RUN, z: first.z + a.z * MOUTH_RUN },
-      ...c,
-      { x: last.x + b.x * MOUTH_RUN, z: last.z + b.z * MOUTH_RUN },
-    ]),
+    line: chaikin([mouth(first, a), ...c, mouth(last, b)]),
     half: ch.width / 2,
   };
 });

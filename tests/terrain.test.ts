@@ -27,6 +27,7 @@ import {
   riverSliceXs,
   channelParkWidth,
   waterEdgeD,
+  channelSlices,
   isoRow,
   type StripSlice,
 } from '../src/terrain/shape';
@@ -314,14 +315,17 @@ describe('ground grid', () => {
     const w = createWater().mesh.geometry.getAttribute('position');
     const prof = channelProfile(0, 0).length;
     const per = prof * 2;
-    expect(ch.count / per).toBe(w.count / 2);
+    // The main strip and its water band come first; side channels and islands follow.
+    const slices = channelSlices().slices.length;
+    expect(ch.count).toBeGreaterThanOrEqual(slices * per);
+    expect(w.count).toBeGreaterThanOrEqual(slices * 2);
     const xz = (attr: THREE.BufferAttribute | THREE.InterleavedBufferAttribute, i: number) => ({
       x: attr.getX(i),
       z: attr.getZ(i),
     });
     const gap = (a: { x: number; z: number }, b: { x: number; z: number }) =>
       Math.hypot(a.x - b.x, a.z - b.z);
-    for (let s = 0; s < ch.count / per; s++) {
+    for (let s = 0; s < slices; s++) {
       for (let side = 0; side < 2; side++) {
         const base = s * per + side * prof;
         for (const j of [1, 3, 5]) expect(gap(xz(ch, base + j), xz(ch, base + j + 1))).toBe(0);
