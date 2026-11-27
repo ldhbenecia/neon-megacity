@@ -145,6 +145,58 @@ Budget (ceiling 50 stays the CI gate; team total 45 leaves a reserve):
 | reserve               |                          | 2                   |
 | **total**             | **29**                   | **45**              |
 
+## Proposal: user quality tiers (high / medium / low) with automatic selection
+
+Status: design, not implemented. Targets: ≥ 60 fps on M-class, ≥ 30 fps on Intel integrated (1600×900).
+
+**Today.** `env.quality` is `'high' | 'low'`, fixed at boot; `low` is the CI tier (DPR 0.5, no
+shadows / post / rain / LOD0 / bridge detail, flat water). Two controllers react to slow frames
+independently: ux `AdaptiveDpr` (1.5 → 1.0 in 0.25 steps) and atmosphere `stepQuality` (bloom at half
+resolution, then half the rain). Neither changes geometry, shadows or LOD.
+
+**Tiers.** `env.quality` becomes `'high' | 'medium' | 'low'` (owner ux, may change at runtime). The
+CI tier stays `?quality=low` with the extra CI-only DPR 0.5.
+
+| knob (owner)                         | high          | medium               | low (user)              | switch at runtime              |
+| ------------------------------------ | ------------- | -------------------- | ----------------------- | ------------------------------ |
+| DPR cap (ux)                         | min(dpr, 1.5) | 1.0                  | 0.75 (CI: 0.5)          | yes                            |
+| shadows (lighting)                   | 2048², sun    | 1024², refresh ≥ 2 s | intensity 0, no refresh | yes (map size, intensity, #31) |
+| bloom (atmosphere)                   | full chain    | half resolution      | off: plain render       | yes (`ctx.render` swap)        |
+| rain drops (atmosphere)              | 100 %         | 50 %                 | 0                       | yes (instance count)           |
+| clouds, searchlights (atmosphere)    | on            | on                   | off                     | yes (visible)                  |
+| buildings LOD0 radius / interior map | 380 m / on    | 250 m / on           | no LOD0                 | yes (pickLevel distances)      |
+| bridge detail (infra)                | 600 m         | 400 m                | off                     | yes (distance constant)        |
+| neon point lights / halos / decals   | 8 / on / on   | 4 / on / on          | 0 / off / off           | yes (pool size, visible)       |
+| water ripples (terrain)              | on            | on                   | off                     | boot only (program)            |
+
+Rules for runtime switching: no knob may change a material's program variant at runtime (the #31 /
+#42 stalls); use intensity, visibility, instance counts, distances or render-target size instead.
+Things that need a different program (water ripples, post on/off programs) are compiled at boot
+for every tier the device may reach, or stay boot-only.
+
+**Selection at boot.** (1) `WEBGL_debug_renderer_info`: Apple M* / discrete NVIDIA-AMD → high;
+Intel Iris Xe / UHD, AMD Radeon integrated → medium; Mali, Adreno, PowerVR, SwiftShader → low;
+unknown → medium. (2) The first 2 s after power-on (under the boot fade) measure the frame time and
+step down at once if the tier is clearly too heavy (> 25 ms average). `?quality=` overrides both
+and disables the controller.
+
+**Controller (one, in ux/perf).** Replaces `AdaptiveDpr` and atmosphere `stepQuality`. Every
+frame: 2 s moving average of the frame time. Above 20 ms for 2 s → step down: DPR first (one 0.25
+step), then the next tier. Below 14 ms for 8 s → step up one step, never above the boot tier
+unless the user picked it. At most one step per 3 s; a step that did not help within 3 s is
+undone and the controller stops climbing (no oscillation). Modules subscribe with
+`ctx.onQuality(fn)` (new, like `onResize`) and apply their knobs in the callback, not per frame.
+
+**UI (hangang-ux).** Control panel: Auto (default) / High / Medium / Low, plus the current tier
+and DPR in the `?stats` HUD. A manual pick disables the controller until Auto is chosen again.
+
+**Verification.** `npm run perf` gains `--quality=medium`; each tier must pass the screen check
+(above) and show its fps on M4. Intel-iGPU fps is measured by hand before the PR is merged.
+
+**Implementation order.** (1) `env.quality` type + `ctx.onQuality` + boot selection + controller
+in ux/perf (perf), replacing the two controllers; (2) module knobs one PR per module with the
+owner's review; (3) UI with hangang-ux.
+
 ## Findings and candidates
 
 - **Day/night scrub stall (fixed).** Toggling the key light's `castShadow` changed the program
