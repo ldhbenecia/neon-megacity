@@ -1,6 +1,7 @@
 // Layout v3 generator (ART_DIRECTION 2.6 pipeline, Seoul zones from docs/SEOUL.md 4):
 // named arterials + zones → rotated road grids clipped by zone / river / corridors → blocks → lots →
 // archetype draw → tiers → tags → street slots. Pure and deterministic per seed.
+import { CatmullRomCurve3, Vector3 } from 'three';
 import { createRng, type Rng } from '../core/random';
 import {
   CORPS,
@@ -1783,6 +1784,7 @@ function makeRidges(seed: number): Ridge[] {
 /** Horizontal reach (m) and vertical margin (m) a sky lane keeps from buildings. */
 export const SKY_LANE_CLEAR = 60;
 export const SKY_LANE_MARGIN = 30;
+const SKY_LANE_STEP = 10;
 
 /**
  * Flying-traffic routes (SEOUL.md 7.5): rings around the 용산, 여의도 and 테헤란로 towers and a
@@ -1808,12 +1810,11 @@ function makeSkyLanes(buildings: readonly BuildingSpec[], hash: GridHash): SkyLa
     { id: 'sky-river', points: river, closed: false, floor: 110 },
   ];
   return defs.map((d) => {
+    const samples = laneSamples(d.points, d.closed);
     let top = 0;
-    const n = d.points.length;
-    const segs = d.closed ? n : n - 1;
-    for (let i = 0; i < segs; i++) {
-      const a = d.points[i] as Vec2;
-      const b = d.points[(i + 1) % n] as Vec2;
+    for (let i = 0; i < samples.length - 1; i++) {
+      const a = samples[i] as Vec2;
+      const b = samples[i + 1] as Vec2;
       for (const id of hash.query(segmentBounds(a, b, SKY_LANE_CLEAR + 60))) {
         const bd = buildings[id] as BuildingSpec;
         const reach = SKY_LANE_CLEAR + Math.hypot(bd.w, bd.d) / 2;
@@ -1822,8 +1823,20 @@ function makeSkyLanes(buildings: readonly BuildingSpec[], hash: GridHash): SkyLa
       }
     }
     const lo = Math.max(d.floor, Math.ceil(top + SKY_LANE_MARGIN));
-    return { id: d.id, points: d.points, closed: d.closed, altitude: [lo, lo + 60] };
+    return { id: d.id, points: d.points, samples, closed: d.closed, altitude: [lo, lo + 60] };
   });
+}
+
+/** The flown path: centripetal Catmull-Rom through the control points, ~SKY_LANE_STEP m apart. */
+function laneSamples(points: readonly Vec2[], closed: boolean): Vec2[] {
+  const curve = new CatmullRomCurve3(
+    points.map((p) => new Vector3(p.x, 0, p.z)),
+    closed,
+    'centripetal',
+  );
+  const n = Math.max(8, Math.ceil(curve.getLength() / SKY_LANE_STEP));
+  // getSpacedPoints repeats the first point at the end of a closed curve.
+  return curve.getSpacedPoints(n).map((v) => ({ x: v.x, z: v.z }));
 }
 
 function buildingHash(buildings: readonly BuildingSpec[]): GridHash {
