@@ -309,6 +309,10 @@ export const TERRAIN_COLORS = {
   groundHill: 0x111a17,
   /** Wooded patches on the slopes and everything past the map edge. */
   groundWood: 0x0d1a14,
+  /** Mountain forest canopy: deep green by day, a near-black mass under the night light. */
+  groundForest: 0x16301f,
+  /** Bare rock on steep mountain crests and cliffs. */
+  groundRock: 0x1e2121,
   /** 둔치 park lawns. */
   park: 0x111e17,
   /** Concrete embankment revetment. */
