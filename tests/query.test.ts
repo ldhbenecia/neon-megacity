@@ -6,11 +6,11 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import {
   CAMERA_LIMITS,
   CAMERA_PRESETS,
-  STREET_FALLBACK,
   type CameraPreset,
   cameraPreset,
   parseQuery,
   streetAnchors,
+  streetFallback,
   streetPose,
   streetPreset,
   type StreetAnchor,
@@ -104,7 +104,7 @@ describe('CAMERA_PRESETS', () => {
     }
     expect(streetPose([], usedAnchor())).toBeNull();
     expect(streetAnchors([])).toEqual([]);
-    expect(cameraPreset('street')).not.toEqual(STREET_FALLBACK);
+    expect(cameraPreset('street')).not.toEqual(streetFallback());
   });
 
   it('sees the street target over the terrain', () => {

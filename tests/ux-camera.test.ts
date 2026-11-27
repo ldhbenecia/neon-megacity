@@ -11,7 +11,7 @@ import {
   toWorld,
   zoneAt,
 } from '../src/city/layout';
-import { CAMERA_LIMITS, CAMERA_RING } from '../src/core/query';
+import { CAMERA_LIMITS, cameraRing } from '../src/core/query';
 import { createRng } from '../src/core/random';
 import {
   cameraFloor,
@@ -284,7 +284,7 @@ describe('camera ring', () => {
       expect(
         Math.hypot(p.position.x, p.position.z),
         JSON.stringify(p.position),
-      ).toBeLessThanOrEqual(CAMERA_RING);
+      ).toBeLessThanOrEqual(cameraRing());
     }
   });
 });

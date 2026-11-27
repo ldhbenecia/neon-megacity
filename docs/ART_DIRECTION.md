@@ -681,7 +681,7 @@ layout 단위 테스트 (반드시 통과):
 
 프리셋 3, 4, 7처럼 지면이나 데크 근처에 있는 위치는 layout 기준으로 가장 가까운 도로나 데크 중심선에 스냅하고, 건물과 충돌하면 8.1 규칙으로 밀어낸다.
 
-PR0 재검증 결과: 타깃이 카메라보다 높으면 극각이 π/2를 넘어 `maxPolarAngle` 제한에 걸리고 OrbitControls가 첫 프레임에 카메라를 옮긴다. 그래서 프리셋 1, 3, 7의 타깃 y를 카메라 높이 아래로 낮췄다(위 표). 올려다보는 구도가 필요하면 ux가 FOV나 타깃 거리로 해결한다. 현재 `?cam=` 프리셋은 layout v2에 맞춰 다시 잡았다: `overview` = 프리셋 2, `skyline` = 프리셋 1, `street` = 프리셋 3 근처 등불가 도로 중심선에 스냅, `core` = 정점 메가타워 사이 (180, 220, -120) → (-60, 160, -380), `topdown` = 프리셋 8. `CAMERA_LIMITS.maxDistance`는 탑다운을 위해 2600으로 올렸다. 모든 프리셋이 건물 밖, 지면 위에 있는지 `tests/query.test.ts`가 검사한다. 포즈는 `cameraPreset(name)`으로 읽는다. `street`는 처음 읽을 때 layout에서 계산하고, 맞는 도로가 없으면 `STREET_FALLBACK`(프리셋 3 원래 좌표)을 쓴다. `CAMERA_PRESETS` 객체도 그대로 쓸 수 있다.
+PR0 재검증 결과: 타깃이 카메라보다 높으면 극각이 π/2를 넘어 `maxPolarAngle` 제한에 걸리고 OrbitControls가 첫 프레임에 카메라를 옮긴다. 그래서 프리셋 1, 3, 7의 타깃 y를 카메라 높이 아래로 낮췄다(위 표). 올려다보는 구도가 필요하면 ux가 FOV나 타깃 거리로 해결한다. 현재 `?cam=` 프리셋은 layout v2에 맞춰 다시 잡았다: `overview` = 프리셋 2, `skyline` = 프리셋 1, `street` = 프리셋 3 근처 등불가 도로 중심선에 스냅, `core` = 정점 메가타워 사이 (180, 220, -120) → (-60, 160, -380), `topdown` = 프리셋 8. `CAMERA_LIMITS.maxDistance`는 탑다운을 위해 2600으로 올렸다. 모든 프리셋이 건물 밖, 지면 위에 있는지 `tests/query.test.ts`가 검사한다. 포즈는 `cameraPreset(name)`으로 읽는다. `street`는 처음 읽을 때 layout에서 계산하고, 맞는 도로가 없으면 `streetFallback()`(첫 거리 앵커 지점)을 쓴다. 서울 명소 프리셋과 별칭은 SEOUL.md 6장과 `src/core/query.ts`가 기준이다. `CAMERA_PRESETS` 객체도 그대로 쓸 수 있다.
 
 URL 쿼리 `?preset=3&time=0.0&rain=0.5&hud=0`을 지원한다(스크린샷 스크립트용, `env.timeLocked = true`).
 
