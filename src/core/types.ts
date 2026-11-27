@@ -166,6 +166,13 @@ export interface Ctx {
    * Returns the unsubscribe function: call it in the module's `dispose()`.
    */
   onQuality: (fn: (q: Quality) => void) => () => void;
+  /**
+   * Ask for the sun shadow map to be redrawn (geometry that casts shadows changed, e.g. a LOD
+   * swap). Call it instead of setting renderer.shadowMap.needsUpdate: lighting owns the decision
+   * and skips it when sun shadows are off (night, low tier). Lighting replaces this at init; the
+   * default just flags the redraw.
+   */
+  requestShadowUpdate: () => void;
   /** Developer views from the URL (`src/ux/query.ts`); absent or all false for regular visitors. */
   debug?: { readonly nan: boolean };
 }

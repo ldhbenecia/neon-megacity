@@ -8,6 +8,7 @@ import {
   keyLightAt,
   moonDirectionAt,
   shadowFrameFor,
+  shadowRequestDue,
   shouldRefreshShadow,
   SHADOW_REFRESH,
   sunDirectionAt,
@@ -203,5 +204,15 @@ describe('shadow fill (env.fillFactor / fillColor)', () => {
     expect(Math.max(...dusk)).toBeCloseTo(0.005 * k, 6);
     expect(dusk[2]).toBeGreaterThan(dusk[1]);
     expect(fillColorAt(0.8, navy, floor)).toEqual([0, 0, 0]);
+  });
+});
+
+describe('shadow redraw requests (ctx.requestShadowUpdate)', () => {
+  it('redraw only while sun shadows show, after the minimum interval; otherwise wait', () => {
+    expect(shadowRequestDue(true, true, 1.5, 1)).toBe(true);
+    expect(shadowRequestDue(true, true, 0.5, 1)).toBe(false);
+    // Night or the low tier: a LOD swap never costs a shadow pass.
+    expect(shadowRequestDue(true, false, 10, 1)).toBe(false);
+    expect(shadowRequestDue(false, true, 10, 1)).toBe(false);
   });
 });

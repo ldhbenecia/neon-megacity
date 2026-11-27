@@ -12,6 +12,8 @@ import {
   keyLightAt,
   moonDirectionAt,
   shadowFrameFor,
+  SHADOW_REFRESH,
+  shadowRequestDue,
   shouldRefreshShadow,
   sunDirectionAt,
   type EnvKey,
@@ -82,6 +84,13 @@ export function init(ctx: Ctx): CityModuleInstance {
   const lastShadowSun = new THREE.Vector3(0, -1, 0);
   let lastShadowFrame: ShadowFrame | null = null;
   let secondsSinceShadow = 0;
+  // Redraw requests from other modules (ctx.requestShadowUpdate): honoured only while the sun
+  // casts shadows, so at night (or with shadows off) a LOD swap costs no shadow pass.
+  let requested = false;
+  const defaultRequest = ctx.requestShadowUpdate;
+  ctx.requestShadowUpdate = () => {
+    requested = true;
+  };
   let frame = 0;
   let pal: PaletteSample = paletteAt(env.timeOfDay);
   let palTime = env.timeOfDay;
@@ -107,7 +116,9 @@ export function init(ctx: Ctx): CityModuleInstance {
     }
     secondsSinceShadow += dt;
     const sunAngle = lastShadowSun.angleTo(env.sunDirection);
-    if (shouldRefreshShadow(changed, sunAngle, secondsSinceShadow, frame < 3)) {
+    const asked = shadowRequestDue(requested, true, secondsSinceShadow, SHADOW_REFRESH.minInterval);
+    if (asked || shouldRefreshShadow(changed, sunAngle, secondsSinceShadow, frame < 3)) {
+      requested = false;
       renderer.shadowMap.needsUpdate = true;
       lastShadowSun.copy(env.sunDirection);
       secondsSinceShadow = 0;
@@ -148,6 +159,8 @@ export function init(ctx: Ctx): CityModuleInstance {
     }
     // Shadow frustum first, so the light target below already sits on this frame's frustum.
     if (sunShadow) updateShadowCamera(dt);
+    // Without sun shadows there is nothing to redraw; the map is redrawn when they come back on.
+    else requested = false;
     const dir = kl.body === 'sun' ? env.sunDirection : moonDir;
     const center = lastShadowFrame ?? ORIGIN_FRAME;
     key.target.position.set(center.cx, 0, center.cz);
@@ -212,6 +225,7 @@ export function init(ctx: Ctx): CityModuleInstance {
       frame++;
     },
     dispose() {
+      ctx.requestShadowUpdate = defaultRequest;
       folder.destroy();
       scene.remove(key, key.target, hemi, sky.mesh);
       key.dispose();

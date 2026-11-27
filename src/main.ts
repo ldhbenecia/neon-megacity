@@ -154,6 +154,9 @@ async function boot(): Promise<void> {
       selectedBuilding: null,
     },
     render: () => renderer.render(scene, camera),
+    requestShadowUpdate: () => {
+      renderer.shadowMap.needsUpdate = true;
+    },
     onResize: (fn) => {
       resizeHandlers.push(fn);
     },
