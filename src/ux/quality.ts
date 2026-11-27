@@ -79,7 +79,8 @@ export type QualityChange = { tier: UserTier; dpr: number; tierChanged: boolean 
  * One controller for DPR and tier. Down: DPR first (0.25 steps to the tier's floor), then the next
  * tier. Up: the reverse, up to high (a guessed boot tier may be too low). A step up that makes the
  * median slow within undoWindowS is undone once and climbing stops for the session; later
- * slowdowns take the normal step-down path. `manual` (a stored or ?quality= pick) disables it.
+ * slowdowns take the normal step-down path. `manual` disables it for good; the app never sets it
+ * and gates the controller with Perf.choose instead, so the picker can turn automatic mode back on.
  */
 export class QualityController {
   state: QualityState;

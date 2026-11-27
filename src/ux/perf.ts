@@ -40,7 +40,7 @@ export const LOW_DPR = 0.5;
 export interface PerfOptions {
   overlay: boolean;
   resize: () => void;
-  /** The tier was picked by the user (?quality=, stored choice): no automatic changes. */
+  /** The boot tier was picked by the user (?quality=, stored choice): automatic changes start off. */
   manual: boolean;
   /** Tier that 'auto' returns to (the renderer-based guess). */
   autoTier: UserTier;
@@ -99,11 +99,17 @@ export function createPerf(ctx: Ctx, opts: PerfOptions): Perf {
   folder
     .add(quality, 'auto')
     .name('Auto quality')
-    // Off returns to the boot tier at full DPR (not the last lowered step); on starts a clean window.
+    .listen()
+    // On behaves like the picker's 'auto'; off returns to the boot tier (?quality=, the stored
+    // pick or the device guess) at full DPR, not the last lowered step.
     .onChange((on: boolean) => {
       if (!controller) return;
-      if (on) controller.clearWindow();
-      else applyChange(controller.reset(opts.autoTier));
+      if (on) {
+        perf.choose('auto');
+        return;
+      }
+      quality.auto = false;
+      applyChange(controller.reset());
     });
   folder.add(quality, 'tier').name('Tier').listen().disable();
   folder.add(quality, 'dpr').name('DPR').listen().disable();
