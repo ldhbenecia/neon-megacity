@@ -69,10 +69,13 @@ vec2 lensDrops( vec2 uv ) {
   vec2 id = floor( p );
   vec2 f = fract( p ) - 0.5;
   float h = hash12( id );
-  float period = 4.0 + 5.0 * h;
+  // A whole number of drop lives per wrap period, and the per-life dice indexed modulo that
+  // number, so the time wrap lands on the same drop in the same phase.
+  float lives = floor( ${TIME_WRAP.lens.toFixed(1)} / ( 4.0 + 5.0 * h ) + 0.5 );
+  float period = ${TIME_WRAP.lens.toFixed(1)} / lives;
   float cycle = uTime / period + hash12( id + 7.1 );
   float life = fract( cycle );
-  float alive = step( 1.0 - 0.3 * uDrops, hash12( id + floor( cycle ) * 13.7 ) );
+  float alive = step( 1.0 - 0.3 * uDrops, hash12( id + mod( floor( cycle ), lives ) * 13.7 ) );
   vec2 center = ( vec2( hash12( id + 3.3 ), hash12( id + 5.9 ) ) - 0.5 ) * 0.5;
   center.y -= life * 0.12;
   float r = 0.07 + 0.13 * hash12( id + 9.4 );
