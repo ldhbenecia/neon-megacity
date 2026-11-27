@@ -19,7 +19,12 @@ import type { MeshData, V3 } from './mesh';
 import type { BridgeDetail, DetailParts } from './parts';
 import { DECK_THICKNESS } from './profile';
 
-/** Night fill multiplier over the shared floor (measured: 1× leaves undersides at 3/255). */
+/**
+ * Shade fill multiplier over the shared floor. Undersides and piers get no street or window light
+ * (1× left them at 3/255); elevated road surfaces get no street light either and went pure black at
+ * dusk (skyline 40 %). At 3× they read dark, and the sunset overview still shows decks no brighter
+ * than ground roads.
+ */
 const INFRA_FILL = 3;
 
 function toGeometry(m: MeshData): THREE.BufferGeometry {
@@ -303,9 +308,7 @@ export function init(ctx: Ctx): CityModuleInstance {
   folder.close();
 
   const emissive = [glowMat, washMat, pointMat];
-  // Night fill: unlit undersides and piers would round to pure black up close. They get no street
-  // or window light at all, so they need INFRA_FILL × the facade / terrain floor to read.
-  // Deck surfaces (asphalt is in the concrete mesh) and lane paint too: at dusk the road reads black.
+  // Undersides, piers and the deck surface (asphalt is in the concrete mesh) with its paint.
   const filled = [
     concrete.material,
     steel.material,
