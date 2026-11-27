@@ -128,6 +128,8 @@ export interface Ctx {
   /** Default renderer.render; atmosphere may replace it with a composer render. */
   render: () => void;
   onResize: (fn: (w: number, h: number) => void) => void;
+  /** Developer views from the URL (`src/ux/query.ts`); all false for regular visitors. */
+  debug: { readonly nan: boolean };
 }
 
 export interface CityModuleInstance {

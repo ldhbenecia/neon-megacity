@@ -26,7 +26,8 @@ const MODULES: readonly (readonly [name: string, weight: number, module: CityMod
 ];
 
 const query = parseQuery(window.location.search);
-const debug = parseUxQuery(window.location.search).debug;
+const uxQuery = parseUxQuery(window.location.search);
+const debug = uxQuery.debug;
 const quality = query.quality ?? 'high';
 const loader = createLoader();
 
@@ -102,6 +103,7 @@ async function boot(): Promise<void> {
     gui,
     CITY,
     LAYOUT,
+    debug: { nan: uxQuery.nan },
     env: {
       timeOfDay: query.time ?? 0.9,
       timeLocked: query.time !== undefined,
