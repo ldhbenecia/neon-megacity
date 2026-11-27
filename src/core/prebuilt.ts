@@ -1,11 +1,12 @@
 // Data a module would otherwise build in its init, made off the main thread at boot (src/boot.ts).
 // main.ts awaits a module's entry right before its init; the module takes it or builds as usual.
 // A failed or missing entry is null: the module then builds it itself.
-import type { TerrainPrebuilt } from '../city/loadLayout';
+import type { BuildingsPrebuilt, TerrainPrebuilt } from '../city/loadLayout';
 
 /** What the city worker can build, by module name. */
 export interface Prebuilt {
   terrain: TerrainPrebuilt;
+  buildings: BuildingsPrebuilt;
 }
 const pending = new Map<string, Promise<unknown>>();
 const ready = new Map<string, unknown>();

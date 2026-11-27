@@ -10,8 +10,17 @@ export interface TerrainPrebuilt {
   channel: PackedGeometry;
 }
 
+/** Road and sidewalk geometry and the puddle mask (src/buildings/index.ts). */
+export interface BuildingsPrebuilt {
+  roads: PackedGeometry;
+  walks: PackedGeometry;
+  puddle: Uint8Array;
+}
+
 export type CityMessage =
-  { kind: 'layout'; layout: Layout } | { kind: 'terrain'; terrain: TerrainPrebuilt };
+  | { kind: 'layout'; layout: Layout }
+  | { kind: 'terrain'; terrain: TerrainPrebuilt }
+  | { kind: 'buildings'; buildings: BuildingsPrebuilt };
 
 /** Minimal worker surface, so tests can inject a fake. */
 export interface LayoutWorker {
@@ -30,6 +39,7 @@ export interface CityLoad {
   layout: Promise<Layout>;
   /** Null when the worker is missing or failed: terrain then builds in init. Never rejects. */
   terrain: Promise<TerrainPrebuilt | null>;
+  buildings: Promise<BuildingsPrebuilt | null>;
 }
 
 function inWorker(seed: number, worker: LayoutWorker): CityLoad {
@@ -43,16 +53,22 @@ function inWorker(seed: number, worker: LayoutWorker): CityLoad {
   const terrain = new Promise<TerrainPrebuilt | null>((res) => {
     gotTerrain = res;
   });
+  let gotBuildings: (b: BuildingsPrebuilt | null) => void = () => {};
+  const buildings = new Promise<BuildingsPrebuilt | null>((res) => {
+    gotBuildings = res;
+  });
   const fail = (err: Error): void => {
     failLayout(err);
     gotTerrain(null);
+    gotBuildings(null);
     worker.terminate();
   };
   worker.onmessage = (e) => {
     const m = e.data;
     if (m.kind === 'layout') gotLayout(m.layout);
+    else if (m.kind === 'terrain') gotTerrain(m.terrain);
     else {
-      gotTerrain(m.terrain);
+      gotBuildings(m.buildings);
       worker.terminate();
     }
   };
@@ -63,7 +79,7 @@ function inWorker(seed: number, worker: LayoutWorker): CityLoad {
     fail(new Error('city worker: a message could not be deserialized'));
   };
   worker.postMessage({ seed });
-  return { layout, terrain };
+  return { layout, terrain, buildings };
 }
 
 async function onMainThread(seed: number): Promise<Layout> {
@@ -76,13 +92,14 @@ export function loadCity(
   seed: number,
   createWorker: (() => LayoutWorker) | null = typeof Worker === 'undefined' ? null : cityWorker,
 ): CityLoad {
-  if (!createWorker) return { layout: onMainThread(seed), terrain: Promise.resolve(null) };
+  const none = { terrain: Promise.resolve(null), buildings: Promise.resolve(null) };
+  if (!createWorker) return { layout: onMainThread(seed), ...none };
   let w: CityLoad;
   try {
     w = inWorker(seed, createWorker());
   } catch (err) {
     console.warn('[boot] city worker unavailable, generating the layout on the main thread', err);
-    return { layout: onMainThread(seed), terrain: Promise.resolve(null) };
+    return { layout: onMainThread(seed), ...none };
   }
   return {
     layout: w.layout.catch((err: unknown) => {
@@ -90,6 +107,7 @@ export function loadCity(
       return onMainThread(seed);
     }),
     terrain: w.terrain,
+    buildings: w.buildings,
   };
 }
 
