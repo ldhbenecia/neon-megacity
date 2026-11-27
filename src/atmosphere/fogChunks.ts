@@ -1,6 +1,6 @@
 // Must run before any material compiles: three resolves #include chunks at compile time.
 import { ShaderChunk, ShaderLib, type IUniform } from 'three';
-import { FOG_UNIFORMS, SUN_SCATTER_POWER } from '../core/shaders/emissiveFog';
+import { FOG_UNIFORMS, HEIGHT_FOG, SUN_SCATTER_POWER } from '../core/shaders/emissiveFog';
 
 const FOG_PARS_VERTEX = /* glsl */ `
 #ifdef USE_FOG
@@ -33,6 +33,19 @@ const FOG_PARS_FRAGMENT = /* glsl */ `
   uniform vec4 cityFogSun;
   uniform vec3 cityFogSunColor;
 
+  // heightFogThinIntegral (emissiveFog.ts): thinning integrated up a vertical ray.
+  float cityFogThin( float y, float h ) {
+    float top = cityFogHeight.y;
+    float c = ${HEIGHT_FOG.clearTop.toFixed(1)};
+    if ( y < h ) return ( 1.0 - top ) * y * y / ( 2.0 * h );
+    float atH = ( 1.0 - top ) * h * 0.5;
+    if ( y < c ) {
+      float t = y - h;
+      return atH + ( 1.0 - top ) * t + top * t * t / ( 2.0 * ( c - h ) );
+    }
+    return atH + ( 1.0 - top ) * ( c - h ) + top * ( c - h ) * 0.5 + ( y - c );
+  }
+
   float cityFogAmount( const in float densityScale ) {
     #ifdef FOG_EXP2
       float fd = fogDensity * densityScale * vFogDepth;
@@ -48,11 +61,11 @@ const FOG_PARS_FRAGMENT = /* glsl */ `
       float fLo = max( min( fy, cameraPosition.y ), 0.0 );
       float fHi = max( max( fy, cameraPosition.y ), 0.0 );
       if ( fHi - fLo > 1.0 ) {
-        float fA = fLo < fH ? fLo * fLo / ( 2.0 * fH ) : fLo - 0.5 * fH;
-        float fB = fHi < fH ? fHi * fHi / ( 2.0 * fH ) : fHi - 0.5 * fH;
-        fh = min( fh, 1.0 - ( 1.0 - cityFogHeight.y ) * ( fB - fA ) / ( fHi - fLo ) );
+        fh = min( fh, 1.0 - ( cityFogThin( fHi, fH ) - cityFogThin( fLo, fH ) ) / ( fHi - fLo ) );
       }
-      fh *= fy < 0.0 ? cityFogHeight.z : 1.0;
+      // fy is rebuilt from the camera height; from far above it rounds around 0 on y = 0
+      // ground, so the water boost starts a little below it (water and park sit at y <= -2).
+      fh *= fy < ${HEIGHT_FOG.waterBelow.toFixed(1)} ? cityFogHeight.z : 1.0;
       fogF = min( fogF * fh, 1.0 );
     }
     return fogF;

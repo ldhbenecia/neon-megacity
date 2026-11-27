@@ -14,6 +14,7 @@ import {
   HEIGHT_FOG,
   fogFactor,
   heightFogScale,
+  heightFogThinIntegral,
 } from '../src/core/shaders/emissiveFog';
 
 describe('searchlight mounts', () => {
@@ -78,6 +79,32 @@ describe('shader time and altitude', () => {
   it('rain fades around the cloud deck height', () => {
     expect(RAIN.fadeAltitude[0]).toBeLessThan(CLOUD_LAYERS.lowY);
     expect(RAIN.fadeAltitude[1]).toBeGreaterThan(CLOUD_LAYERS.lowY);
+  });
+});
+
+describe('height fog seen from above', () => {
+  it('thins the ray mean to clear air above clearTop, continuously', () => {
+    const { heightTop: H, clearTop: C } = HEIGHT_FOG;
+    for (const y of [H, C]) {
+      expect(heightFogThinIntegral(y + 1e-6)).toBeCloseTo(heightFogThinIntegral(y - 1e-6), 4);
+    }
+    // Slope of the integral is the thinning: (1 - top) just above heightTop, 1 at clearTop.
+    const d = (y: number) => (heightFogThinIntegral(y + 0.5) - heightFogThinIntegral(y - 0.5)) / 1;
+    expect(d(H + 1)).toBeCloseTo(1 - HEIGHT_FOG.top, 2);
+    expect(d(C + 10)).toBeCloseTo(1, 6);
+  });
+
+  it('keeps topdown (y 1900 looking at the ground) readable', () => {
+    expect(heightFogScale(0, 1900)).toBeLessThan(0.2);
+  });
+
+  it('leaves the fog on tower tops seen from street level as it was', () => {
+    expect(heightFogScale(600, 50)).toBeCloseTo(HEIGHT_FOG.top, 9);
+  });
+
+  it('boosts water and park only, not y = 0 ground rebuilt with rounding error', () => {
+    expect(heightFogScale(-0.01, 1900)).toBe(heightFogScale(0, 1900));
+    expect(heightFogScale(-4, 5)).toBeGreaterThan(heightFogScale(0, 5));
   });
 });
 

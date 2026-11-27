@@ -7,8 +7,33 @@ export const EMISSIVE_FOG_GLOW = 0.25;
 export const HEIGHT_FOG = {
   heightTop: 260,
   top: 0.35,
+  /**
+   * Height (m) where the air along a camera ray is clear. Between heightTop and here the ray's
+   * mean density keeps thinning from `top` to 0, so looking down from far above (topdown) sees
+   * little haze. The fog at a point's own height still stops at `top`, so horizontal views of
+   * tower tops keep their aerial perspective.
+   */
+  clearTop: 1040,
   water: 1.25,
+  /** Below this height (m) a point counts as water or park; y = 0 ground stays clear of it. */
+  waterBelow: -1,
 } as const;
+
+/**
+ * ∫₀^y of the thinning (1 − density factor) along a vertical ray: (1 − top)·y/heightTop up to
+ * heightTop, then rising linearly to 1 at clearTop, 1 above. Shared by the shader and the CPU mirror.
+ */
+export function heightFogThinIntegral(y: number): number {
+  const { heightTop: H, top, clearTop: C } = HEIGHT_FOG;
+  if (y <= 0) return 0;
+  if (y < H) return ((1 - top) * y * y) / (2 * H);
+  const atH = ((1 - top) * H) / 2;
+  if (y < C) {
+    const t = y - H;
+    return atH + (1 - top) * t + (top * t * t) / (2 * (C - H));
+  }
+  return atH + (1 - top) * (C - H) + (top * (C - H)) / 2 + (y - C);
+}
 
 export const SUN_SCATTER_POWER = 8;
 
@@ -63,10 +88,10 @@ export function heightFogScale(worldY: number, cameraY = worldY): number {
   const lo = Math.max(Math.min(worldY, cameraY), 0);
   const hi = Math.max(Math.max(worldY, cameraY), 0);
   if (hi - lo > 1) {
-    const F = (y: number): number => (y < H ? (y * y) / (2 * H) : y - H / 2);
-    k = Math.min(k, 1 - ((1 - HEIGHT_FOG.top) * (F(hi) - F(lo))) / (hi - lo));
+    const F = heightFogThinIntegral;
+    k = Math.min(k, 1 - (F(hi) - F(lo)) / (hi - lo));
   }
-  return worldY < 0 ? k * HEIGHT_FOG.water : k;
+  return worldY < HEIGHT_FOG.waterBelow ? k * HEIGHT_FOG.water : k;
 }
 
 export function fogFactor(fogDensity: number, depth: number, worldY = 0, cameraY = worldY): number {
