@@ -182,6 +182,17 @@ export function boxEdges(
   );
 }
 
+/** boxEdges without the bottom edge, for strips lying on a surface. */
+export function openBoxEdges(
+  l0: number,
+  l1: number,
+  y0: number,
+  y1: number,
+  color: RGB,
+): ProfileEdge[] {
+  return boxEdges(l0, l1, y0, y1, color).filter((_, i) => i !== 2);
+}
+
 /** Clockwise-ness check used by tests: signed area < 0 means clockwise in (l, y). */
 export function signedArea(points: readonly P[]): number {
   let a = 0;

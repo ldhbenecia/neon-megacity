@@ -1,6 +1,6 @@
-// Bridges and highways of kinds infra does not know yet (layout v3) must still build: they fall
-// back to a plain girder that handles any span, width, deck height, asymmetric ramps and a
-// lower deck. Layout v2 bridges keep their own shapes.
+// Bridges and highways of kinds infra does not know must still build: they fall back to a plain
+// girder that handles any span, width, deck height, asymmetric ramps and a lower deck. Every
+// known kind builds from the same synthetic specs too.
 import { describe, expect, it } from 'vitest';
 import {
   LAYOUT,
@@ -17,6 +17,7 @@ import {
   bridgeShape,
   buildBridge,
   deckYAt,
+  lowerDeckAt,
   lowerDeckY,
   pierStations,
   spanCount,
@@ -153,10 +154,10 @@ const CASES: Spec[] = [
 ];
 
 describe('infra fallback: bridge kinds', () => {
-  it('keeps the v2 shapes and maps every other kind to girder', () => {
-    const v2 = new Set<string>(['arch', 'truss', 'doubleDeck']);
-    for (const k of v2) expect(bridgeShape(makeBridge(0, { ...CASES[3]!, kind: k }))).toBe(k);
-    for (const k of ['deckArch', 'tiedArch', 'girder', 'cableStayed', 'mystery', '']) {
+  it('maps every known kind to its own builder and anything else to girder', () => {
+    const known = ['arch', 'truss', 'doubleDeck', 'girder', 'deckArch', 'tiedArch', 'cableStayed'];
+    for (const k of known) expect(bridgeShape(makeBridge(0, { ...CASES[3]!, kind: k }))).toBe(k);
+    for (const k of ['mystery', '', 'constructor', '__proto__']) {
       expect(bridgeShape(makeBridge(0, { ...CASES[0]!, kind: k }))).toBe('girder');
     }
   });
@@ -176,7 +177,7 @@ describe('infra fallback: bridge kinds', () => {
   });
 
   it('reads the layout span count, clamped to the shape minimum; arch always has two', () => {
-    const b = makeBridge(-200, { ...CASES[0]!, spans: 9 });
+    const b = makeBridge(-200, { ...CASES[0]!, kind: 'mystery', spans: 9 });
     const f = bridgeFrame(b);
     expect(spanCount(b, f)).toBe(9);
     expect(spanCount({ ...b, spans: 1e7 }, f)).toBe(Math.floor((2 * f.spanHalf) / 10));
@@ -197,7 +198,7 @@ describe('infra fallback: bridge kinds', () => {
     expect(spanCount(arch, bridgeFrame(arch))).toBe(2);
   });
 
-  it.each(CASES)('$kind builds a finite girder with evenly spaced river piers', (s) => {
+  it.each(CASES)('$kind builds finite geometry with evenly spaced river piers', (s) => {
     const b = makeBridge(-200, s);
     const f = bridgeFrame(b);
     const parts = createParts();
@@ -216,10 +217,13 @@ describe('infra fallback: bridge kinds', () => {
     });
 
     // With nothing to avoid, every river pier stands and reaches the lowest deck's underside.
-    const top = (lowerDeckY(b) ?? b.deckY) - DECK_THICKNESS;
+    const low = lowerDeckY(b);
     const river = parts.columns.filter((c) => c.y0 === -8);
     expect(river).toHaveLength(n - 1);
-    for (const c of river) expect(c.y1).toBeCloseTo(top, 9);
+    river.forEach((c, i) => {
+      const deck = low === undefined ? b.deckY : lowerDeckAt(b, f, low, stations[i]!);
+      expect(c.y1).toBeCloseTo(deck - DECK_THICKNESS, 9);
+    });
 
     // Deck profile follows the layout, asymmetric landings included.
     expect(-f.landA).toBeCloseTo(s.landA, 6);
@@ -228,16 +232,27 @@ describe('infra fallback: bridge kinds', () => {
       const p = bridgePoint(f, k, 0, 0);
       expect(Math.abs(deckYAt(b, f, k) - bridgeDeckY(b, p[0], p[2])!)).toBeLessThan(0.01);
     }
-    expect(maxY(parts.concrete)).toBeLessThan(s.deckY + 1);
-    expect(maxY(parts.steel)).toBeLessThan(s.deckY + 1.5);
+    // Structure above the deck: none for girders and deck arches, bounded for the rest.
+    const above: Record<string, number> = { cableStayed: 60 + 6, tiedArch: 14 + 2 };
+    const limit = above[bridgeShape(b)] ?? 1;
+    expect(maxY(parts.concrete)).toBeLessThan(s.deckY + Math.max(1, limit));
+    expect(maxY(parts.steel)).toBeLessThan(s.deckY + Math.max(1.5, limit));
   });
 
-  it('draws a lower deck and skips uplights when it sits too close to the water', () => {
+  it('draws a lower deck that rises mid-span near the water, uplights only with room', () => {
     const s = CASES[4]!;
     const b = makeBridge(-200, s);
+    const f = bridgeFrame(b);
     const parts = createParts();
     buildBridge(b, parts, C);
-    expect(parts.wash.vertexCount).toBe(0);
+    // Piers under the flat part sit too close to the water to light; the raised middle ones not.
+    const lit = pierStations(b, f).filter(
+      (q) => lowerDeckAt(b, f, s.lowerDeckY!, q) - DECK_THICKNESS - 0.2 - RIVER.waterY >= 2,
+    );
+    expect(lit.length).toBeGreaterThan(0);
+    expect(lit.length).toBeLessThan(pierStations(b, f).length);
+    expect(parts.wash.vertexCount).toBe(lit.length * 2 * 12);
+    expect(lowerDeckAt(b, f, s.lowerDeckY!, 0)).toBeGreaterThan(s.lowerDeckY! + 3);
     let lower = 0;
     for (let i = 1; i < parts.concrete.positions.length; i += 3) {
       if (Math.abs(parts.concrete.positions[i]! - s.lowerDeckY!) < 1e-6) lower++;
@@ -248,7 +263,7 @@ describe('infra fallback: bridge kinds', () => {
 
   it('a single-deck fallback bridge lights its piers', () => {
     const parts = createParts();
-    buildBridge(makeBridge(-200, CASES[0]!), parts, C);
+    buildBridge(makeBridge(-200, { ...CASES[3]!, kind: 'mystery' }), parts, C);
     expect(parts.wash.vertexCount).toBeGreaterThan(0);
   });
 
@@ -355,6 +370,42 @@ describe('infra fallback: piers and highways', () => {
     buildBridge(b, none, C);
     expect(count(across(40))).toBe(none.columns.length);
     expect(count(across(0.3))).toBe(none.columns.length - 1);
+  });
+});
+
+describe('infra: spans follow the piers actually placed', () => {
+  it('a pier dropped for a road below merges its two spans; no arch springs there', () => {
+    const s: Spec = {
+      kind: 'tiedArch',
+      half: 180,
+      landA: 260,
+      landB: 380,
+      deckY: 12,
+      width: 24,
+      lanes: 4,
+      spans: 4,
+    };
+    const b = { ...makeBridge(-200, s), structureH: 14 };
+    const f = bridgeFrame(b);
+    const blocked = pierStations(b, f)[1]!;
+    const road = straightHighway(
+      [riverPoint(-200, blocked, -60), riverPoint(-200, blocked, 60)],
+      0.3,
+      12,
+    );
+    const parts = createParts();
+    buildBridge(b, parts, C, [], [road]);
+    expect(parts.columns.filter((c) => c.y0 === -8)).toHaveLength(2);
+    // Over the dropped pier the rib is near its crown, not at a springing on the deck.
+    let low = 0;
+    for (let i = 0; i < parts.steel.positions.length; i += 3) {
+      const x = parts.steel.positions[i]! - f.mid[0];
+      const z = parts.steel.positions[i + 2]! - f.mid[2];
+      const along = x * f.u[0] + z * f.u[2];
+      const y = parts.steel.positions[i + 1]!;
+      if (Math.abs(along - blocked) < 2 && y > b.deckY + 1 && y < b.deckY + 6) low++;
+    }
+    expect(low).toBe(0);
   });
 });
 

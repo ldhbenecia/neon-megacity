@@ -5,8 +5,21 @@ import { createControls } from './controls';
 import { createHud, type Hud } from './hud';
 import { reducedMotion } from './loader';
 import { createPerf, estimateMemory, type FrameStats, type Perf } from './perf';
-import { LAYOUT, buildingContaining } from '../city/layout';
-import { camPose, DEFAULT_PRESET, rigPreset, rigPresets, safePose } from './presets';
+import {
+  LAYOUT,
+  buildingContaining,
+  riverSignedDistance,
+  riversideHalfAt,
+  zoneAt,
+} from '../city/layout';
+import {
+  camPose,
+  DEFAULT_PRESET,
+  districtViewById,
+  rigPreset,
+  rigPresets,
+  safePose,
+} from './presets';
 import { parseUxQuery, poseInLimits } from './query';
 
 export { createLoader, nextFrame, type Loader } from './loader';
@@ -42,16 +55,23 @@ export function initUx(ctx: Ctx, opts: UxOptions): Ux {
   // safePose may lower the target onto the camera (e.g. a target straight above it).
   const pose = q.pose ? safePose(LAYOUT, q.pose) : undefined;
   const custom = pose && poseInLimits(pose) ? pose : undefined;
-  const deterministic = custom !== undefined || opts.cam !== undefined || q.preset !== undefined;
+  const startDistrict = q.district ? districtViewById(q.district) : undefined;
+  const deterministic =
+    custom !== undefined ||
+    startDistrict !== undefined ||
+    opts.cam !== undefined ||
+    q.preset !== undefined;
   const hud = createHud({
     visible: q.hud,
     onDeselect: () => rig.select(null),
   });
   const initial = custom
     ? custom
-    : opts.cam
-      ? camPose(opts.cam)
-      : rigPreset(q.preset ?? DEFAULT_PRESET);
+    : startDistrict
+      ? startDistrict
+      : opts.cam
+        ? camPose(opts.cam)
+        : rigPreset(q.preset ?? DEFAULT_PRESET);
   const rig = createCameraRig(ctx, {
     initial,
     dollyIn: !deterministic,
@@ -98,6 +118,7 @@ export function initUx(ctx: Ctx, opts: UxOptions): Ux {
     };
   }
 
+  let districtFor = 0;
   let power: { t: number } | null = null;
   let powered = false;
   return {
@@ -126,9 +147,22 @@ export function initUx(ctx: Ctx, opts: UxOptions): Ux {
       }
       rig.update(dt, t);
     },
-    afterUpdate() {
+    afterUpdate(dt) {
       hud.update(ctx.env.timeOfDay);
       controls.update();
+      districtFor -= dt;
+      if (districtFor <= 0) {
+        districtFor = 0.5;
+        const t = rig.debug().target;
+        const zone = zoneAt(t.x, t.z);
+        // zoneAt falls back to the riverside band off every polygon (hills, map edge): only call
+        // it 한강 when the point really is on the river band.
+        const onRiver =
+          zone.kind === 'riverside' &&
+          Math.abs(riverSignedDistance(t.x, t.z)) <= riversideHalfAt(t.x);
+        hud.setDistrict(zone.kind !== 'riverside' ? zone.name : onRiver ? '한강' : '');
+        controls.markDistrict(zone.kind === 'riverside' ? '' : zone.id);
+      }
       if (q.stats) {
         const p = ctx.camera.position;
         const id = buildingContaining(LAYOUT, p.x, p.y, p.z);
