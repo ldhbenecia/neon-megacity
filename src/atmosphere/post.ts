@@ -365,13 +365,12 @@ export function createPost(ctx: Ctx): Post | null {
       finalHolder.add(new Mesh(quadGeo, finalMaterial));
       renderer.setRenderTarget(null);
       const finalReady = renderer.compileAsync(finalHolder, warmCamera);
-      try {
-        await Promise.all([sceneReady, bloomReady, finalReady]);
-      } finally {
-        holder.clear();
-        finalHolder.clear();
-        quadGeo.dispose();
-      }
+      // The programs exist once compileAsync returns; the temporary quads are not needed while
+      // linking finishes, and a dispose() during the wait must not find them still alive.
+      holder.clear();
+      finalHolder.clear();
+      quadGeo.dispose();
+      await Promise.all([sceneReady, bloomReady, finalReady]);
     },
     render() {
       syncPixelRatio();
