@@ -40,7 +40,11 @@ import {
   HALF_X,
   HALF_Z,
   ISLANDS,
+  PALACE_RECT,
+  TALL_GROUND,
+  TALL_H,
   bankPoint,
+  isForest,
   MOUNTAINS,
   RIVER,
   SAETGANG,
@@ -295,8 +299,10 @@ function buildRoads(seed: number, bridges: readonly Bridge[], named: readonly Na
   }
   for (const zone of ZONES) {
     if (!hasGrid(zone)) continue;
-    // Riverside apartment strips are laid out as slab rows along the bank (bankRows), not a grid.
+    // Riverside apartment strips are laid out as slab rows along the bank (bankRows), and the
+    // palace court as halls on its axis (palaceHalls), not as grids.
     if (zone.kind === 'apartment' && zoneBank(zone.id)) continue;
+    if (zone.kind === 'palace') continue;
     const rng = zoneRng(seed, `roads:${zone.id}`);
     const { u0, u1, v0, v1 } = gridRange(zone);
     const P = zone.roadPitch;
@@ -527,6 +533,7 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
     for (const p of [...obbCorners(o), { x: o.x, z: o.z }]) {
       if (zoneAt(p.x, p.z).id !== zone.id) return false;
       if (!waterClear(p.x, p.z, RIVER_CLEARANCE)) return false;
+      if (isForest(p.x, p.z)) return false;
     }
     if (obstacles.blocked(o)) return false;
     for (const id of lotHash.query(obbBounds(o))) {
@@ -554,6 +561,10 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
     if (mega) {
       // The tower field lays out the whole cluster (towers first, then podiums between them).
       towerField(zone, mega, zoneRng(seed, `towers:${zone.id}`));
+      continue;
+    }
+    if (zone.kind === 'palace') {
+      palaceHalls(zone);
       continue;
     }
     const bank = zoneBank(zone.id);
@@ -628,7 +639,7 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
 
   /**
    * Megacore towers: candidate sites every 10 m, nearest the peak first; each tier claims the
-   * closest sites where a footprint of its size fits (zone, water, obstacles, ≥ 10 m from other
+   * closest sites where a footprint of its size fits (zone, water, obstacles, ≥ 8 m from other
    * towers). Every tower is a one-lot block.
    */
   function towerField(zone: DistrictZone, plan: MegaPlan, rng: Rng): void {
@@ -670,6 +681,8 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
             rotY: zone.gridAngle,
           };
           if (placed.some((q) => obbOverlap(q, o, TOWER_GAP))) continue;
+          if (h > TALL_H && obbCorners(o).some((c) => terrainHeight(c.x, c.z) > TALL_GROUND))
+            continue;
           if (!accept(o, zone)) continue;
           placed.push(o);
           const blockId = blocks.length;
@@ -763,6 +776,39 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
         lotHash.insert(lots.length, obbBounds(obb));
         lots.push({ obb, zone, blockId, rowGap: ROW_PITCH - SLAB_DEPTH });
       }
+    }
+  }
+
+  /**
+   * Palace halls on the court's north–south axis, gate to throne hall to inner halls (SEOUL.md
+   * 4.3): a generic order of sizes, not any real palace's plan. Each hall is a one-lot block.
+   */
+  function palaceHalls(zone: DistrictZone): void {
+    const cx = (PALACE_RECT.x0 + PALACE_RECT.x1) / 2;
+    // [distance north of the south wall, width, depth, height] per hall.
+    const halls: readonly (readonly [number, number, number, number])[] = [
+      [20, 34, 12, 10],
+      [62, 48, 26, 18],
+      [104, 40, 22, 15],
+      [138, 30, 16, 11],
+    ];
+    for (const [k, w, d, h] of halls) {
+      const obb: Obb = { x: cx, z: PALACE_RECT.z1 - k, hw: w / 2, hd: d / 2, rotY: 0 };
+      if (!accept(obb, zone)) continue;
+      const blockId = blocks.length;
+      blocks.push({
+        id: blockId,
+        zoneId: zone.id,
+        district: zone.kind,
+        x: obb.x,
+        z: obb.z,
+        w,
+        d,
+        rotY: 0,
+        buildingIds: [],
+      });
+      lotHash.insert(lots.length, obbBounds(obb));
+      lots.push({ obb, zone, blockId, tower: { h, tier: 0 } });
     }
   }
 
@@ -866,7 +912,7 @@ const SLAB_GAP = 16;
 const ROW_PITCH = 72;
 
 /** Clear gap kept between megacore towers (m). */
-const TOWER_GAP = 10;
+const TOWER_GAP = 8;
 
 /** Hillside occupancy reaches its ridge floor at this terrain height (m). */
 const HILL_TOP = 120;
@@ -1004,7 +1050,9 @@ function draftsFor(zone: DistrictZone, lots: Lot[], rng: Rng): Draft[] {
     const s = fitScale(w, d, jitter, ox, oz, lw, ld);
     w *= s;
     d *= s;
-    const hh = extra.corp ? h : Math.min(h, slenderCap(w, d));
+    let hh = extra.corp ? h : Math.min(h, slenderCap(w, d));
+    // Tall buildings stand only on low ground (manager rule).
+    if (hh > TALL_H && terrainHeight(lot.obb.x, lot.obb.z) > TALL_GROUND) hh = TALL_H;
     return { lot, archetype, w, d, h: hh, ox, oz, jitter, ...extra };
   };
 
@@ -1103,8 +1151,11 @@ function draftsFor(zone: DistrictZone, lots: Lot[], rng: Rng): Draft[] {
     }
     case 'palace':
       for (const lot of lots) {
-        if (!rng.chance(0.5)) continue;
-        drafts.push(make(lot, 'palaceHall', rng.range(H.min, H.max)));
+        // Hall lots are sized for their hall.
+        const w = lot.obb.hw * 2 * 0.98;
+        const d = lot.obb.hd * 2 * 0.98;
+        const h = lot.tower?.h ?? H.min;
+        drafts.push({ lot, archetype: 'palaceHall', w, d, h, ox: 0, oz: 0, jitter: 0 });
       }
       break;
     case 'brick':
@@ -1277,7 +1328,12 @@ function applyBlockHeightRules(drafts: Draft[], rng: Rng): void {
     const capOf = (d: Draft): number =>
       d.corp
         ? Infinity
-        : Math.min(d.lot.zone.heights.tallMax, MEGA_MIN_H - 1, slenderCap(d.w, d.d));
+        : Math.min(
+            d.lot.zone.heights.tallMax,
+            MEGA_MIN_H - 1,
+            slenderCap(d.w, d.d),
+            terrainHeight(d.lot.obb.x, d.lot.obb.z) > TALL_GROUND ? TALL_H : Infinity,
+          );
     for (const d of list) d.h = Math.min(d.h, capOf(d));
     if (list.length < 2) continue;
 

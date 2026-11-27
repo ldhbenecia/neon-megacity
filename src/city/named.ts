@@ -13,7 +13,8 @@ export function makeNamedRoads(bridges: readonly Bridge[]): NamedRoad[] {
   // 서울역 sits west of 남산 in reality; with the plan compressed 1:6 its projection (-282, -456)
   // lands on the mountain, so it is moved to the foot of the slope.
   const seoulStation = { x: -480, z: -520 };
-  const gwanghwamun = { x: -190, z: -890 };
+  // 광화문: the palace's south gate (PALACE_RECT z1 = -720).
+  const gwanghwamun = { x: -190, z: -705 };
   return [
     { id: 'rd-sejong', name: '세종대로', width: 50, points: [gwanghwamun, seoulStation] },
     {
@@ -21,8 +22,8 @@ export function makeNamedRoads(bridges: readonly Bridge[]): NamedRoad[] {
       name: '종로',
       width: 30,
       points: [
-        { x: -190, z: -820 },
-        { x: 290, z: -760 },
+        { x: -190, z: -690 },
+        { x: 290, z: -640 },
       ],
     },
     {
