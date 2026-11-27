@@ -219,11 +219,17 @@ First checks (M4, low load, main 31ead8a measured in the same session):
 Top-down view: #97 triangles 0.92 → 0.93 M, geometry 60.7 → 62.0 MB; #104 0.92 → 0.86 M,
 60.7 → 56.1 MB (bridge LOD). Programs 37 and textures 29 in all three.
 
-**Textures (29 vs target 24).** No module added textures in the v3 PRs: of the 29, about 17 are
-render targets and env maps (bloom bright + 5 + 5 mips = 11, HDR scene target 1, shadow map 1,
-four baked PMREM maps 4); the rest are module textures (neon atlas, car paths, cloud noise, window
-digits, puddles). The 24 target predates the post chain; options are fewer bloom mips (5 → 3
-saves 4 targets, atmosphere) or counting module textures separately.
+**Textures: two budgets (manager decision).** `info.memory.textures` (29) mixes two kinds:
+
+- **Module textures** (neon atlas, car paths, cloud noise, window digits, puddles, …): about 12;
+  **target 14**, counted per module in review.
+- **Render targets and env maps** (bloom bright + 5 + 5 mips = 11, HDR scene target 1, shadow map
+  1, four baked PMREM maps 4): budgeted by **memory** (resolution × format, MB), not by count. At
+  2400×1350 the HDR target alone is ≈ 37 MB (8 B colour + 4 B depth per pixel).
+
+Bloom keeps 5 mips: fewer mips would remove the wide glow around neon in fog, and the count target
+is not a reason to change the picture. The mip count becomes a quality-tier knob instead (high 5,
+medium 4, low 3, by pass count only, no program change), done with env in the per-module knobs.
 
 ## Proposal: move boot work off the main thread (Web Worker)
 
