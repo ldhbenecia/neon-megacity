@@ -62,3 +62,10 @@ export const NIGHT_FILL = {
   bounce: [0.012, 0.0075, 0.0035],
   bounceFalloff: 9,
 } as const;
+
+/** Night grazing light on brick walls: color × albedo, strongest at street level. */
+export const BRICK_GRAZE = {
+  color: [0.3, 0.2, 0.12],
+  falloff: 8,
+  floor: 0.2,
+} as const;

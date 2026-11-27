@@ -134,7 +134,9 @@ export function brickWarehouseRoof(
   const t = topTier(spec);
   if (!t) return;
   if (pick < 0.55) {
-    sawtooth(g, t, spec.rotY, plain(0x3a2a26, 0.7), glow(SEOUL_COLORS.tungsten, 0.35));
+    // Only some workshops are lit at night; the rest keep dark glass.
+    const glass = pick < 0.2 ? glow(SEOUL_COLORS.tungsten, 0.35) : plain(0x1a1c1e, 0.15);
+    sawtooth(g, t, spec.rotY, plain(0x3a2a26, 0.7), glass);
     return;
   }
   if (lv === 2 || pick > 0.85) return;

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { MATERIAL, NEON, WINDOW_MIX } from '../core/palette';
-import { FACADE_DAY, NIGHT_FILL } from './colors';
+import { BRICK_GRAZE, FACADE_DAY, NIGHT_FILL } from './colors';
 
 const glsl = (v: number): string => v.toFixed(4);
 const vec3 = (c: readonly [number, number, number]): string => `vec3(${c.map(glsl).join(', ')})`;
@@ -389,7 +389,12 @@ const FRAG_MAIN = /* glsl */ `
   if (fType < 4.5 || fType > 6.5) {
     // f.y is measured from the window start, about one ground floor above the street.
     float bounce = exp(-max(f.y + 4.0, 0.0) / ${glsl(NIGHT_FILL.bounceFalloff)});
-    fEmit += (${vec3(NIGHT_FILL.ambient)} + ${vec3(NIGHT_FILL.bounce)} * bounce) * uNight;
+    float brick = step(8.5, fType);
+    fEmit += (${vec3(NIGHT_FILL.ambient)} * (1.0 - 0.6 * brick) + ${vec3(NIGHT_FILL.bounce)} * bounce) * uNight;
+    // Seongsu brick: warm tungsten grazing from street lamps, scaled by albedo so the red and the
+    // mortar courses read at night; glass is already dark here, so windows stay unlit.
+    float graze = ${glsl(BRICK_GRAZE.floor)} + exp(-max(f.y + 4.0, 0.0) / ${glsl(BRICK_GRAZE.falloff)});
+    fEmit += brick * fAlbedo * ${vec3(BRICK_GRAZE.color)} * graze * uNight;
   }
   diffuseColor.rgb = fAlbedo;
 `;
@@ -456,7 +461,7 @@ export function createFacadeMaterial(
       );
   };
   material.customProgramCacheKey = () =>
-    interior ? 'hangang-facade-near-v4' : 'hangang-facade-v4';
+    interior ? 'hangang-facade-near-v5' : 'hangang-facade-v5';
   material.userData.uLitRatio = uniforms.uLitRatio;
   return material;
 }
