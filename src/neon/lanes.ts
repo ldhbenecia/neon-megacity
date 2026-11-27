@@ -8,7 +8,9 @@ export interface Path {
   points: Vec3[];
   length: number;
   closed: boolean;
-  kind: 'ground' | 'bridge' | 'highway' | 'flying';
+  kind: 'ground' | 'bridge' | 'highway' | 'flying' | 'rail';
+  /** Rail tracks run one way; alternate tracks take turns. */
+  oneWay?: 1 | -1;
   fade: number;
   altitude?: readonly [number, number];
   /** Ground paths on arterials keep full traffic when the ground cap thins side streets. */
@@ -108,6 +110,38 @@ export function bridgePaths(
   });
 }
 
+const RAIL_MAX_SAMPLES = 512;
+
+/** Rail track polylines (rail top, approach slopes included) from infra, one path per track. */
+export function railPaths(
+  tracks: ReadonlyMap<string, readonly { points: readonly Vec3[] }[]>,
+): Path[] {
+  const out: Path[] = [];
+  for (const [id, list] of tracks) {
+    list.forEach((t, i) => {
+      if (t.points.length < 2) return;
+      // Even 2 m stations (the path shader assumes even spacing) keep infra's grade breaks
+      // within a metre.
+      let len = 0;
+      t.points.forEach((q, k) => {
+        const p = t.points[k - 1];
+        if (p) len += Math.hypot(q.x - p.x, q.y - p.y, q.z - p.z);
+      });
+      const r = resample([...t.points], Math.min(RAIL_MAX_SAMPLES, Math.ceil(len / 2) + 1));
+      out.push({
+        id: `rail-${id}-${i}`,
+        points: r.points,
+        length: r.length,
+        closed: false,
+        kind: 'rail',
+        fade: 40,
+        oneWay: i % 2 === 0 ? 1 : -1,
+      });
+    });
+  }
+  return out;
+}
+
 const SKY_SAMPLES_PER_100M = 4;
 
 // Drone lanes come from the layout (Layout.skyLanes), never from highway ids. Path y is 0, so
@@ -117,14 +151,20 @@ export function skyPaths(lanes: readonly SkyLane[]): Path[] {
   for (const lane of lanes) {
     // A broken lane must fail loudly, not vanish like hw-ring did.
     if (lane.points.length < 2) throw new Error(`sky lane ${lane.id} has fewer than 2 points`);
-    const curve = new THREE.CatmullRomCurve3(
-      lane.points.map((p) => new THREE.Vector3(p.x, 0, p.z)),
-      lane.closed,
-      'centripetal',
-    );
-    const n = Math.max(8, Math.round((curve.getLength() / 100) * SKY_SAMPLES_PER_100M));
+    // Prefer the layout's own samples: its clearance is measured on exactly that path.
+    let pts: Vec3[];
+    if (lane.samples && lane.samples.length >= 2) {
+      pts = lane.samples.map((p) => ({ x: p.x, y: 0, z: p.z }));
+    } else {
+      const curve = new THREE.CatmullRomCurve3(
+        lane.points.map((p) => new THREE.Vector3(p.x, 0, p.z)),
+        lane.closed,
+        'centripetal',
+      );
+      const n = Math.max(8, Math.round((curve.getLength() / 100) * SKY_SAMPLES_PER_100M));
+      pts = curve.getSpacedPoints(n).map((v) => ({ x: v.x, y: 0, z: v.z }));
+    }
     // Closed lanes keep the repeated end point: the shader wraps u with fract().
-    const pts = curve.getSpacedPoints(n).map((v) => ({ x: v.x, y: 0, z: v.z }));
     const r = resample(pts, pts.length);
     out.push({
       id: lane.id,
@@ -164,6 +204,7 @@ export function laneSlots(
   const both = (offs: number[]): { dir: 1 | -1; lane: number }[] =>
     ([1, -1] as const).flatMap((dir) => offs.map((lane) => ({ dir, lane })));
   if (p.kind === 'flying') return both([0]);
+  if (p.kind === 'rail') return [{ dir: p.oneWay ?? 1, lane: 0 }];
   if (p.kind === 'ground')
     return both(p.length > 300 ? [LANE_W * 0.5, LANE_W * 1.5] : [LANE_W * 0.5]);
   if (p.kind === 'bridge') return both([LANE_W * 0.5 + 0.6, LANE_W * 1.5 + 0.6]);
@@ -184,7 +225,7 @@ export function vehicleStreams(
 ): Vehicle[] {
   const rng = createRng(opts.seed ?? 6060);
   const hw = new Map(highways.map((h) => [h.id, h]));
-  const density = { ground: 2.2, bridge: 26, highway: 34, flying: 3, ...opts.density };
+  const density = { ground: 2.2, bridge: 26, highway: 34, flying: 3, rail: 1.2, ...opts.density };
   const perLane = (p: Path): number => Math.max(1, Math.round((density[p.kind] * p.length) / 1000));
   // Over the cap, side streets lose cars first (some none); arterials shrink only if they alone
   // exceed the cap. A no-op on maps under the cap, so their streams stay identical.
@@ -220,7 +261,9 @@ export function vehicleStreams(
           ? rng.range(30, 50)
           : p.kind === 'flying'
             ? rng.range(110, 160)
-            : rng.range(65, 100);
+            : p.kind === 'rail'
+              ? rng.range(55, 75)
+              : rng.range(65, 100);
       const speed = kmh / 3.6 / p.length;
       const base = rng.next();
       const [amin, amax] = p.altitude ?? [80, 260];

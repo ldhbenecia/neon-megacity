@@ -72,10 +72,11 @@ function glowText(
     return;
   }
   g.fillStyle = css(color);
-  g.shadowBlur = size * 0.35;
+  g.shadowBlur = size * 0.22;
   g.fillText(text, x, y, maxW);
   g.shadowBlur = 0;
-  g.fillStyle = mixCss(color, WHITE, 0.55);
+  // A tinted core rather than near-white, so strokes do not bloom into each other.
+  g.fillStyle = mixCss(color, WHITE, 0.3);
   g.fillText(text, x, y, maxW);
 }
 
@@ -95,7 +96,8 @@ function board(g: G, w: number, h: number, color: number, lightbox: boolean): vo
 
 function drawBand(g: G, c: Cell, rng: Rng): void {
   const col = NEON[c.color].hex;
-  const style = rng.int(0, 2);
+  const drawn = rng.int(0, 2);
+  const style = c.style ?? drawn;
   board(g, c.pw, c.ph, col, style === 1);
   if (style === 2) {
     roundRect(g, 5, 5, c.pw - 10, c.ph - 10, 8);
@@ -108,6 +110,18 @@ function drawBand(g: G, c: Cell, rng: Rng): void {
   } else {
     glowText(g, c.text, c.pw / 2, c.ph * 0.54, c.ph * 0.6, col, c.pw * 0.9, mode, 900);
   }
+}
+
+// Plain light lettering on black: the paint shader keeps only the letters (additive).
+function drawPaint(g: G, c: Cell): void {
+  g.fillStyle = css(BLACK);
+  g.fillRect(0, 0, c.pw, c.ph);
+  g.font = `900 ${c.ph * 0.72}px ${FONT}`;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.shadowBlur = 0;
+  g.fillStyle = css(WHITE);
+  g.fillText(c.text, c.pw / 2, c.ph * 0.54, c.pw * 0.94);
 }
 
 function drawVerticalGlyphs(
@@ -419,6 +433,9 @@ export function buildAtlas(catalog: Catalog, renderer: THREE.WebGLRenderer, seed
         break;
       case 'tent':
         drawTent(g, c);
+        break;
+      case 'paint':
+        drawPaint(g, c);
         break;
       case 'logo':
         drawLogo(g, c, logoIdx++);

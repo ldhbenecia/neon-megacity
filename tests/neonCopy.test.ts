@@ -7,7 +7,7 @@ import { HANJA, OLD_NAMES } from './forbiddenPatterns';
 const cat = buildCatalog(LAYOUT);
 const HIGH = new Set(['crown', 'ring', 'line', 'logo', 'koi']);
 const COMPLEX = /\d+단지$/;
-const LOW = new Set(['band', 'blade', 'vtext', 'panel', 'ad', 'tent']);
+const LOW = new Set(['band', 'blade', 'vtext', 'panel', 'ad', 'tent', 'paint']);
 
 describe('neon copy rules', () => {
   it('uses no hanja anywhere', () => {
