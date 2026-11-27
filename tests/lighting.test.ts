@@ -201,7 +201,7 @@ describe('shadow fill (env.fillFactor / fillColor)', () => {
     const dusk = fillColorAt(0.153, navy, floor);
     const k = fillFactorAt(0.153);
     expect(Math.max(...dusk)).toBeCloseTo(0.005 * k, 6);
-    expect(dusk[2]).toBeGreaterThan(dusk[1]!);
+    expect(dusk[2]).toBeGreaterThan(dusk[1]);
     expect(fillColorAt(0.8, navy, floor)).toEqual([0, 0, 0]);
   });
 });
