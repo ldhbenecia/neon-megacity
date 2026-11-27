@@ -6,12 +6,14 @@
 // glow and paint (BatchedMesh, one instance per bridge, hidden by distance LOD; not built for
 // quality 'ci'). No real lights.
 import * as THREE from 'three';
-import { deckHeightAt, highwayCurve } from '../city/layout';
+import { deckHeightAt, type Vec2, type Vec3 } from '../city/layout';
 import { MATERIAL, NIGHT_FILL_AMBIENT } from '../core/palette';
 import { EMISSIVE_FOG_DENSITY_SCALE, applyEmissiveFog } from '../core/shaders/emissiveFog';
 import type { CityModuleInstance, Ctx, InfraApi } from '../core/types';
+import { fountainNozzles, railTracks } from './bridges';
 import { buildInfra } from './build';
 import { infraColors } from './colors';
+import { hwPath, visiblePoints } from './highways';
 import { bridgeDetailOn } from './lod';
 import type { MeshData, V3 } from './mesh';
 import type { BridgeDetail, DetailParts } from './parts';
@@ -76,6 +78,9 @@ function emissiveBasic(params: THREE.MeshBasicMaterialParameters): THREE.MeshBas
   };
   return m;
 }
+
+/** Static lights by day, relative to night (on top of env.neonGain): structure leads by day. */
+const DAY_LIGHTS = 0.35;
 
 const DETAIL_KEYS = ['steel', 'glow', 'markings'] as const satisfies readonly (keyof DetailParts)[];
 
@@ -254,12 +259,40 @@ export function init(ctx: Ctx): CityModuleInstance {
   ctx.scene.add(group);
 
   const curves = new Map<string, THREE.CatmullRomCurve3>();
-  for (const hw of L.highways) curves.set(hw.id, highwayCurve(hw));
+  for (const hw of L.highways) {
+    const pts = visiblePoints(hwPath(hw));
+    // Same curve type as the layout's highwayCurve, through the drawn part only (visiblePoints
+    // trims only open roads, so a loop stays closed and a trimmed road is always open).
+    if (pts.length >= 2) {
+      const v = pts.map((p) => new THREE.Vector3(p[0], p[1], p[2]));
+      curves.set(hw.id, new THREE.CatmullRomCurve3(v, hw.closed, 'centripetal'));
+    }
+  }
+  const v3 = (p: V3): Vec3 => ({ x: p[0], y: p[1], z: p[2] });
+  const tracks = new Map<string, { points: Vec3[] }[]>();
+  const nozzles = new Map<string, { a: Vec3; b: Vec3; outward: Vec2 }[]>();
+  for (const b of L.bridges) {
+    const t = railTracks(b);
+    if (t.length > 0)
+      tracks.set(
+        b.id,
+        t.map((pts) => ({ points: pts.map(v3) })),
+      );
+    const n = fountainNozzles(b);
+    if (n.length > 0) {
+      nozzles.set(
+        b.id,
+        n.map((q) => ({ a: v3(q.a), b: v3(q.b), outward: { x: q.outward[0], z: q.outward[2] } })),
+      );
+    }
+  }
   const api: InfraApi = {
     group,
     curves,
     deckThickness: DECK_THICKNESS,
     deckHeightAt: (x, z) => deckHeightAt(L, x, z),
+    railTracks: tracks,
+    fountainNozzles: nozzles,
   };
   ctx.infra = api;
 
@@ -290,7 +323,8 @@ export function init(ctx: Ctx): CityModuleInstance {
           });
         }
       }
-      const gain = ctx.env.neonGain * ctx.env.powerOn * settings.gain;
+      const day = DAY_LIGHTS + (1 - DAY_LIGHTS) * ctx.env.nightFactor;
+      const gain = ctx.env.neonGain * ctx.env.powerOn * settings.gain * day;
       for (const m of emissive) m.color.setScalar(gain);
       const [r, g, b] = NIGHT_FILL_AMBIENT;
       const k = ctx.env.nightFactor * INFRA_FILL;
