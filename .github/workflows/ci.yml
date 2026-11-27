@@ -20,15 +20,17 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # Decides whether the slow SwiftShader e2e runs. Main pushes and main dispatches always run it
-  # (Pages deploys only after a fully green main run); PRs and branch dispatches only when they
-  # touch what e2e exercises: the app shell, the camera / HUD layer, query hooks or the test setup.
+  # Decides which e2e runs. Main pushes and main dispatches always run the full suite (Pages
+  # deploys only after a fully green main run). PRs and branch dispatches run it only when they
+  # touch the app shell, ux, core, build config or the test setup; PRs that touch only feature
+  # modules run just the full-quality budget scenario (draw calls, programs, console errors).
   changes:
     name: changes
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       e2e: ${{ steps.files.outputs.e2e }}
+      budget: ${{ steps.files.outputs.budget }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -49,16 +51,22 @@ jobs:
             base="$(git merge-base origin/main HEAD || true)"
           fi
           e2e=true
+          budget=false
           if [ -n "$base" ]; then
             # --no-renames: a move must list the old path too; quotePath=false keeps Hangul names.
             files="$(git -c core.quotePath=false diff --name-only --no-renames "$base" HEAD)"
             echo "$files"
-            pattern='^(src/ux/|src/main\.ts$|src/boot\.ts$|src/core/query\.ts$|tests/e2e/|playwright\.config\.ts$|scripts/|\.github/|index\.html$|src/style\.css$|package(-lock)?\.json$)'
+            pattern='^(src/ux/|src/main\.ts$|src/boot\.ts$|src/core/|vite\.config\.ts$|tsconfig[^/]*\.json$|tests/e2e/|playwright\.config\.ts$|scripts/|\.github/|index\.html$|src/style\.css$|package(-lock)?\.json$)'
+            modules='^src/(lighting|terrain|buildings|infra|neon|atmosphere|city)/'
             if [ -n "$files" ] && ! grep -qE "$pattern" <<<"$files"; then
               e2e=false
+              if grep -qE "$modules" <<<"$files"; then
+                budget=true
+              fi
             fi
           fi
           echo "e2e=$e2e" | tee -a "$GITHUB_OUTPUT"
+          echo "budget=$budget" | tee -a "$GITHUB_OUTPUT"
 
   check:
     name: check
@@ -139,10 +147,48 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+  budget:
+    name: e2e budget
+    needs: changes
+    if: needs.changes.outputs.budget == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Budget scenario
+        run: npm run test:e2e -- tests/e2e/perf.spec.ts --grep "full quality"
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-budget
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
   # Always reported under one name, so a required check never goes missing when e2e is skipped.
   e2e-result:
     name: e2e-result
-    needs: [changes, e2e]
+    needs: [changes, e2e, budget]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -150,7 +196,10 @@ jobs:
       - env:
           CHANGES: ${{ needs.changes.result }}
           E2E: ${{ needs.e2e.result }}
+          BUDGET: ${{ needs.budget.result }}
         run: |
-          echo "changes=$CHANGES e2e=$E2E"
+          echo "changes=$CHANGES e2e=$E2E budget=$BUDGET"
           [ "$CHANGES" = success ] || exit 1
-          [ "$E2E" = success ] || [ "$E2E" = skipped ] || exit 1
+          for r in "$E2E" "$BUDGET"; do
+            [ "$r" = success ] || [ "$r" = skipped ] || exit 1
+          done
