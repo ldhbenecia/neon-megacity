@@ -1,6 +1,6 @@
 import { createRng, type Rng } from '../core/random';
 import { MATERIAL, NEON } from '../core/palette';
-import { baseKind, terrainHeight } from '../city/layout';
+import { baseKindOf, terrainHeight } from '../city/layout';
 import type { BuildingSpec, Side, Tier } from '../city/types';
 import {
   UNIT_CONE8,
@@ -26,11 +26,24 @@ import {
   mixHex,
   OPPOSITE,
   scaleHex,
+  isBlankStyle,
   windowStyle,
   baseArchetype,
   withBaseArchetype,
+  zoneLitScale,
   type BaseSpec,
 } from './params';
+import { emitLandmark } from './landmarks';
+import {
+  SEOUL_COLORS,
+  brickProps,
+  brickWarehouseRoof,
+  cornice,
+  hanokRoof,
+  palaceHall,
+  showroomSlab,
+  taperSeams,
+} from './seoul';
 import {
   band,
   edgeNormal,
@@ -62,6 +75,7 @@ const TOWERS = new Set([
   'bracedTower',
   'cantileverTower',
   'twinTower',
+  'taperTower',
 ]);
 
 interface Bld {
@@ -80,7 +94,15 @@ interface Bld {
 
 export type StreetTest = (x: number, z: number) => boolean;
 
-const SHOP_ARCHETYPES = new Set(['sangga', 'officeSlab', 'pavilion']);
+const SHOP_ARCHETYPES = new Set([
+  'sangga',
+  'officeSlab',
+  'pavilion',
+  'mediaSlab',
+  'lowOffice',
+  'hanokRow',
+  'brickWarehouse',
+]);
 const ALL_SIDES: readonly Side[] = ['px', 'nx', 'pz', 'nz'];
 
 const tierStacks = (spec: BuildingSpec): Tier[][] =>
@@ -115,16 +137,46 @@ function facadeHex(spec: BuildingSpec, rng: Rng): number {
       return mixHex(MATERIAL.facadeDark, rng.pick(FACADE_TINT.sangga), 0.4 + 0.6 * t);
     case 'warehouse':
       return mixHex(MATERIAL.facadeLight, rng.pick(FACADE_TINT.warehouse), 0.5 * t + 0.3);
+    case 'brickWarehouse':
+      return mixHex(rng.pick(SEOUL_COLORS.brick), 0x2a1a16, 0.15 * t);
+    case 'lowOffice':
+      return mixHex(rng.pick(SEOUL_COLORS.stone), MATERIAL.facadeDark, 0.2 + 0.3 * t);
+    case 'hanokRow':
+      return mixHex(rng.pick(SEOUL_COLORS.plaster), MATERIAL.facadeDark, 0.3 * t);
+    case 'palaceHall':
+      return SEOUL_COLORS.wood;
     default:
       return mixHex(MATERIAL.facadeDark, MATERIAL.facadeLight, t);
   }
 }
 
+type Role = ReturnType<typeof faceRole>;
+
+function roleOf(spec: BaseSpec, side: Side | null, shops: ReadonlySet<Side>): Role {
+  const base = side ? faceRole(spec, side) : 'side';
+  return side !== null && shops.has(side) && base === 'side' ? 'front' : base;
+}
+
+/**
+ * Whether a wall side has no windows and no shop front, by the same rule the facade renderer
+ * uses (faceStyle). Neon reads it from `BuildingsApi.faces[].blank` to place painted signs.
+ */
+export function faceBlank(raw: BuildingSpec, side: Side, onStreet?: StreetTest): boolean {
+  const spec = withBaseArchetype(raw);
+  const shops = shopSides(spec, raw.archetype, onStreet);
+  // A media face is the giant screen's place (neon reads tags.mediaFace), not a sign wall.
+  if (side === spec.tags.mediaFace) return false;
+  if (spec.archetype === 'showroomBox' || shops.has(side)) return false;
+  return isBlankStyle(windowStyle(spec.archetype, roleOf(spec, side, shops), spec.seed));
+}
+
 function faceStyle(b: Bld, side: Side | null, len: number, tierIdx: number): Style {
   const { spec } = b;
-  const baseRole = side ? faceRole(spec, side) : 'side';
   const shop = side !== null && b.shopSides.has(side);
-  const role = shop && baseRole === 'side' ? 'front' : baseRole;
+  const role = roleOf(spec, side, b.shopSides);
+  if (spec.archetype === 'showroomBox') return glow(SEOUL_COLORS.showroom, 0.7);
+  if (spec.archetype === 'palaceHall' && tierIdx === 0) return plain(SEOUL_COLORS.plinth, 0.9);
+  if (side !== null && side === spec.tags.mediaFace) return plain(SEOUL_COLORS.screenOff, 0.25);
   const ws = windowStyle(spec.archetype, role, spec.seed);
   if (ws.type === FACADE.plain || (side === null && len < 4)) {
     return { ...plain(b.wall, 0.85), windowY: b.windowY };
@@ -138,7 +190,7 @@ function faceStyle(b: Bld, side: Side | null, len: number, tierIdx: number): Sty
     windowY: b.windowY,
     seed: b.seed01 + tierIdx * 0.013 + (side ? ALL_SIDES.indexOf(side) * 0.1 : 0),
     lit: b.lit,
-    param: spec.archetype === 'hillHouse' ? 0.55 : 0,
+    param: spec.archetype === 'hillHouse' ? 0.55 : spec.archetype === 'brickWarehouse' ? 0.6 : 0,
     storefront: tierIdx === 0 && (b.tower || shop),
   });
 }
@@ -199,7 +251,7 @@ export function emitBuilding(raw: BuildingSpec, T: Targets, onStreet?: StreetTes
     spec,
     rng,
     seed01: seeded01(spec.seed),
-    lit: districtLitFactor(spec.district),
+    lit: districtLitFactor(spec.district) * zoneLitScale(spec.zoneId),
     wall,
     roof: scaleHex(wall, spec.archetype === 'apartmentSlab' ? 0.7 : 0.9),
     windowY: spec.baseY + spec.groundFloorH,
@@ -217,6 +269,13 @@ export function emitBuilding(raw: BuildingSpec, T: Targets, onStreet?: StreetTes
   if (spec.archetype === 'hillHouse') return hillHouse(b, T);
   if (b.inL2) levels.push([T.l2, 2]);
   else if (!discards(T.l2)) lowBox(b, T.l2);
+
+  const landmark = spec.tags.landmark;
+  if (landmark) {
+    const roof = plain(b.roof, 0.92);
+    const wallFor = (len: number, tier: number): Style => faceStyle(b, null, len, tier);
+    if (levels.every(([g, lv]) => emitLandmark(landmark, g, spec, wallFor, roof, lv))) return;
+  }
 
   const roofKind = roofTopKind(spec);
 
@@ -245,9 +304,38 @@ export function emitBuilding(raw: BuildingSpec, T: Targets, onStreet?: StreetTes
       if (spec.skybridge && spec.twin) skybridge(g, b);
     }
     if (lv === 1 && spec.archetype === 'warehouse') warehouseRoof(g, b);
+    seoulExtras(g, b, lv);
   }
   if (!discards(T.l0)) detail(b, T.l0);
 }
+
+function seoulExtras(g: GeoBuilder, b: Bld, lv: 0 | 1 | 2): void {
+  const { spec } = b;
+  switch (spec.archetype) {
+    case 'brickWarehouse':
+      brickWarehouseRoof(g, spec, seeded01(spec.seed + 31), lv);
+      break;
+    case 'palaceHall':
+      palaceHall(g, spec, lv);
+      break;
+    case 'hanokRow':
+      hanokRoof(g, spec, spec.front, lv);
+      break;
+    case 'showroomBox':
+      showroomSlab(g, spec);
+      break;
+    case 'taperTower':
+      if (lv < 2) {
+        const hex = seeded01(spec.seed + 41) < 0.6 ? NEON.neonCyan.hex : NEON.neonAmber.hex;
+        taperSeams(g, spec, hex, spec.tiers);
+      }
+      break;
+    default:
+      break;
+  }
+}
+
+const NO_PARAPET = new Set(['warehouse', 'pavilion', 'hanokRow', 'palaceHall', 'showroomBox']);
 
 const discards = (g: GeoBuilder): boolean => g instanceof NullBuilder;
 
@@ -260,7 +348,7 @@ function detail(b: Bld, g: GeoBuilder): void {
   for (const tiers of stacks) {
     tiers.forEach((t, i) => {
       const o = tierOutline(t, spec.rotY, cylinderSegments(0));
-      if (spec.archetype !== 'warehouse' && spec.archetype !== 'pavilion') {
+      if (!NO_PARAPET.has(spec.archetype)) {
         parapet(g, o, t.y1, parapetH, plain(scaleHex(b.wall, 1.15), 0.85));
       }
       if (b.tower || spec.archetype === 'officeSlab') {
@@ -298,6 +386,20 @@ function detail(b: Bld, g: GeoBuilder): void {
     case 'warehouse':
       warehouseRoof(g, b);
       warehouseProps(g, b, rng);
+      break;
+    case 'mediaSlab':
+      if (flatRoof) roofMechanical(g, b, rng);
+      break;
+    case 'brickWarehouse':
+      brickProps(g, spec, rng);
+      break;
+    case 'lowOffice': {
+      const t = spec.tiers[spec.tiers.length - 1];
+      if (t) cornice(g, tierOutline(t, spec.rotY, 8), t.y1, plain(scaleHex(b.wall, 1.2), 0.8));
+      break;
+    }
+    case 'taperTower':
+      if (flatRoof) roofMechanical(g, b, rng);
       break;
     default:
       break;
@@ -505,7 +607,8 @@ function roofMechanical(g: GeoBuilder, b: Bld, rng: Rng): void {
     }
     if (
       r > 20 &&
-      (rng.chance(0.005) || (baseKind(spec.district) === 'core' && seeded01(spec.seed + 99) < 0.04))
+      (rng.chance(0.005) ||
+        (baseKindOf(spec.district) === 'core' && seeded01(spec.seed + 99) < 0.04))
     ) {
       crane(g, t, spec.rotY, rng);
     }
