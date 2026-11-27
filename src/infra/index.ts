@@ -262,11 +262,36 @@ export function init(ctx: Ctx): CityModuleInstance {
   group.add(concrete, steel, paint, columns, beams, glow, wash, points);
   if (detail) group.add(...detail.meshes);
 
-  // Quality knob (PERF.md): detail distance by tier; 'low' hides the built detail, kept for later.
+  // Quality knob (PERF.md): detail distance by tier. 'low' (and a 'low' boot) still builds the
+  // detail and only hides it, so moving back up a tier needs no rebuild.
   let lod: BridgeLodRange | null = null;
+  // lighting renders shadows on demand; detail casts them, so every visibility change asks for one.
+  const refreshDetail = (fresh: boolean): void => {
+    if (!detail || !lod) return;
+    const cam = ctx.camera.position;
+    let changed = false;
+    for (const b of detail.bridges) {
+      const dx = cam.x - b.center[0];
+      const dy = cam.y - b.center[1];
+      const dz = cam.z - b.center[2];
+      const on = bridgeDetailOn(fresh ? false : b.on, dx * dx + dy * dy + dz * dz, lod);
+      if (on === b.on) continue;
+      b.on = on;
+      changed = true;
+      detail.meshes.forEach((m, k) => {
+        const id = b.ids[k] ?? -1;
+        if (id >= 0) m.setVisibleAt(id, on);
+      });
+    }
+    if (changed) ctx.renderer.shadowMap.needsUpdate = true;
+  };
   const applyQuality = (q: Quality): void => {
     lod = bridgeLodRange(q);
-    for (const m of detail?.meshes ?? []) m.visible = lod !== null;
+    if (!detail) return;
+    for (const m of detail.meshes) m.visible = lod !== null;
+    // States frozen while hidden are stale: decide afresh from the camera now.
+    refreshDetail(true);
+    ctx.renderer.shadowMap.needsUpdate = true;
   };
   applyQuality(ctx.env.quality);
   const offQuality = ctx.onQuality(applyQuality);
@@ -326,21 +351,7 @@ export function init(ctx: Ctx): CityModuleInstance {
   ] as THREE.MeshStandardMaterial[];
   return {
     update() {
-      if (detail && lod) {
-        const cam = ctx.camera.position;
-        for (const b of detail.bridges) {
-          const dx = cam.x - b.center[0];
-          const dy = cam.y - b.center[1];
-          const dz = cam.z - b.center[2];
-          const on = bridgeDetailOn(b.on, dx * dx + dy * dy + dz * dz, lod);
-          if (on === b.on) continue;
-          b.on = on;
-          detail.meshes.forEach((m, k) => {
-            const id = b.ids[k] ?? -1;
-            if (id >= 0) m.setVisibleAt(id, on);
-          });
-        }
-      }
+      refreshDetail(false);
       const day = DAY_LIGHTS + (1 - DAY_LIGHTS) * ctx.env.nightFactor;
       const gain = ctx.env.neonGain * ctx.env.powerOn * settings.gain * day;
       for (const m of emissive) m.color.setScalar(gain);
