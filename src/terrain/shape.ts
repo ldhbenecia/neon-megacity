@@ -19,14 +19,15 @@ import { createRng } from '../core/random';
 export { EMBANK_SLOPE };
 
 // Read on first use, not at import: the layout may still be generating (async boot, Worker).
-let nearRidgeCache: Ridge | null = null;
+// Keyed on the layout object, so a later setLayout (another seed) is picked up.
+let nearRidgeCache: { layout: typeof LAYOUT; ridge: Ridge } | null = null;
 function nearRidge(): Ridge {
-  if (!nearRidgeCache) {
+  if (nearRidgeCache?.layout !== LAYOUT) {
     const r = LAYOUT.ridges.find((q) => q.id === 'ridge-near') ?? LAYOUT.ridges[0];
     if (!r) throw new Error('terrain: layout has no ridges');
-    nearRidgeCache = r;
+    nearRidgeCache = { layout: LAYOUT, ridge: r };
   }
-  return nearRidgeCache;
+  return nearRidgeCache.ridge;
 }
 
 /** The ground must stay inside the near ridge wall or the plateau shows behind it. */
