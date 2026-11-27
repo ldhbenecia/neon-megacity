@@ -11,7 +11,7 @@ import {
   toWorld,
   zoneAt,
 } from '../src/city/layout';
-import { CAMERA_LIMITS } from '../src/core/query';
+import { CAMERA_LIMITS, CAMERA_RING } from '../src/core/query';
 import { createRng } from '../src/core/random';
 import {
   cameraFloor,
@@ -276,6 +276,17 @@ describe('district views', () => {
       expect(d).toBeLessThanOrEqual(CAMERA_LIMITS.maxDistance);
     },
   );
+});
+
+describe('camera ring', () => {
+  it('holds every rig preset and district view, so the first frame never moves them', () => {
+    for (const p of [...rigPresets(), ...districtViews()]) {
+      expect(
+        Math.hypot(p.position.x, p.position.z),
+        JSON.stringify(p.position),
+      ).toBeLessThanOrEqual(CAMERA_RING);
+    }
+  });
 });
 
 describe('street-level presets', () => {

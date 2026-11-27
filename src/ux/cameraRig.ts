@@ -31,7 +31,7 @@ import {
   rigPreset,
   rigPresets,
 } from './presets';
-import { CAMERA_LIMITS } from '../core/query';
+import { CAMERA_FOV, CAMERA_LIMITS, CAMERA_RING } from '../core/query';
 
 export interface RigDebug {
   mode: RigMode;
@@ -63,7 +63,7 @@ export interface RigOptions {
   hud: Hud;
 }
 
-const BASE_FOV = 55;
+const BASE_FOV = CAMERA_FOV;
 const IDLE_CINEMATIC_S = 90;
 const CINEMATIC_LOOP_S = 180;
 const LOOK_SENSITIVITY = 0.0022;
@@ -72,6 +72,15 @@ const TAP_PX = 6;
 const TAP_MS = 250;
 const DOUBLE_TAP_MS = 320;
 const ZOOM_TAU = 0.12;
+/** Safari's non-standard GestureEvent (not in lib.dom). */
+interface GestureLike {
+  scale?: number;
+  clientX?: number;
+  clientY?: number;
+}
+/** log-zoom per wheel pixel: a mouse notch (100 px) is ~1.27x. */
+const WHEEL_GAIN = 0.0022;
+const PINCH_GAIN = 0.012;
 const MOVE_TAU = 0.25;
 const MIN_DISTANCE = CAMERA_LIMITS.minDistance;
 /** Keys that move the camera, by KeyboardEvent.code (layout independent: works with 한글 IME). */
@@ -87,9 +96,6 @@ const MOVE_KEYS = new Set([
   'ArrowLeft',
   'ArrowRight',
 ]);
-
-/** Above this height no building volume (spires included) can be within the wall margin. */
-const SKY_CLEAR = LAYOUT.buildings.reduce((m, b) => Math.max(m, buildingTop(b)), 0) + WALL_MARGIN;
 
 const _v = new THREE.Vector3();
 const _w = new THREE.Vector3();
@@ -114,6 +120,9 @@ function isTyping(target: EventTarget | null): boolean {
 }
 
 export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
+  // Above this height no building volume (spires included) can be within the wall margin. Read
+  // here, with the rig, not at module evaluation: the rig is created once the layout exists.
+  const skyClear = LAYOUT.buildings.reduce((m, b) => Math.max(m, buildingTop(b)), 0) + WALL_MARGIN;
   const { camera, controls, gui, renderer, env } = ctx;
   const { hud } = opts;
   const canvas = renderer.domElement;
@@ -462,7 +471,19 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
     cancelFlight();
     steered();
     const px = e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 400 : 1;
-    const amount = clamp(-e.deltaY * px * 0.0022 * controls.zoomSpeed, -0.6, 0.6);
+    // Trackpad pinch arrives as ctrlKey wheel with deltaY of 1-5 per event, so it needs a far
+    // higher gain than a mouse notch (deltaY ~100) or two-finger scroll to feel like a pinch.
+    // Ctrl + a real mouse wheel (line mode or a ~100 px notch) keeps the wheel gain.
+    const pinch = e.ctrlKey && e.deltaMode === 0 && Math.abs(e.deltaY) < 50;
+    // Some Safari versions send ctrl+wheel alongside gesture* for one pinch: count it once.
+    if (pinch && gestureActive) return;
+    const gain = pinch ? PINCH_GAIN : WHEEL_GAIN;
+    const amount = clamp(-e.deltaY * px * gain * controls.zoomSpeed, -0.6, 0.6);
+    zoomBy(amount, e.clientX, e.clientY);
+  };
+
+  /** `amount` > 0 zooms in (log scale), toward the scene point under (clientX, clientY). */
+  const zoomBy = (amount: number, clientX: number, clientY: number): void => {
     if (mode === 'fly') {
       camera.getWorldDirection(_v);
       vel.addScaledVector(_v, amount * 60);
@@ -471,8 +492,8 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
     // Keep one anchor through a continuous scroll (re-picking every event would jitter), but
     // re-pick when the cursor moved, the gesture paused, the camera has nearly reached the
     // anchor, or the anchor drifted off the cursor ray (pan / rotate between wheel events).
-    setRayFromPointer(e.clientX, e.clientY);
-    const moved = Math.hypot(e.clientX - lastAnchorPx.x, e.clientY - lastAnchorPx.y);
+    setRayFromPointer(clientX, clientY);
+    const moved = Math.hypot(clientX - lastAnchorPx.x, clientY - lastAnchorPx.y);
     const toAnchor = _w.copy(zoomAnchor).sub(raycaster.ray.origin);
     const near = toAnchor.length() < MIN_DISTANCE;
     const offRay = toAnchor.normalize().dot(raycaster.ray.direction) < Math.cos(0.04);
@@ -484,11 +505,41 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
           .copy(raycaster.ray.direction)
           .multiplyScalar(camera.position.distanceTo(controls.target))
           .add(camera.position);
-      lastAnchorPx.x = e.clientX;
-      lastAnchorPx.y = e.clientY;
+      lastAnchorPx.x = clientX;
+      lastAnchorPx.y = clientY;
     }
     lastAnchorAt = elapsed;
     zoomPending += amount;
+  };
+  // Safari reports trackpad pinch as gesture* events (scale since gesturestart). Page zoom is
+  // blocked everywhere in the app; only a pinch that starts on the canvas zooms the camera.
+  let gestureScale = 1;
+  let gestureActive = false;
+  let gestureOnCanvas = false;
+  let gestureAt = { x: 0, y: 0 };
+  const onGestureStart = (e: Event): void => {
+    e.preventDefault();
+    gestureActive = true;
+    gestureOnCanvas = e.target === canvas;
+    gestureScale = 1;
+    if (!gestureOnCanvas) return;
+    const g = e as GestureLike;
+    gestureAt = { x: g.clientX ?? canvas.clientWidth / 2, y: g.clientY ?? canvas.clientHeight / 2 };
+    markInput();
+    cancelFlight();
+    steered();
+  };
+  const onGestureChange = (e: Event): void => {
+    e.preventDefault();
+    const scale = (e as GestureLike).scale ?? 1;
+    if (!gestureOnCanvas || !(scale > 0)) return;
+    zoomBy(clamp(Math.log(scale / gestureScale), -0.6, 0.6), gestureAt.x, gestureAt.y);
+    gestureScale = scale;
+  };
+  const onGestureEnd = (e: Event): void => {
+    e.preventDefault();
+    gestureActive = false;
+    gestureOnCanvas = false;
   };
 
   const look = (dx: number, dy: number): void => {
@@ -588,6 +639,9 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
   };
 
   window.addEventListener('wheel', onWheel, { capture: true, passive: false });
+  document.addEventListener('gesturestart', onGestureStart, { passive: false });
+  document.addEventListener('gesturechange', onGestureChange, { passive: false });
+  document.addEventListener('gestureend', onGestureEnd, { passive: false });
   window.addEventListener('keydown', onKeyDownCapture, { capture: true });
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', onKeyUp);
@@ -657,8 +711,30 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
     const toAnchor = camera.position.distanceTo(zoomAnchor);
     if (s > 1 && orbit * s > CAMERA_LIMITS.maxDistance) {
       s = Math.max(1, CAMERA_LIMITS.maxDistance / orbit);
+      // At the limit: drop the pending zoom-out so a later zoom-in reacts at once.
+      zoomPending = Math.max(zoomPending, 0);
     }
     if (s < 1 && toAnchor * s < 6) s = Math.min(1, 6 / Math.max(toAnchor, 1e-6));
+    if (s > 1) {
+      // Out: around the orbit target, not the cursor, so the city stays in frame; and only as far
+      // as the ridge ring (a low view stops at the ring, a high one reaches maxDistance).
+      const out = (k: number): THREE.Vector3 =>
+        _w.copy(camera.position).sub(controls.target).multiplyScalar(k).add(controls.target);
+      if (Math.hypot(out(s).x, _w.z) > CAMERA_RING) {
+        // Go as far as the ring this frame (bisection on the scale), then stop the gesture.
+        let lo = 1;
+        let hi = s;
+        for (let i = 0; i < 16; i++) {
+          const mid = (lo + hi) / 2;
+          if (Math.hypot(out(mid).x, _w.z) > CAMERA_RING) hi = mid;
+          else lo = mid;
+        }
+        out(lo);
+        zoomPending = Math.max(zoomPending, 0);
+      }
+      camera.position.copy(_w);
+      return;
+    }
     camera.position.sub(zoomAnchor).multiplyScalar(s).add(zoomAnchor);
     controls.target.sub(zoomAnchor).multiplyScalar(s).add(zoomAnchor);
     const d = camera.position.distanceTo(controls.target);
@@ -674,7 +750,20 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
   const clampCamera = (): void => {
     const p = camera.position;
     if (p.equals(resolvedAt)) return;
-    if (p.y <= SKY_CLEAR) {
+    const r = Math.hypot(p.x, p.z);
+    if (r > CAMERA_RING) {
+      // Moving past the ring (keys, pan): slide camera and target back together, view unchanged.
+      const k = (r - CAMERA_RING) / r;
+      const dx = p.x * k;
+      const dz = p.z * k;
+      p.x -= dx;
+      p.z -= dz;
+      if (mode !== 'cinematic' && mode !== 'flight') {
+        controls.target.x -= dx;
+        controls.target.z -= dz;
+      }
+    }
+    if (p.y <= skyClear) {
       const fixed = resolveCollision(LAYOUT, p);
       if (fixed) p.set(fixed.x, fixed.y, fixed.z);
     }
@@ -836,6 +925,9 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
     },
     dispose() {
       window.removeEventListener('wheel', onWheel, { capture: true });
+      document.removeEventListener('gesturestart', onGestureStart);
+      document.removeEventListener('gesturechange', onGestureChange);
+      document.removeEventListener('gestureend', onGestureEnd);
       window.removeEventListener('keydown', onKeyDownCapture, { capture: true });
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
