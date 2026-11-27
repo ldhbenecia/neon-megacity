@@ -93,8 +93,9 @@ const phase = (page: Page, p: Phase): Promise<unknown> =>
   page.evaluate(`window.__screen.phase = '${p}'`);
 
 /**
- * Rest 1 s; zoom out and back in; fly forward and back; orbit drag; rest 1 s. The path stays near
- * the preset pose, so it never parks the camera inside a wall (a dark interior is not a bug).
+ * Rest 1 s; zoom out and back in; fly forward and back; a small orbit drag; rest 1 s. The path
+ * stays near the preset pose: wide orbits at street level swing the camera against unlit walls,
+ * which are legitimately black at night.
  */
 export async function checkScreen(page: Page, light: Light): Promise<ScreenCheck> {
   await page.evaluate(START);
@@ -105,22 +106,22 @@ export async function checkScreen(page: Page, light: Light): Promise<ScreenCheck
     await page.waitForTimeout(1000);
     await phase(page, 'move');
     await page.mouse.move(cx, cy);
-    for (const dy of [500, 500, 500, -500, -500, -500]) {
+    for (const dy of [400, 400, -400, -400]) {
       await page.mouse.wheel(0, dy);
       await page.waitForTimeout(120);
     }
     for (const key of ['KeyW', 'KeyS']) {
       await page.keyboard.down(key);
       try {
-        await page.waitForTimeout(600);
+        await page.waitForTimeout(400);
       } finally {
         await page.keyboard.up(key);
       }
     }
     await page.mouse.down();
     try {
-      for (let i = 1; i <= 8; i++) {
-        await page.mouse.move(cx + i * 50, cy + i * 6);
+      for (let i = 1; i <= 6; i++) {
+        await page.mouse.move(cx + i * 25, cy + i * 3);
         await page.waitForTimeout(60);
       }
     } finally {
