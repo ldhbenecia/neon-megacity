@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { buildingFaces, buildingTop, terrainHeight } from '../city/layout';
-import { pointSegmentDistance } from '../city/math';
+import { pointSegmentDistance, toLocal } from '../city/math';
 import { GridHash, segmentBounds } from '../city/spatial';
 import type { BuildingsApi, CityModuleInstance, Ctx, Road } from '../core/types';
 import { GeoBuilder } from './builder';
@@ -101,12 +101,20 @@ function collectChunks(LAYOUT: Ctx['LAYOUT'], grid: ChunkGrid): Chunk[] {
     namsanMast(c.l1, l.x, y0, l.z, l.h, 1);
     namsanMast(c.l2, l.x, y0, l.z, l.h, 2);
   }
+  // The wall opens for roads and for the gate hall standing on its line.
+  const halls = LAYOUT.buildings.filter((b) => b.archetype === 'palaceHall');
+  const inHall = (x: number, z: number): boolean =>
+    halls.some((h) => {
+      const l = toLocal(x - h.x, z - h.z, h.rotY);
+      return Math.abs(l.x) <= h.w / 2 + 2 && Math.abs(l.z) <= h.d / 2 + 2;
+    });
+  const gate = (x: number, z: number): boolean => onStreet(x, z) || inHall(x, z);
   for (const zone of LAYOUT.districts) {
     if (zone.kind !== 'palace') continue;
     zone.polygon.forEach((a, i) => {
       const b = zone.polygon[(i + 1) % zone.polygon.length];
       if (!b) return;
-      palaceWall(chunkAt((a.x + b.x) / 2, (a.z + b.z) / 2).l1, a, b, terrainHeight, onStreet);
+      palaceWall(chunkAt((a.x + b.x) / 2, (a.z + b.z) / 2).l1, a, b, terrainHeight, gate);
     });
   }
   return [...chunks.values()];
