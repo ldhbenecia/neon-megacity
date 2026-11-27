@@ -93,6 +93,14 @@ describe('QualityController', () => {
     expect(c.reset()).toMatchObject({ tier: 'high', dpr: 1.5 });
   });
 
+  it('reset(tier) jumps to any tier at its DPR cap (quality picker)', () => {
+    const c = new QualityController('high', 2, false);
+    expect(c.reset('low')).toEqual({ tier: 'low', dpr: 0.75, tierChanged: true });
+    expect(c.state).toEqual({ tier: 'low', dpr: 0.75 });
+    expect(c.reset('medium')).toEqual({ tier: 'medium', dpr: 1, tierChanged: true });
+    expect(c.reset('medium')).toBeNull();
+  });
+
   it('climbs back on a 60 Hz display, where frames never go below 16.7 ms', () => {
     const c = new QualityController('high', 2, false);
     run(c, 30, 12);

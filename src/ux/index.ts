@@ -4,6 +4,7 @@ import { createCameraRig, type CameraRig, type RigDebug } from './cameraRig';
 import { createControls } from './controls';
 import { createHud, type Hud } from './hud';
 import { reducedMotion } from './loader';
+import type { UserTier } from './quality';
 import { createPerf, estimateMemory, type FrameStats, type Perf } from './perf';
 import {
   LAYOUT,
@@ -43,6 +44,8 @@ export interface UxOptions {
   resize: () => void;
   /** env.quality came from ?quality= or a stored pick: the controller leaves it alone. */
   manualQuality: boolean;
+  /** The renderer-based tier guess, used when the user switches back to automatic quality. */
+  autoTier: UserTier;
   /** Runs the ctx.onQuality handlers after a runtime tier change. */
   emitQuality: (q: Quality) => void;
 }
@@ -87,6 +90,7 @@ export function initUx(ctx: Ctx, opts: UxOptions): Ux {
     overlay: q.stats,
     resize: opts.resize,
     manual: opts.manualQuality,
+    autoTier: opts.autoTier,
     emitQuality: opts.emitQuality,
   });
 

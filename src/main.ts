@@ -73,9 +73,9 @@ async function boot(): Promise<void> {
   if (!container) throw new Error('#app container missing');
 
   const renderer = createRenderer();
-  if (!manualQuality) {
-    quality = tierFromRenderer(rendererName(renderer), navigator.maxTouchPoints > 1);
-  }
+  // The device guess; also where "auto" in the quality picker returns to after a manual pick.
+  const autoTier = tierFromRenderer(rendererName(renderer), navigator.maxTouchPoints > 1);
+  if (!manualQuality) quality = autoTier;
   // Pixel ratio is owned by ux/perf (adaptive, capped at 1.5).
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -169,6 +169,7 @@ async function boot(): Promise<void> {
     ...(query.cam ? { cam: query.cam } : {}),
     resize,
     manualQuality: manualQuality !== null,
+    autoTier,
     emitQuality: (q) => {
       for (const fn of [...qualityHandlers]) fn(q);
     },
