@@ -108,7 +108,15 @@ async function measure(browser: Browser, name: string, query: string): Promise<R
     return { deltas, boot, stats: r.stats(), memory: r.memory(), cpu: window.__city?.cpu ?? {} };
   }, frames);
   // After the frame timing: the motion burst moves the camera.
-  const screenCheck = screen ? await checkScreen(page) : null;
+  let screenCheck: ScreenCheck | null = null;
+  if (screen) {
+    try {
+      screenCheck = await checkScreen(page);
+    } catch (err) {
+      const none = { frames: 0, maxBlack: 0, minLum: 0 };
+      screenCheck = { rest: none, move: none, failures: [`screen check error: ${String(err)}`] };
+    }
+  }
   await page.close();
   const sorted = [...result.deltas].sort((a, b) => a - b);
   const q = (p: number): number =>
@@ -129,11 +137,8 @@ async function measure(browser: Browser, name: string, query: string): Promise<R
 
 function screenCell(c: ScreenCheck | null): string {
   if (!c) return '-';
-  const rest = c.shots.filter((s) => /^(idle|rest)/.test(s.tag));
-  const move = c.shots.filter((s) => !/^(idle|rest)/.test(s.tag));
-  const max = (xs: typeof c.shots): number => Math.max(0, ...xs.map((s) => s.black));
-  const lum = Math.min(...c.shots.map((s) => s.lum));
-  return `${max(rest)} / ${max(move)}, ${lum.toFixed(0)}${warn(c.failures.length > 0)}`;
+  const lum = Math.min(c.rest.minLum, c.move.minLum);
+  return `${c.rest.maxBlack} / ${c.move.maxBlack}, ${lum.toFixed(1)}${warn(c.failures.length > 0)}`;
 }
 
 const mb = (b: number): string => (b / 1024 / 1024).toFixed(1);
@@ -200,7 +205,7 @@ async function main(): Promise<void> {
       for (const [time, tname] of TIMES) {
         const name = `${preset} ${pname} · ${tname}`;
         if (only && !name.includes(only)) continue;
-        const query = `nogui&hud=0&stats&preset=${preset}&time=${time}&rain=0.35${quality ? `&quality=${quality}` : ''}`;
+        const query = `nogui&stats&preset=${preset}&time=${time}&rain=0.35${quality ? `&quality=${quality}` : ''}`;
         const r = await measure(browser, name, query);
         console.log(
           `${name}: ${r.frame.mean.toFixed(1)} ms, ${r.stats.calls} calls, ` +
