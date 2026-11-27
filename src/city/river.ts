@@ -577,11 +577,27 @@ const PEAKS: readonly { id: string; name: string; peak: Vec2; height: number }[]
   { id: 'wausan', name: '와우산', peak: { x: -1010, z: -700 }, height: 25 },
 ];
 
-/** Peaks; `radius` is the farthest reach of the mountain's range base from its peak. */
+/**
+ * Peaks. `radius` bounds the peak's share of its range: the spine nodes nearer to it than to the
+ * range's other peak, half a spine segment past them, plus the base half width. The radii of a
+ * range's peaks together cover all of its ground (h > 0), and a shared range is not covered
+ * twice (북악 and 인왕 split at the saddle).
+ */
 export const MOUNTAINS: readonly Mountain[] = PEAKS.map((m) => {
   const r = RANGES.find((g) => g.ids.includes(m.id)) as Range;
-  const reach = Math.max(...r.nodes.map((n) => Math.hypot(n.x - m.peak.x, n.z - m.peak.z)));
-  return { ...m, radius: Math.ceil(reach + r.width) };
+  const others = PEAKS.filter((q) => q.id !== m.id && r.ids.includes(q.id));
+  const d = (n: RangeNode, q: Vec2): number => Math.hypot(n.x - q.x, n.z - q.z);
+  const own = r.nodes.filter((n) => others.every((q) => d(n, m.peak) <= d(n, q.peak)));
+  // Only a shared range needs the half segment past the split (the saddle stretch).
+  let seg = 0;
+  for (let i = 0; i < r.nodes.length - 1 && others.length > 0; i++) {
+    const a = r.nodes[i] as RangeNode;
+    const b = r.nodes[i + 1] as RangeNode;
+    seg = Math.max(seg, Math.hypot(b.x - a.x, b.z - a.z));
+  }
+  const wide = Math.max(...r.nodes.map((n) => n.w ?? r.width));
+  const reach = Math.max(...own.map((n) => d(n, m.peak)));
+  return { ...m, radius: Math.ceil(reach + seg / 2 + wide) };
 });
 
 export const TERRAIN = {
@@ -641,7 +657,9 @@ function rangeHeight(r: Range, top: number, x: number, z: number): number {
 }
 
 /** Namsan's summit stays a level pad for the mast (SEOUL.md 4.5). */
-const NAMSAN_PAD = { x: -176, z: -389, r: 35, blend: 30, h: 95 };
+const NAMSAN = PEAKS.find((m) => m.id === 'namsan') as (typeof PEAKS)[number];
+// The pad sits a little under the spine top so it meets the ground ringing the summit.
+const NAMSAN_PAD = { x: NAMSAN.peak.x, z: NAMSAN.peak.z, r: 35, blend: 30, h: NAMSAN.height - 5 };
 
 /** Width of the embankment and park-edge slopes (m). */
 export const EMBANK_SLOPE = 4;
@@ -652,6 +670,11 @@ export const EMBANK_SLOPE = 4;
  */
 export function terrainHeight(x: number, z: number): number {
   CALLS.terrainHeight++;
+  return terrainSample(x, z).h;
+}
+
+/** Ground height and the peak height of the range that made it (0, 0 on the plain). */
+function terrainSample(x: number, z: number): { h: number; top: number } {
   let h = 0;
   let top = 1;
   for (let k = 0; k < RANGES.length; k++) {
@@ -663,7 +686,7 @@ export function terrainHeight(x: number, z: number): number {
       top = bx.top;
     }
   }
-  if (h === 0) return 0;
+  if (h === 0) return { h: 0, top: 0 };
   // Spurs and gullies: domain-warped ridged noise, growing from the mid slope up.
   const b = h / top;
   const wgt = smoothstep(0.08, 0.45, b);
@@ -680,7 +703,7 @@ export function terrainHeight(x: number, z: number): number {
     const f = 1 - smoothstep(NAMSAN_PAD.r, NAMSAN_PAD.r + NAMSAN_PAD.blend, pd);
     h += (NAMSAN_PAD.h - h) * f;
   }
-  if (h === 0) return 0;
+  if (h === 0) return { h: 0, top: 0 };
   // The palace grounds are a level court at the foot of 북악. The fade back to the slope is at
   // least PALACE_FADE m and grows with the ground it meets (2.5 m per m of height, up to
   // PALACE_FADE_MAX), so the cut stays near 60 % slope instead of a cliff.
@@ -688,7 +711,7 @@ export function terrainHeight(x: number, z: number): number {
   const dz = Math.max(PALACE_RECT.z0 - z, 0, z - PALACE_RECT.z1);
   const out = Math.hypot(dx, dz);
   const fade = clamp(2.5 * h, PALACE_FADE, PALACE_FADE_MAX);
-  return out >= fade ? h : h * smoothstep(0, fade, out);
+  return { h: out >= fade ? h : h * smoothstep(0, fade, out), top };
 }
 
 /** Walled palace grounds (SEOUL.md 4.5): level ground south of 북악. Shared with the zone. */
@@ -717,14 +740,10 @@ export const TALL_H = 40;
  * the local mountain's height. Nothing is built there (hillside houses stop below it).
  */
 export function isForest(x: number, z: number): boolean {
-  const h = terrainHeight(x, z);
+  const { h, top } = terrainSample(x, z);
   if (h <= 0) return false;
-  if (terrainSlope(x, z) > FOREST_SLOPE) return true;
-  for (const m of MOUNTAINS) {
-    if (Math.hypot(x - m.peak.x, z - m.peak.z) < m.radius && h > FOREST_LINE * m.height)
-      return true;
-  }
-  return false;
+  // The forest line is a share of the range that raised this ground, not of any nearby peak.
+  return h > FOREST_LINE * top || terrainSlope(x, z) > FOREST_SLOPE;
 }
 
 /**
