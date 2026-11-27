@@ -72,10 +72,11 @@ function glowText(
     return;
   }
   g.fillStyle = css(color);
-  g.shadowBlur = size * 0.35;
+  g.shadowBlur = size * 0.22;
   g.fillText(text, x, y, maxW);
   g.shadowBlur = 0;
-  g.fillStyle = mixCss(color, WHITE, 0.55);
+  // A tinted core rather than near-white, so strokes do not bloom into each other.
+  g.fillStyle = mixCss(color, WHITE, 0.3);
   g.fillText(text, x, y, maxW);
 }
 

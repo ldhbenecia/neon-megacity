@@ -990,7 +990,6 @@ function placeBanners(c: Ctx, rng: Rng): void {
 }
 
 const PAINT_CHANCE = 0.85;
-const WARM: ReadonlySet<NeonName> = new Set(['neonAmber', 'neonOrange']);
 
 // Seongsu: one big painted Korean name on the street wall of a warehouse, washed by warm lamps.
 function placePaint(c: Ctx, b: BuildingSpec, rng: Rng, zone: number): void {
@@ -998,17 +997,18 @@ function placePaint(c: Ctx, b: BuildingSpec, rng: Rng, zone: number): void {
   const fi = shopFaces(c, b)[0];
   const f = fi === undefined ? undefined : c.faces[b.id]?.[fi];
   if (!f || fi === undefined) return;
+  // Big painted name across more than half the wall, 2–4 syllables (SEOUL.md 4.3 brick).
   const usable = f.width - 2 * EDGE_IN;
-  const w = Math.min(14, usable * 0.75);
+  const w = Math.min(18, usable * 0.8);
   if (w < 5) return;
-  const h = Math.min(2.4, Math.max(1.4, w / 6));
-  const y0 = b.baseY + b.groundFloorH + rng.range(0.6, 2.4);
+  const h = Math.min(3, Math.max(1.4, w / 5));
+  const y0 = b.baseY + b.groundFloorH + rng.range(0.8, 2.2);
   const uc = rng.range(-(usable - w) / 2, (usable - w) / 2);
-  const warm = c.cat.byKind.band.filter((i) => {
+  const short = c.cat.byKind.band.filter((i) => {
     const k = c.cat.cells[i];
-    return k !== undefined && k.style === 0 && WARM.has(k.color);
+    return k !== undefined && k.style === 0 && !k.sub && k.text.replace(/\s+/g, '').length <= 5;
   });
-  const cell = warm.length ? rng.pick(warm) : pickCell(c, 'band', rng);
+  const cell = short.length ? rng.pick(short) : pickCell(c, 'band', rng);
   const s = tryWallSign(
     c,
     b,

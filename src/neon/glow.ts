@@ -1,14 +1,21 @@
 import * as THREE from 'three';
 import { ADDITIVE_TAIL, COMMON_PARS, PATH_PARS, neonMaterial, type NeonUniforms } from './glsl';
 
-// Halos, holograms, ground reflections, vehicle lights and fountains share one shader program (perf budget: every
+// Halos, holograms, ground reflections, vehicle lights, fountains and wall paint share one shader program (perf budget: every
 // distinct source or define is another program). `uMode` picks the branch at run time, so
 // only uniforms may differ between these materials, never defines or `side`.
-export const GlowMode = { halo: 0, holo: 1, decal: 2, vehicle: 3, fountain: 4 } as const;
+export const GlowMode = { halo: 0, holo: 1, decal: 2, vehicle: 3, fountain: 4, paint: 5 } as const;
 export type GlowMode = (typeof GlowMode)[keyof typeof GlowMode];
+
+const PAINT_DEFS = /* glsl */ `
+  #define PAINT_PAD_X 1.15
+  #define PAINT_RISE 2.4
+  #define PAINT_BELOW 0.2
+`;
 
 const VERTEX = /* glsl */ `
   ${COMMON_PARS}
+  ${PAINT_DEFS}
   ${PATH_PARS}
   uniform float uMode;
   uniform vec3 uHead; uniform vec3 uTail; uniform vec3 uGlowA; uniform vec3 uGlowB;
@@ -56,6 +63,17 @@ const VERTEX = /* glsl */ `
       vec3 n = vec3(c * n0.x + s * n0.z, 0.0, -s * n0.x + c * n0.z);
       float facing = dot(safeNormalize(cameraPosition - world, vec3(0.0, 1.0, 0.0)), n);
       vFace = smoothstep(0.35, 0.85, abs(facing)) * sign(facing);
+    } else if (uMode > 4.5) {
+      // Painted wall lettering (iPos = bottom centre on the wall, iParam.xy = wall normal,
+      // iSize = lettering width and height); the quad extends up to the gooseneck lamps.
+      vec3 n = vec3(iParam.x, 0.0, iParam.y);
+      vec3 t = vec3(iParam.y, 0.0, -iParam.x);
+      vec3 world = iPos.xyz + t * (position.x * iSize.x * PAINT_PAD_X)
+        + vec3(0.0, (position.y * PAINT_RISE - PAINT_BELOW) * iSize.y, 0.0) + n * 0.06;
+      mvPosition = viewMatrix * vec4(world, 1.0);
+      vUv = vec2(position.x + 0.5, position.y);
+      vRect = iRect;
+      vParam = iParam;
     } else if (uMode > 3.5) {
       // Water jets from the deck edge (iPos, iPos.w long, along iParam.xy, spraying to side
       // iParam.z): out iSize.x and down iSize.y to the water on a parabola, fanning along the deck.
@@ -131,6 +149,7 @@ const VERTEX = /* glsl */ `
 
 const FRAGMENT = /* glsl */ `
   ${COMMON_PARS}
+  ${PAINT_DEFS}
   uniform float uMode; uniform sampler2D uAtlas; uniform vec3 uTint;
   uniform vec3 uHead; uniform vec3 uTail; uniform vec3 uGlowA; uniform vec3 uGlowB;
   varying vec2 vUv; varying vec3 vCol; varying float vAlpha; varying vec4 vRect; varying vec4 vParam;
@@ -158,6 +177,31 @@ const FRAGMENT = /* glsl */ `
       vec3 col = mix(tex, uTint * lum, 0.35) * 3.0;
       float a = vParam.y * scan * smoothstep(0.03, 0.25, lum) * vPower * uGain * abs(vFace);
       gl_FragColor = vec4(col * a, 1.0);
+    } else if (uMode > 4.5) {
+      // Lettering occupies the lower part of the quad; three warm cones fall from lamps above.
+      float vy = vUv.y * PAINT_RISE - PAINT_BELOW;
+      vec2 tuv = vec2((vUv.x - 0.5) * PAINT_PAD_X + 0.5, vy);
+      float inside = step(0.0, tuv.x) * step(tuv.x, 1.0) * step(0.0, tuv.y) * step(tuv.y, 1.0);
+      vec3 tex = texture2D(uAtlas, vRect.xy + clamp(tuv, 0.01, 0.99) * vRect.zw).rgb;
+      float letter = inside * smoothstep(0.25, 0.6, max(tex.r, max(tex.g, tex.b)));
+      float lit = 0.0;
+      float heads = 0.0;
+      float lampY = PAINT_RISE - PAINT_BELOW - 0.15;
+      for (int i = 0; i < 3; i++) {
+        float lx = 0.2 + 0.3 * float(i);
+        float dy = lampY - vy;
+        float spread = 0.06 + max(dy, 0.0) * 0.08;
+        float dx = (vUv.x - lx) / spread;
+        lit += exp(-dx * dx) * smoothstep(0.0, 0.3, dy) * clamp(1.0 - dy * 0.35, 0.0, 1.0);
+        vec2 hd = vec2((vUv.x - lx) * 8.0, (vy - lampY - 0.05) * 3.0);
+        heads += exp(-dot(hd, hd) * 6.0);
+      }
+      // The wash fades out well inside the quad, so no rectangle edge shows on the wall.
+      lit *= smoothstep(0.0, 0.15, vUv.x) * smoothstep(0.0, 0.15, 1.0 - vUv.x)
+        * smoothstep(0.0, 0.2, vUv.y);
+      float night = mix(0.25, 1.0, uNight);
+      vec3 col = uTail * lit * 0.18 + uHead * letter * lit * 0.9 + uTail * heads * 2.0;
+      gl_FragColor = vec4(col * night * uPower, 1.0);
     } else if (uMode > 3.5) {
       if (vFade <= 0.0) discard;
       float sArc = vUv.y;
@@ -203,7 +247,8 @@ const FRAGMENT = /* glsl */ `
         // patches with the road roughness instead of an even disc.
         float d = dot(vUv, vUv);
         float a = exp(-d * 6.0) * (1.0 - smoothstep(0.6, 1.0, d));
-        float patchy = 0.45 + 0.55 * vnoise(vWorld * 0.45);
+        // 0.3–1 m grain: wet asphalt texture, not a shadow-sized blot.
+        float patchy = 0.72 + 0.28 * vnoise(vWorld * 2.2);
         float wetMix = mix(1.0, patchy, clamp(uWet, 0.0, 1.0));
         vec3 c = mix(vCol, vec3(dot(vCol, vec3(0.2126, 0.7152, 0.0722))), 0.35);
         gl_FragColor = vec4(c * 0.7 * a * wetMix * vFade * uNight * uPower, 1.0);

@@ -12,6 +12,9 @@ export function neonHdr(name: NeonName, t: number): number {
   return a + (b - a) * t;
 }
 
+/** HDR multiplier cap for signs seen up close (bloom starts just above). */
+const NEAR_HDR = 1.1;
+
 const FAR_FADE_KINDS = new Set(['band', 'blade', 'panel', 'ad', 'tent']);
 
 export function buildFlatSigns(
@@ -65,7 +68,7 @@ export function buildFlatSigns(
       ${COMMON_PARS}
       attribute vec3 iPos; attribute vec4 iDir; attribute vec4 iSize; attribute vec4 iRect; attribute vec4 iAnim;
       varying vec2 vUv; varying vec4 vRect; varying vec4 vSize; varying vec4 vAnim; varying float vDouble;
-      varying float vFar; varying float vPower;
+      varying float vFar; varying float vPower; varying float vNear;
       #include <fog_pars_vertex>
       void main() {
         vec3 n = vec3(iDir.x, 0.0, iDir.y);
@@ -76,15 +79,18 @@ export function buildFlatSigns(
         vUv = uv; vRect = iRect; vSize = iSize; vAnim = iAnim; vDouble = iDir.z;
         float dist = length(cameraPosition - iPos);
         vFar = iDir.w > 0.5 ? 1.0 - smoothstep(600.0, 700.0, dist) : 1.0;
+        // Close up, keep strokes under bloom saturation so Korean lettering stays legible.
+        vNear = 1.0 - smoothstep(25.0, 140.0, dist);
         vPower = powerOn(iAnim.z, iAnim.y * 50.0);
         #include <fog_vertex>
       }
     `,
     fragmentShader: /* glsl */ `
       ${COMMON_PARS}
+      #define NEAR_HDR ${NEAR_HDR.toFixed(2)}
       uniform sampler2D uAtlas;
       varying vec2 vUv; varying vec4 vRect; varying vec4 vSize; varying vec4 vAnim; varying float vDouble;
-      varying float vFar; varying float vPower;
+      varying float vFar; varying float vPower; varying float vNear;
       #include <fog_pars_fragment>
       void main() {
         if (vFar < 1.0 && nHash2(gl_FragCoord.xy) > vFar) discard;
@@ -117,7 +123,8 @@ export function buildFlatSigns(
           float rate = mix(0.5, 2.0, fract(vAnim.y * 7.0));
           if (glyph == target) on *= step(0.45, nHash(floor(uTime * rate * 2.0) + vAnim.y * 31.0));
         }
-        float boost = mix(1.0, vAnim.w, smoothstep(0.08, 0.55, lum));
+        float hdr = mix(vAnim.w, min(vAnim.w, NEAR_HDR), vNear);
+        float boost = mix(1.0, hdr, smoothstep(0.08, 0.55, lum));
         vec3 board = col * 0.6;
         gl_FragColor = vec4(mix(board, col * boost * uGain, on), 1.0);
         ${EMISSIVE_TAIL}

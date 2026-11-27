@@ -26,6 +26,7 @@ import { createLightPool, type LightCandidate } from './lights';
 import { placeSigns, roadGapIndex, type FlatSign, type Placement } from './placement';
 import { buildHolograms, buildRings, buildScreens } from './screens';
 import { buildFountains, fountainJets, fountainJetsFromNozzles } from './fountain';
+import { buildPaint } from './paint';
 import { createSelection } from './selection';
 import {
   buildEmissiveSolids,
@@ -75,18 +76,7 @@ function haloList(P: Placement): HaloInstance[] {
     });
   }
   for (const f of P.flats) {
-    if (f.wash) {
-      // Warm wall wash: a wide soft tungsten glow around painted lettering.
-      out.push({
-        x: f.x,
-        y: f.y + f.h * 0.4,
-        z: f.z,
-        size: Math.sqrt(f.w * f.h) * 1.1,
-        color: signColor('neonAmber', 0.55),
-        zone: f.zone,
-      });
-      continue;
-    }
+    if (f.wash) continue;
     if (f.kind !== 'vtext') continue;
     out.push({
       x: f.x,
@@ -269,7 +259,16 @@ export function init(ctx: Ctx): CityModuleInstance {
   const street = planStreet(L, catalog, sidewalkH);
   const P = placeSigns(L, faces, catalog, { reserved: street.flats.length });
 
-  const flats = buildFlatSigns(shared, atlas.texture, catalog, [...P.flats, ...street.flats]);
+  const flats = buildFlatSigns(shared, atlas.texture, catalog, [
+    ...P.flats.filter((f) => !f.wash),
+    ...street.flats,
+  ]);
+  const paint = buildPaint(
+    shared,
+    atlas.texture,
+    catalog,
+    P.flats.filter((f) => f.wash),
+  );
   const solidMat = emissiveSolidMaterial(shared);
   const tubes: SolidInstance[] = P.tubes.map((t) => ({
     x: t.x,
@@ -350,7 +349,7 @@ export function init(ctx: Ctx): CityModuleInstance {
     shared,
     decalList(P, street, faces, roadY, roadGapIndex(ctx.LAYOUT)),
   );
-  for (const m of [screens, rings, holos, halos, decals]) {
+  for (const m of [screens, rings, holos, halos, decals, paint]) {
     disposables.push(m.geometry, m.material as THREE.Material);
   }
   const nozzles = infraExtras(ctx).fountainNozzles;
@@ -365,6 +364,7 @@ export function init(ctx: Ctx): CityModuleInstance {
     crossMesh,
     crossPoles,
     bannerCables,
+    paint,
     screens,
     rings,
     holos,
@@ -413,7 +413,7 @@ export function init(ctx: Ctx): CityModuleInstance {
   const folder = ctx.gui.addFolder('Neon');
   const view = { signs: true, traffic: true, halos: true, reflections: true, holograms: true };
   folder.add(view, 'signs').onChange((v: boolean) => {
-    for (const m of [flats, tubeMesh, crossMesh, crossPoles, bannerCables, screens, rings])
+    for (const m of [flats, tubeMesh, crossMesh, crossPoles, bannerCables, paint, screens, rings])
       m.visible = v;
   });
   folder.add(view, 'traffic').onChange((v: boolean) => (traffic.group.visible = v));
