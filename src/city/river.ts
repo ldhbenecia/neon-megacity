@@ -342,7 +342,10 @@ function southBankZ(x: number): number {
 function saetgangLine(): Vec2[] {
   const pts: Vec2[] = [];
   for (let x = SAETGANG_X0; x <= SAETGANG_X1 + 1e-6; x += 12) {
-    pts.push({ x, z: southBankZ(x) + saetgangOffset(x) + SAETGANG_WIDTH / 2 - 20 });
+    // The mouths stop SAETGANG_MOUTH m south of the bank: 올림픽대로 runs along the bank on an
+    // embankment, and 샛강 passes under it in culverts rather than as open water.
+    const off = Math.max(saetgangOffset(x), SAETGANG_MOUTH);
+    pts.push({ x, z: southBankZ(x) + off + SAETGANG_WIDTH / 2 - 20 });
   }
   return pts;
 }
@@ -362,6 +365,8 @@ function sideChannelDistance(ch: SideChannel, x: number, z: number): number {
   if (x < first.x - 200 || x > last.x + 200 || z < first.z - 600 || z > first.z + 900) {
     return Infinity;
   }
+/** Shortest distance (m) of the 샛강 centerline offset from the south bank (clear of 올림픽대로). */
+const SAETGANG_MOUTH = 75;
   let best = Infinity;
   for (let i = 0; i < c.length - 1; i++) {
     best = Math.min(best, pointSegmentDistance(p, c[i] as Vec2, c[i + 1] as Vec2));

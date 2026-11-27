@@ -734,6 +734,13 @@ describe('layout v3: water and islands', () => {
       }
     }
     for (const s of LAYOUT.slots) expect(s.y, s.kind).toBeGreaterThan(RIVER.waterY + 0.5);
+    // At-grade highways too (elevated decks may cross water).
+    for (const hw of LAYOUT.highways.filter((h) => h.kind === 'atGrade')) {
+      for (const p of highwaySamples(hw, 4)) {
+        if (Math.abs(p.x) > CITY.halfX || Math.abs(p.z) > CITY.halfZ) continue;
+        expect(surfaceHeight(p.x, p.z), `${hw.id} at ${Math.round(p.x)}`).toBeGreaterThan(-1);
+      }
+    }
   }, 60_000);
 
   it('keeps island outlines and the 샛강 centerline free of self-intersections', () => {
