@@ -9,7 +9,7 @@ import { chromium, type Browser } from '@playwright/test';
 import { preview } from 'vite';
 import { SWIFTSHADER_ARGS, collectErrors } from '../tests/e2e/helpers';
 import { bundleGzip } from './bundle';
-import { checkScreen, type ScreenCheck } from './screen';
+import { checkScreen, lightAt, type ScreenCheck } from './screen';
 
 const PRESETS = [
   [1, '강변 히어로'],
@@ -79,7 +79,12 @@ interface Result {
   errors: string[];
 }
 
-async function measure(browser: Browser, name: string, query: string): Promise<Result> {
+async function measure(
+  browser: Browser,
+  name: string,
+  query: string,
+  time: number,
+): Promise<Result> {
   const page = await browser.newPage({ viewport: VIEWPORT, deviceScaleFactor: 2 });
   const errors = collectErrors(page);
   await page.goto(`${BASE}?${query}`);
@@ -111,7 +116,7 @@ async function measure(browser: Browser, name: string, query: string): Promise<R
   let screenCheck: ScreenCheck | null = null;
   if (screen) {
     try {
-      screenCheck = await checkScreen(page);
+      screenCheck = await checkScreen(page, lightAt(time));
     } catch (err) {
       const none = { frames: 0, maxBlack: 0, minLum: 0 };
       screenCheck = { rest: none, move: none, failures: [`screen check error: ${String(err)}`] };
@@ -206,7 +211,7 @@ async function main(): Promise<void> {
         const name = `${preset} ${pname} · ${tname}`;
         if (only && !name.includes(only)) continue;
         const query = `nogui&stats&preset=${preset}&time=${time}&rain=0.35${quality ? `&quality=${quality}` : ''}`;
-        const r = await measure(browser, name, query);
+        const r = await measure(browser, name, query, time);
         console.log(
           `${name}: ${r.frame.mean.toFixed(1)} ms, ${r.stats.calls} calls, ` +
             `${(r.stats.triangles / 1e6).toFixed(2)} M tris, boot ${ms(r.boot.interactive)} ms` +

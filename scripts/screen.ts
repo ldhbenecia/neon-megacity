@@ -23,18 +23,29 @@ export interface ScreenCheck {
 }
 
 /**
- * At rest, more black than this fails. Measured on Metal: night overview ≤ 17 %, night street
- * ~16 % (dark asphalt); SwiftShader night street 12–14 %.
+ * Black-pixel limits (% of a frame) by time of day. Day and sunset views are bright when healthy
+ * (Metal: 1–3 % black), so a black rectangle stands out. Night views are legitimately dark
+ * (Metal, fixed build: up to 76 % at rest on the hillside preset, 68 % while moving), so at night
+ * only an almost entirely black frame fails: the reported night symptom is whole black frames.
  */
-export const REST_BLACK_MAX = 30;
-/** While moving, more black than this in any single frame fails (whole-frame flashes). */
-export const MOVE_BLACK_MAX = 50;
+export const BLACK_MAX = {
+  day: { rest: 30, move: 50 },
+  night: { rest: 90, move: 90 },
+} as const;
 /** Any frame darker than this on average fails. */
 export const LUM_MIN = 2;
 
+export type Light = keyof typeof BLACK_MAX;
+
+/** Night limits for time of day (0..1) before 05:00 or after 20:00, day limits otherwise. */
+export function lightAt(time: number): Light {
+  return time < 5 / 24 || time > 20 / 24 ? 'night' : 'day';
+}
+
 /** Pure verdict, shared by the perf table and its unit test. */
-export function judgeScreen(rest: PhaseStats, move: PhaseStats): string[] {
+export function judgeScreen(rest: PhaseStats, move: PhaseStats, light: Light): string[] {
   const out: string[] = [];
+  const limits = BLACK_MAX[light];
   const check = (name: Phase, s: PhaseStats, max: number): void => {
     if (s.frames === 0) out.push(`${name}: no frames sampled`);
     if (s.maxBlack > max) out.push(`${name}: a frame was ${s.maxBlack}% black (max ${max}%)`);
@@ -42,8 +53,8 @@ export function judgeScreen(rest: PhaseStats, move: PhaseStats): string[] {
       out.push(`${name}: a frame had mean brightness ${s.minLum} (min ${LUM_MIN})`);
     }
   };
-  check('rest', rest, REST_BLACK_MAX);
-  check('move', move, MOVE_BLACK_MAX);
+  check('rest', rest, limits.rest);
+  check('move', move, limits.move);
   return out;
 }
 
@@ -85,7 +96,7 @@ const phase = (page: Page, p: Phase): Promise<unknown> =>
  * Rest 1 s; zoom out and back in; fly forward and back; orbit drag; rest 1 s. The path stays near
  * the preset pose, so it never parks the camera inside a wall (a dark interior is not a bug).
  */
-export async function checkScreen(page: Page): Promise<ScreenCheck> {
+export async function checkScreen(page: Page, light: Light): Promise<ScreenCheck> {
   await page.evaluate(START);
   const vp = page.viewportSize() ?? { width: 1600, height: 900 };
   const cx = vp.width / 2;
@@ -122,5 +133,5 @@ export async function checkScreen(page: Page): Promise<ScreenCheck> {
     await page.evaluate('window.__screen.on = false');
   }
   const acc = await page.evaluate<{ rest: PhaseStats; move: PhaseStats }>('window.__screen.acc');
-  return { ...acc, failures: judgeScreen(acc.rest, acc.move) };
+  return { ...acc, failures: judgeScreen(acc.rest, acc.move, light) };
 }
