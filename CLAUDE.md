@@ -46,7 +46,7 @@ Read `docs/ARCHITECTURE.md` before editing. Summary:
 - Pure logic (layout, time-of-day math, placement) lives in side-effect-free functions with unit tests in `tests/`.
 - Use only current three r0.187 APIs. No deprecated APIs (`Clock` → `Timer`, `outputEncoding` → `outputColorSpace`, `mergeBufferGeometries` → `mergeGeometries`, set `colorSpace` on color textures).
 - No external asset files or CDNs: all textures are procedural (canvas / shaders).
-- 실제 서울 지리(지명, 대교, 지역구, 산)는 사용한다. 실존 브랜드·기업 로고·상호 금지. 실존 건물은 복제하지 않고 실루엣만 연상. 기존 게임·애니메이션의 이름·캐릭터·장소 금지. 한자 금지. (`docs/SEOUL.md`)
+- 실제 서울 지리(지명, 대교, 지역구, 산)는 사용한다. 궁궐 같은 역사 유적(경복궁의 광화문, 근정전, 경회루 등)은 실제 이름과 배치를 따른다. 실존 브랜드·기업 로고·상호 금지. 현대의 실존 건물은 복제하지 않고 실루엣만 연상. 기존 게임·애니메이션의 이름·캐릭터·장소 금지. 한자 금지. (`docs/SEOUL.md`)
 - 코드 주석은 코드만으로 알 수 없는 필수 정보만 쓴다.
 - 고층 미디어(거대 스크린, 링 광고판, 옥상 크라운, 가상 기업 로고)는 영어, 저층 간판은 한글로 쓴다. 아파트 단지명은 고층이어도 한글로 쓴다.
 - `env.quality`를 읽는 품질 분기 코드는 어느 모듈 폴더에 있든 성능 작업을 맡은 쪽이 소유한다. 필드 값 자체는 ux가 부팅 때 쓴다.
