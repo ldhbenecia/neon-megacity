@@ -291,6 +291,11 @@ body {
 .segmented-4 {
   grid-template-columns: repeat(4, 1fr);
 }
+/* Text-only options: no icon row, so a single centred line. */
+.segmented.segmented-4 button {
+  justify-content: center;
+  min-height: 34px;
+}
 .quality-now {
   color: var(--c-faint);
   font-weight: 400;
