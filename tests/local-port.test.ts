@@ -1,9 +1,22 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { localPort } from './e2e/helpers';
 
+const KEYS = ['E2E_PORT', 'SHOTS_PORT', 'PERF_PORT'] as const;
+
 describe('localPort', () => {
+  let saved: Partial<Record<(typeof KEYS)[number], string>> = {};
+  beforeEach(() => {
+    saved = {};
+    for (const k of KEYS) {
+      saved[k] = process.env[k];
+      delete process.env[k];
+    }
+  });
   afterEach(() => {
-    delete process.env.E2E_PORT;
+    for (const k of KEYS) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
   });
 
   it('is stable per worktree, distinct per tool and inside 4200–4979', () => {
