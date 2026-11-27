@@ -74,6 +74,9 @@ function emissiveBasic(params: THREE.MeshBasicMaterialParameters): THREE.MeshBas
   return m;
 }
 
+/** Static lights by day, relative to night (on top of env.neonGain): structure leads by day. */
+const DAY_LIGHTS = 0.35;
+
 const DETAIL_KEYS = ['steel', 'glow', 'markings'] as const satisfies readonly (keyof DetailParts)[];
 
 interface DetailLod {
@@ -304,7 +307,8 @@ export function init(ctx: Ctx): CityModuleInstance {
           });
         }
       }
-      const gain = ctx.env.neonGain * ctx.env.powerOn * settings.gain;
+      const day = DAY_LIGHTS + (1 - DAY_LIGHTS) * ctx.env.nightFactor;
+      const gain = ctx.env.neonGain * ctx.env.powerOn * settings.gain * day;
       for (const m of emissive) m.color.setScalar(gain);
     },
     dispose() {

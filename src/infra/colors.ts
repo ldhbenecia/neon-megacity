@@ -78,7 +78,7 @@ export function infraColors(): InfraColors {
     diamondPoint: lin(NEON.neonOrange.hex, 4),
     pylonRing: lin(NEON.neonCyan.hex, 4),
     pylonBand: lin(NEON.neonOrange.hex, 4),
-    laneLamp: lin(NEON.neonAmber.hex, 2.5),
+    laneLamp: lin(NEON.neonAmber.hex, 1.5),
     deckBand: lin(NEON.neonWhite.hex, 2),
     islandWash: lin(NEON.neonTeal.hex, 0.7),
     islandStrip: lin(NEON.neonTeal.hex, 4),

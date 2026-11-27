@@ -335,6 +335,8 @@ const buildGirder: BridgeBuilder = (b, f, parts, c, obstacles) => {
     (low === undefined ? b.deckY : lowerDeckAt(b, f, low, s)) - DECK_THICKNESS;
   const stations = pushPiers(b, f, parts, top, pierW, pierD, obstacles);
   if (low === undefined) buildBoxGirder(b, f, parts, c, stations);
+  // The fountain (neon) is the hero of a 'fountain' bridge: no pier uplights competing with it.
+  if (b.motif === 'fountain') return;
   buildPierWashes(
     f,
     parts,
