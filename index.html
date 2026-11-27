@@ -459,6 +459,7 @@
       <div class="hud-brand">
         <span class="brand-mark" aria-hidden="true"></span>
         <span class="brand-name">한강 <span class="brand-sep">//</span> HANGANG</span>
+        <span id="hud-district" class="hud-district" aria-live="polite"></span>
         <span id="hud-mode" class="hud-mode" hidden></span>
       </div>
 
@@ -508,6 +509,16 @@
           <h2 class="panel-label" id="preset-label">카메라 위치</h2>
           <div class="chips" role="group" aria-labelledby="preset-label" id="preset-chips"></div>
         </div>
+
+        <details class="panel-group district-group" id="district-group" open>
+          <summary class="panel-label" id="district-label">구역으로 이동</summary>
+          <div
+            class="districts"
+            role="group"
+            aria-labelledby="district-label"
+            id="district-chips"
+          ></div>
+        </details>
 
         <div class="panel-group panel-switches">
           <button type="button" class="switch" role="switch" aria-checked="false" id="sw-cinematic">
