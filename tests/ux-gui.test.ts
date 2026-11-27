@@ -18,6 +18,13 @@ describe('stubGui', () => {
     expect(params.on).toBe(true);
   });
 
+  it('converts to a string and iterates as empty', () => {
+    const gui = stubGui();
+    expect((gui as unknown as { toString(): string }).toString()).toBe('[gui stub]');
+    expect(gui.controllers).toEqual([]);
+    expect(gui.folders).toEqual([]);
+  });
+
   it('is not a thenable, so awaiting it resolves to the stub', async () => {
     const gui = await createGui(false);
     expect(typeof (gui as unknown as { then?: unknown }).then).toBe('undefined');
