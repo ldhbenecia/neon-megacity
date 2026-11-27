@@ -23,7 +23,14 @@ import {
   type Flight,
   type Pose,
 } from './motion';
-import { CINEMATIC_ORDER, DEFAULT_PRESET, cinematicKeys, rigPreset, rigPresets } from './presets';
+import {
+  CINEMATIC_ORDER,
+  DEFAULT_PRESET,
+  cinematicKeys,
+  districtViewById,
+  rigPreset,
+  rigPresets,
+} from './presets';
 import { CAMERA_LIMITS } from '../core/query';
 
 export interface RigDebug {
@@ -38,6 +45,8 @@ export interface CameraRig {
   update(dt: number, elapsed: number): void;
   readonly mode: RigMode;
   goPreset(key: number): void;
+  /** Flies to a zone's view (`districtViews`); false for an unknown id. */
+  goDistrict(id: string): boolean;
   readonly preset: number | null;
   setCinematic(on: boolean): void;
   setFly(on: boolean): void;
@@ -56,7 +65,7 @@ export interface RigOptions {
 
 const BASE_FOV = 55;
 const IDLE_CINEMATIC_S = 90;
-const CINEMATIC_LOOP_S = 150;
+const CINEMATIC_LOOP_S = 180;
 const LOOK_SENSITIVITY = 0.0022;
 const CLICK_PX = 4;
 const TAP_PX = 6;
@@ -231,6 +240,15 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
     presetKey = p.key;
     hud.toast(`프리셋 ${p.key} · ${p.name}`);
     flyTo(p);
+  };
+
+  const goDistrict = (id: string): boolean => {
+    const d = districtViewById(id);
+    if (!d) return false;
+    presetKey = null;
+    hud.toast(d.name);
+    flyTo(d);
+    return true;
   };
 
   const orbitAround = (raw: Pose): void => {
@@ -770,6 +788,7 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
       camState.fly = mode === 'fly';
     },
     goPreset,
+    goDistrict,
     get preset() {
       return presetKey;
     },
