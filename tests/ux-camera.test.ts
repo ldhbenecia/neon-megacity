@@ -18,7 +18,6 @@ import {
   pick,
   raycastSurface,
   resolveCollision,
-  viewClearance,
   WALL_MARGIN,
 } from '../src/ux/collision';
 import {
@@ -129,14 +128,6 @@ describe('collision', () => {
     expect(buildingContaining(LAYOUT, out!.x, out!.y, out!.z)).toBeNull();
     // Running it again on the result is a no-op (stable, no jitter).
     expect(resolveCollision(LAYOUT, out!)).toBeNull();
-  });
-
-  it('scales the view clearance with height, 12..100 m', () => {
-    for (const b of LAYOUT.buildings) {
-      expect(viewClearance(b)).toBeGreaterThanOrEqual(12);
-      expect(viewClearance(b)).toBeLessThanOrEqual(100);
-    }
-    expect(viewClearance(tall)).toBe(100);
   });
 
   it('never leaves the camera inside a building and settles in one call', () => {

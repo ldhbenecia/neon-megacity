@@ -18,14 +18,6 @@ import {
 export const GROUND_CLEARANCE = 2;
 export const WATER_CLEARANCE = 3;
 export const WALL_MARGIN = 1.5;
-/**
- * Distance (12..100 m, 40 % of the building's height) inside which a building face starts to fill
- * the view. Not a collision margin: the cursor zoom stops there unless the gesture starts closer.
- */
-export function viewClearance(b: BuildingSpec): number {
-  return Math.min(100, Math.max(12, buildingTop(b) * 0.4));
-}
-
 // A point pushed onto the margin boundary must count as outside despite rotation round-off.
 const EDGE_EPS = 1e-6;
 
@@ -148,13 +140,15 @@ export function resolveCollision(L: Layout, p: Vec3, margin = WALL_MARGIN): Vec3
   const r = settle(L, p, margin);
   if (r.settled) return r.moved ? r.at : null;
   if (buildingContaining(L, p.x, p.y, p.z) === null) return null;
-  let at = r.at;
+  // Rise straight up from where the camera was, not from wherever the oscillation stopped.
+  let at: Vec3 = { x: p.x, y: p.y, z: p.z };
   for (let i = 0; i < 4; i++) {
     const id = buildingContaining(L, at.x, at.y, at.z);
     if (id === null) break;
     at = { x: at.x, y: buildingTop(L.buildings[id] as BuildingSpec) + margin, z: at.z };
   }
-  return at;
+  const after = settle(L, at, margin);
+  return after.settled ? after.at : at;
 }
 
 const dist2 = (a: Vec3, b: Vec3): number => (a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2;
