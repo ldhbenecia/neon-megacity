@@ -6,7 +6,7 @@ import {
   cameraFloor,
   frameBuildingClear,
   pick,
-  resolveCollision,
+  resolveCamera,
   standoff,
   targetFloor,
 } from './collision';
@@ -464,7 +464,7 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
     if (moved > 8 || elapsed - lastAnchorAt > 0.25 || near || offRay) {
       const hit = pickRay();
       const b = hit?.kind === 'building' ? LAYOUT.buildings[hit.id] : undefined;
-      zoomStop = b ? Math.max(6, standoff(b) * 4) : 6;
+      zoomStop = b ? Math.max(6, standoff(b) * 3) : 6;
       if (hit) zoomAnchor.set(hit.point.x, hit.point.y, hit.point.z);
       else
         zoomAnchor
@@ -645,7 +645,10 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
     if (s > 1 && orbit * s > CAMERA_LIMITS.maxDistance) {
       s = Math.max(1, CAMERA_LIMITS.maxDistance / orbit);
     }
-    if (s < 1 && toAnchor * s < zoomStop) s = Math.min(1, zoomStop / Math.max(toAnchor, 1e-6));
+    // Already inside the stop distance (zoomed there before, or moved close): allow zooming
+    // on down to the hard floor rather than freezing the wheel.
+    const stop = toAnchor > zoomStop ? zoomStop : 6;
+    if (s < 1 && toAnchor * s < stop) s = Math.min(1, stop / Math.max(toAnchor, 1e-6));
     camera.position.sub(zoomAnchor).multiplyScalar(s).add(zoomAnchor);
     controls.target.sub(zoomAnchor).multiplyScalar(s).add(zoomAnchor);
     const d = camera.position.distanceTo(controls.target);
@@ -662,8 +665,10 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
     const p = camera.position;
     if (p.equals(resolvedAt)) return;
     if (p.y <= SKY_CLEAR) {
-      const fixed = resolveCollision(LAYOUT, p);
-      if (fixed) p.set(fixed.x, fixed.y, fixed.z);
+      const fix = resolveCamera(LAYOUT, p);
+      // Unresolvable gap: keep the last resolved spot instead of jumping onto the roofs.
+      if (fix.blocked && Number.isFinite(resolvedAt.x)) p.copy(resolvedAt);
+      else if (fix.at) p.set(fix.at.x, fix.at.y, fix.at.z);
     }
     const floor = cameraFloor(p.x, p.z);
     if (p.y < floor) p.y = floor;

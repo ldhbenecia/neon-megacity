@@ -146,35 +146,45 @@ function settle(
   return { at: cur, moved, settled: false };
 }
 
+export interface CameraFix {
+  /** Corrected position, or null when `p` needs no change. */
+  at: Vec3 | null;
+  /**
+   * Neither clearance settles here (narrow gap between tall blocks): `at` is only guaranteed to
+   * be outside every volume, so a moving camera should rather stay where it last resolved.
+   */
+  blocked: boolean;
+}
+
+const hardMargin = (): number => WALL_MARGIN;
+
 /**
- * Pushes `p` out of every building's clearance (`standoff` unless `margin` is given). Where the
- * clearances of close neighbours overlap (e.g. between twin towers) no such point exists nearby,
- * so it falls back to the hard WALL_MARGIN, then to rising above the nearby roofs; the result is
- * idempotent either way.
+ * Camera collision. Prefers the height-scaled `standoff`; where the clearances of neighbours
+ * overlap (twin towers, narrow streets between tall blocks) it accepts any point that keeps the
+ * hard WALL_MARGIN. A soft result is only taken when it settles, and a hard-valid point is left
+ * alone when soft cannot settle from it, so applying the fix again returns `at: null`.
  */
-export function resolveCollision(L: Layout, p: Vec3, margin?: number): Vec3 | null {
-  if (margin !== undefined) {
-    const r = settle(L, p, () => margin, margin);
-    return r.moved ? r.at : null;
-  }
+export function resolveCamera(L: Layout, p: Vec3): CameraFix {
   const soft = settle(L, p, standoff, MAX_STANDOFF);
-  if (soft.settled) return soft.moved ? soft.at : null;
-  const hard = settle(L, p, () => WALL_MARGIN, WALL_MARGIN);
-  if (hard.settled) return hard.moved ? hard.at : null;
-  // Even the hard margin ping-pongs (narrow alley between rotated blocks): rise above every roof
-  // whose clearance could reach this point.
-  let y = p.y;
-  for (const id of buildingsInAabb(
-    L,
-    p.x - MAX_STANDOFF,
-    p.z - MAX_STANDOFF,
-    p.x + MAX_STANDOFF,
-    p.z + MAX_STANDOFF,
-  )) {
-    const b = L.buildings[id] as BuildingSpec;
-    y = Math.max(y, buildingTop(b) + standoff(b));
+  if (soft.settled) return { at: soft.moved ? soft.at : null, blocked: false };
+  const hard = settle(L, p, hardMargin, WALL_MARGIN);
+  if (hard.settled) {
+    if (!hard.moved) return { at: null, blocked: false };
+    // The next call starts from hard.at; resolve that soft attempt now so it returns null.
+    const again = settle(L, hard.at, standoff, MAX_STANDOFF);
+    return { at: again.settled ? again.at : hard.at, blocked: false };
   }
-  return { x: p.x, y, z: p.z };
+  const stuck = buildingContaining(L, hard.at.x, hard.at.y, hard.at.z);
+  if (stuck === null) return { at: hard.at, blocked: true };
+  const b = L.buildings[stuck] as BuildingSpec;
+  return { at: { x: hard.at.x, y: buildingTop(b) + WALL_MARGIN, z: hard.at.z }, blocked: true };
+}
+
+/** `resolveCamera` without the blocked flag (presets), or with one fixed margin. */
+export function resolveCollision(L: Layout, p: Vec3, margin?: number): Vec3 | null {
+  if (margin === undefined) return resolveCamera(L, p).at;
+  const r = settle(L, p, () => margin, margin);
+  return r.moved ? r.at : null;
 }
 
 const dist2 = (a: Vec3, b: Vec3): number => (a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2;

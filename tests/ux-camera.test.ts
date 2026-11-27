@@ -1,15 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import { PerspectiveCamera, Vector3 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { LAYOUT, SKYLINE_PEAK, buildingContaining } from '../src/city/layout';
+import {
+  LAYOUT,
+  SKYLINE_PEAK,
+  buildingContaining,
+  buildingVolumes,
+  raycastBuildings,
+  surfaceHeight,
+  toWorld,
+} from '../src/city/layout';
 import { CAMERA_LIMITS } from '../src/core/query';
 import { createRng } from '../src/core/random';
-import { buildingVolumes, toWorld } from '../src/city/layout';
 import {
   cameraFloor,
   frameBuildingClear,
   pick,
   raycastSurface,
+  resolveCamera,
   resolveCollision,
   standoff,
 } from '../src/ux/collision';
@@ -26,7 +34,6 @@ import {
   type Pose,
 } from '../src/ux/motion';
 import { CINEMATIC_ORDER, cinematicKeys, rigPresets } from '../src/ux/presets';
-import { raycastBuildings } from '../src/city/layout';
 
 const pose = (p: [number, number, number], t: [number, number, number]): Pose => ({
   position: { x: p[0], y: p[1], z: p[2] },
@@ -136,13 +143,14 @@ describe('collision', () => {
     const rng = createRng(7);
     let checked = 0;
     for (const b of LAYOUT.buildings) {
-      if (rng.next() > 0.08) continue;
+      if (rng.next() > 0.35) continue;
       for (const v of buildingVolumes(b)) {
         const w = toWorld((rng.next() - 0.5) * v.w, (rng.next() - 0.5) * v.d, b.rotY);
         const p = { x: v.x + w.x, y: v.y0 + (v.y1 - v.y0) * rng.next(), z: v.z + w.z };
-        const out = resolveCollision(LAYOUT, p) ?? p;
+        const fix = resolveCamera(LAYOUT, p);
+        const out = fix.at ?? p;
         expect(buildingContaining(LAYOUT, out.x, out.y, out.z), JSON.stringify(p)).toBeNull();
-        expect(resolveCollision(LAYOUT, out), JSON.stringify(p)).toBeNull();
+        if (!fix.blocked) expect(resolveCamera(LAYOUT, out).at, JSON.stringify(p)).toBeNull();
         checked++;
       }
     }
@@ -230,6 +238,14 @@ describe('rig presets (8.4)', () => {
       expect(camera.position.distanceTo(pos)).toBeLessThan(1e-6);
     },
   );
+});
+
+describe('street-level presets', () => {
+  it('keep the eye-level street preset at eye level after collision', () => {
+    const p = rigPresets()[2]!.position;
+    expect(p.y - surfaceHeight(p.x, p.z)).toBeLessThan(10);
+    expect(resolveCamera(LAYOUT, p).at).toBeNull();
+  });
 });
 
 describe('framing and cinematic keys', () => {
