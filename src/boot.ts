@@ -10,7 +10,7 @@ const app = import('./main');
 const city = loadCity(CITY_SEED);
 const layout = city.layout;
 // Terrain geometry follows the layout from the same worker; terrain init waits for it (main.ts).
-providePrebuilt('terrain', city.terrain);
+providePrebuilt('terrain', city.terrain, city.layout);
 // Handled here so an app failure while the worker still runs is not an unhandled rejection.
 app.catch(() => {});
 

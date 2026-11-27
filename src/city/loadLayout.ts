@@ -32,7 +32,13 @@ export interface CityLoad {
   terrain: Promise<TerrainPrebuilt | null>;
 }
 
-function inWorker(seed: number, worker: LayoutWorker): CityLoad {
+/**
+ * After the layout, how long the terrain geometry may take before terrain builds it itself: a
+ * worker killed without an error event (memory pressure) must not leave the loader waiting.
+ */
+export const TERRAIN_TIMEOUT_MS = 8000;
+
+function inWorker(seed: number, worker: LayoutWorker, terrainTimeoutMs: number): CityLoad {
   let gotLayout: (l: Layout) => void = () => {};
   let gotTerrain: (t: TerrainPrebuilt | null) => void = () => {};
   let failLayout: (e: Error) => void = () => {};
@@ -43,15 +49,24 @@ function inWorker(seed: number, worker: LayoutWorker): CityLoad {
   const terrain = new Promise<TerrainPrebuilt | null>((res) => {
     gotTerrain = res;
   });
+  let timer: ReturnType<typeof setTimeout> | undefined;
   const fail = (err: Error): void => {
+    clearTimeout(timer);
     failLayout(err);
     gotTerrain(null);
     worker.terminate();
   };
   worker.onmessage = (e) => {
     const m = e.data;
-    if (m.kind === 'layout') gotLayout(m.layout);
-    else {
+    if (m.kind === 'layout') {
+      gotLayout(m.layout);
+      timer = setTimeout(() => {
+        console.warn('[boot] city worker: no terrain geometry in time, terrain builds it itself');
+        gotTerrain(null);
+        worker.terminate();
+      }, terrainTimeoutMs);
+    } else {
+      clearTimeout(timer);
       gotTerrain(m.terrain);
       worker.terminate();
     }
@@ -75,11 +90,12 @@ async function onMainThread(seed: number): Promise<Layout> {
 export function loadCity(
   seed: number,
   createWorker: (() => LayoutWorker) | null = typeof Worker === 'undefined' ? null : cityWorker,
+  terrainTimeoutMs = TERRAIN_TIMEOUT_MS,
 ): CityLoad {
   if (!createWorker) return { layout: onMainThread(seed), terrain: Promise.resolve(null) };
   let w: CityLoad;
   try {
-    w = inWorker(seed, createWorker());
+    w = inWorker(seed, createWorker(), terrainTimeoutMs);
   } catch (err) {
     console.warn('[boot] city worker unavailable, generating the layout on the main thread', err);
     return { layout: onMainThread(seed), terrain: Promise.resolve(null) };
@@ -91,11 +107,4 @@ export function loadCity(
     }),
     terrain: w.terrain,
   };
-}
-
-export function loadLayout(
-  seed: number,
-  createWorker?: (() => LayoutWorker) | null,
-): Promise<Layout> {
-  return (createWorker === undefined ? loadCity(seed) : loadCity(seed, createWorker)).layout;
 }
