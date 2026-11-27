@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { CITY, LAYOUT } from './city/layout';
 import { postEnabled } from './core/gl';
+import { awaitPrebuilt } from './core/prebuilt';
 import { NIGHT } from './core/palette';
 import { CAMERA_FOV, CAMERA_LIMITS, cameraFar, parseQuery } from './core/query';
 import type { CityModule, CityModuleInstance, CompileHook, Ctx, Quality } from './core/types';
@@ -182,6 +183,8 @@ async function boot(): Promise<void> {
   for (const [name, weight, mod] of MODULES) {
     loader.stage(name, weight);
     await nextFrame();
+    // Data the city worker builds for this module (terrain geometry), if it is still on its way.
+    await awaitPrebuilt(name);
     try {
       modules.push([name, mod.init(ctx)]);
     } catch (err) {

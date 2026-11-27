@@ -1,7 +1,18 @@
-// City worker: generates the layout off the main thread (docs/PERF.md "async boot", phase 1).
-// It imports the generator only, so the layout module's live binding stays a main-thread concern.
+// City worker (docs/PERF.md "async boot"): the layout first, so the main thread can start booting,
+// then the terrain geometry (src/terrain/ground.ts), transferred without a copy.
+import { packGeometry, packedBuffers } from '../core/packedGeometry';
+import { buildChannel, buildGround } from '../terrain/ground';
 import { generateLayout } from './generate';
+import { setLayout } from './layout';
+import type { CityMessage } from './loadLayout';
 
 self.onmessage = (e: MessageEvent<{ seed: number }>) => {
-  postMessage(generateLayout(e.data.seed));
+  const layout = generateLayout(e.data.seed);
+  postMessage({ kind: 'layout', layout } satisfies CityMessage);
+  // The terrain code reads the worker's own copy of LAYOUT.
+  setLayout(layout);
+  const terrain = { ground: packGeometry(buildGround()), channel: packGeometry(buildChannel()) };
+  postMessage({ kind: 'terrain', terrain } satisfies CityMessage, {
+    transfer: [...packedBuffers(terrain.ground), ...packedBuffers(terrain.channel)],
+  });
 };

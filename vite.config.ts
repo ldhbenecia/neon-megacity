@@ -41,7 +41,8 @@ function preloadApp(): Plugin {
 
 /**
  * Worker bundles only (build; dev serves workers with the full three): 'three' imported from
- * src/city/ resolves to src/city/three-lite.ts (two classes, not three.core).
+ * src/city, src/terrain and src/core resolves to src/city/three-lite.ts (a few classes, not
+ * three.core).
  */
 function threeLite(): Plugin {
   const lite = fileURLToPath(new URL('./src/city/three-lite.ts', import.meta.url));
@@ -49,7 +50,9 @@ function threeLite(): Plugin {
     name: 'hangang-worker-three-lite',
     enforce: 'pre',
     resolveId(id, importer) {
-      return id === 'three' && importer?.includes('/src/city/') ? lite : null;
+      return id === 'three' && importer && /\/src\/(city|terrain|core)\//.test(importer)
+        ? lite
+        : null;
     },
   };
 }
