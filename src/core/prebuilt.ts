@@ -2,12 +2,13 @@
 // main.ts awaits a module's entry right before its init; the module takes it or builds as usual.
 // An entry is used only with the layout it was built from; a failed or missing one is null and
 // the module then builds it itself.
-import type { TerrainPrebuilt } from '../city/loadLayout';
+import type { BuildingsPrebuilt, TerrainPrebuilt } from '../city/loadLayout';
 import type { Layout } from '../city/types';
 
 /** What the city worker can build, by module name. */
 export interface Prebuilt {
   terrain: TerrainPrebuilt;
+  buildings: BuildingsPrebuilt;
 }
 
 const pending = new Map<string, Promise<unknown>>();

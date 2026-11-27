@@ -3,12 +3,14 @@ import { CITY, generateLayout } from '../src/city/layout';
 import {
   loadCity,
   type CityMessage,
+  type BuildingsPrebuilt,
   type LayoutWorker,
   type TerrainPrebuilt,
 } from '../src/city/loadLayout';
 
 const reference = generateLayout(CITY.seed);
 const TERRAIN = { ground: 'g', channel: 'c' } as unknown as TerrainPrebuilt;
+const BUILDINGS = { roads: 'r', walks: 'w', puddle: 'p' } as unknown as BuildingsPrebuilt;
 
 type Script = 'ok' | 'error' | 'layout-then-error' | 'layout-then-silence';
 
@@ -29,7 +31,10 @@ function fakeWorker(script: Script = 'ok'): LayoutWorker & { terminated: number 
           w.onmessage?.({ data } as MessageEvent<CityMessage>);
         };
         send({ kind: 'layout', layout: structuredClone(generateLayout(seed)) });
-        if (script === 'ok') send({ kind: 'terrain', terrain: TERRAIN });
+        if (script === 'ok') {
+          send({ kind: 'terrain', terrain: TERRAIN });
+          send({ kind: 'buildings', buildings: BUILDINGS });
+        }
         if (script === 'layout-then-error') w.onerror?.({ message: 'late' } as ErrorEvent);
       });
     },
@@ -60,6 +65,7 @@ describe('loadCity', () => {
     const city = loadCity(CITY.seed, () => w);
     expect(await city.layout).toStrictEqual(reference);
     expect(await city.terrain).toBe(TERRAIN);
+    expect(await city.buildings).toBe(BUILDINGS);
     expect(w.terminated).toBe(1);
   });
 
@@ -75,6 +81,7 @@ describe('loadCity', () => {
       const city = loadCity(CITY.seed, make);
       expect(await city.layout).toStrictEqual(reference);
       expect(await city.terrain).toBeNull();
+      expect(await city.buildings).toBeNull();
     }
     warn.mockRestore();
   });
@@ -93,6 +100,7 @@ describe('loadCity', () => {
     const city = loadCity(CITY.seed, () => w, 20);
     expect(await city.layout).toStrictEqual(reference);
     expect(await city.terrain).toBeNull();
+    expect(await city.buildings).toBeNull();
     expect(w.terminated).toBe(1);
     expect(warn).toHaveBeenCalledTimes(1);
     warn.mockRestore();
