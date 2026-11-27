@@ -33,6 +33,41 @@ closure instead of on the material or its `uniforms` (arrays of textures are cou
 Results also go to `perf-results/<label>.json` (gitignored). fps above 60 only says how much
 headroom is left: on a real display rAF is capped by vsync.
 
+## Screen verification: full quality, several times of day, while moving
+
+Counts, fps and e2e did not catch the black-rectangle bug (592da37 → #63): a shader `pow()` of a
+slightly negative base gave NaN in the HDR target, and bloom spread it over most of the screen.
+Only real-GPU full quality showed it; the low tier and SwiftShader did not (SwiftShader, 960×540:
+noon overview 0 % black, sunset skyline 9–10 %, night street 12–14 %; Metal: 94 %, 100 % and
+whole-frame flashes while moving).
+
+So every `npm run perf` scenario (presets 1, 2, 3, 5, 8 × night, sunset, noon) also runs
+`scripts/screen.ts`. A rAF callback queued after the app's loop downsamples the WebGL canvas to
+64×36 on **every frame** (a 1–3 frame flash cannot slip between samples), first 1 s at rest, then
+during a short zoom out and back, a W / S flight and a small orbit drag, then 1 s at rest. A pixel
+is black when R + G + B < 6. Limits by time of day (`lightAt`, from Metal runs of the fixed build):
+
+| light               | at rest | moving | why                                                      |
+| ------------------- | ------- | ------ | -------------------------------------------------------- |
+| day 07–17 h         | 30 %    | 50 %   | healthy views ≤ 13 % black                               |
+| dusk 05–07, 17–20 h | 50 %    | 70 %   | street at sunset 26–27 % rest, 46–48 % moving            |
+| night               | 90 %    | 90 %   | street / hillside up to 57–76 %: only whole black frames |
+
+Any frame darker than mean 2 fails too. The run then exits with code 1. The table column is
+`max black % at rest / moving, min brightness`; `--no-screen` skips it. Fixed build (#63 + #64):
+all 15 scenarios pass; main c0fc4be: noon overview 100 % black at rest and moving.
+
+Limit: at night only whole black frames fail, so a partial black block (say 15 % of the screen) at
+night would pass; a follow-up could track the largest connected black region or a sudden jump in
+the black share between frames.
+
+The motion stays small on purpose: wide orbits at street level swing the camera against unlit
+walls (legitimately black at night) and once clipped into a building (99 % black, mean 0.1).
+
+Because SwiftShader does not reproduce GPU-specific NaN or precision bugs, **a full-quality
+`npm run perf` on a real GPU is required before merging** any change to shaders, post-processing,
+lighting or materials; paste its screen column in the PR body. CI keeps its SwiftShader checks.
+
 ## Snapshot: main e2b7fef (lighting, infra, atmosphere, ux; terrain, buildings, neon are stubs)
 
 Apple M4 (Metal ANGLE), 2400×1350 (DPR 1.5 held for every run), full quality, canvas 4× MSAA
@@ -145,7 +180,63 @@ Budget (ceiling 50 stays the CI gate; team total 45 leaves a reserve):
 | reserve               |                          | 2                   |
 | **total**             | **29**                   | **45**              |
 
+## Proposal: move boot work off the main thread (Web Worker)
+
+Status: measured and decided (Worker), not implemented. Engine stays three.js; this is about where
+the CPU work runs.
+
+**Measured** (main c0fc4be, M4, preset 2 night, `PerformanceObserver('longtask')`, 3 runs): the
+main thread is blocked 2.1–3.2 s in total during boot, so the loader skeleton cannot update.
+
+| boot slice                                 | blocked (ms)             | shape         |
+| ------------------------------------------ | ------------------------ | ------------- |
+| JS evaluation + layout generation (import) | 394–599                  | one task      |
+| buildings init (LOD1/LOD2 emit + build)    | 444–640                  | one task      |
+| compile (shader link)                      | 248–293 (cold run: 1735) | one task      |
+| neon init                                  | 173–200                  | one task      |
+| lighting, terrain, infra, setup            | 85–171 each              | one task each |
+
+**Decision (manager, #78): one Worker, no build-time JSON.** Precomputed layout data would add a
+download outside the bundle budget (slower than computing on a slow link, and it cannot overlap
+with JS evaluation and shader compiles the way a worker can) and could drift from the generator.
+
+**Design conditions.**
+
+1. **One worker**: it generates the layout, posts it to main, then builds the buildings geometry
+   in the same worker and transfers the `ArrayBuffer`s. The layout is never sent to two workers.
+2. Main needs the layout too (src/city queries: camera collision, neon placement, terrain). It
+   arrives by structured clone; measure the clone cost. If it is large, building specs become a
+   bundle of typed arrays (agree with hangang-seoul, owner of src/city).
+3. Boot becomes asynchronous. The module init order (lighting → terrain → buildings → infra →
+   neon → atmosphere) and the meaning of `window.__city.ready` stay; the loader covers the wait
+   (with hangang-ux). Without workers (old browsers, worker creation failure) the current
+   synchronous main-thread path remains.
+4. Deterministic: the worker and the main path call the same pure functions; a unit test pins
+   that layout and geometry are identical.
+5. Vite `new Worker(new URL(..., import.meta.url), { type: 'module' })`; an e2e run with
+   `BASE_PATH` checks the worker chunk URL; the worker chunk counts in `npm run size`.
+6. Order: (1) buildings geometry worker, built as the single worker of point 1; (2) layout. Both
+   after quality tiers (a). Re-measure on layout v3 (#32) first: more buildings, longer freezes.
+
+**Expected payoff.** Buildings in the worker remove the 0.44–0.64 s freeze and overlap boot with
+lighting / infra / neon init (est. 0.2–0.4 s shorter); the time-sliced LOD0 jobs (#53) move too,
+removing the 12 ms `build()` spike per chunk. Layout in the worker removes the 0.39–0.60 s import
+task (v3: Node ~1.0 s, likely 1–2 s in a laptop browser).
+
+**Costs.** A worker chunk duplicates part of three (BufferGeometry and math; est. 40–60 KB gzip,
+lazy, not counted in the initial-load budget). Determinism is unchanged (same code, same seeds;
+`tests/buildings-lod.test.ts` pins sliced vs direct LOD0 bytes, `tests/buildings-passes.test.ts`
+(#57) far / near passes vs the full emit). Debugging spans two threads.
+
+**Verification.** Same longtask probe: the buildings slice must vanish from the main thread, the
+boot → interactive time must not grow, and the loader must keep animating (no task > 100 ms
+during the buildings stage).
+
 ## Findings and candidates
+
+- **Signs in layout v3 always hit the cap.** The sign total stays at its 16,000 cap, so thinning
+  always runs (building signs ~10,300, street panels ~4,070, street lights 1,456 / 1,500, ground
+  traffic 1,199 / 1,200; caps scaled to the map in #67).
 
 - **Day/night scrub stall (fixed).** Toggling the key light's `castShadow` changed the program
   variant of every lit material. With buildings (#11), preset 2, M4: a timeline jump between night
