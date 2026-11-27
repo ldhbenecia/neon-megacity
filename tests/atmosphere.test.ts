@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { NIGHT, paletteAt } from '../src/core/palette';
 import {
-  QUALITY,
   RAIN,
   WETNESS,
   beamLength,
@@ -10,14 +9,12 @@ import {
   skyExtrasFor,
   userTier,
   computeFog,
-  createQualityState,
   msaaSamplesFor,
   rainAltitudeFade,
   rainDropCount,
   rainPoolFor,
   searchlightDirection,
   searchlightLevelAt,
-  stepQuality,
   stepRain,
   stepWetness,
   sunScatterStrength,
@@ -170,34 +167,6 @@ describe('post and quality', () => {
     expect(bloomScaleFor(2, 0)).toBe(1);
     expect(bloomScaleFor(2, 1)).toBe(0.5);
     expect(bloomScaleFor(0.75, 0)).toBe(0.75);
-  });
-
-  it('steps down after sustained slow frames and back up after fast ones', () => {
-    const s = createQualityState();
-    let t = 0;
-    const run = (ms: number, seconds: number): void => {
-      for (let i = 0; i < seconds / (ms / 1000); i++) {
-        stepQuality(s, ms / 1000);
-        t += ms;
-      }
-    };
-    run(16, QUALITY.warmup + 1);
-    expect(s.tier).toBe(0);
-    run(30, 6);
-    expect(s.tier).toBe(1);
-    run(30, 3.5);
-    expect(s.tier).toBe(2);
-    run(30, 10);
-    expect(s.tier).toBe(QUALITY.maxTier);
-    run(10, 9.5);
-    expect(s.tier).toBe(1);
-    expect(t).toBeGreaterThan(0);
-  });
-
-  it('ignores compile spikes during warm-up', () => {
-    const s = createQualityState();
-    for (let i = 0; i < 20; i++) stepQuality(s, 0.1);
-    expect(s.tier).toBe(0);
   });
 });
 

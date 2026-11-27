@@ -11,12 +11,10 @@ import {
   computeFog,
   mapFogScale,
   fogBrightness,
-  createQualityState,
   rainAltitudeFade,
   searchlightLevelAt,
   rainPoolFor,
   skyExtrasFor,
-  stepQuality,
   userTier,
   stepRain,
   stepWetness,
@@ -48,9 +46,6 @@ export function init(ctx: Ctx): CityModuleInstance {
     clouds: !low,
     searchlights: !low,
     stars: true,
-    // ux owns the tier decision (env.quality, ctx.onQuality); this frame-time controller is a
-    // debug-panel tool only, or a slow stretch would step down twice and override a chosen tier.
-    autoQuality: false,
   };
 
   const uninstallFog = installFogChunks();
@@ -65,11 +60,11 @@ export function init(ctx: Ctx): CityModuleInstance {
   const stars = createStars(ctx);
   const clouds = createClouds(ctx, searchlights.spots, searchlights.colors);
   const rain = low ? null : createRain(ctx);
-  // The user tier (ctx.onQuality) is a floor under the frame-time tier below.
+  // ux alone decides the tier (env.quality, ctx.onQuality); atmosphere only applies its knobs.
   let floorTier = low ? 0 : userTier(env.quality);
   let tier = -1;
   const applyTier = (): void => {
-    const t = Math.max(floorTier, settings.autoQuality ? quality.tier : 0);
+    const t = floorTier;
     clouds.setVisible(settings.clouds && skyExtrasFor(t));
     if (t === tier) return;
     tier = t;
@@ -93,7 +88,6 @@ export function init(ctx: Ctx): CityModuleInstance {
   };
   if (post) userData.compile = warmup;
 
-  const quality = createQualityState();
   applyTier();
 
   const folder = gui.addFolder('Atmosphere');
@@ -109,15 +103,6 @@ export function init(ctx: Ctx): CityModuleInstance {
     .onChange(() => applyTier());
   folder.add(settings, 'searchlights').name('Searchlights');
   folder.add(settings, 'stars').name('Stars');
-  folder
-    .add(settings, 'autoQuality')
-    .name('Auto quality')
-    .onChange((on: boolean) => {
-      if (on) return;
-      Object.assign(quality, createQualityState());
-      applyTier();
-    });
-  folder.add(quality, 'tier', 0, 2, 1).name('Quality tier (0 = full)').listen().disable();
   folder.close();
 
   let palette: PaletteSample = paletteAt(env.timeOfDay);
@@ -209,8 +194,6 @@ export function init(ctx: Ctx): CityModuleInstance {
       postSettings.drops =
         settings.lensDrops && rainPoolFor(tier) > 0 ? Math.min(1, r * 1.2) * below : 0;
       post?.update(elapsed, postSettings);
-
-      if (settings.autoQuality && stepQuality(quality, dt)) applyTier();
     },
     dispose() {
       offQuality();
