@@ -1,5 +1,5 @@
-// Layout v2 generator (ART_DIRECTION 2.6 pipeline):
-// zones → rotated road grids clipped by zone / river / corridors → blocks → lots →
+// Layout v3 generator (ART_DIRECTION 2.6 pipeline, Seoul zones from docs/SEOUL.md 4):
+// named arterials + zones → rotated road grids clipped by zone / river / corridors → blocks → lots →
 // archetype draw → tiers → tags → street slots. Pure and deterministic per seed.
 import { createRng, type Rng } from '../core/random';
 import {
@@ -11,7 +11,8 @@ import {
   weighted,
   type Massing,
 } from './archetypes';
-import { ZONES, zoneAt, zoneById } from './districts';
+import { TEHERAN, ZONES, zoneAt, zoneBank, zoneById, zoneSide } from './districts';
+import { makeNamedRoads } from './named';
 import {
   MAX_DECK_THICKNESS,
   MIN_ROAD_CLEARANCE,
@@ -30,17 +31,31 @@ import {
   obbCorners,
   obbOverlap,
   obbSegmentDistance,
+  pointSegmentDistance,
   toLocal,
   toWorld,
   type Obb,
 } from './math';
 import {
+  HALF_X,
+  HALF_Z,
+  ISLANDS,
+  PALACE_RECT,
+  TALL_GROUND,
+  TALL_H,
+  bankPoint,
+  isForest,
+  MOUNTAINS,
   RIVER,
-  TERRAIN,
+  SAETGANG,
+  parkWidthAt,
   riverFrame,
+  riverOffset,
+  riverWidthAt,
   riverSignedDistance,
   surfaceHeight,
   terrainHeight,
+  waterClear,
 } from './river';
 import { GridHash, segmentBounds } from './spatial';
 import type {
@@ -49,7 +64,10 @@ import type {
   Bridge,
   BuildingSpec,
   DistrictZone,
+  Landmark,
   Layout,
+  NamedRoad,
+  SkyLane,
   Ridge,
   Road,
   RoadKind,
@@ -59,17 +77,65 @@ import type {
   Vec2,
 } from './types';
 
-export const EXTENT = 2400;
-/** Skyline peak (ART_DIRECTION 2.2): the tallest tower stands near here. */
-export const SKYLINE_PEAK: Vec2 = { x: -60, z: -380 };
-/** Megatower threshold and fixed top heights. */
+/** Play area size (m). */
+export const EXTENT_X = HALF_X * 2;
+export const EXTENT_Z = HALF_Z * 2;
+/** Skyline peak: the 용산 apex, the tallest tower of the city (SEOUL.md 4.5). */
+export const SKYLINE_PEAK: Vec2 = { x: -380, z: -80 };
+/** Megatower threshold. */
 export const MEGA_MIN_H = 250;
-const MEGA_COUNT = 10;
-const MEGA_TOP = [520, 470, 455] as const;
-/** Core blocks whose center is within this distance of the peak get megatower-sized lots. */
-const CORE_MEGA_RADIUS = 200;
-/** Height caps for non-megatower buildings, applied after the neighbour rule. */
-const HEIGHT_CAP: Partial<Record<string, number>> = { core: 245, midtown: 210, sangga: 70 };
+
+interface TowerTier {
+  count: number;
+  /** Height range (m); the towers nearest the peak get the top of the range. */
+  h: readonly [number, number];
+  /** Footprint side range (m); always at least h / MAX_SLENDER. */
+  size: readonly [number, number];
+}
+
+interface MegaPlan {
+  peak: Vec2;
+  /** Tiers placed outward from the peak, tallest first. The first tier is the landmark. */
+  tiers: readonly TowerTier[];
+  landmark: Landmark['id'];
+}
+
+/** Tallest allowed height / footprint width (√(w·d)) for any building. */
+export const MAX_SLENDER = 10;
+
+/** Tower clusters per megacore zone: one apex, then stepped tiers (SEOUL.md 4.5, 7.5). */
+const MEGA: Record<string, MegaPlan> = {
+  yongsan: {
+    peak: SKYLINE_PEAK,
+    tiers: [
+      { count: 1, h: [600, 600], size: [80, 88] },
+      { count: 6, h: [280, 450], size: [46, 54] },
+      { count: 16, h: [120, 250], size: [26, 32] },
+      { count: 18, h: [40, 110], size: [26, 40] },
+    ],
+    landmark: 'yongsan-apex',
+  },
+  yeouido: {
+    peak: riverOffset(-1090, riverWidthAt(-1090) / 2 + 170),
+    tiers: [
+      { count: 1, h: [430, 430], size: [56, 62] },
+      { count: 4, h: [300, 360], size: [40, 44] },
+      { count: 18, h: [120, 220], size: [22, 28] },
+      { count: 12, h: [40, 100], size: [24, 36] },
+    ],
+    landmark: 'yeouido-gold',
+  },
+  jamsil: {
+    peak: { x: 1650, z: 330 },
+    tiers: [
+      { count: 1, h: [500, 500], size: [70, 78] },
+      { count: 10, h: [150, 300], size: [34, 44] },
+      { count: 16, h: [40, 110], size: [26, 40] },
+    ],
+    landmark: 'jamsil-blade',
+  },
+};
+
 /** Building must keep this far from the channel edge (riverSignedDistance). */
 export const RIVER_CLEARANCE = 5;
 
@@ -140,7 +206,10 @@ function clipLine(
     const t = t0 + i * ROAD_STEP;
     const p = at(t);
     const inside =
-      i <= n && zoneAt(p.x, p.z).id === zone.id && !underLowDeck(bridges, p.x, p.z, half);
+      i <= n &&
+      zoneAt(p.x, p.z).id === zone.id &&
+      waterClear(p.x, p.z, half) &&
+      !underLowDeck(bridges, p.x, p.z, half);
     if (inside && start === null) start = t;
     if (!inside && start !== null) {
       const end = t - ROAD_STEP;
@@ -157,6 +226,19 @@ function clipLine(
  */
 function underLowDeck(bridges: readonly Bridge[], x: number, z: number, half: number): boolean {
   for (const br of bridges) {
+    const reach = br.width / 2 + 2 * half;
+    if (
+      x < Math.min(br.landA.x, br.landB.x) - reach ||
+      x > Math.max(br.landA.x, br.landB.x) + reach
+    ) {
+      continue;
+    }
+    if (
+      z < Math.min(br.landA.z, br.landB.z) - reach ||
+      z > Math.max(br.landA.z, br.landB.z) + reach
+    ) {
+      continue;
+    }
     // The road strip spans ±half around (x, z); check its centre and both edges along the
     // bridge axis, where the approach deck is lowest on the landing side.
     const ax = br.landB.x - br.landA.x;
@@ -170,13 +252,58 @@ function underLowDeck(bridges: readonly Bridge[], x: number, z: number, half: nu
   return false;
 }
 
-function buildRoads(seed: number, bridges: readonly Bridge[]): Road[] {
+/** Zones that get a road grid and lots. */
+function hasGrid(zone: DistrictZone): boolean {
+  return zone.kind !== 'riverside' && zone.kind !== 'park' && zone.roadPitch > 0;
+}
+
+function buildRoads(seed: number, bridges: readonly Bridge[], named: readonly NamedRoad[]): Road[] {
   const roads: Road[] = [];
   const push = (kind: RoadKind, a: Vec2, b: Vec2, width: number, zone: DistrictZone): void => {
     roads.push({ id: roads.length, kind, a, b, width, district: zone.kind, zoneId: zone.id });
   };
+  /**
+   * Arterial a→b, cut where it would pass under a low approach of a bridge other than `own`
+   * (named roads and avenues that start at a landing continue that bridge's deck).
+   */
+  const clipped = (a: Vec2, b: Vec2, width: number, own: (br: Bridge) => boolean): void => {
+    const others = bridges.filter((br) => !own(br));
+    const half = width / 2 + 1;
+    const len = Math.hypot(b.x - a.x, b.z - a.z);
+    const n = Math.ceil(len / ROAD_STEP);
+    const at = (t: number): Vec2 => ({ x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t });
+    let start: number | null = null;
+    for (let k = 0; k <= n + 1; k++) {
+      const p = at(Math.min(1, k / n));
+      const ok = k <= n && waterClear(p.x, p.z, half) && !underLowDeck(others, p.x, p.z, half);
+      if (ok && start === null) start = Math.min(1, k / n);
+      if (!ok && start !== null) {
+        const end = Math.max(start, (k - 1) / n);
+        if ((end - start) * len >= 8) {
+          const ra = at(start);
+          const rb = at(end);
+          push('arterial', ra, rb, width, zoneAt((ra.x + rb.x) / 2, (ra.z + rb.z) / 2));
+        }
+        start = null;
+      }
+    }
+  };
+  for (const nr of named) {
+    for (let i = 0; i < nr.points.length - 1; i++) {
+      const a = nr.points[i] as Vec2;
+      const b = nr.points[i + 1] as Vec2;
+      // Only the segment that starts or ends at a landing continues that bridge's deck.
+      const own = (br: Bridge): boolean =>
+        [a, b].some((e) => [br.landA, br.landB].some((l) => Math.hypot(l.x - e.x, l.z - e.z) < 1));
+      clipped(a, b, nr.width, own);
+    }
+  }
   for (const zone of ZONES) {
-    if (zone.kind === 'riverside') continue;
+    if (!hasGrid(zone)) continue;
+    // Riverside apartment strips are laid out as slab rows along the bank (bankRows), and the
+    // palace court as halls on its axis (palaceHalls), not as grids.
+    if (zone.kind === 'apartment' && zoneBank(zone.id)) continue;
+    if (zone.kind === 'palace') continue;
     const rng = zoneRng(seed, `roads:${zone.id}`);
     const { u0, u1, v0, v1 } = gridRange(zone);
     const P = zone.roadPitch;
@@ -217,8 +344,9 @@ function buildRoads(seed: number, bridges: readonly Bridge[]): Road[] {
       }
     }
   }
-  // Bridge approach avenues continue 150 m into the districts on both banks.
+  // Road bridge approach avenues continue 90 m into the districts on both banks.
   for (const br of bridges) {
+    if (br.motif === 'railTruss') continue; // rail only: no road continues
     for (const [land, abut] of [
       [br.landA, br.a],
       [br.landB, br.b],
@@ -226,9 +354,8 @@ function buildRoads(seed: number, bridges: readonly Bridge[]): Road[] {
       const dx = land.x - abut.x;
       const dz = land.z - abut.z;
       const len = Math.hypot(dx, dz);
-      const end = { x: land.x + (dx / len) * 150, z: land.z + (dz / len) * 150 };
-      const mid = { x: (land.x + end.x) / 2, z: (land.z + end.z) / 2 };
-      push('arterial', land, end, br.width, zoneAt(mid.x, mid.z));
+      const end = { x: land.x + (dx / len) * 90, z: land.z + (dz / len) * 90 };
+      clipped(land, end, br.width, (o) => o === br);
     }
   }
   return roads;
@@ -238,6 +365,10 @@ interface Lot {
   obb: Obb;
   zone: DistrictZone;
   blockId: number;
+  /** Set on tower-field lots of a megacore: fixed height and tier (0 = landmark). */
+  tower?: { h: number; tier: number };
+  /** Set on bank-row apartment lots: clear gap (m) to the next row toward the land. */
+  rowGap?: number;
 }
 
 export const SIDEWALK: Record<string, number> = {
@@ -247,6 +378,13 @@ export const SIDEWALK: Record<string, number> = {
   hillside: 1,
   apartment: 6,
   industrial: 4,
+  megacore: 5,
+  corridor: 4,
+  oldtown: 2,
+  palace: 10,
+  brick: 2,
+  nightlife: 1.5,
+  showroom: 4,
 };
 
 const SANGGA_ALLEY = 5;
@@ -287,16 +425,26 @@ function lotGrid(
   switch (kind) {
     case 'coreDense':
       return cells(3, 3);
+    case 'corridor':
+    case 'oldtown':
+    case 'brick':
+    case 'palace':
+      return cells(3, 2);
+    case 'nightlife':
+      return cells(3, 2, SANGGA_ALLEY);
+    case 'showroom':
+      return cells(2, 2);
     case 'midtown':
       return rng.chance(0.5) ? cells(2, 2) : cells(3, 2);
     case 'sangga':
       return cells(3, 2, SANGGA_ALLEY);
     case 'apartment':
-      return cells(Math.max(1, Math.floor(bw / 85)), 3);
+      // One slab row per ~90 m of depth so rows keep 0.8–1.0 × height apart (ART_DIRECTION 4.2).
+      return cells(Math.max(1, Math.floor(bw / 85)), Math.max(1, Math.floor(bd / 90)));
     case 'hillside':
       // 별계단동 is the densest quarter: 4 × 4 lots of ~11 m per 45 m block.
       return cells(4, 4);
-    default: // core (megatower lots), industrial
+    default: // core / megacore (megatower lots), industrial
       return cells(2, 2);
   }
 }
@@ -385,7 +533,8 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
   const accept = (o: Obb, zone: DistrictZone): boolean => {
     for (const p of [...obbCorners(o), { x: o.x, z: o.z }]) {
       if (zoneAt(p.x, p.z).id !== zone.id) return false;
-      if (riverSignedDistance(p.x, p.z) < RIVER_CLEARANCE) return false;
+      if (!waterClear(p.x, p.z, RIVER_CLEARANCE)) return false;
+      if (isForest(p.x, p.z)) return false;
     }
     if (obstacles.blocked(o)) return false;
     for (const id of lotHash.query(obbBounds(o))) {
@@ -407,8 +556,23 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
   };
 
   for (const zone of ZONES) {
-    if (zone.kind === 'riverside') continue;
+    if (!hasGrid(zone)) continue;
     const rng = zoneRng(seed, `lots:${zone.id}`);
+    const mega = MEGA[zone.id];
+    if (mega) {
+      // The tower field lays out the whole cluster (towers first, then podiums between them).
+      towerField(zone, mega, zoneRng(seed, `towers:${zone.id}`));
+      continue;
+    }
+    if (zone.kind === 'palace') {
+      palaceHalls(zone);
+      continue;
+    }
+    const bank = zoneBank(zone.id);
+    if (bank && zone.kind === 'apartment') {
+      bankRows(zone, bank, rng);
+      continue;
+    }
     const { u0, u1, v0, v1 } = gridRange(zone);
     const P = zone.roadPitch;
     const Q = zone.roadPitchV;
@@ -431,10 +595,8 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
           buildingIds: [],
         };
         const before = lots.length;
-        // Core: big 2×2 lots near the skyline peak (megatowers), 3×3 elsewhere.
-        const dense =
-          zone.kind === 'core' &&
-          Math.hypot(c.x - SKYLINE_PEAK.x, c.z - SKYLINE_PEAK.z) > CORE_MEGA_RADIUS;
+        // Megacore: the tower field took the big sites; the grid fills in with podium lots.
+        const dense = zone.kind === 'megacore';
         const grid = lotGrid(dense ? 'coreDense' : zone.kind, bw - 2 * walk, bd - 2 * walk, rng);
         const cand = new Map<string, Obb>();
         for (const g of grid) {
@@ -461,7 +623,8 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
           blocks.push(block);
           // Mid-block alley, only along the lots that survived and only between two rows.
           const fit = toLocal(block.x - c.x, block.z - c.z, zone.gridAngle);
-          if (zone.kind === 'sangga' && Math.abs(fit.z) + SANGGA_ALLEY / 2 < block.d / 2) {
+          const alleyed = zone.kind === 'sangga' || zone.kind === 'nightlife';
+          if (alleyed && Math.abs(fit.z) + SANGGA_ALLEY / 2 < block.d / 2) {
             const a = toWorld(fit.x - block.w / 2, 0, zone.gridAngle);
             const b = toWorld(fit.x + block.w / 2, 0, zone.gridAngle);
             alleys.push({
@@ -475,15 +638,207 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
     }
   }
 
+  /**
+   * Megacore towers: candidate sites every 10 m, nearest the peak first; each tier claims the
+   * closest sites where a footprint of its size fits (zone, water, obstacles, ≥ 8 m from other
+   * towers). Every tower is a one-lot block.
+   */
+  function towerField(zone: DistrictZone, plan: MegaPlan, rng: Rng): void {
+    let x0 = Infinity;
+    let x1 = -Infinity;
+    let z0 = Infinity;
+    let z1 = -Infinity;
+    for (const p of zone.polygon) {
+      x0 = Math.min(x0, p.x);
+      x1 = Math.max(x1, p.x);
+      z0 = Math.min(z0, p.z);
+      z1 = Math.max(z1, p.z);
+    }
+    const sites: (Vec2 & { r: number })[] = [];
+    for (let x = x0; x <= x1; x += 10) {
+      for (let z = z0; z <= z1; z += 10) {
+        if (zoneAt(x, z).id !== zone.id) continue;
+        sites.push({ x, z, r: Math.hypot(x - plan.peak.x, z - plan.peak.z) + rng.range(0, 6) });
+      }
+    }
+    sites.sort((a, b) => a.r - b.r);
+    const placed: Obb[] = [];
+    // A site whose centre is under a placed tower can never host another; a site that rejected a
+    // footprint (accept) rejects any footprint containing it (same centre and rotation, both half
+    // extents at least as large), so those are skipped without testing.
+    const dead = new Uint8Array(sites.length);
+    const failW = new Float64Array(sites.length).fill(Infinity);
+    const failD = new Float64Array(sites.length).fill(Infinity);
+    plan.tiers.forEach((tier, t) => {
+      const hs = Array.from({ length: tier.count }, () => rng.range(tier.h[0], tier.h[1])).sort(
+        (a, b) => b - a,
+      );
+      // Each height takes the nearest site where its footprint fits; a height that fits nowhere
+      // is skipped so the smaller ones after it still get their chance.
+      for (const h of hs) {
+        // The draft insets the lot by 4 % and the depth may be 15 % short: size for that.
+        const side = Math.max(rng.range(tier.size[0], tier.size[1]), h / (MAX_SLENDER * 0.8));
+        const depth = side * (t === 0 ? rng.range(0.95, 1) : rng.range(0.85, 1));
+        for (let si = 0; si < sites.length; si++) {
+          if (dead[si]) continue;
+          if (side / 2 >= (failW[si] as number) && depth / 2 >= (failD[si] as number)) continue;
+          const site = sites[si] as Vec2;
+          const o: Obb = {
+            x: site.x,
+            z: site.z,
+            hw: side / 2,
+            hd: depth / 2,
+            rotY: zone.gridAngle,
+          };
+          if (placed.some((q) => obbOverlap(q, o, TOWER_GAP))) continue;
+          if (h > TALL_H && obbCorners(o).some((c) => terrainHeight(c.x, c.z) > TALL_GROUND))
+            continue;
+          if (!accept(o, zone)) {
+            failW[si] = o.hw;
+            failD[si] = o.hd;
+            continue;
+          }
+          placed.push(o);
+          sites.forEach((q, qi) => {
+            const l = toLocal(q.x - o.x, q.z - o.z, o.rotY);
+            if (Math.abs(l.x) < o.hw && Math.abs(l.z) < o.hd) dead[qi] = 1;
+          });
+          const blockId = blocks.length;
+          blocks.push({
+            id: blockId,
+            zoneId: zone.id,
+            district: zone.kind,
+            x: o.x,
+            z: o.z,
+            w: o.hw * 2,
+            d: o.hd * 2,
+            rotY: o.rotY,
+            buildingIds: [],
+          });
+          lotHash.insert(lots.length, obbBounds(o));
+          lots.push({ obb: o, zone, blockId, tower: { h, tier: t } });
+          break;
+        }
+      }
+    });
+  }
+
+  /**
+   * Riverside apartment walls (SEOUL.md 4.2): slab rows parallel to the bank at true bank
+   * distances, from just outside the riverside band inland. Rows are ROW_PITCH apart, so a slab
+   * may be as tall as the clear gap / 0.8 (ART_DIRECTION 4.2). Every slab is a one-lot block.
+   */
+  function bankRows(
+    zone: DistrictZone,
+    bank: { x0: number; x1: number; o0: number; o1: number },
+    rng: Rng,
+  ): void {
+    const side = zoneSide(zone.id) === 'north' ? -1 : 1;
+    const first = Math.max(bank.o0, RIVER.bandWidth) + 4 + SLAB_DEPTH / 2;
+    for (let o = first; o + SLAB_DEPTH / 2 <= bank.o1; o += ROW_PITCH) {
+      // Seed on the row as close to the middle of the strip (world x) as the normal offsets
+      // reach (they bunch up or spread out on bends), then trace both ways.
+      const mid = (bank.x0 + bank.x1) / 2;
+      let seed: Vec2 | null = null;
+      for (let x = bank.x0; x <= bank.x1; x += 10) {
+        const p = bankPoint(x, side, o);
+        if (p.x < bank.x0 || p.x > bank.x1) continue;
+        if (!seed || Math.abs(p.x - mid) < Math.abs(seed.x - mid)) seed = p;
+      }
+      if (!seed) continue;
+      const row = bankContour(seed, o, bank.x0, bank.x1);
+      // Place slabs by arc length along the row: slab, gap, slab, …
+      let s0 = rng.range(0, SLAB_GAP);
+      const arc = [0];
+      for (let i = 1; i < row.length; i++) {
+        const a = row[i - 1] as Vec2;
+        const b = row[i] as Vec2;
+        arc.push((arc[i - 1] as number) + Math.hypot(b.x - a.x, b.z - a.z));
+      }
+      const at = (sx: number): Vec2 => {
+        let i = 1;
+        while (i < row.length - 1 && (arc[i] as number) < sx) i++;
+        const a = row[i - 1] as Vec2;
+        const b = row[i] as Vec2;
+        const t = clamp(
+          (sx - (arc[i - 1] as number)) / ((arc[i] as number) - (arc[i - 1] as number) || 1),
+          0,
+          1,
+        );
+        return { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t };
+      };
+      const total = arc[arc.length - 1] as number;
+      while (s0 < total) {
+        const want = rng.range(45, 70);
+        if (s0 + want > total) break;
+        const a = at(s0);
+        const b = at(s0 + want);
+        s0 += want + SLAB_GAP;
+        const c = { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 };
+        const len = Math.hypot(b.x - a.x, b.z - a.z);
+        const rotY = Math.atan2(-(b.z - a.z), b.x - a.x);
+        const obb: Obb = { x: c.x, z: c.z, hw: len / 2, hd: SLAB_DEPTH / 2, rotY };
+        if (!accept(obb, zone)) continue;
+        const blockId = blocks.length;
+        blocks.push({
+          id: blockId,
+          zoneId: zone.id,
+          district: zone.kind,
+          x: obb.x,
+          z: obb.z,
+          w: obb.hw * 2,
+          d: obb.hd * 2,
+          rotY,
+          buildingIds: [],
+        });
+        lotHash.insert(lots.length, obbBounds(obb));
+        lots.push({ obb, zone, blockId, rowGap: ROW_PITCH - SLAB_DEPTH });
+      }
+    }
+  }
+
+  /**
+   * Palace halls on the court's north–south axis, gate to throne hall to inner halls (SEOUL.md
+   * 4.3): a generic order of sizes, not any real palace's plan. Each hall is a one-lot block.
+   */
+  function palaceHalls(zone: DistrictZone): void {
+    const cx = (PALACE_RECT.x0 + PALACE_RECT.x1) / 2;
+    // [distance north of the south wall, width, depth, height] per hall.
+    const halls: readonly (readonly [number, number, number, number])[] = [
+      [20, 34, 12, 10],
+      [62, 48, 26, 18],
+      [104, 40, 22, 15],
+      [138, 30, 16, 11],
+    ];
+    for (const [k, w, d, h] of halls) {
+      const obb: Obb = { x: cx, z: PALACE_RECT.z1 - k, hw: w / 2, hd: d / 2, rotY: 0 };
+      if (!accept(obb, zone)) continue;
+      const blockId = blocks.length;
+      blocks.push({
+        id: blockId,
+        zoneId: zone.id,
+        district: zone.kind,
+        x: obb.x,
+        z: obb.z,
+        w,
+        d,
+        rotY: 0,
+        buildingIds: [],
+      });
+      lotHash.insert(lots.length, obbBounds(obb));
+      lots.push({ obb, zone, blockId, tower: { h, tier: 0 } });
+    }
+  }
+
   // Riverside pavilions (매점, 펌프장): a thin row between the embankment and the highway corridor.
   const rng = zoneRng(seed, 'lots:riverside');
   const riverside = zoneById('riverside');
   for (const side of [-1, 1] as const) {
-    for (let x = -1150; x <= 1150; x += 90) {
+    for (let x = -HALF_X + 50; x <= HALF_X - 50; x += 90) {
       if (!rng.chance(0.55)) continue;
       const f = riverFrame(x);
-      const off = 129.5;
-      const p = { x: f.p.x + f.south.x * off * side, z: f.p.z + f.south.z * off * side };
+      // Just outside the embankment, inside the band and short of the riverside highways.
+      const p = bankPoint(x, side, 9.5);
       if (onBridge(bridges, p, 30)) continue;
       const rotY = Math.atan2(-f.along.z, f.along.x);
       const obb: Obb = { x: p.x, z: p.z, hw: rng.range(3, 6), hd: rng.range(2, 3.5), rotY };
@@ -521,9 +876,85 @@ interface Draft {
   jitter: number;
   /** Set only on megatowers. */
   corp?: string;
+  landmark?: Landmark['id'];
 }
 
-const CORE_MEGA_BAG: Archetype[] = [
+/** Archetype of each landmark tower. */
+const LANDMARK_ARCHETYPE: Record<Landmark['id'], Archetype> = {
+  'yongsan-apex': 'setbackTower',
+  'jamsil-blade': 'taperTower',
+  'yeouido-gold': 'setbackTower',
+  'namsan-mast': 'cylinderTower',
+  palace: 'palaceHall',
+};
+
+/** Height limit from MAX_SLENDER (with 2 % headroom) for a w × d footprint. */
+function slenderCap(w: number, d: number): number {
+  return MAX_SLENDER * 0.98 * Math.sqrt(w * d);
+}
+
+/**
+ * Points every 4 m along the line `o` m beyond the bank, west to east, covering world x in
+ * [x0, x1]. Steps follow the level set of riverSignedDistance (along the tangent, then a Newton
+ * nudge back onto it), so the row stays even on the inside of a bend where normal offsets bunch
+ * up. It is traced both ways from a seed in the middle of the range.
+ */
+function bankContour(seed: Vec2, o: number, x0: number, x1: number): Vec2[] {
+  const f = (x: number, z: number): number => riverSignedDistance(x, z);
+  const trace = (east: boolean): Vec2[] => {
+    const out: Vec2[] = [];
+    let p = seed;
+    let dir: Vec2 | null = null;
+    for (let k = 0; k < 1500; k++) {
+      const gx = (f(p.x + 1, p.z) - f(p.x - 1, p.z)) / 2;
+      const gz = (f(p.x, p.z + 1) - f(p.x, p.z - 1)) / 2;
+      const gl = Math.hypot(gx, gz) || 1;
+      let t = { x: -gz / gl, z: gx / gl };
+      const flip = dir ? t.x * dir.x + t.z * dir.z < 0 : east ? t.x < 0 : t.x > 0;
+      if (flip) t = { x: -t.x, z: -t.z };
+      dir = t;
+      const q = { x: p.x + t.x * 4, z: p.z + t.z * 4 };
+      const err = o - f(q.x, q.z);
+      p = { x: q.x + (gx / gl) * err, z: q.z + (gz / gl) * err };
+      if (p.x < x0 || p.x > x1) break;
+      out.push(p);
+    }
+    return out;
+  };
+  return [...trace(false).reverse(), seed, ...trace(true)];
+}
+
+/** Apartment slab depth, gap between slabs in a row, and distance between rows (m). */
+const SLAB_DEPTH = 14;
+const SLAB_GAP = 16;
+const ROW_PITCH = 72;
+
+/** Clear gap kept between megacore towers (m). */
+const TOWER_GAP = 8;
+
+/** Hillside occupancy reaches its ridge floor at this terrain height (m). */
+const HILL_TOP = 120;
+
+const HIGHRISE_MIX: readonly (readonly [Archetype, number])[] = [
+  ['setbackTower', 30],
+  ['officeSlab', 20],
+  ['bracedTower', 15],
+  ['cantileverTower', 10],
+  ['cylinderTower', 15],
+  ['taperTower', 10],
+];
+
+/** Low and mid-rise blocks between the megacore towers. */
+const PODIUM_MIX: readonly (readonly [Archetype, number])[] = [
+  ['officeSlab', 40],
+  ['setbackTower', 25],
+  ['bracedTower', 15],
+  ['cantileverTower', 10],
+  ['twinTower', 5],
+  ['cylinderTower', 5],
+];
+
+const MEGA_BAG: Archetype[] = [
   'setbackTower',
   'setbackTower',
   'setbackTower',
@@ -533,7 +964,7 @@ const CORE_MEGA_BAG: Archetype[] = [
   'bracedTower',
   'bracedTower',
   'cantileverTower',
-  'twinTower',
+  'taperTower',
 ];
 
 function shuffle<T>(rng: Rng, arr: T[]): T[] {
@@ -576,6 +1007,18 @@ function footprint(rng: Rng, a: Archetype, lw: number, ld: number): { w: number;
       return { w: Math.min(rng.range(55, 90), lw * 0.95), d: rng.range(12, 14) };
     case 'pavilion':
       return { w: lw, d: ld };
+    case 'mediaSlab': {
+      const d = Math.min(ld * f, (lw * f) / 2);
+      return { w: lw * f, d };
+    }
+    case 'hanokRow':
+      return { w: lw * 0.9, d: clamp(ld * 0.55, 6, 14) };
+    case 'palaceHall':
+      return { w: lw * rng.range(0.4, 0.6), d: ld * rng.range(0.3, 0.45) };
+    case 'brickWarehouse':
+      return { w: lw * rng.range(0.7, 0.92), d: ld * rng.range(0.7, 0.92) };
+    case 'showroomBox':
+      return { w: lw * rng.range(0.6, 0.85), d: ld * rng.range(0.6, 0.85) };
     default:
       return { w: lw * f, d: ld * f };
   }
@@ -608,11 +1051,16 @@ export function fitScale(
 
 function draftsFor(zone: DistrictZone, lots: Lot[], rng: Rng): Draft[] {
   const drafts: Draft[] = [];
+  const H = zone.heights;
+  const jitterable =
+    zone.kind === 'sangga' ||
+    zone.kind === 'hillside' ||
+    zone.kind === 'nightlife' ||
+    zone.kind === 'oldtown';
   const make = (lot: Lot, archetype: Archetype, h: number, extra: Partial<Draft> = {}): Draft => {
     const lw = lot.obb.hw * 2;
     const ld = lot.obb.hd * 2;
     let { w, d } = footprint(rng, archetype, lw, ld);
-    const jitterable = zone.kind === 'sangga' || zone.kind === 'hillside';
     const ox = jitterable ? rng.range(-1, 1) * Math.max(0, (lw - w) / 2 - 1) * 0.6 : 0;
     const oz = jitterable ? rng.range(-1, 1) * Math.max(0, (ld - d) / 2 - 1) * 0.6 : 0;
     const jitter = jitterable ? rng.range(-4, 4) * (Math.PI / 180) : 0;
@@ -620,58 +1068,144 @@ function draftsFor(zone: DistrictZone, lots: Lot[], rng: Rng): Draft[] {
     const s = fitScale(w, d, jitter, ox, oz, lw, ld);
     w *= s;
     d *= s;
-    return { lot, archetype, w, d, h, ox, oz, jitter, ...extra };
+    let hh = extra.corp ? h : Math.min(h, slenderCap(w, d));
+    // Tall buildings stand only on low ground (manager rule).
+    if (hh > TALL_H && terrainHeight(lot.obb.x, lot.obb.z) > TALL_GROUND) hh = TALL_H;
+    return { lot, archetype, w, d, h: hh, ox, oz, jitter, ...extra };
   };
 
   switch (zone.kind) {
-    case 'core': {
-      const perBlock = new Map<number, number>();
-      let picked = 0;
-      const big = lots
-        .filter((l) => Math.min(l.obb.hw, l.obb.hd) * 2 >= 55)
-        .sort(
-          (a, b) =>
-            Math.hypot(a.obb.x - SKYLINE_PEAK.x, a.obb.z - SKYLINE_PEAK.z) -
-            Math.hypot(b.obb.x - SKYLINE_PEAK.x, b.obb.z - SKYLINE_PEAK.z),
-        )
-        .filter((l) => {
-          // At most 3 megatowers per block so every block keeps one low building (ratio rule).
-          const n = perBlock.get(l.blockId) ?? 0;
-          if (n >= 3 || picked >= MEGA_COUNT) return false;
-          perBlock.set(l.blockId, n + 1);
-          picked++;
-          return true;
-        });
-      const bag = shuffle(rng, [...CORE_MEGA_BAG]);
-      // The 520 m landmark is a single slender tower: setback or cylinder.
-      const lead = bag.findIndex((x) => x === 'setbackTower' || x === 'cylinderTower');
-      [bag[0], bag[lead]] = [bag[lead] as Archetype, bag[0] as Archetype];
-      const rest = Array.from({ length: Math.max(0, big.length - MEGA_TOP.length) }, () =>
-        rng.range(MEGA_MIN_H + 10, 420),
-      ).sort((a, b) => b - a);
-      const heights = [...MEGA_TOP.slice(0, big.length), ...rest];
-      const megaSet = new Set(big);
-      big.forEach((lot, i) => {
-        drafts.push(
-          make(lot, bag[i % bag.length] as Archetype, heights[i] as number, {
-            corp: CORPS[i % CORPS.length] as string,
-          }),
-        );
-      });
+    case 'megacore': {
+      const plan = MEGA[zone.id];
+      const peak = plan?.peak ?? zone.origin;
+      const bag = shuffle(rng, [...MEGA_BAG]);
+      let corp = 0;
       for (const lot of lots) {
-        if (megaSet.has(lot)) continue;
-        // Plaza / sunken square / ramp space, except next to megatowers (they need a podium).
-        if (!perBlock.has(lot.blockId) && rng.chance(0.3)) continue;
+        const tw = lot.tower;
+        if (!tw) continue;
+        const mega = tw.h >= MEGA_MIN_H;
+        const a: Archetype =
+          tw.tier === 0 && plan
+            ? LANDMARK_ARCHETYPE[plan.landmark]
+            : mega
+              ? (bag[corp % bag.length] as Archetype)
+              : tw.h < 120
+                ? weighted<Archetype>(rng, PODIUM_MIX)
+                : weighted<Archetype>(rng, HIGHRISE_MIX);
+        const extra: Partial<Draft> = {};
+        if (mega) extra.corp = CORPS[corp++ % CORPS.length];
+        if (tw.tier === 0 && plan) extra.landmark = plan.landmark;
+        // Tower lots are sized for their tower: the footprint fills the lot.
+        const w = lot.obb.hw * 2 * 0.96;
+        const d = lot.obb.hd * 2 * 0.96;
+        drafts.push({ lot, archetype: a, w, d, h: tw.h, ox: 0, oz: 0, jitter: 0, ...extra });
+      }
+      for (const lot of lots) {
+        if (lot.tower) continue;
+        // Plazas and sunken squares between the towers.
+        if (rng.chance(0.3)) continue;
         const a = weighted<Archetype>(rng, [
-          ['setbackTower', 40],
-          ['officeSlab', 30],
+          ['officeSlab', 40],
+          ['setbackTower', 25],
           ['bracedTower', 15],
-          ['cylinderTower', 15],
+          ['cantileverTower', 10],
+          ['twinTower', 5],
+          ['cylinderTower', 5],
         ]);
-        drafts.push(make(lot, a, rng.range(120, 245)));
+        // Podium and mid-rise blocks, lower away from the peak.
+        const dist = Math.hypot(lot.obb.x - peak.x, lot.obb.z - peak.z);
+        const fall = 1 - 0.5 * clamp(dist / 700, 0, 1);
+        drafts.push(make(lot, a, rng.range(40, 110) * fall));
       }
       break;
     }
+    case 'corridor': {
+      const [ta, tb] = TEHERAN;
+      for (const lot of lots) {
+        if (rng.chance(0.06)) continue;
+        const onAvenue = pointSegmentDistance(lot.obb, ta, tb) < 110;
+        if (onAvenue) {
+          const a = weighted<Archetype>(rng, [
+            ['officeSlab', 35],
+            ['setbackTower', 25],
+            ['mediaSlab', 20],
+            ['bracedTower', 10],
+            ['cantileverTower', 10],
+          ]);
+          drafts.push(make(lot, a, rng.range(120, H.tallMax)));
+        } else {
+          const a = weighted<Archetype>(rng, [
+            ['sangga', 70],
+            ['officeSlab', 30],
+          ]);
+          drafts.push(make(lot, a, a === 'sangga' ? sanggaHeight(rng) : rng.range(H.min, H.max)));
+        }
+      }
+      break;
+    }
+    case 'oldtown': {
+      const tallBlocks = new Set<number>();
+      for (const lot of lots) {
+        if (rng.chance(0.1)) continue;
+        const a = weighted<Archetype>(rng, [
+          ['lowOffice', 50],
+          ['sangga', 30],
+          ['hanokRow', 20],
+        ]);
+        let h =
+          a === 'hanokRow'
+            ? rng.range(4, 8)
+            : a === 'sangga'
+              ? Math.min(H.max, sanggaHeight(rng))
+              : rng.range(18, H.max);
+        // At most one old 40–70 m office per block.
+        if (a === 'lowOffice' && !tallBlocks.has(lot.blockId) && rng.chance(H.tallShare)) {
+          tallBlocks.add(lot.blockId);
+          h = rng.range(40, H.tallMax);
+        }
+        drafts.push(make(lot, a, h));
+      }
+      break;
+    }
+    case 'palace':
+      for (const lot of lots) {
+        // Hall lots are sized for their hall.
+        const w = lot.obb.hw * 2 * 0.98;
+        const d = lot.obb.hd * 2 * 0.98;
+        const h = lot.tower?.h ?? H.min;
+        drafts.push({ lot, archetype: 'palaceHall', w, d, h, ox: 0, oz: 0, jitter: 0 });
+      }
+      break;
+    case 'brick':
+      for (const lot of lots) {
+        if (rng.chance(0.1)) continue;
+        const a = weighted<Archetype>(rng, [
+          ['brickWarehouse', 70],
+          ['sangga', 15],
+          ['officeSlab', 15],
+        ]);
+        const h =
+          a === 'brickWarehouse'
+            ? rng.range(H.min, H.max)
+            : a === 'sangga'
+              ? Math.min(H.max, sanggaHeight(rng))
+              : rng.range(40, H.tallMax);
+        drafts.push(make(lot, a, h));
+      }
+      break;
+    case 'showroom':
+      for (const lot of lots) {
+        if (rng.chance(0.1)) continue;
+        const a = weighted<Archetype>(rng, [
+          ['showroomBox', 50],
+          ['officeSlab', 30],
+          ['setbackTower', 20],
+        ]);
+        drafts.push(
+          make(lot, a, a === 'showroomBox' ? rng.range(H.min, H.max) : rng.range(30, H.tallMax)),
+        );
+      }
+      break;
     case 'midtown':
       for (const lot of lots) {
         if (rng.chance(0.08)) continue;
@@ -681,14 +1215,15 @@ function draftsFor(zone: DistrictZone, lots: Lot[], rng: Rng): Draft[] {
           ['bracedTower', 10],
           ['sangga', 10],
         ]);
-        let h = a === 'sangga' ? sanggaHeight(rng) : rng.range(40, 140);
-        if (a !== 'sangga' && rng.chance(0.15)) h *= 1.5;
+        let h = a === 'sangga' ? sanggaHeight(rng) : rng.range(H.min, H.max);
+        if (a !== 'sangga' && rng.chance(H.tallShare)) h = Math.min(h * 1.5, H.tallMax);
         drafts.push(make(lot, a, h));
       }
       break;
     case 'sangga':
+    case 'nightlife':
       for (const lot of lots) {
-        if (rng.chance(0.15)) continue;
+        if (rng.chance(zone.kind === 'nightlife' ? 0.05 : 0.15)) continue;
         const a = weighted<Archetype>(rng, [
           ['sangga', 85],
           ['officeSlab', 10],
@@ -696,25 +1231,39 @@ function draftsFor(zone: DistrictZone, lots: Lot[], rng: Rng): Draft[] {
         ]);
         const h =
           a === 'officeSlab'
-            ? rng.range(45, 70)
+            ? rng.range(Math.max(40, H.max), H.tallMax)
             : a === 'cylinderTower'
               ? rng.range(15, 30)
-              : sanggaHeight(rng);
+              : Math.min(H.max, sanggaHeight(rng));
         drafts.push(make(lot, a, h));
       }
       break;
-    case 'apartment':
+    case 'apartment': {
+      const fMin = Math.ceil(H.min / 2.8);
+      const fMax = Math.floor(H.max / 2.8);
       for (const lot of lots) {
         if (rng.chance(0.1)) {
           drafts.push(make(lot, 'sangga', 4.2 + 3.3 * rng.int(1, 2)));
           continue;
         }
-        // Row spacing 0.8..1.0 × height (ART_DIRECTION 4.2).
-        const gap = lot.obb.hd * 2 - 13;
-        const floors = clamp(Math.round((gap * rng.range(1.0, 1.25)) / 2.8), 15, 25);
+        // Taller zones get taller slabs (SEOUL.md 4.2), but rows stay ≥ 0.8 × height apart:
+        // the lot depth minus the slab depth (≈ 13 m) is the gap to the next row.
+        const gap = lot.rowGap ?? lot.obb.hd * 2 - 13;
+        const fGap = Math.floor(gap / 0.8 / 2.8);
+        const fTop = Math.min(Math.floor(H.tallMax / 2.8), fGap);
+        const want = rng.chance(H.tallShare)
+          ? Math.round(rng.int(fMin, fMax) * 1.2)
+          : rng.int(fMin, fMax);
+        // Too shallow for a 5-storey slab at 0.8 × height: a low shopping block instead.
+        if (fTop < 5) {
+          drafts.push(make(lot, 'sangga', 4.2 + 3.3 * rng.int(1, 2)));
+          continue;
+        }
+        const floors = Math.min(fTop, want);
         drafts.push(make(lot, 'apartmentSlab', floors * 2.8));
       }
       break;
+    }
     case 'industrial':
       for (const lot of lots) {
         if (rng.chance(0.1)) continue;
@@ -723,12 +1272,8 @@ function draftsFor(zone: DistrictZone, lots: Lot[], rng: Rng): Draft[] {
       break;
     case 'hillside':
       for (const lot of lots) {
-        // Packed near the bottom of the slope (~85 % of lots built), thinning toward the ridge.
-        const up = clamp(
-          (TERRAIN.hillStartZ - lot.obb.z) / (TERRAIN.hillStartZ - TERRAIN.hillEndZ),
-          0,
-          1,
-        );
+        // Packed at the foot of the slope (~85 % of lots built), thinning toward the ridge.
+        const up = clamp(terrainHeight(lot.obb.x, lot.obb.z) / HILL_TOP, 0, 1);
         if (!rng.chance(HILL_OCCUPANCY_LOW * Math.pow(1 - up, 2.2) + HILL_OCCUPANCY_TOP)) continue;
         drafts.push(make(lot, 'hillHouse', 2.7 * rng.int(2, 4)));
       }
@@ -736,8 +1281,10 @@ function draftsFor(zone: DistrictZone, lots: Lot[], rng: Rng): Draft[] {
     case 'riverside':
       for (const lot of lots) drafts.push(make(lot, 'pavilion', rng.range(3, 8)));
       break;
+    case 'park':
+      break;
     default:
-      throw new Error(`layout v2 generator does not support zone kind ${zone.kind}`);
+      throw new Error(`layout generator does not support zone kind ${zone.kind}`);
   }
   return drafts;
 }
@@ -755,9 +1302,16 @@ function sanggaHeight(rng: Rng): number {
  *    the rest inside [4.2, min(cap, tallest)]. The tallest stays the max and the low one stays
  *    ≤ tallest / 3, so step 1 can never be undone. Pairs of megatowers are exempt (their heights
  *    are fixed landmarks).
- * Caps (HEIGHT_CAP) hold for every non-megatower at the end.
+ * Caps (the zone's `heights.tallMax`) hold for every non-megatower at the end.
  */
-const RATIO_KINDS = new Set(['core', 'midtown', 'sangga']);
+const RATIO_KINDS = new Set<DistrictZone['kind']>([
+  'core',
+  'megacore',
+  'corridor',
+  'midtown',
+  'sangga',
+  'nightlife',
+]);
 const MIN_STOREY = 4.2;
 /** Footprints closer than this (m) count as neighbours for the ±10 % rule. */
 export const NEIGHBOUR_GAP = 4;
@@ -788,8 +1342,16 @@ function applyBlockHeightRules(drafts: Draft[], rng: Rng): void {
     else byBlock.set(d.lot.blockId, [d]);
   }
   for (const list of byBlock.values()) {
+    // Only megatowers (corp) may reach MEGA_MIN_H; everything stays within MAX_SLENDER.
     const capOf = (d: Draft): number =>
-      d.corp ? Infinity : (HEIGHT_CAP[d.lot.zone.kind] ?? Infinity);
+      d.corp
+        ? Infinity
+        : Math.min(
+            d.lot.zone.heights.tallMax,
+            MEGA_MIN_H - 1,
+            slenderCap(d.w, d.d),
+            terrainHeight(d.lot.obb.x, d.lot.obb.z) > TALL_GROUND ? TALL_H : Infinity,
+          );
     for (const d of list) d.h = Math.min(d.h, capOf(d));
     if (list.length < 2) continue;
 
@@ -889,6 +1451,8 @@ function frontSide(
   );
 }
 
+const STOREFRONT_KINDS = new Set<DistrictZone['kind']>(['core', 'megacore', 'midtown', 'corridor']);
+
 function buildSpecs(
   seed: number,
   lots: Lot[],
@@ -928,9 +1492,11 @@ function buildSpecs(
       storefront:
         d.archetype === 'sangga' ||
         d.archetype === 'pavilion' ||
-        ((lot.zone.kind === 'core' || lot.zone.kind === 'midtown') && rng.chance(0.4)) ||
+        d.archetype === 'hanokRow' ||
+        d.archetype === 'showroomBox' ||
+        (STOREFRONT_KINDS.has(lot.zone.kind) && rng.chance(0.4)) ||
         (d.archetype === 'hillHouse' && rng.chance(0.1)),
-      name: fictionalName(rng, d.archetype),
+      name: fictionalName(rng, d.archetype, lot.zone.name),
     };
     if (d.archetype === 'hillHouse' || d.archetype === 'sangga') {
       if (rng.chance(0.07)) tags.cross = true;
@@ -947,7 +1513,7 @@ function buildSpecs(
       }
       const dong = (dongs.get(lot.blockId) ?? 100) + 1;
       dongs.set(lot.blockId, dong);
-      tags.complex = `새빛마을 ${n}단지`;
+      tags.complex = `${lot.zone.name} ${n}단지`;
       tags.dong = dong;
       tags.name = `${tags.complex} ${dong}동`;
     }
@@ -974,12 +1540,16 @@ function buildSpecs(
       seed: Math.floor(rng.next() * 1e9),
       tags,
     };
+    if (d.archetype === 'mediaSlab') spec.tags.mediaFace = spec.front;
+    if (d.landmark) spec.tags.landmark = d.landmark;
     if (tr.twin) spec.twin = tr.twin;
     if (tr.skybridge) spec.skybridge = tr.skybridge;
     if (tr.cantilever) spec.cantilever = tr.cantilever;
     return spec;
   });
 }
+
+const SIGN_STREETS = new Set<DistrictZone['kind']>(['sangga', 'nightlife', 'oldtown']);
 
 /** Street slots (ART_DIRECTION 6.2). */
 function buildSlots(
@@ -999,7 +1569,12 @@ function buildSlots(
     for (const id of hash.query(obbBounds(probe))) {
       if (obbOverlap(footprints[id] as Obb, probe)) return false;
     }
-    return Math.abs(p.x) < EXTENT / 2 && Math.abs(p.z) < EXTENT / 2;
+    // Park strips (둔치) are fine; open water, 샛강 included, is not.
+    return (
+      Math.abs(p.x) < HALF_X &&
+      Math.abs(p.z) < HALF_Z &&
+      surfaceHeight(p.x, p.z) > RIVER.waterY + 0.5
+    );
   };
   const add = (kind: SlotKind, p: Vec2, rotY: number): void => {
     if (!free(p)) return;
@@ -1034,7 +1609,7 @@ function buildSlots(
     for (let s = lightStep / 2, k = 0; s < len; s += lightStep, k++) {
       add('streetLight', along(r, s / len, k % 2 ? 1 : -1, curb), yaw);
     }
-    if (r.district !== 'sangga') {
+    if (!SIGN_STREETS.has(r.district)) {
       const treeStep = r.district === 'apartment' || r.kind === 'arterial' ? 40 : 75;
       for (let s = treeStep / 3, k = 0; s < len; s += treeStep, k++) {
         add('tree', along(r, s / len, k % 2 ? -1 : 1, r.width / 2 + 2), yaw);
@@ -1054,11 +1629,11 @@ function buildSlots(
   }
   // 포장마차: riverside park strips and a few sangga alleys.
   for (const side of [-1, 1] as const) {
-    for (let x = -1160; x <= 1160; x += 75) {
+    for (let x = -HALF_X + 40; x <= HALF_X - 40; x += 75) {
       if (!rng.chance(0.75)) continue;
       const f = riverFrame(x);
-      const off = RIVER.width / 2 - 20;
-      const p = { x: f.p.x + f.south.x * off * side, z: f.p.z + f.south.z * off * side };
+      // Middle of the park strip (둔치).
+      const p = bankPoint(x, side, -parkWidthAt(x) / 2);
       if (onBridge(bridges, p, 8)) continue;
       add('pojangmacha', p, Math.atan2(-f.along.z, f.along.x));
     }
@@ -1075,49 +1650,128 @@ function buildSlots(
   return slots;
 }
 
+/** Angle in `ridgeHeight`'s atan2(z, x) convention of a compass heading (0° = north) in degrees. */
+const bearing = (deg: number): number => ((deg - 90) * Math.PI) / 180;
+
 function makeRidges(seed: number): Ridge[] {
   const rng = zoneRng(seed, 'ridges');
+  // Named peaks (SEOUL.md 5.2): real elevation × 0.6. Compass 0° = north (-Z).
+  const peak = (deg: number, height: number, widthDeg: number) => ({
+    angle: bearing(deg),
+    height,
+    width: (widthDeg * Math.PI) / 180,
+  });
   return [
     {
       id: 'ridge-near',
-      radius: 2500,
+      radius: 3200,
       peakNorth: 260,
       peakSouth: 120,
       segments: 512,
       fog: 0.35,
       baseY: -50,
       seed: rng.int(1, 1e6),
-      peaks: [],
+      peaks: [peak(-5, 500, 14), peak(190, 380, 12)],
     },
     {
       id: 'ridge-mid',
-      radius: 4000,
+      radius: 4800,
       peakNorth: 450,
       peakSouth: 180,
       segments: 384,
       fog: 0.6,
       baseY: -50,
       seed: rng.int(1, 1e6),
-      peaks: [],
+      peaks: [peak(15, 430, 18), peak(165, 370, 14), peak(90, 300, 30)],
     },
     {
       id: 'ridge-far',
-      radius: 6000,
+      radius: 7000,
       peakNorth: 700,
       peakSouth: 240,
       segments: 256,
       fog: 0.8,
       baseY: -50,
       seed: rng.int(1, 1e6),
-      peaks: [],
+      peaks: [peak(270, 150, 40)],
     },
   ];
+}
+
+/** Horizontal reach (m) and vertical margin (m) a sky lane keeps from buildings. */
+export const SKY_LANE_CLEAR = 60;
+export const SKY_LANE_MARGIN = 30;
+
+/**
+ * Flying-traffic routes (SEOUL.md 7.5): rings around the 용산, 여의도 and 테헤란로 towers and a
+ * long route over the river. Each band starts above every building within SKY_LANE_CLEAR m of
+ * the lane, so drones never fly through a tower.
+ */
+function makeSkyLanes(buildings: readonly BuildingSpec[], hash: GridHash): SkyLane[] {
+  const ring = (c: Vec2, r: number, n = 16): Vec2[] =>
+    Array.from({ length: n }, (_, i) => {
+      const a = (i / n) * Math.PI * 2;
+      return { x: c.x + Math.cos(a) * r, z: c.z + Math.sin(a) * r };
+    });
+  const yeouido = MEGA.yeouido?.peak ?? { x: -1090, z: 200 };
+  const [ta, tb] = TEHERAN;
+  const tmid = { x: (ta.x + tb.x) / 2, z: (ta.z + tb.z) / 2 };
+  const river = RIVER.samples.filter(
+    (p, i) => i % 20 === 0 && Math.abs(p.x) < HALF_X - 60 && Math.abs(p.z) < HALF_Z - 60,
+  );
+  const defs: { id: string; points: Vec2[]; closed: boolean; floor: number }[] = [
+    { id: 'sky-yongsan-ring', points: ring(SKYLINE_PEAK, 430), closed: true, floor: 140 },
+    { id: 'sky-yeouido-ring', points: ring(yeouido, 320), closed: true, floor: 140 },
+    { id: 'sky-gangnam-loop', points: ring(tmid, 330, 12), closed: true, floor: 120 },
+    { id: 'sky-river', points: river, closed: false, floor: 110 },
+  ];
+  return defs.map((d) => {
+    let top = 0;
+    const n = d.points.length;
+    const segs = d.closed ? n : n - 1;
+    for (let i = 0; i < segs; i++) {
+      const a = d.points[i] as Vec2;
+      const b = d.points[(i + 1) % n] as Vec2;
+      for (const id of hash.query(segmentBounds(a, b, SKY_LANE_CLEAR + 60))) {
+        const bd = buildings[id] as BuildingSpec;
+        const reach = SKY_LANE_CLEAR + Math.hypot(bd.w, bd.d) / 2;
+        if (pointSegmentDistance(bd, a, b) > reach) continue;
+        top = Math.max(top, bd.baseY + bd.h + bd.spireH);
+      }
+    }
+    const lo = Math.max(d.floor, Math.ceil(top + SKY_LANE_MARGIN));
+    return { id: d.id, points: d.points, closed: d.closed, altitude: [lo, lo + 60] };
+  });
+}
+
+function buildingHash(buildings: readonly BuildingSpec[]): GridHash {
+  const h = new GridHash();
+  buildings.forEach((b, id) => h.insert(id, obbBounds(footprintObb(b))));
+  return h;
+}
+
+function makeLandmarks(buildings: readonly BuildingSpec[]): Landmark[] {
+  const out: Landmark[] = [];
+  for (const b of buildings) {
+    if (b.tags.landmark)
+      out.push({ id: b.tags.landmark, buildingId: b.id, x: b.x, z: b.z, h: b.h });
+  }
+  const namsan = MOUNTAINS.find((m) => m.id === 'namsan');
+  if (namsan) {
+    out.push({ id: 'namsan-mast', buildingId: null, x: namsan.peak.x, z: namsan.peak.z, h: 180 });
+  }
+  const palace = zoneById('palace');
+  const c = palace.polygon.reduce((a, p) => ({ x: a.x + p.x, z: a.z + p.z }), { x: 0, z: 0 });
+  const n = palace.polygon.length;
+  out.push({ id: 'palace', buildingId: null, x: c.x / n, z: c.z / n, h: 18 });
+  return out;
 }
 
 export function generateLayout(seed = 2077): Layout {
   const bridges = makeBridges();
   const highways = makeHighways(bridges);
-  const roads = buildRoads(seed, bridges);
+  const namedRoads = makeNamedRoads(bridges);
+  const roads = buildRoads(seed, bridges, namedRoads);
 
   const obstacles = new Obstacles();
   for (const r of roads) obstacles.add(r.a, r.b, r.width / 2 + 0.5);
@@ -1129,9 +1783,15 @@ export function generateLayout(seed = 2077): Layout {
     for (const p of hw.pillars) obstacles.add(p, p, 3);
   }
   for (const b of bridges) obstacles.add(b.landA, b.landB, b.width / 2 + 3);
-  const c = RIVER.centerline;
+  const c = RIVER.samples;
   for (let i = 0; i < c.length - 1; i++) {
-    obstacles.add(c[i] as Vec2, c[i + 1] as Vec2, RIVER.width / 2 + RIVER_CLEARANCE);
+    const a = c[i] as Vec2;
+    const b = c[i + 1] as Vec2;
+    obstacles.add(a, b, Math.max(riverWidthAt(a.x), riverWidthAt(b.x)) / 2 + RIVER_CLEARANCE);
+  }
+  const sg = SAETGANG.centerline;
+  for (let i = 0; i < sg.length - 1; i++) {
+    obstacles.add(sg[i] as Vec2, sg[i + 1] as Vec2, SAETGANG.width / 2 + RIVER_CLEARANCE);
   }
 
   const { lots, blocks, alleys } = buildLots(seed, obstacles, bridges);
@@ -1159,9 +1819,8 @@ export function generateLayout(seed = 2077): Layout {
 
   return {
     seed,
-    extent: EXTENT,
-    extentX: EXTENT,
-    extentZ: EXTENT,
+    extentX: EXTENT_X,
+    extentZ: EXTENT_Z,
     districts: [...ZONES],
     river: {
       ...RIVER,
@@ -1169,6 +1828,10 @@ export function generateLayout(seed = 2077): Layout {
       widths: [...RIVER.widths],
       parkWidths: [...RIVER.parkWidths],
       samples: RIVER.samples.map((p) => ({ ...p })),
+      channels: RIVER.channels.map((ch) => ({
+        ...ch,
+        centerline: ch.centerline.map((p) => ({ ...p })),
+      })),
     },
     bridges,
     highways,
@@ -1177,9 +1840,10 @@ export function generateLayout(seed = 2077): Layout {
     blocks: usedBlocks,
     buildings,
     slots,
-    islands: [],
-    mountains: [],
-    namedRoads: [],
-    landmarks: [],
+    islands: ISLANDS.map((i) => ({ ...i, polygon: i.polygon.map((p) => ({ ...p })) })),
+    mountains: MOUNTAINS.map((m) => ({ ...m, peak: { ...m.peak } })),
+    namedRoads,
+    landmarks: makeLandmarks(buildings),
+    skyLanes: makeSkyLanes(buildings, buildingHash(buildings)),
   };
 }
