@@ -312,6 +312,27 @@ export interface ProfilePoint {
   part: ChannelPart;
 }
 
+/** Widest park column (m): a quad cut out at a 샛강 mouth or an island moat stays this small. */
+export const PARK_COLUMN = 8;
+
+// One count for the whole river: every slice's profile must have the same length.
+const PARK_COLUMNS = Math.max(
+  1,
+  Math.ceil((Math.max(...RIVER.parkWidths) - EMBANK_SLOPE) / PARK_COLUMN),
+);
+
+function parkColumns(parkWidth: number): ProfilePoint[] {
+  const from = EMBANK_SLOPE;
+  const n = PARK_COLUMNS;
+  const out: ProfilePoint[] = [];
+  for (let k = 0; k < n; k++) {
+    const a = from + ((parkWidth - from) * k) / n;
+    const b = from + ((parkWidth - from) * (k + 1)) / n;
+    out.push({ d: -a, y: RIVER.parkY, part: 'park' }, { d: -b, y: RIVER.parkY, part: 'park' });
+  }
+  return out;
+}
+
 // Must match surfaceHeight; the stone edge sinks below waterY so the water plane cuts it cleanly.
 export function channelProfile(outer: number, parkWidth: number): ProfilePoint[] {
   const { bankY, parkY, waterY } = RIVER;
@@ -322,8 +343,7 @@ export function channelProfile(outer: number, parkWidth: number): ProfilePoint[]
     { d: 0, y: bankY, part: 'bank' },
     { d: 0, y: bankY, part: 'embankment' },
     { d: -EMBANK_SLOPE, y: parkY, part: 'embankment' },
-    { d: -EMBANK_SLOPE, y: parkY, part: 'park' },
-    { d: -parkWidth, y: parkY, part: 'park' },
+    ...parkColumns(parkWidth),
     { d: -parkWidth, y: parkY, part: 'parkEdge' },
     { d: edgeD, y: below, part: 'parkEdge' },
   ];
@@ -435,7 +455,6 @@ export function sideDistance(x: number, z: number): number {
   return best;
 }
 
-/** Distance the ground keeps from any water: the main channel and the side channels. */
 /** groundWaterDistance reports at least this far for points outside the river band. */
 export const FAR_FROM_WATER = 60;
 
@@ -510,11 +529,23 @@ export function sideProfile(outer: number): ProfilePoint[] {
   ];
 }
 
-/** Bank distance of a side channel's water edge, tucked under the embankment stone. */
-export const SIDE_WATER_EDGE = -EMBANK_SLOPE * 0.5;
+/**
+ * Reach of a side channel's bank strip past its water edge (m). Must cover the ground cells
+ * dropped near it: KEEP_DISTANCE (6) plus the widest cell diagonal there (12 × 24 m: 27).
+ */
+export const SIDE_REACH = 40;
+
+/**
+ * How far past a side channel's water edge its water plane runs (m), hidden under the bank and
+ * embankment. Wider than a park quad's diagonal, so main-strip quads cut at a mouth (any corner in
+ * the water) always have water under them.
+ */
+export const SIDE_WATER_UNDER = 12;
 
 /** Width of the ring of water cut around an island that sits on the park strip. */
 export const MOAT = 10;
+/** How far the moat's water plane runs past the moat, under the park (see SIDE_WATER_UNDER). */
+export const MOAT_WATER_UNDER = 12;
 
 export function centroid(poly: readonly Vec2[]): Vec2 {
   let x = 0;
@@ -544,7 +575,8 @@ export function grow(poly: readonly Vec2[], d: number): Vec2[] {
     const u = normal(poly[(i + n - 1) % n] as Vec2, p);
     const v = normal(p, poly[(i + 1) % n] as Vec2);
     const m = { x: u.x + v.x, z: u.z + v.z };
-    const k = m.x * v.x + m.z * v.z || 1;
+    // A sharp corner would push the mitre far out; cap it at twice the offset.
+    const k = Math.max(m.x * v.x + m.z * v.z, 0.5);
     return { x: p.x + (m.x / k) * d, z: p.z + (m.z / k) * d };
   });
 }
@@ -674,8 +706,8 @@ export function groundVertex(x: number, z: number): { x: number; y: number; z: n
   const y = terrainHeight(px, pz);
   const rr = r * k;
   const t = Math.min(1, Math.max(0, (rr - (GROUND_RADIUS - 1300)) / 1250));
-  // The cap only bites far out and on raised ground; ridgeHeight is too costly for every vertex.
-  if (t <= 0 || y <= 0) return { x: px, y, z: pz };
+  // The cap only bites far out; ridgeHeight is too costly for every vertex.
+  if (t <= 0) return { x: px, y, z: pz };
   const fade = t * t * (3 - 2 * t);
   const cap = ridgeHeight(NEAR_RIDGE, Math.atan2(pz, px)) * 0.6 - 15;
   return { x: px, y: y + (Math.min(y, cap) - y) * fade, z: pz };

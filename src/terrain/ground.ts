@@ -5,6 +5,7 @@ import {
   GROUND_RADIUS,
   MAP_HALF_X,
   MAP_HALF_Z,
+  SIDE_REACH,
   SIDE_STRIPS,
   channelDistance,
   channelProfile,
@@ -33,8 +34,6 @@ import {
 const KEEP_DISTANCE = 6;
 /** Largest cell edge on the in-map mountains (m); the base grid is split until it is below. */
 export const MOUNTAIN_CELL = 8;
-/** Reach of a side channel's bank strip beyond its water edge (m). */
-const SIDE_REACH = 20;
 
 const c = (hex: number): THREE.Color => new THREE.Color().setHex(hex);
 
@@ -81,22 +80,56 @@ function groundColor(
 }
 
 /** Forest weight of ground at height y: 0 on the plain and low foothills, 1 from 24 m up. */
+const FOREST_START = 4;
+
 function forestAt(y: number): number {
-  return Math.min(1, Math.max(0, (y - 4) / 20));
+  return Math.min(1, Math.max(0, (y - FOREST_START) / 20));
 }
 
 /** Height of tree crowns over forest ground (m); visual only, never negative. */
 const CANOPY = 2.5;
-/** 남산's summit stays level for the transmission tower (buildings): no canopy within this. */
+/** Radius of the level summit kept around 남산's mast (m). */
 const SUMMIT_FLAT = 50;
 /** Cell of the baked forest mask (m). */
 const FOREST_CELL = 16;
 
+/** Clearance kept free of canopy around every building footprint (m). */
+const BUILDING_CLEAR = 8;
+
 /**
- * layout's isForest baked once on a FOREST_CELL grid over each mountain and read bilinearly:
- * the query costs ~20 µs, too much for every mountain vertex.
+ * layout's isForest baked once on a FOREST_CELL grid over each mountain and read bilinearly (the
+ * query costs ~20 µs, too much for every vertex). A node counts as forest only off every building
+ * footprint (plus BUILDING_CLEAR), so a lift reaching half a cell past the forest edge never
+ * buries a hillside house. Nodes below forestAt's start are skipped: no canopy there anyway.
  */
 function forestMask(): (x: number, z: number) => number {
+  const BUCKET = 32;
+  const near = new Map<string, { x: number; z: number; r: number }[]>();
+  for (const bld of LAYOUT.buildings) {
+    const r = Math.hypot(bld.w, bld.d) / 2 + BUILDING_CLEAR;
+    const bx = Math.floor(bld.x / BUCKET);
+    const bz = Math.floor(bld.z / BUCKET);
+    const key = `${bx},${bz}`;
+    const list = near.get(key) ?? [];
+    list.push({ x: bld.x, z: bld.z, r });
+    near.set(key, list);
+  }
+  const reach = Math.ceil(
+    (Math.max(0, ...LAYOUT.buildings.map((b) => Math.hypot(b.w, b.d) / 2)) + BUILDING_CLEAR) /
+      BUCKET,
+  );
+  const onBuilding = (x: number, z: number): boolean => {
+    const bx = Math.floor(x / BUCKET);
+    const bz = Math.floor(z / BUCKET);
+    for (let dz = -reach; dz <= reach; dz++) {
+      for (let dx = -reach; dx <= reach; dx++) {
+        for (const q of near.get(`${bx + dx},${bz + dz}`) ?? []) {
+          if (Math.hypot(x - q.x, z - q.z) < q.r) return true;
+        }
+      }
+    }
+    return false;
+  };
   const grids = LAYOUT.mountains.map((m) => {
     const x0 = m.peak.x - m.radius;
     const z0 = m.peak.z - m.radius;
@@ -104,7 +137,10 @@ function forestMask(): (x: number, z: number) => number {
     const v = new Float32Array(n * n);
     for (let j = 0; j < n; j++) {
       for (let i = 0; i < n; i++) {
-        v[j * n + i] = isForest(x0 + i * FOREST_CELL, z0 + j * FOREST_CELL) ? 1 : 0;
+        const x = x0 + i * FOREST_CELL;
+        const z = z0 + j * FOREST_CELL;
+        if (terrainHeight(x, z) <= FOREST_START) continue;
+        v[j * n + i] = isForest(x, z) && !onBuilding(x, z) ? 1 : 0;
       }
     }
     return { x0, z0, n, v };
@@ -128,6 +164,13 @@ function forestMask(): (x: number, z: number) => number {
   };
 }
 
+/** 남산's mast (buildings) stands on a level summit: no canopy within SUMMIT_FLAT of it. */
+const MAST = (() => {
+  const l = LAYOUT.landmarks.find((m) => m.id === 'namsan-mast');
+  const n = LAYOUT.mountains.find((m) => m.id === 'namsan');
+  return l ? { x: l.x, z: l.z } : n ? { x: n.peak.x, z: n.peak.z } : null;
+})();
+
 // Only ever raises the ground, so a tree placed on surfaceHeight sinks a little rather than
 // floats, and only where the layout keeps forest: the mask must be over 0.5 (inside the baked
 // forest edge), so hillside houses below the forest line stand on bare ground.
@@ -142,23 +185,20 @@ function canopyLift(
   if (f <= 0) return 0;
   const inside = Math.min(1, Math.max(0, (mask(x, z) - 0.5) * 2));
   if (inside <= 0) return 0;
-  let keep = 1;
-  for (const m of LAYOUT.mountains) {
-    if (m.id !== 'namsan') continue;
-    const d = Math.hypot(x - m.peak.x, z - m.peak.z);
-    keep = Math.min(keep, Math.min(1, Math.max(0, (d - SUMMIT_FLAT) / 20)));
-  }
+  const keep = MAST
+    ? Math.min(1, Math.max(0, (Math.hypot(x - MAST.x, z - MAST.z) - SUMMIT_FLAT) / 20))
+    : 1;
   return CANOPY * f * inside * keep * canopy;
 }
 
 /** A cell is split once one corner rises this far (m); flat ground inside a radius stays coarse. */
 const MOUNTAIN_RISE = 2;
 
-function nearMountain(x: number, z: number): boolean {
+/** Inside some mountain's radius and risen more than MOUNTAIN_RISE (terrainHeight is their max). */
+function raised(x: number, z: number): boolean {
   for (const m of LAYOUT.mountains) {
-    if (Math.hypot(x - m.peak.x, z - m.peak.z) < m.radius) {
+    if (Math.hypot(x - m.peak.x, z - m.peak.z) < m.radius)
       return terrainHeight(x, z) > MOUNTAIN_RISE;
-    }
   }
   return false;
 }
@@ -196,8 +236,44 @@ export function buildGround(): THREE.BufferGeometry {
     if ((rim[a] ?? 0) + (rim[b] ?? 0) + (rim[d] ?? 0) + (rim[e] ?? 0) === 4) return;
     idx.push(a, d, b, b, d, e);
   };
-  // Fine vertices inside one base cell edge are shared with the neighbouring cell through this
-  // key: (i, a, j, b) with a and b normalised onto the lower cell so both sides agree.
+  // Which base cells split into MOUNTAIN_CELL cells: decided for all first, so a shared edge
+  // knows both sides. Sampled at corners, centre and edge midpoints so a small rise between
+  // corners still splits.
+  const cw = nx - 1;
+  const split = new Uint8Array(cw * (nz - 1));
+  for (let j = 0; j < nz - 1; j++) {
+    for (let i = 0; i < cw; i++) {
+      const x0 = xs[i] ?? 0;
+      const x1 = xs[i + 1] ?? 0;
+      const z0 = zs[j] ?? 0;
+      const z1 = zs[j + 1] ?? 0;
+      let hit = false;
+      for (const fx of [0, 0.5, 1]) {
+        for (const fz of [0, 0.5, 1]) {
+          if (!hit && raised(x0 + (x1 - x0) * fx, z0 + (z1 - z0) * fz)) hit = true;
+        }
+      }
+      split[j * cw + i] = hit ? 1 : 0;
+    }
+  }
+  const isSplit = (i: number, j: number): boolean =>
+    i >= 0 && j >= 0 && i < cw && j < nz - 1 && split[j * cw + i] === 1;
+  // On an edge shared with an unsplit cell the extra vertex sits on the straight line between the
+  // two corners, so the coarse quad's edge and the fine ones coincide: no cracks.
+  const between = (k0: number, k1: number, t: number): number => {
+    for (let c = 0; c < 3; c++) {
+      const p0 = pos[k0 * 3 + c] ?? 0;
+      const c0 = col[k0 * 3 + c] ?? 0;
+      pos.push(p0 + ((pos[k1 * 3 + c] ?? 0) - p0) * t);
+      col.push(c0 + ((col[k1 * 3 + c] ?? 0) - c0) * t);
+    }
+    const d0 = dist[k0] ?? 0;
+    dist.push(d0 + ((dist[k1] ?? 0) - d0) * t);
+    rim.push(Math.max(rim[k0] ?? 0, rim[k1] ?? 0));
+    return dist.length - 1;
+  };
+  // Fine vertices on a base cell edge are shared with the neighbouring cell through this key:
+  // (i, a, j, b) with a and b normalised onto the lower cell so both sides agree.
   const fine = new Map<string, number>();
   const fineVertex = (
     i: number,
@@ -220,32 +296,33 @@ export function buildGround(): THREE.BufferGeometry {
       a === 0 ? `x${i},${j},${b}/${sz}` : b === 0 ? `z${i},${a}/${sx},${j}` : `${i},${j},${a},${b}`;
     const hit = fine.get(key);
     if (hit !== undefined) return hit;
-    const x0 = xs[i] ?? 0;
-    const z0 = zs[j] ?? 0;
-    const x = x0 + (((xs[i + 1] ?? x0) - x0) * a) / sx;
-    const z = z0 + (((zs[j + 1] ?? z0) - z0) * b) / sz;
-    const k = vertex(x, z);
+    let k: number;
+    if (a === 0 && !(isSplit(i - 1, j) && isSplit(i, j))) {
+      k = between(j * nx + i, (j + 1) * nx + i, b / sz);
+    } else if (b === 0 && !(isSplit(i, j - 1) && isSplit(i, j))) {
+      k = between(j * nx + i, j * nx + i + 1, a / sx);
+    } else {
+      const x0 = xs[i] ?? 0;
+      const z0 = zs[j] ?? 0;
+      k = vertex(
+        x0 + (((xs[i + 1] ?? x0) - x0) * a) / sx,
+        z0 + (((zs[j + 1] ?? z0) - z0) * b) / sz,
+      );
+    }
     fine.set(key, k);
     return k;
   };
   for (let j = 0; j < nz - 1; j++) {
-    for (let i = 0; i < nx - 1; i++) {
+    for (let i = 0; i < cw; i++) {
       const a = j * nx + i;
-      const x0 = xs[i] ?? 0;
-      const x1 = xs[i + 1] ?? 0;
-      const z0 = zs[j] ?? 0;
-      const z1 = zs[j + 1] ?? 0;
-      const mountain =
-        nearMountain(x0, z0) ||
-        nearMountain(x1, z0) ||
-        nearMountain(x0, z1) ||
-        nearMountain(x1, z1);
-      if (!mountain) {
+      if (!isSplit(i, j)) {
         quad(a, a + 1, a + nx, a + nx + 1);
         continue;
       }
-      const sx = Math.ceil((x1 - x0) / MOUNTAIN_CELL - 1e-6);
-      const sz = Math.ceil((z1 - z0) / MOUNTAIN_CELL - 1e-6);
+      const x0 = xs[i] ?? 0;
+      const z0 = zs[j] ?? 0;
+      const sx = Math.ceil(((xs[i + 1] ?? x0) - x0) / MOUNTAIN_CELL - 1e-6);
+      const sz = Math.ceil(((zs[j + 1] ?? z0) - z0) / MOUNTAIN_CELL - 1e-6);
       for (let v = 0; v < sz; v++) {
         for (let u = 0; u < sx; u++) {
           quad(
@@ -305,7 +382,8 @@ function appendStrip(
   c: ChannelSlices,
   profiles: readonly (readonly ProfilePoint[])[],
   dist: (x: number, z: number) => number,
-  keep: (x: number, z: number) => boolean,
+  /** Called with the quad's four corners; false leaves the quad out. */
+  keep: (corners: readonly Vec2[]) => boolean,
   pal: Palette,
 ): void {
   const profLen = profiles[0]?.length ?? 0;
@@ -335,8 +413,7 @@ function appendStrip(
         const a2 = a + perSlice;
         const b2 = b + perSlice;
         const pa = at(a);
-        const pb2 = at(b2);
-        if (!keep((pa.x + pb2.x) / 2, (pa.z + pb2.z) / 2)) continue;
+        if (!keep([pa, at(b), at(a2), at(b2)])) continue;
         // Where a bend is tighter than two rows deep both rows fold; the few quads left turned
         // over inside the fold are dropped rather than drawn upside down.
         if (side === 0 ? !facesUp(pa, at(b), at(a2)) : !facesUp(pa, at(a2), at(b))) continue;
@@ -405,8 +482,9 @@ export function buildChannel(): THREE.BufferGeometry {
     main,
     main.xs.map((x) => channelProfile(bankReach(x), channelParkWidth(x))),
     channelDistance,
-    // The side channels' mouths and the island moats open the park to the water below.
-    (x, z) => sideDistance(x, z) > 0 && !moats.some((m) => inPolygon(x, z, m)),
+    // The side channels' mouths and the island moats open the park to the water below: a quad
+    // goes once any corner is in them, and the water runs on under it (SIDE_WATER_UNDER).
+    (q) => q.every((p) => sideDistance(p.x, p.z) > 0 && !moats.some((m) => inPolygon(p.x, p.z, m))),
     pal,
   );
   SIDE_STRIPS.forEach((_, i) => {
@@ -417,7 +495,11 @@ export function buildChannel(): THREE.BufferGeometry {
       c.slices.map(() => sideProfile(SIDE_REACH)),
       (x, z) => sideStripDistance(i, x, z),
       // Inside the main channel the main strip and water take over.
-      (x, z) => channelDistance(x, z) > 0,
+      (q) => {
+        const cx = q.reduce((t, p) => t + p.x, 0) / q.length;
+        const cz = q.reduce((t, p) => t + p.z, 0) / q.length;
+        return channelDistance(cx, cz) > 0;
+      },
       pal,
     );
   });

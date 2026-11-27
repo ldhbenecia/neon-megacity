@@ -4,7 +4,10 @@ import { TERRAIN_COLORS } from '../core/palette';
 import type { Vec2 } from '../city/layout';
 import {
   SIDE_STRIPS,
-  SIDE_WATER_EDGE,
+  SIDE_REACH,
+  SIDE_WATER_UNDER,
+  MOAT_WATER_UNDER,
+  grow,
   bankReach,
   centroid,
   channelRows,
@@ -140,12 +143,12 @@ export function buildWaterGeometry(): THREE.BufferGeometry {
       pos,
       idx,
       s,
-      s.slices.map(() => 20),
-      s.slices.map(() => SIDE_WATER_EDGE),
+      s.slices.map(() => SIDE_REACH),
+      s.slices.map(() => SIDE_WATER_UNDER),
       (x, z) => sideStripDistance(i, x, z),
     );
   });
-  for (const m of islandMoats()) appendFan(pos, idx, m);
+  for (const m of islandMoats()) appendFan(pos, idx, grow(m, MOAT_WATER_UNDER));
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   geometry.setIndex(idx);

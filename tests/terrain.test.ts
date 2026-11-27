@@ -21,6 +21,9 @@ import {
   channelProfile,
   gridAxis,
   groundAxes,
+  groundWaterDistance,
+  SIDE_REACH,
+  sideDistance,
   noise2,
   ridgePeaks,
   ridgeProfile,
@@ -290,7 +293,111 @@ describe('ground grid', () => {
         expect(pos.getY(v)).toBeLessThanOrEqual(ridgeHeight(near, Math.atan2(z, x)) + 1e-3);
       }
     }
+    // Vertex normals average a fold away; every triangle must face up on its own.
+    const a = new THREE.Vector3();
+    const b = new THREE.Vector3();
+    const c = new THREE.Vector3();
+    let down = 0;
+    for (let i = 0; i < index.count; i += 3) {
+      a.fromBufferAttribute(pos, index.getX(i));
+      b.fromBufferAttribute(pos, index.getX(i + 1));
+      c.fromBufferAttribute(pos, index.getX(i + 2));
+      if (Math.hypot(a.x, a.z) > GROUND_RADIUS - 1) continue;
+      const n = c.sub(b).cross(a.sub(b));
+      if (n.length() > 1e-6 && n.y <= 0) down++;
+    }
+    expect(down).toBe(0);
   }, 20_000);
+
+  it('split mountain cells and coarse cells share their edges exactly (no cracks)', () => {
+    const g = buildGround();
+    const pos = g.getAttribute('position');
+    const index = g.getIndex()!;
+    // Every triangle edge used once is a border: on the map interior there must be none apart
+    // from the cells dropped along the water.
+    const key = (p: number, q: number) => (p < q ? `${p},${q}` : `${q},${p}`);
+    const edges = new Map<string, number>();
+    for (let i = 0; i < index.count; i += 3) {
+      const t = [index.getX(i), index.getX(i + 1), index.getX(i + 2)];
+      for (let e = 0; e < 3; e++) {
+        const k = key(t[e]!, t[(e + 1) % 3]!);
+        edges.set(k, (edges.get(k) ?? 0) + 1);
+      }
+    }
+    const xz = (v: number) => ({ x: pos.getX(v), y: pos.getY(v), z: pos.getZ(v) });
+    const midOf = (k: string) => {
+      const [p, q] = k.split(',').map(Number) as [number, number];
+      const a = xz(p);
+      const b = xz(q);
+      return { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 };
+    };
+    // A T-junction is fine when the long edge and its short pieces are collinear: each open edge's
+    // midpoint must lie on another open edge. A crack (fine vertex off the coarse edge) fails.
+    type P = { x: number; y: number; z: number };
+    const open: [P, P, string][] = [];
+    for (const [k, n] of edges) {
+      if (n !== 1) continue;
+      const m = midOf(k);
+      // Borders are expected along water (dropped cells) and at the outer rim.
+      if (Math.abs(m.x) > CITY.halfX || Math.abs(m.z) > CITY.halfZ) continue;
+      if (groundWaterDistance(m.x, m.z) < 60) continue;
+      const [p, q] = k.split(',').map(Number) as [number, number];
+      open.push([xz(p), xz(q), k]);
+    }
+    // In 3D: a crack is a fine vertex lifted off the coarse edge.
+    const onSegment = (m: P, a: P, b: P) => {
+      const d = { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z };
+      const t =
+        ((m.x - a.x) * d.x + (m.y - a.y) * d.y + (m.z - a.z) * d.z) /
+        (d.x * d.x + d.y * d.y + d.z * d.z);
+      const e = Math.hypot(a.x + d.x * t - m.x, a.y + d.y * t - m.y, a.z + d.z * t - m.z);
+      return t > -1e-6 && t < 1 + 1e-6 && e < 1e-3;
+    };
+    let cracked = 0;
+    for (const [a, b, k] of open) {
+      const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, z: (a.z + b.z) / 2 };
+      if (!open.some(([c, d, k2]) => k2 !== k && onSegment(m, c, d))) cracked++;
+    }
+    expect(cracked).toBe(0);
+  }, 20_000);
+
+  it('ground cells dropped beside a side channel stay inside its bank strip', () => {
+    const { xs, zs } = groundAxes();
+    let worst = 0;
+    for (let j = 0; j < zs.length - 1; j++) {
+      for (let i = 0; i < xs.length - 1; i++) {
+        const corners = [
+          [xs[i]!, zs[j]!],
+          [xs[i + 1]!, zs[j]!],
+          [xs[i]!, zs[j + 1]!],
+          [xs[i + 1]!, zs[j + 1]!],
+        ].map(([x, z]) => sideDistance(x!, z!));
+        if (Math.min(...corners) >= 6) continue;
+        worst = Math.max(worst, ...corners.filter(Number.isFinite));
+      }
+    }
+    expect(worst).toBeLessThan(SIDE_REACH);
+  });
+
+  it('islands are convex with no sharp corners (fans and mitred skirts stay sound)', () => {
+    for (const isl of LAYOUT.islands.filter((i) => i.kind !== 'land')) {
+      const p = isl.polygon;
+      let sign = 0;
+      for (let i = 0; i < p.length; i++) {
+        const a = p[i]!;
+        const b = p[(i + 1) % p.length]!;
+        const c = p[(i + 2) % p.length]!;
+        const cross = (b.x - a.x) * (c.z - b.z) - (b.z - a.z) * (c.x - b.x);
+        if (sign === 0) sign = Math.sign(cross);
+        expect(Math.sign(cross)).toBe(sign);
+        const u = Math.atan2(a.z - b.z, a.x - b.x);
+        const v = Math.atan2(c.z - b.z, c.x - b.x);
+        let ang = Math.abs(u - v);
+        if (ang > Math.PI) ang = 2 * Math.PI - ang;
+        expect(ang).toBeGreaterThan(Math.PI / 3);
+      }
+    }
+  });
 
   it('river strips end exactly on the outer extent', () => {
     for (const [fine, coarse] of [
@@ -329,12 +436,14 @@ describe('ground grid', () => {
     for (let s = 0; s < slices; s++) {
       for (let side = 0; side < 2; side++) {
         const base = s * per + side * prof;
-        for (const j of [1, 3, 5]) expect(gap(xz(ch, base + j), xz(ch, base + j + 1))).toBe(0);
+        for (let j = 1; j < prof - 1; j += 2) {
+          expect(gap(xz(ch, base + j), xz(ch, base + j + 1))).toBe(0);
+        }
         // Ground drops 12 m cells with a corner nearer than 6 m; the strip must reach past them.
         const o = xz(ch, base);
         expect(channelDistance(o.x, o.z)).toBeGreaterThan(6 + 12 * Math.SQRT2);
-        const park = xz(ch, base + 6);
-        const edge = xz(ch, base + 7);
+        const park = xz(ch, base + prof - 2);
+        const edge = xz(ch, base + prof - 1);
         const water = xz(w, s * 2 + side);
         expect(gap(park, water) + gap(water, edge)).toBeCloseTo(gap(park, edge), 1);
       }
