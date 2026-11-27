@@ -67,6 +67,7 @@ import type {
   Landmark,
   Layout,
   NamedRoad,
+  SkyLane,
   Ridge,
   Road,
   RoadKind,
@@ -1697,6 +1698,58 @@ function makeLandmarks(buildings: readonly BuildingSpec[]): Landmark[] {
   return out;
 }
 
+/** Horizontal reach (m) and vertical margin (m) a sky lane keeps from buildings. */
+export const SKY_LANE_CLEAR = 60;
+export const SKY_LANE_MARGIN = 30;
+
+/**
+ * Flying-traffic routes (SEOUL.md 7.5): rings around the 용산, 여의도 and 테헤란로 towers and a
+ * long route over the river. Each band starts above every building within SKY_LANE_CLEAR m of
+ * the lane, so drones never fly through a tower.
+ */
+function makeSkyLanes(buildings: readonly BuildingSpec[], hash: GridHash): SkyLane[] {
+  const ring = (c: Vec2, r: number, n = 16): Vec2[] =>
+    Array.from({ length: n }, (_, i) => {
+      const a = (i / n) * Math.PI * 2;
+      return { x: c.x + Math.cos(a) * r, z: c.z + Math.sin(a) * r };
+    });
+  const yeouido = MEGA.yeouido?.peak ?? { x: -1090, z: 200 };
+  const [ta, tb] = TEHERAN;
+  const tmid = { x: (ta.x + tb.x) / 2, z: (ta.z + tb.z) / 2 };
+  const river = RIVER.samples.filter(
+    (p, i) => i % 20 === 0 && Math.abs(p.x) < HALF_X - 60 && Math.abs(p.z) < HALF_Z - 60,
+  );
+  const defs: { id: string; points: Vec2[]; closed: boolean; floor: number }[] = [
+    { id: 'sky-yongsan-ring', points: ring(SKYLINE_PEAK, 430), closed: true, floor: 140 },
+    { id: 'sky-yeouido-ring', points: ring(yeouido, 320), closed: true, floor: 140 },
+    { id: 'sky-gangnam-loop', points: ring(tmid, 330, 12), closed: true, floor: 120 },
+    { id: 'sky-river', points: river, closed: false, floor: 110 },
+  ];
+  return defs.map((d) => {
+    let top = 0;
+    const n = d.points.length;
+    const segs = d.closed ? n : n - 1;
+    for (let i = 0; i < segs; i++) {
+      const a = d.points[i] as Vec2;
+      const b = d.points[(i + 1) % n] as Vec2;
+      for (const id of hash.query(segmentBounds(a, b, SKY_LANE_CLEAR + 60))) {
+        const bd = buildings[id] as BuildingSpec;
+        const reach = SKY_LANE_CLEAR + Math.hypot(bd.w, bd.d) / 2;
+        if (pointSegmentDistance(bd, a, b) > reach) continue;
+        top = Math.max(top, bd.baseY + bd.h + bd.spireH);
+      }
+    }
+    const lo = Math.max(d.floor, Math.ceil(top + SKY_LANE_MARGIN));
+    return { id: d.id, points: d.points, closed: d.closed, altitude: [lo, lo + 60] };
+  });
+}
+
+function buildingHash(buildings: readonly BuildingSpec[]): GridHash {
+  const h = new GridHash();
+  buildings.forEach((b, id) => h.insert(id, obbBounds(footprintObb(b))));
+  return h;
+}
+
 export function generateLayout(seed = 2077): Layout {
   const bridges = makeBridges();
   const highways = makeHighways(bridges);
@@ -1776,3 +1829,4 @@ export function generateLayout(seed = 2077): Layout {
     landmarks: makeLandmarks(buildings),
   };
 }
+    skyLanes: makeSkyLanes(buildings, buildingHash(buildings)),
