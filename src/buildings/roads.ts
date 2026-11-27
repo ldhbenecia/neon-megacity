@@ -10,6 +10,8 @@ import { mergeIntervals } from './params';
 
 export const ROAD_Y = 0.03;
 export const SIDEWALK_H = 0.15;
+/** Extra environment reflection in a fully wet puddle (1 + this). */
+export const PUDDLE_REFLECTION = 2;
 
 class FlatBuilder {
   pos: number[] = [];
@@ -365,7 +367,7 @@ export function createWetMaterial(
       .replace(
         '#include <lights_fragment_maps>',
         `#include <lights_fragment_maps>
-        radiance *= 1.0 + 2.0 * wPud * uWet;`,
+        radiance *= 1.0 + ${PUDDLE_REFLECTION.toFixed(2)} * wPud * uWet;`,
       );
   };
   m.customProgramCacheKey = () => `hangang-wet-v2-${name}`;
