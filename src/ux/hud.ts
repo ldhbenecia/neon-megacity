@@ -105,10 +105,20 @@ export interface Hud {
 
 const HINT_MS = 7000;
 
-export function createHud(opts: { visible: boolean; onDeselect?: () => void }): Hud {
+export function createHud(opts: {
+  visible: boolean;
+  onDeselect?: () => void;
+  /** Leaves fly mode or the cinematic (the × next to the mode label on touch screens). */
+  onModeExit?: () => void;
+}): Hud {
   const root = document.getElementById('hud');
   const clockEl = document.getElementById('clock');
   const modeEl = document.getElementById('hud-mode');
+  const modeExit = document.getElementById('hud-mode-exit');
+  // Touch screens have no Esc key: a × button leaves the mode instead of the "Esc로 끄기" hint.
+  const coarse = window.matchMedia('(pointer: coarse)');
+  const onModeExit = (): void => opts.onModeExit?.();
+  modeExit?.addEventListener('click', onModeExit);
   const card = document.getElementById('hud-card');
   const toastEl = document.getElementById('hud-toast');
   const hint = document.getElementById('hud-hint');
@@ -163,9 +173,11 @@ export function createHud(opts: { visible: boolean; onDeselect?: () => void }): 
       mode = m;
       if (root) root.dataset.mode = m;
       if (!modeEl) return;
-      const label = m === 'fly' ? '비행 모드 · Esc로 끄기' : m === 'cinematic' ? '시네마틱' : '';
+      const fly = coarse.matches ? '비행 모드' : '비행 모드 · Esc로 끄기';
+      const label = m === 'fly' ? fly : m === 'cinematic' ? '시네마틱' : '';
       modeEl.textContent = label;
       modeEl.hidden = label === '';
+      if (modeExit) modeExit.hidden = label === '' || !coarse.matches;
       if (m !== 'orbit' && m !== 'flight') hideHint();
     },
     setDistrict(name) {
@@ -232,6 +244,7 @@ export function createHud(opts: { visible: boolean; onDeselect?: () => void }): 
       clearTimeout(toastTimer);
       clearTimeout(hintTimer);
       cardClose?.removeEventListener('click', onCardClose);
+      modeExit?.removeEventListener('click', onModeExit);
       helpClose?.removeEventListener('click', onHelpClose);
       cardListeners.clear();
       helpListeners.clear();
