@@ -3,7 +3,7 @@
 import type { BuildingSpec } from '../city/types';
 import type { GeoBuilder, Style, V3 } from './builder';
 import { SEOUL_COLORS, face, frame, hipRoof } from './seoul';
-import { glow, plain } from './shapes';
+import { band, glow, plain, tierOutline } from './shapes';
 
 export type PalaceForm =
   | 'main'
@@ -201,6 +201,11 @@ export function palaceBody(
     0.55,
     column(),
   );
+  // Low warm light along the plinth edge at night.
+  if (lv === 0) {
+    const o = tierOutline(plinth, spec.rotY, 8);
+    band(g, o, plinth.y1 - 0.25, 0.2, 0.06, glow(SEOUL_COLORS.uplight, 0.6));
+  }
 }
 
 /** Gwanghwamun: high stone base with three arched openings, a two-roof gate tower on top. */
@@ -423,14 +428,29 @@ function hyangwonjeong(g: GeoBuilder, spec: BuildingSpec, lv: 0 | 1 | 2): void {
   const r = spec.w / 2;
   const cx = spec.x;
   const cz = spec.z;
+  const wood = plain(SEOUL_COLORS.wood, 0.9);
+  if (lv === 2) {
+    // Far away: one hexagonal mass and roof, nothing hanging in the air.
+    const ring = hexPoints(cx, cz, r * 0.8, y0);
+    const top = y0 + spec.h * 0.6;
+    const inside: V3 = [cx, (y0 + top) / 2, cz];
+    for (let i = 0; i < 6; i++) {
+      const a = ring[i] as V3;
+      const b = ring[(i + 1) % 6] as V3;
+      face(g, [a, b, [b[0], top, b[2]], [a[0], top, a[2]]], wood, inside);
+    }
+    hexRoof(g, cx, cz, r + 1, top, spec.h * 0.4, 0, tile());
+    return;
+  }
   const y1 = y0 + spec.h * 0.45;
   const y2 = y0 + spec.h * 0.8;
-  const posts = hexPoints(cx, cz, r * 0.85, y0);
-  if (lv < 2) for (const p of posts) g.box(p[0], y0, p[2], 0.35, y1 - y0, 0.35, 0, column());
-  hexRoof(g, cx, cz, r + 1, y1, (y2 - y1) * 0.45, 0.4, tile(), r * 0.6);
+  for (const p of hexPoints(cx, cz, r * 0.85, y0)) {
+    g.box(p[0], y0, p[2], 0.35, y1 - y0, 0.35, 0, column());
+  }
+  // The lower roof sits on the post tops; only the upper roof lifts its eaves.
+  hexRoof(g, cx, cz, r + 1, y1, (y2 - y1) * 0.45, 0, tile(), r * 0.6);
   const upper = hexPoints(cx, cz, r * 0.6, y1);
   const inside: V3 = [cx, (y1 + y2) / 2, cz];
-  const wood = plain(SEOUL_COLORS.wood, 0.9);
   for (let i = 0; i < 6; i++) {
     const a = upper[i] as V3;
     const b = upper[(i + 1) % 6] as V3;

@@ -255,3 +255,46 @@ describe('Gyeongbokgung hall forms', () => {
     }
   });
 });
+
+describe('Hyangwonjeong island and bridge', () => {
+  it('keeps the island inside its pond and draws the bridge to the north bank', () => {
+    const plan = palacePlan(LAYOUT)!;
+    const p = LAYOUT.buildings.find((b) => b.tags.palaceId === 'hyangwonjeong')!;
+    const pond = plan.ponds.find((poly) => {
+      const xs = poly.map((v) => v.x);
+      const zs = poly.map((v) => v.z);
+      return (
+        p.x > Math.min(...xs) &&
+        p.x < Math.max(...xs) &&
+        p.z > Math.min(...zs) &&
+        p.z < Math.max(...zs)
+      );
+    })!;
+    const minX = Math.min(...pond.map((v) => v.x));
+    const maxX = Math.max(...pond.map((v) => v.x));
+    const minZ = Math.min(...pond.map((v) => v.z));
+    const maxZ = Math.max(...pond.map((v) => v.z));
+    const g = new GeoBuilder(0, 0);
+    palaceGrounds(g, { ...plan, walls: [] }, 0);
+    const P = g.build()!.getAttribute('position');
+    let ring = 0;
+    let bridge = 0;
+    for (let i = 0; i < P.count; i++) {
+      const x = P.getX(i);
+      const y = P.getY(i);
+      const z = P.getZ(i);
+      // Island top ring at y 0.7 near the pavilion.
+      if (Math.abs(y - 0.7) < 1e-3 && Math.hypot(x - p.x, z - p.z) < p.w / 2 + 5) {
+        ring++;
+        expect(x).toBeGreaterThan(minX);
+        expect(x).toBeLessThan(maxX);
+        expect(z).toBeGreaterThan(minZ);
+        expect(z).toBeLessThan(maxZ);
+      }
+      // Wooden bridge deck (top at y 0.8) north of the pavilion.
+      if (Math.abs(y - 0.8) < 1e-3 && Math.abs(x - p.x) < 1.2 && z < p.z - p.w / 2) bridge++;
+    }
+    expect(ring).toBeGreaterThanOrEqual(12);
+    expect(bridge).toBeGreaterThan(0);
+  });
+});

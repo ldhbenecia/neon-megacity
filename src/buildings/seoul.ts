@@ -199,7 +199,6 @@ export function brickProps(g: GeoBuilder, spec: BuildingSpec, rng: Rng): void {
   }
 }
 
-/** Palace hall: stone plinth (tier 0) and hall (tier 1); adds columns, double hip roof, uplight. */
 /** Hanok row: tiled hip roof with deep eaves and a warm strip under the street eave. */
 export function hanokRoof(g: GeoBuilder, spec: BuildingSpec, front: Side, lv: 0 | 1 | 2): void {
   const t = topTier(spec);

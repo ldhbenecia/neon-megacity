@@ -1,6 +1,5 @@
-// Palace grounds (SEOUL.md 4.3, 4.5): stone court, raised royal walk and terrace, inner walls with
-// gates, a covered corridor around the main court, side halls and a rear garden. It follows the
-// composition of a Joseon palace (layers of courts on one south-north axis), not any real plan.
+// Gyeongbokgung grounds (SEOUL.md 4.5): paving, the royal walk and garden trees, plus the walls,
+// corridors, terraces, ponds and pond islands from the layout. Hall forms are in gyeongbok.ts.
 import { createRng, type Rng } from '../core/random';
 import { PALACE_AXIS, palaceWallDistance } from '../city/layout';
 import { toLocal } from '../city/math';
@@ -130,7 +129,9 @@ function islands(g: GeoBuilder, plan: PalacePlan, lv: 0 | 1 | 2): void {
         }
       }
     } else if (p.tags.palaceId === 'hyangwonjeong') {
-      const r = p.w / 2 + 4;
+      // The island fits inside the pond with 2 m of water around it, leaving room for the bridge.
+      const half = Math.min(p.x - box.x0, box.x1 - p.x, p.z - box.z0, box.z1 - p.z);
+      const r = Math.max(p.w / 2 + 0.5, Math.min(p.w / 2 + 4, half - 2));
       const ring: V3[] = [];
       for (let i = 0; i < 12; i++) {
         const a = (i / 12) * Math.PI * 2;
