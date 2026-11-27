@@ -34,21 +34,29 @@ const TOPDOWN_Y = Math.max(CITY.extentX, CITY.extentZ) / 2 + 700;
  * The camera always looks down at (or level with) its target: polar angle is
  * measured from +Y, so maxPolarAngle just under PI/2 keeps it above the horizon.
  * maxDistance lets the whole map fit the 55 deg view: the sphere around the map's half-diagonal
- * spans the vertical field of view, with 25 % to spare for an orbit target off the map centre
- * (v2 ~4600 m, v3 ~6500 m).
+ * spans the vertical field of view, with 10 % to spare (v3 ~5700 m). Zoom-out scales around the
+ * orbit target, and the camera itself stays inside CAMERA_RING (see below).
  */
 export const CAMERA_FOV = 55;
 const FIT_DISTANCE = Math.ceil(
-  (Math.hypot(CITY.extentX, CITY.extentZ) / 2 / Math.sin(((CAMERA_FOV / 2) * Math.PI) / 180)) *
-    1.25,
+  (Math.hypot(CITY.extentX, CITY.extentZ) / 2 / Math.sin(((CAMERA_FOV / 2) * Math.PI) / 180)) * 1.1,
 );
-/** Camera far plane: the farthest map corner seen from the zoom-out limit. */
-export const CAMERA_FAR = FIT_DISTANCE + Math.hypot(CITY.extentX, CITY.extentZ);
 export const CAMERA_LIMITS = {
   minDistance: 20,
   maxDistance: Math.max(FIT_DISTANCE, TOPDOWN_Y + 700),
   maxPolarAngle: Math.PI * 0.495,
 } as const;
+
+const NEAREST_RIDGE = Math.min(...LAYOUT.ridges.map((r) => r.radius));
+const FARTHEST_RIDGE = Math.max(...LAYOUT.ridges.map((r) => r.radius));
+/**
+ * The camera stays this far (horizontally) from the map centre: inside the nearest ridge ring and
+ * the ground disc, so their edges never stand between the camera and the city. A low zoom-out
+ * therefore stops at the ring; looking down, the full maxDistance is reachable.
+ */
+export const CAMERA_RING = NEAREST_RIDGE - 150;
+/** Far plane: the farthest ridge seen from the zoom-out limit across the map. */
+export const CAMERA_FAR = CAMERA_LIMITS.maxDistance + FARTHEST_RIDGE + 500;
 
 /** Used when no suitable street exists (e.g. a different layout seed): 8.4 preset 3 as written. */
 export const STREET_FALLBACK: CameraPose = { position: [-760, 6, -360], target: [-700, 1, -470] };
