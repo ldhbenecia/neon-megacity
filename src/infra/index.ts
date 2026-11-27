@@ -128,8 +128,7 @@ function buildDetail(
 
 export function init(ctx: Ctx): CityModuleInstance {
   const L = ctx.LAYOUT;
-  const colors = infraColors();
-  const parts = buildInfra(L, colors, ctx.env.quality !== 'low');
+  const parts = buildInfra(L, infraColors(), ctx.env.quality !== 'ci');
 
   const group = new THREE.Group();
   group.name = 'infra';

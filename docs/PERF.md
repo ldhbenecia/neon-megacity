@@ -8,7 +8,7 @@ every PR that changes performance, with before / after numbers in the PR body.
 ```sh
 npm run perf -- <label>                  # real GPU (Metal ANGLE), builds first
 npm run perf -- <label> --no-build --only=탑다운
-npm run perf -- <label> --quality=low    # the CI tier
+npm run perf -- <label> --quality=ci     # the CI tier
 npm run perf -- <label> --swiftshader    # software GL, slow
 ```
 
@@ -32,6 +32,41 @@ closure instead of on the material or its `uniforms` (arrays of textures are cou
 
 Results also go to `perf-results/<label>.json` (gitignored). fps above 60 only says how much
 headroom is left: on a real display rAF is capped by vsync.
+
+## Screen verification: full quality, several times of day, while moving
+
+Counts, fps and e2e did not catch the black-rectangle bug (592da37 → #63): a shader `pow()` of a
+slightly negative base gave NaN in the HDR target, and bloom spread it over most of the screen.
+Only real-GPU full quality showed it; the low tier and SwiftShader did not (SwiftShader, 960×540:
+noon overview 0 % black, sunset skyline 9–10 %, night street 12–14 %; Metal: 94 %, 100 % and
+whole-frame flashes while moving).
+
+So every `npm run perf` scenario (presets 1, 2, 3, 5, 8 × night, sunset, noon) also runs
+`scripts/screen.ts`. A rAF callback queued after the app's loop downsamples the WebGL canvas to
+64×36 on **every frame** (a 1–3 frame flash cannot slip between samples), first 1 s at rest, then
+during a short zoom out and back, a W / S flight and a small orbit drag, then 1 s at rest. A pixel
+is black when R + G + B < 6. Limits by time of day (`lightAt`, from Metal runs of the fixed build):
+
+| light               | at rest | moving | why                                                      |
+| ------------------- | ------- | ------ | -------------------------------------------------------- |
+| day 07–17 h         | 30 %    | 50 %   | healthy views ≤ 13 % black                               |
+| dusk 05–07, 17–20 h | 50 %    | 70 %   | street at sunset 26–27 % rest, 46–48 % moving            |
+| night               | 90 %    | 90 %   | street / hillside up to 57–76 %: only whole black frames |
+
+Any frame darker than mean 2 fails too. The run then exits with code 1. The table column is
+`max black % at rest / moving, min brightness`; `--no-screen` skips it. Fixed build (#63 + #64):
+all 15 scenarios pass; main c0fc4be: noon overview 100 % black at rest and moving.
+
+Limit: at night only whole black frames fail, so a partial black block (say 15 % of the screen) at
+night would pass; a follow-up could track the largest connected black region or a sudden jump in
+the black share between frames.
+
+The motion stays small on purpose: wide orbits at street level swing the camera against unlit
+walls (legitimately black at night) and once clipped into a building (99 % black, mean 0.1).
+
+Because SwiftShader does not reproduce GPU-specific NaN or precision bugs, **a full-quality
+`npm run perf` on a real GPU is required before merging** any change to shaders, post-processing,
+lighting or materials; paste its screen column in the PR body. CI keeps its SwiftShader checks.
 
 ## Snapshot: main e2b7fef (lighting, infra, atmosphere, ux; terrain, buildings, neon are stubs)
 
@@ -198,6 +233,10 @@ boot → interactive time must not grow, and the loader must keep animating (no 
 during the buildings stage).
 
 ## Findings and candidates
+
+- **Signs in layout v3 always hit the cap.** The sign total stays at its 16,000 cap, so thinning
+  always runs (building signs ~10,300, street panels ~4,070, street lights 1,456 / 1,500, ground
+  traffic 1,199 / 1,200; caps scaled to the map in #67).
 
 - **Day/night scrub stall (fixed).** Toggling the key light's `castShadow` changed the program
   variant of every lit material. With buildings (#11), preset 2, M4: a timeline jump between night
