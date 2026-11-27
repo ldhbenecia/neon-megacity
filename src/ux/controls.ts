@@ -5,7 +5,8 @@ import { clockMinutes } from '../core/clock';
 import type { Ctx } from '../core/types';
 import type { CameraRig } from './cameraRig';
 import type { Hud } from './hud';
-import { districtViews, rigPresets } from './presets';
+import { createMinimap } from './minimap';
+import { districtViewById, districtViews, rigPresets } from './presets';
 
 export interface Controls {
   update(): void;
@@ -135,6 +136,19 @@ export function createControls(ctx: Ctx, rig: CameraRig, hud: Hud): Controls {
     }
   }
 
+  const minimapCanvas = document.getElementById('minimap');
+  const minimap =
+    minimapCanvas instanceof HTMLCanvasElement
+      ? createMinimap(
+          minimapCanvas,
+          (id) => {
+            rig.goDistrict(id);
+            if (compact.matches) setPanel(false);
+          },
+          (id) => districtViewById(id) !== undefined,
+        )
+      : null;
+  if (minimap) cleanup.push(() => minimap.dispose());
   const districtRoot = document.getElementById('district-chips');
   const districtGroup = document.getElementById('district-group');
   // On a phone the long list would hide the whole city behind the panel: start folded there.
@@ -215,6 +229,10 @@ export function createControls(ctx: Ctx, rig: CameraRig, hud: Hud): Controls {
       }
     },
     update() {
+      if (minimap && panel?.hidden === false) {
+        const d = rig.debug();
+        minimap.update(d.position, d.target);
+      }
       const mins = clockMinutes(env.timeOfDay);
       if (input && mins !== lastMins && !scrubbing) {
         lastMins = mins;
