@@ -66,8 +66,11 @@ export function init(ctx: Ctx): CityModuleInstance {
   if (post) ctx.render = () => post.render();
   // main's compile stage calls this instead of renderer.compile: the HDR target needs
   // different program variants than the canvas.
-  const userData = scene.userData as { compile?: () => void };
-  const warmup = (): void => post?.warmup();
+  // Contract with main (ux): compile may return a Promise, which the boot awaits.
+  const userData = scene.userData as { compile?: () => void | Promise<void> };
+  const warmup = async (): Promise<void> => {
+    await post?.warmup();
+  };
   if (post) userData.compile = warmup;
 
   const quality = createQualityState();

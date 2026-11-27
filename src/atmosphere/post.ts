@@ -146,7 +146,8 @@ export interface PostSettings {
 
 export interface Post {
   render(): void;
-  warmup(): void;
+  /** Compiles the scene and every post program; resolves once they are linked. */
+  warmup(): Promise<void>;
   update(elapsed: number, s: PostSettings): void;
   setTier(tier: number): void;
   dispose(): void;
@@ -343,10 +344,13 @@ export function createPost(ctx: Ctx): Post | null {
   }
 
   return {
-    warmup() {
+    // compileAsync creates the programs synchronously against the bound target, then waits for
+    // KHR_parallel_shader_compile to link them, so the boot can await instead of stalling the
+    // first rendered frame.
+    async warmup() {
       syncOutputDefines();
       renderer.setRenderTarget(sceneTarget);
-      renderer.compile(scene, camera);
+      const sceneReady = renderer.compileAsync(scene, camera);
       const quadGeo = new PlaneGeometry(2, 2);
       const holder = new Group();
       const mats = [
@@ -356,13 +360,18 @@ export function createPost(ctx: Ctx): Post | null {
       ];
       for (const m of mats) holder.add(new Mesh(quadGeo, m));
       renderer.setRenderTarget(bloom.renderTargetBright);
-      renderer.compile(holder, warmCamera);
-      holder.clear();
-      holder.add(new Mesh(quadGeo, finalMaterial));
+      const bloomReady = renderer.compileAsync(holder, warmCamera);
+      const finalHolder = new Group();
+      finalHolder.add(new Mesh(quadGeo, finalMaterial));
       renderer.setRenderTarget(null);
-      renderer.compile(holder, warmCamera);
-      holder.clear();
-      quadGeo.dispose();
+      const finalReady = renderer.compileAsync(finalHolder, warmCamera);
+      try {
+        await Promise.all([sceneReady, bloomReady, finalReady]);
+      } finally {
+        holder.clear();
+        finalHolder.clear();
+        quadGeo.dispose();
+      }
     },
     render() {
       syncPixelRatio();
