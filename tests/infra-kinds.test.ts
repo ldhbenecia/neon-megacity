@@ -8,9 +8,11 @@ import {
   bridgePoint,
   bridgeShape,
   buildBridge,
+  fountainNozzles,
   islandRange,
   lowerDeckAt,
   pierStations,
+  railTracks,
   spanList,
   type BridgeFrame,
 } from '../src/infra/bridges';
@@ -147,6 +149,44 @@ describe('infra kinds: layout v3 bridges', () => {
     // 청담대교's subway deck is high above the water: flat.
     const cd = bridge('br-cheongdam');
     expect(lowerDeckAt(cd, bridgeFrame(cd), cd.lowerDeckY!, 0)).toBe(cd.lowerDeckY);
+  });
+});
+
+describe('infra: geometry neon matches (InfraApi)', () => {
+  it('rail tracks: 한강철교 4, 동호대교 2 in the middle, 청담대교 2 on the lower deck', () => {
+    const count = Object.fromEntries(LAYOUT.bridges.map((b) => [b.id, railTracks(b).length]));
+    expect(count['br-hangang-rail']).toBe(4);
+    expect(count['br-dongho']).toBe(2);
+    expect(count['br-cheongdam']).toBe(2);
+    for (const b of LAYOUT.bridges) if (!b.rail) expect(count[b.id], b.id).toBe(0);
+    const cd = bridge('br-cheongdam');
+    for (const t of railTracks(cd)) {
+      for (const p of t) expect(p[1]).toBeCloseTo(cd.lowerDeckY! + 0.41, 9);
+    }
+    // 동호대교's tracks sit inside its center bed, on the deck and its ramps.
+    const dh = bridge('br-dongho');
+    const f = bridgeFrame(dh);
+    for (const t of railTracks(dh)) {
+      const l = (t[0]![0] - f.mid[0]) * f.v[0] + (t[0]![2] - f.mid[2]) * f.v[2];
+      expect(Math.abs(l)).toBeLessThan(4);
+      expect(Math.max(...t.map((p) => p[1]))).toBeCloseTo(dh.deckY + 0.46, 9);
+      expect(Math.min(...t.map((p) => p[1]))).toBeLessThan(1);
+    }
+  });
+
+  it('fountain nozzles run along both upper deck edges of 반포대교, facing out', () => {
+    const b = bridge('br-banpo');
+    const f = bridgeFrame(b);
+    const lines = fountainNozzles(b);
+    expect(lines).toHaveLength(2);
+    for (const q of lines) {
+      expect(q.a[1]).toBeCloseTo(b.deckY - 0.3, 9);
+      const l = (q.a[0] - f.mid[0]) * f.v[0] + (q.a[2] - f.mid[2]) * f.v[2];
+      expect(Math.abs(l)).toBeCloseTo(b.width / 2 + 0.05, 6);
+      expect(Math.sign(q.outward[0] * f.v[0] + q.outward[2] * f.v[2])).toBe(Math.sign(l));
+    }
+    for (const o of LAYOUT.bridges)
+      if (o.motif !== 'fountain') expect(fountainNozzles(o)).toEqual([]);
   });
 });
 

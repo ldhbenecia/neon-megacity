@@ -347,6 +347,56 @@ const buildGirder: BridgeBuilder = (b, f, parts, c, obstacles) => {
   );
 };
 
+/** Rail top above the deck surface: 'all' tracks sit on a 0.25 m bed, a center bed is 0.3 m. */
+const RAIL_TOP = { all: 0.25 + 0.16, center: 0.3 + 0.16 } as const;
+
+/**
+ * Rail top polylines of every track on a bridge (InfraApi.railTracks): upper deck tracks over
+ * the whole deck and its ramps, lower deck tracks abutment to abutment.
+ */
+export function railTracks(b: Bridge): V3[][] {
+  const f = bridgeFrame(b);
+  const out: V3[][] = [];
+  const add = (use: DeckUse, from: number, to: number, y: (s: number) => number): void => {
+    if (use.tracks === 'none') return;
+    const path = deckPath(f, from, to, y);
+    const top = RAIL_TOP[use.tracks];
+    for (const t of trackCenters(use)) {
+      out.push(
+        path.map((p): V3 => {
+          const s = (p[0] - f.mid[0]) * f.u[0] + (p[2] - f.mid[2]) * f.u[2];
+          return bridgePoint(f, s, t, p[1] + top);
+        }),
+      );
+    }
+  };
+  add(upperUse(b), f.landA, f.landB, (s) => deckYAt(b, f, s));
+  const low = lowerDeckY(b);
+  if (low !== undefined) {
+    const h = f.spanHalf + ABUT / 2;
+    add(lowerUse(b), -h, h, (s) => lowerDeckAt(b, f, low, s));
+  }
+  return out;
+}
+
+/** Nozzle line depth under the deck surface on the outer fascia (m). */
+const NOZZLE_DROP = 0.3;
+
+/** Fountain nozzle lines along both upper deck edges (InfraApi.fountainNozzles). */
+export function fountainNozzles(b: Bridge): { a: V3; b: V3; outward: V3 }[] {
+  if (b.motif !== 'fountain') return [];
+  const f = bridgeFrame(b);
+  const h = f.spanHalf;
+  return ([-1, 1] as const).map((sgn) => {
+    const l = sgn * (b.width / 2 + 0.05);
+    return {
+      a: bridgePoint(f, -h, l, b.deckY - NOZZLE_DROP),
+      b: bridgePoint(f, h, l, b.deckY - NOZZLE_DROP),
+      outward: [f.v[0] * sgn, 0, f.v[2] * sgn],
+    };
+  });
+}
+
 const BUILDERS: Record<BridgeShape, BridgeBuilder> = {
   arch: buildArch,
   truss: buildTruss,

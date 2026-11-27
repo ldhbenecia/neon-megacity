@@ -4,7 +4,7 @@ import type * as THREE from 'three';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type GUI from 'lil-gui';
 import type { CITY } from '../city/layout';
-import type { BuildingFace, BuildingSpec, Layout } from '../city/types';
+import type { BuildingFace, BuildingSpec, Layout, Vec2, Vec3 } from '../city/types';
 
 export type * from '../city/types';
 
@@ -109,6 +109,17 @@ export interface InfraApi {
   deckThickness: number;
   /** Highest deck surface at (x, z) or null; same as layout `deckHeightAt(ctx.LAYOUT, x, z)`. */
   deckHeightAt(x: number, z: number): number | null;
+  /**
+   * Rail tracks by bridge id (rail bridges only), one polyline per track along the rail tops,
+   * approach ramps included where the deck has them (한강철교 four tracks, 동호대교 two in the
+   * middle, 청담대교 two on the lower deck). Neon runs trains along these.
+   */
+  railTracks: ReadonlyMap<string, readonly { points: readonly Vec3[] }[]>;
+  /**
+   * Fountain nozzle lines by bridge id ('fountain' motif): one per upper deck edge, abutment to
+   * abutment, on the outer fascia just under the deck surface; `outward` points away from the deck.
+   */
+  fountainNozzles: ReadonlyMap<string, readonly { a: Vec3; b: Vec3; outward: Vec2 }[]>;
 }
 
 export interface Ctx {
