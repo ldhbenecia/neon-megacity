@@ -14,7 +14,7 @@ import {
   type Level,
   type Lod0Job,
 } from './lod';
-import { emitBuilding, industrialStacks } from './archetypes';
+import { emitBuilding, faceBlank, industrialStacks } from './archetypes';
 import { namsanMast, palaceWall } from './landmarks';
 import { createFacadeMaterial, createFacadeUniforms } from './facadeMaterial';
 import {
@@ -58,7 +58,11 @@ interface Chunk {
 
 const NULL = new NullBuilder(0, 0);
 
-function collectChunks(LAYOUT: Ctx['LAYOUT'], grid: ChunkGrid): Chunk[] {
+function collectChunks(
+  LAYOUT: Ctx['LAYOUT'],
+  grid: ChunkGrid,
+  onStreet: (x: number, z: number) => boolean,
+): Chunk[] {
   const chunks = new Map<string, Chunk>();
   const chunkAt = (x: number, z: number): Chunk => {
     const { i, j } = chunkIndex(x, z, grid);
@@ -72,7 +76,6 @@ function collectChunks(LAYOUT: Ctx['LAYOUT'], grid: ChunkGrid): Chunk[] {
     return c;
   };
 
-  const onStreet = streetTest(LAYOUT.roads);
   for (const spec of LAYOUT.buildings) {
     const c = chunkAt(spec.x, spec.z);
     const far = { l0: NULL, l1: c.l1, l2: c.l2 };
@@ -137,7 +140,8 @@ export function init(ctx: Ctx): CityModuleInstance {
   group.name = 'buildings';
   scene.add(group);
 
-  const chunks = collectChunks(LAYOUT, chunkGrid(LAYOUT, CITY.chunkSize));
+  const onStreet = streetTest(LAYOUT.roads);
+  const chunks = collectChunks(LAYOUT, chunkGrid(LAYOUT, CITY.chunkSize), onStreet);
   // Low tier (CI SwiftShader): start at LOD1, so no LOD0 detail (trees, stairs, props) and no
   // interior-mapped windows; LOD2 takes over at the LOD1 distance.
   const low = env.quality === 'ci';
@@ -300,7 +304,9 @@ export function init(ctx: Ctx): CityModuleInstance {
   const api: BuildingsApi = {
     group,
     specs,
-    faces: specs.map((s) => buildingFaces(s)),
+    faces: specs.map((s) =>
+      buildingFaces(s).map((f) => ({ ...f, blank: faceBlank(s, f.side, onStreet) })),
+    ),
     maxHeight: specs.reduce((m, s) => Math.max(m, buildingTop(s)), 0),
     roadY: ROAD_Y,
     sidewalkHeight: SIDEWALK_H,

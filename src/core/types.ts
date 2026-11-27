@@ -86,8 +86,10 @@ export interface BuildingsApi {
    * Wall faces of every tier, index = building id. Identical to `buildingFaces(spec)` from the
    * layout, precomputed once. Neon places signs strictly inside one face:
    * `face.y0 + 2 ≤ y ≤ face.y1 - 2`, 1 m in from the face edges.
+   * `blank`: the wall has no window cells and no shop front, decided by the same rule the facade
+   * renderer uses (painted signs, 단지명 and 동 numbers go there).
    */
-  faces: readonly (readonly BuildingFace[])[];
+  faces: readonly (readonly (BuildingFace & { blank: boolean })[])[];
   /** Highest world y of any building (spires included). */
   maxHeight: number;
   /** Road surface y and sidewalk top y (flat districts). */

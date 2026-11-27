@@ -26,6 +26,7 @@ import {
   mixHex,
   OPPOSITE,
   scaleHex,
+  isBlankStyle,
   windowStyle,
   baseArchetype,
   withBaseArchetype,
@@ -149,11 +150,29 @@ function facadeHex(spec: BuildingSpec, rng: Rng): number {
   }
 }
 
+type Role = ReturnType<typeof faceRole>;
+
+function roleOf(spec: BaseSpec, side: Side | null, shops: ReadonlySet<Side>): Role {
+  const base = side ? faceRole(spec, side) : 'side';
+  return side !== null && shops.has(side) && base === 'side' ? 'front' : base;
+}
+
+/**
+ * Whether a wall side has no windows and no shop front, by the same rule the facade renderer
+ * uses (faceStyle). Neon reads it from `BuildingsApi.faces[].blank` to place painted signs.
+ */
+export function faceBlank(raw: BuildingSpec, side: Side, onStreet?: StreetTest): boolean {
+  const spec = withBaseArchetype(raw);
+  const shops = shopSides(spec, raw.archetype, onStreet);
+  if (side === spec.tags.mediaFace) return true;
+  if (spec.archetype === 'showroomBox' || shops.has(side)) return false;
+  return isBlankStyle(windowStyle(spec.archetype, roleOf(spec, side, shops), spec.seed));
+}
+
 function faceStyle(b: Bld, side: Side | null, len: number, tierIdx: number): Style {
   const { spec } = b;
-  const baseRole = side ? faceRole(spec, side) : 'side';
   const shop = side !== null && b.shopSides.has(side);
-  const role = shop && baseRole === 'side' ? 'front' : baseRole;
+  const role = roleOf(spec, side, b.shopSides);
   if (spec.archetype === 'showroomBox') return glow(SEOUL_COLORS.showroom, 0.7);
   if (spec.archetype === 'palaceHall' && tierIdx === 0) return plain(SEOUL_COLORS.plinth, 0.9);
   if (side !== null && side === spec.tags.mediaFace) return plain(SEOUL_COLORS.screenOff, 0.25);

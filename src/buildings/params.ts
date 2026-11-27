@@ -108,8 +108,16 @@ export function windowStyle(
         ? { type: FACADE.punched, cellW: 3, winW: 2.2, winH: 1.5 }
         : { type: FACADE.plain, cellW: 3, winW: 0, winH: 0 };
     case 'brickWarehouse':
-      return { type: FACADE.brick, cellW: 4.5, winW: 2.2, winH: 2.6 };
+      // Blind brick walls (the back, and the sides of every other building) carry painted signs.
+      return role === 'back' || (role === 'side' && seed % 2 === 0)
+        ? { type: FACADE.brick, cellW: 4.5, winW: 0, winH: 0 }
+        : { type: FACADE.brick, cellW: 4.5, winW: 2.2, winH: 2.6 };
   }
+}
+
+/** A wall drawn without any window cells. */
+export function isBlankStyle(ws: WindowStyle): boolean {
+  return ws.type === FACADE.plain || ws.winW <= 0;
 }
 
 export function fitCells(width: number, target: number): { count: number; cellW: number } {
