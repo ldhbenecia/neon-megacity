@@ -16,8 +16,8 @@ export interface Controls {
   dispose(): void;
 }
 
-/** Zone kinds whose chips stand out: the quarters most visitors look for first. */
 const TIER_KO: Readonly<Record<string, string>> = { high: '상', medium: '중', low: '하', ci: 'CI' };
+/** Zone kinds whose chips stand out: the quarters most visitors look for first. */
 
 const MAJOR_KINDS = new Set(['megacore', 'corridor', 'nightlife', 'brick', 'oldtown']);
 
@@ -213,6 +213,7 @@ export function createControls(ctx: Ctx, rig: CameraRig, hud: Hud, perf: Perf): 
   // Quality row: auto, or a fixed tier that turns the frame-time controller off (saved).
   const qualityGroup = document.getElementById('quality-group');
   const qualityNow = document.getElementById('quality-now');
+  const urlQuality = new URLSearchParams(location.search).has('quality');
   const qualityButtons = [
     ...(qualityGroup?.querySelectorAll<HTMLButtonElement>('button[data-quality]') ?? []),
   ];
@@ -233,15 +234,30 @@ export function createControls(ctx: Ctx, rig: CameraRig, hud: Hud, perf: Perf): 
   for (const b of qualityButtons) {
     on(b, 'click', () => {
       const choice = b.dataset.quality as 'auto' | UserTier;
-      try {
-        localStorage.setItem(QUALITY_STORAGE_KEY, choice);
-      } catch {
-        // Private mode or blocked storage: the pick still applies for this visit.
+      // ?quality= wins over the stored pick at boot, so a pick made under it lasts this visit only.
+      if (!urlQuality) {
+        try {
+          localStorage.setItem(QUALITY_STORAGE_KEY, choice);
+        } catch {
+          // Private mode or blocked storage: the pick still applies for this visit.
+        }
       }
       perf.choose(choice);
       renderQuality();
     });
   }
+  on(qualityGroup?.querySelector('.segmented') ?? null, 'keydown', (e) => {
+    if (e.code !== 'ArrowLeft' && e.code !== 'ArrowRight') return;
+    e.preventDefault();
+    e.stopPropagation();
+    const at = qualityButtons.findIndex((b) => b.getAttribute('aria-checked') === 'true');
+    const next = Math.min(
+      qualityButtons.length - 1,
+      Math.max(0, at + (e.code === 'ArrowRight' ? 1 : -1)),
+    );
+    qualityButtons[next]?.click();
+    qualityButtons[next]?.focus();
+  });
   renderQuality();
 
   return {
