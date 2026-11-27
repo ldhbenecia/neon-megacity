@@ -14,6 +14,8 @@ import {
   PALACE_GATE_HALF,
   PALACE_PLAN,
   palaceWallAt,
+  palaceWallDistance,
+  MOUNTAIN_RANGES,
   TERRAIN,
   islandAt,
   parkWidthAt,
@@ -56,6 +58,7 @@ import {
 } from '../src/city/river';
 import {
   hashString,
+  obbCorners,
   obbOverlap,
   obbSegmentDistance,
   pointInPolygon,
@@ -94,11 +97,11 @@ describe('layout v3: determinism', () => {
       digest: digest(LAYOUT),
     }).toMatchInlineSnapshot(`
       {
-        "blocks": 1418,
-        "buildings": 5688,
-        "digest": "8ae9fdd4",
-        "roads": 1189,
-        "slots": 3477,
+        "blocks": 1424,
+        "buildings": 5649,
+        "digest": "41074fcc",
+        "roads": 1181,
+        "slots": 3474,
       }
     `);
   });
@@ -814,9 +817,7 @@ describe('layout v3: building names', () => {
   it('names buildings after their quarter', () => {
     const named = (zone: string) => B.filter((b) => b.zoneId === zone).map((b) => b.tags.name);
     expect(
-      B.filter((b) => b.tags.palacePart === 'gate' || b.tags.palacePart === 'hall').map(
-        (b) => b.tags.name,
-      ),
+      B.map((b) => b.tags.name).filter((n) => (PALACE_HALLS as readonly string[]).includes(n)),
     ).toEqual(['한빛문', '정운전', '사현전', '평안전']);
     for (const b of B) expect(b.tags.name, b.archetype).not.toMatch(/[\u4e00-\u9fff]/u);
     expect(named('hongdae').some((n) => /전자상가|시장/u.test(n))).toBe(false);
@@ -849,7 +850,14 @@ describe('layout v3: palace grounds', () => {
 
   it('tags the gate, axis halls, 4–8 side halls and one pond pavilion', () => {
     const part = (p: string) => palace.filter((b) => b.tags.palacePart === p);
-    expect(part('gate').map((b) => b.tags.name)).toEqual([PALACE_HALLS[0]]);
+    // The main gate (slot 0) and the gatehouses in the two inner-wall openings.
+    const gates = part('gate');
+    expect(gates[0]!.tags.name).toBe(PALACE_HALLS[0]);
+    expect(gates).toHaveLength(3);
+    for (const g of gates.slice(1)) {
+      expect(g.tags.name).toMatch(/문$/u);
+      expect(Math.abs(g.x - PALACE_AXIS_X)).toBeLessThan(1e-6);
+    }
     expect(part('hall')).toHaveLength(PALACE_PLAN.length - 1);
     expect(part('annex').length).toBeGreaterThanOrEqual(4);
     expect(part('annex').length).toBeLessThanOrEqual(8);
@@ -862,30 +870,170 @@ describe('layout v3: palace grounds', () => {
   });
 
   it('closes the outer wall except the main gate on the axis, inner walls with axis gates', () => {
-    const outer = walls.filter((w) => w.kind === 'wall' && w.height === 4);
-    expect(outer).toHaveLength(5);
     const south = PALACE_RECT.z1;
     expect(palaceWallAt(LAYOUT, PALACE_AXIS_X, south)).toBeNull();
-    expect(palaceWallAt(LAYOUT, PALACE_AXIS_X - PALACE_GATE_HALF - 2, south)?.kind).toBe('wall');
-    expect(palaceWallAt(LAYOUT, PALACE_RECT.x0, (PALACE_RECT.z0 + south) / 2)?.kind).toBe('wall');
+    // The outer wall stays mostly closed: openings are only the gate and the roads.
+    const outer = walls.filter((w) => w.kind === 'wall' && w.height === 4);
+    const length = outer.reduce((n, w) => n + Math.hypot(w.b.x - w.a.x, w.b.z - w.a.z), 0);
+    const { x0, x1, z0 } = PALACE_RECT;
+    expect(length).toBeGreaterThan(0.6 * 2 * (x1 - x0 + (south - z0)));
+    expect(
+      outer.some(
+        (w) => w.a.z === south && Math.max(w.a.x, w.b.x) <= PALACE_AXIS_X - PALACE_GATE_HALF + 1e-6,
+      ),
+    ).toBe(true);
     const inner = walls.filter((w) => w.kind === 'wall' && w.height < 4);
     expect(inner).toHaveLength(4);
     for (const w of inner) expect(palaceWallAt(LAYOUT, PALACE_AXIS_X, w.a.z)).toBeNull();
     const terrace = walls.filter((w) => w.kind === 'terrace');
     expect(terrace).toHaveLength(1);
     expect(terrace[0]!.height).toBeCloseTo(1.2, 9);
+    // The terrace is a rectangle on the axis: nothing between the south gate and its south end.
+    const t = terrace[0]!;
+    for (let z = south - 1; z > Math.max(t.a.z, t.b.z) + 0.5; z -= 1) {
+      expect(palaceWallAt(LAYOUT, PALACE_AXIS_X, z), `axis z ${z}`).toBeNull();
+    }
   });
 
-  it('keeps every palace building off the walls and corridors', () => {
+  it('opens the outer wall wherever a road reaches it', () => {
+    const { x0, x1, z0, z1 } = PALACE_RECT;
+    const edges: [Vec2, Vec2][] = [
+      [
+        { x: x0, z: z1 },
+        { x: x1, z: z1 },
+      ],
+      [
+        { x: x1, z: z1 },
+        { x: x1, z: z0 },
+      ],
+      [
+        { x: x1, z: z0 },
+        { x: x0, z: z0 },
+      ],
+      [
+        { x: x0, z: z0 },
+        { x: x0, z: z1 },
+      ],
+    ];
+    let reached = 0;
+    for (const r of LAYOUT.roads) {
+      for (const [a, b] of edges) {
+        // Where the road's centerline meets this wall line (crossing or end on it).
+        const ux = b.x - a.x;
+        const uz = b.z - a.z;
+        const len = Math.hypot(ux, uz);
+        const off = (p: Vec2) => ((p.x - a.x) * -uz + (p.z - a.z) * ux) / len;
+        const da = off(r.a);
+        const db = off(r.b);
+        const t = da * db < 0 ? da / (da - db) : Math.abs(da) <= Math.abs(db) ? 0 : 1;
+        const p = { x: r.a.x + (r.b.x - r.a.x) * t, z: r.a.z + (r.b.z - r.a.z) * t };
+        if (Math.abs(off(p)) > r.width / 2) continue;
+        const s = ((p.x - a.x) * ux + (p.z - a.z) * uz) / len;
+        if (s < 0 || s > len) continue;
+        reached++;
+        const wall = palaceWallAt(LAYOUT, p.x, p.z);
+        expect(wall?.kind === 'wall' && wall.height === 4, `road ${r.id}`).toBe(false);
+      }
+    }
+    expect(reached).toBeGreaterThan(0);
+  });
+
+  it('keeps every palace building off the walls, corridors and terrace, side halls apart', () => {
     for (const b of palace) {
-      for (const w of walls.filter((x) => x.kind !== 'terrace')) {
-        expect(obbSegmentDistance(obb(b), w.a, w.b), b.tags.name).toBeGreaterThan(w.width / 2);
+      const pts = [...obbCorners(obb(b)), { x: b.x, z: b.z }];
+      for (const w of walls) {
+        // The throne hall's south face meets the terrace edge; nothing may reach inside it.
+        const min = Math.min(...pts.map((p) => palaceWallDistance(w, p.x, p.z)));
+        expect(min, `${b.tags.name} ${w.kind}`).toBeGreaterThanOrEqual(-1e-6);
+        if (w.kind !== 'terrace') {
+          expect(obbSegmentDistance(obb(b), w.a, w.b), b.tags.name).toBeGreaterThan(w.width / 2);
+        }
+      }
+    }
+    // Side halls stand on bases 1.5 m wider than the hall: bases never touch.
+    const annex = palace.filter((b) => b.tags.palacePart === 'annex');
+    for (let i = 0; i < annex.length; i++) {
+      for (let j = i + 1; j < annex.length; j++) {
+        expect(obbOverlap(obb(annex[i]!), obb(annex[j]!), 3)).toBe(false);
+      }
+    }
+  });
+});
+
+describe('layout v3: mountain slopes', () => {
+  // Manager criteria (terrain at 0.375 × real elevation): no face over 100 % (45°), mid slopes
+  // under 60 % on average, and a gentle foot (< 15 %) where the city meets the mountain. Cells
+  // belong to the nearest peak; the palace terrace (a cut, not a natural slope) is left out of
+  // the foot check.
+  it('keeps every mountain under 100 % slope, mid slopes under 60 %, feet under 15 %', () => {
+    const owner = (x: number, z: number) =>
+      MOUNTAINS.reduce((a, m) =>
+        Math.hypot(x - m.peak.x, z - m.peak.z) < Math.hypot(x - a.peak.x, z - a.peak.z) ? m : a,
+      );
+    const terrace = (x: number, z: number) =>
+      x > PALACE_RECT.x0 - 120 &&
+      x < PALACE_RECT.x1 + 120 &&
+      z > PALACE_RECT.z0 - 120 &&
+      z < PALACE_RECT.z1 + 120;
+    for (const m of MOUNTAINS) {
+      let max = 0;
+      let midSum = 0;
+      let midN = 0;
+      let foot = 0;
+      for (let x = m.peak.x - m.radius; x <= m.peak.x + m.radius; x += 8) {
+        for (let z = m.peak.z - m.radius; z <= m.peak.z + m.radius; z += 8) {
+          if (owner(x, z) !== m) continue;
+          const h = terrainHeight(x, z);
+          if (h <= 0.05) continue;
+          const s = Math.hypot(terrainHeight(x + 4, z) - h, terrainHeight(x, z + 4) - h) / 4;
+          max = Math.max(max, s);
+          const b = h / m.height;
+          if (b >= 0.2 && b <= 0.8) {
+            midSum += s;
+            midN++;
+          }
+          if (b <= 0.04 && !terrace(x, z)) foot = Math.max(foot, s);
+        }
+      }
+      expect(max, `${m.id} max`).toBeLessThanOrEqual(1);
+      expect(midSum / midN, `${m.id} mid`).toBeLessThanOrEqual(0.6);
+      expect(foot, `${m.id} foot`).toBeLessThanOrEqual(0.15);
+    }
+  }, 120_000);
+});
+
+describe('layout v3: mountain feet and the river', () => {
+  // terrain splits ground cells where the ground rises over 2 m and drops cells within 40 m of the
+  // water (bankReach); raised ground stays two coarse cells (2 × 24 m) beyond that, so the split
+  // cells never meet the dropped waterside cells.
+  it('keeps raised ground (> 2 m) at least 88 m from the water', () => {
+    for (const r of MOUNTAIN_RANGES) {
+      for (let x = r.x0; x <= r.x1; x += 8) {
+        for (let z = r.z0; z <= r.z1; z += 8) {
+          if (terrainHeight(x, z) <= 2) continue;
+          expect(waterSignedDistance(x, z), `${r.ids.join('+')} ${x},${z}`).toBeGreaterThanOrEqual(
+            88,
+          );
+        }
       }
     }
   });
 });
 
 describe('layout v3: mountains stay wooded', () => {
+  it('seats every building at its lowest footprint corner (slopes get a retaining base)', () => {
+    for (const b of B) {
+      const corners = obbCorners(obb(b)).map((p) => terrainHeight(p.x, p.z));
+      expect(b.baseY, b.id.toString()).toBeLessThanOrEqual(Math.min(...corners) + 1e-6);
+    }
+  });
+
+  it("keeps 남산's summit pad clear for the mast", () => {
+    const n = MOUNTAINS.find((m) => m.id === 'namsan')!;
+    expect(isForest(n.peak.x, n.peak.z)).toBe(true);
+    for (const b of B) expect(Math.hypot(b.x - n.peak.x, b.z - n.peak.z)).toBeGreaterThan(35);
+  });
+
   it('builds nothing on slopes over 25 % or above the forest line', () => {
     for (const b of B) {
       const o = obb(b);

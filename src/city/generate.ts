@@ -388,6 +388,8 @@ interface Lot {
    * after a rejected slab), so a named complex never spans a row change or a gap.
    */
   aptRun?: number;
+  /** Set on bank-row apartment lots: order within the run (a skipped number is a gap). */
+  aptSeq?: number;
   /** Set on palace hall lots: slot in the south-to-north hall plan (names follow the slot). */
   hall?: number;
   /** Set on palace lots: role on the grounds. */
@@ -761,8 +763,10 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
     const side = zoneSide(zone.id) === 'north' ? -1 : 1;
     const first = Math.max(bank.o0, RIVER.bandWidth) + 4 + SLAB_DEPTH / 2;
     let run = 0;
+    let seq: number;
     for (let o = first; o + SLAB_DEPTH / 2 <= bank.o1; o += ROW_PITCH) {
       run++;
+      seq = 0;
       // Seed on the row as close to the middle of the strip (world x) as the normal offsets
       // reach (they bunch up or spread out on bends), then trace both ways.
       const mid = (bank.x0 + bank.x1) / 2;
@@ -822,7 +826,14 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
           buildingIds: [],
         });
         lotHash.insert(lots.length, obbBounds(obb));
-        lots.push({ obb, zone, blockId, rowGap: ROW_PITCH - SLAB_DEPTH, aptRun: run });
+        lots.push({
+          obb,
+          zone,
+          blockId,
+          rowGap: ROW_PITCH - SLAB_DEPTH,
+          aptRun: run,
+          aptSeq: seq++,
+        });
       }
     }
   }
@@ -860,7 +871,12 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
     }
   }
 
-  function palaceLot(zone: DistrictZone, obb: Obb, h: number, part: 'annex' | 'pavilion'): void {
+  function palaceLot(
+    zone: DistrictZone,
+    obb: Obb,
+    h: number,
+    part: 'gate' | 'annex' | 'pavilion',
+  ): void {
     const blockId = blocks.length;
     blocks.push({
       id: blockId,
@@ -908,7 +924,8 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
       const w = 10 + rng.next() * 6;
       const d = 7 + rng.next() * 3;
       const h = 4 + rng.next() * 1.5;
-      const obb: Obb = { x, z, hw: w / 2 + 1.5, hd: d / 2 + 1.5, rotY: 0 };
+      // Each base reaches 1.5 m past its hall, so two side halls keep 3 m between their lots.
+      const obb: Obb = { x, z, hw: w / 2 + 3, hd: d / 2 + 3, rotY: 0 };
       const reach = Math.hypot(obb.hw, obb.hd) + 2;
       if (walls.some((wl) => palaceWallDistance(wl, x, z) < reach)) continue;
       if (
@@ -922,6 +939,11 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
       if (!accept(obb, zone)) continue;
       palaceLot(zone, { ...obb, hw: w / 2, hd: d / 2 }, h, 'annex');
       placed++;
+    }
+    // Gatehouses in the inner-wall openings on the axis (narrower than the opening).
+    for (const z of palaceCourts().inner) {
+      const gate: Obb = { x: PALACE_AXIS_X, z, hw: 6, hd: 2.5, rotY: 0 };
+      if (accept(gate, zone)) palaceLot(zone, gate, 6, 'gate');
     }
     const pc = { x: (px0 + px1) / 2, z: (pz0 + pz1) / 2 };
     const pav: Obb = { x: pc.x, z: pc.z, hw: 3.5, hd: 3.5, rotY: 0 };
@@ -1639,7 +1661,7 @@ function buildSpecs(
   const rng = zoneRng(seed, 'specs');
   applyBlockHeightRules(drafts, rng);
 
-  const aptState = new Map<string, { run: number; n: number; dongs: number }>();
+  const aptState = new Map<string, { run: number; seq: number; n: number; dongs: number }>();
   return drafts.map((d, id): BuildingSpec => {
     const { lot } = d;
     const obb = draftObb(d);
@@ -1671,6 +1693,8 @@ function buildSpecs(
     };
     // The pond pavilion is a 정, not a 전.
     if (lot.palacePart === 'pavilion') tags.name = tags.name.replace(/전$/u, '정');
+    // Inner gates (the main gate keeps its slot name).
+    if (lot.palacePart === 'gate' && lot.hall !== 0) tags.name = tags.name.replace(/전$/u, '문');
     if (d.archetype === 'hillHouse' || d.archetype === 'sangga') {
       if (rng.chance(0.07)) tags.cross = true;
     }
@@ -1683,10 +1707,12 @@ function buildSpecs(
       // 반포 1단지 101~104동, 반포 2단지 ... A new row or a gap starts a new complex.
       const prev = aptState.get(lot.zone.id);
       const run = lot.aptRun ?? -lot.blockId - 1;
-      const fresh = !prev || prev.run !== run || prev.dongs >= COMPLEX_SIZE;
+      const seq = lot.aptSeq ?? 0;
+      // A slab drawn as something else (a 상가) leaves a gap in the sequence: new complex.
+      const fresh = !prev || prev.run !== run || prev.seq !== seq - 1 || prev.dongs >= COMPLEX_SIZE;
       const cur = fresh
-        ? { run, n: (prev?.n ?? 0) + 1, dongs: 1 }
-        : { run, n: prev.n, dongs: prev.dongs + 1 };
+        ? { run, seq, n: (prev?.n ?? 0) + 1, dongs: 1 }
+        : { run, seq, n: prev.n, dongs: prev.dongs + 1 };
       aptState.set(lot.zone.id, cur);
       const dong = 100 + cur.dongs;
       tags.complex = `${lot.zone.name} ${cur.n}단지`;
@@ -2043,7 +2069,8 @@ export function generateLayout(seed = 2077): Layout {
     namedRoads,
     landmarks: makeLandmarks(buildings),
     skyLanes: makeSkyLanes(buildings, buildingHash(buildings)),
-    palaceWalls: palaceWalls(),
+    // Stairs end at the wall foot; the wall opens for streets only.
+    palaceWalls: palaceWalls(roads.filter((r) => r.kind !== 'stair')),
     palacePonds: [palacePond()],
   };
 }
