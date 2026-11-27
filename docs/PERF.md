@@ -208,7 +208,8 @@ machine load, the ratio does not). Baseline (main 0d4c9de, M4, under load): layo
 buildings 0.6 s, terrain 0.5 s, neon 0.37 s, compile 0.26 s, infra 0.23 s. Over 1.3× the reviewer
 comments on the PR and the manager decides; work moving to the boot worker does not count.
 
-First checks (M4, low load, main 31ead8a measured in the same session):
+First checks (M4, low load, main 31ead8a measured in the same session; compare ratios only, not
+these absolute numbers with the loaded 0d4c9de baseline above):
 
 | PR                  | module init (ms)  | main (ms) | ratio      |
 | ------------------- | ----------------- | --------- | ---------- |
