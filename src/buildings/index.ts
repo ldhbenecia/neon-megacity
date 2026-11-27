@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { buildingFaces, buildingTop, terrainHeight } from '../city/layout';
-import { pointSegmentDistance, toLocal } from '../city/math';
+import { pointSegmentDistance } from '../city/math';
 import { GridHash, segmentBounds } from '../city/spatial';
 import type { BuildingsApi, CityModuleInstance, Ctx, Road } from '../core/types';
 import type { Vec2 } from '../city/types';
@@ -17,7 +17,7 @@ import {
 } from './lod';
 import { emitBuilding, faceBlank, industrialStacks } from './archetypes';
 import { namsanMast, palaceWall } from './landmarks';
-import { palaceGrounds, palacePlan } from './palace';
+import { axisGate, palaceGrounds, palacePlan } from './palace';
 import { createFacadeMaterial, createFacadeUniforms } from './facadeMaterial';
 import {
   LOD_DISTANCES,
@@ -46,6 +46,23 @@ function streetTest(roads: readonly Road[]): (x: number, z: number) => boolean {
       const r = surfaces[id];
       return !!r && pointSegmentDistance({ x, z }, r.a, r.b) <= r.width / 2 + 2;
     });
+}
+
+/** Shortest distance between segments pq and ab (0 when they cross). */
+function segmentDistance(p: Vec2, q: Vec2, a: Vec2, b: Vec2): number {
+  const cross = (o: Vec2, u: Vec2, v: Vec2): number =>
+    (u.x - o.x) * (v.z - o.z) - (u.z - o.z) * (v.x - o.x);
+  const d1 = cross(a, b, p);
+  const d2 = cross(a, b, q);
+  const d3 = cross(p, q, a);
+  const d4 = cross(p, q, b);
+  if (d1 * d2 < 0 && d3 * d4 < 0) return 0;
+  return Math.min(
+    pointSegmentDistance(p, a, b),
+    pointSegmentDistance(q, a, b),
+    pointSegmentDistance(a, p, q),
+    pointSegmentDistance(b, p, q),
+  );
 }
 
 interface Chunk {
@@ -108,37 +125,49 @@ function collectChunks(
     namsanMast(c.l2, l.x, y0, l.z, l.h, 2);
     c.lod0.push((g) => namsanMast(g, l.x, y0, l.z, l.h, 1));
   }
-  // The wall opens for roads and for the gate hall standing on its line.
-  const halls = LAYOUT.buildings.filter((b) => b.archetype === 'palaceHall');
-  const inHall = (x: number, z: number): boolean =>
-    halls.some((h) => {
-      const l = toLocal(x - h.x, z - h.z, h.rotY);
-      return Math.abs(l.x) <= h.w / 2 + 2 && Math.abs(l.z) <= h.d / 2 + 2;
-    });
-  // Roads running alongside the wall don't open it; only ones crossing its line do.
-  const crossing = (a: Vec2, b: Vec2, x: number, z: number): boolean => {
-    const len = Math.hypot(b.x - a.x, b.z - a.z) || 1;
-    const wx = (b.x - a.x) / len;
-    const wz = (b.z - a.z) / len;
-    return LAYOUT.roads.some((r) => {
-      if (r.kind === 'stair') return false;
-      const rl = Math.hypot(r.b.x - r.a.x, r.b.z - r.a.z) || 1;
-      const along = Math.abs(((r.b.x - r.a.x) * wx + (r.b.z - r.a.z) * wz) / rl);
-      return along < 0.5 && pointSegmentDistance({ x, z }, r.a, r.b) <= r.width / 2 + 1;
-    });
-  };
-  for (const zone of LAYOUT.districts) {
-    if (zone.kind !== 'palace') continue;
-    zone.polygon.forEach((a, i) => {
-      const b = zone.polygon[(i + 1) % zone.polygon.length];
-      if (!b) return;
-      const gate = (x: number, z: number): boolean => crossing(a, b, x, z) || inHall(x, z);
-      const c = chunkAt((a.x + b.x) / 2, (a.z + b.z) / 2);
-      palaceWall(c.l1, a, b, terrainHeight, gate);
-      c.lod0.push((g) => palaceWall(g, a, b, terrainHeight, gate));
-    });
-  }
+  // The outer wall opens where a road crosses its line, where a hall stands on it, and on the axis
+  // of the south side (main gate). Roads are pre-filtered to the palace once.
   const plan = palacePlan(LAYOUT);
+  if (plan) {
+    const near = LAYOUT.roads.filter(
+      (r) =>
+        r.kind !== 'stair' &&
+        Math.max(r.a.x, r.b.x) > plan.x0 - 20 &&
+        Math.min(r.a.x, r.b.x) < plan.x1 + 20 &&
+        Math.max(r.a.z, r.b.z) > plan.z0 - 20 &&
+        Math.min(r.a.z, r.b.z) < plan.z1 + 20,
+    );
+    const crosses = (p: Vec2, q: Vec2): boolean => {
+      const len = Math.hypot(q.x - p.x, q.z - p.z) || 1;
+      return near.some((r) => {
+        const rl = Math.hypot(r.b.x - r.a.x, r.b.z - r.a.z) || 1;
+        const along = Math.abs(
+          ((r.b.x - r.a.x) * (q.x - p.x) + (r.b.z - r.a.z) * (q.z - p.z)) / (rl * len),
+        );
+        return along < 0.5 && segmentDistance(p, q, r.a, r.b) <= r.width / 2 + 1;
+      });
+    };
+    const onHall = (p: Vec2, q: Vec2): boolean =>
+      plan.halls.some(
+        (h) =>
+          segmentDistance(p, q, { x: h.x, z: h.z }, { x: h.x, z: h.z }) <= Math.hypot(h.w, h.d) / 2,
+      );
+    const southGate = axisGate(plan.axisX);
+    for (const zone of LAYOUT.districts) {
+      if (zone.kind !== 'palace') continue;
+      zone.polygon.forEach((a, i) => {
+        const b = zone.polygon[(i + 1) % zone.polygon.length];
+        if (!b) return;
+        const south = Math.abs(a.z - plan.z1) < 1 && Math.abs(b.z - plan.z1) < 1;
+        const gate = (p: Vec2, q: Vec2): boolean =>
+          crosses(p, q) || onHall(p, q) || (south && southGate(p, q));
+        const c = chunkAt((a.x + b.x) / 2, (a.z + b.z) / 2);
+        palaceWall(c.l1, a, b, terrainHeight, gate);
+        palaceWall(c.l2, a, b, terrainHeight, gate);
+        c.lod0.push((g) => palaceWall(g, a, b, terrainHeight, gate));
+      });
+    }
+  }
   if (plan) {
     const c = chunkAt((plan.x0 + plan.x1) / 2, (plan.z0 + plan.z1) / 2);
     palaceGrounds(c.l1, plan, 1);
@@ -329,8 +358,12 @@ export function init(ctx: Ctx): CityModuleInstance {
   const api: BuildingsApi = {
     group,
     specs,
+    // Landmark towers are drawn from their own geometry, not the tier boxes buildingFaces sees,
+    // so they expose no faces and neon leaves them alone.
     faces: specs.map((s) =>
-      buildingFaces(s).map((f) => ({ ...f, blank: faceBlank(s, f.side, onStreet) })),
+      s.tags.landmark
+        ? []
+        : buildingFaces(s).map((f) => ({ ...f, blank: faceBlank(s, f.side, onStreet) })),
     ),
     maxHeight: specs.reduce((m, s) => Math.max(m, buildingTop(s)), 0),
     roadY: ROAD_Y,

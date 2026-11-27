@@ -242,13 +242,13 @@ export function namsanMast(
   g.box(x, y0 + h, z, 1.4, 1.4, 1.4, 0, glow(NEON.neonRed.hex, 1.4));
 }
 
-/** Low palace wall with a dark tile coping from a to b; open where `gate` (a road) says so. */
+/** Low palace wall with a dark tile coping from a to b; a piece is left out where `gate` says so. */
 export function palaceWall(
   g: GeoBuilder,
   a: P2,
   b: P2,
   ground: (x: number, z: number) => number,
-  gate: (x: number, z: number) => boolean,
+  gate: (a: P2, b: P2) => boolean,
 ): void {
   const len = Math.hypot(b.x - a.x, b.z - a.z);
   if (len < 0.5) return;
@@ -257,8 +257,12 @@ export function palaceWall(
   const wall = plain(0x5a5650, 0.9);
   const tile = plain(0x1a1d1f, 0.6);
   for (let i = 0; i < n; i++) {
-    const p = { x: a.x + ((b.x - a.x) * (i + 0.5)) / n, z: a.z + ((b.z - a.z) * (i + 0.5)) / n };
-    if (gate(p.x, p.z)) continue;
+    const at = (k: number): P2 => ({
+      x: a.x + ((b.x - a.x) * k) / n,
+      z: a.z + ((b.z - a.z) * k) / n,
+    });
+    const p = at(i + 0.5);
+    if (gate(at(i), at(i + 1))) continue;
     const seg = len / n;
     const y0 = ground(p.x, p.z) - 0.6;
     g.box(p.x, y0, p.z, seg + 0.6, 4.6, 1.1, rot, wall);

@@ -45,6 +45,12 @@ export function palacePlan(
 
 const flat = (): number => 0;
 
+/** Gate opening of ±8 m around the axis for walls crossing it. */
+export const axisGate =
+  (axisX: number) =>
+  (a: { x: number }, b: { x: number }): boolean =>
+    Math.min(a.x, b.x) < axisX + 8 && Math.max(a.x, b.x) > axisX - 8;
+
 const quad = (x0: number, z0: number, x1: number, z1: number, y: number): V3[] => [
   [x0, y, z0],
   [x1, y, z0],
@@ -158,16 +164,12 @@ function garden(
  * (index.ts). Deterministic: the same plan always emits the same geometry.
  */
 export function palaceGrounds(g: GeoBuilder, plan: PalacePlan, lv: 0 | 1 | 2): void {
-  const rng = createRng(plan.seed);
-  paving(g, plan, rng, lv);
+  // Separate streams so the side halls and garden sit in the same place at every LOD (paving
+  // draws a different number of values per level).
+  paving(g, plan, createRng(plan.seed + 1), lv);
+  const rng = createRng(plan.seed + 2);
   const main = mainHall(plan);
   const stone = plain(0x8a847a, 0.85);
-  // Royal walk from the south wall to the terrace, one step above the court.
-  const terraceZ = main.z + main.d / 2 + 11;
-  const walkLen = plan.z1 - (terraceZ + 10);
-  if (walkLen > 2) g.box(plan.axisX, 0, (plan.z1 + terraceZ + 10) / 2, 6, 0.35, walkLen, 0, stone);
-  g.box(plan.axisX, 0, terraceZ, main.w * 0.95, 1.2, 20, 0, stone);
-
   // Inner walls in the gaps north of the main hall, each with a gate on the axis; the main court
   // runs from the hall south of it to the first inner wall.
   const mi = plan.halls.indexOf(main);
@@ -179,12 +181,20 @@ export function palaceGrounds(g: GeoBuilder, plan: PalacePlan, lv: 0 | 1 | 2): v
   const gaps: number[] = [];
   for (let i = mi; i + 1 < plan.halls.length && gaps.length < 2; i++) gaps.push(between(i));
   for (const z of gaps) {
-    palaceWall(g, { x: plan.x0, z }, { x: plan.x1, z }, flat, (x) => Math.abs(x - plan.axisX) < 8);
+    palaceWall(g, { x: plan.x0, z }, { x: plan.x1, z }, flat, axisGate(plan.axisX));
     gateHouse(g, plan.axisX, z, lv);
   }
 
   // Covered corridor (haenggak) around the main court.
   const south = mi > 0 ? between(mi - 1) : Math.min(plan.z1 - 4, main.z + main.d / 2 + 34);
+  // Terrace in front of the main hall, stopping short of the south corridor; the royal walk runs
+  // from the south gate through the corridor opening to the terrace.
+  const front = main.z + main.d / 2;
+  const depth = Math.max(4, Math.min(20, south - 4 - front));
+  const terraceZ = front + depth / 2;
+  g.box(plan.axisX, 0, terraceZ, main.w * 0.95, 1.2, depth, 0, stone);
+  const walkLen = plan.z1 - (terraceZ + depth / 2);
+  if (walkLen > 2) g.box(plan.axisX, 0, plan.z1 - walkLen / 2, 6, 0.35, walkLen, 0, stone);
   const northZ = gaps[0] ?? Math.max(plan.z0 + 4, main.z - main.d / 2 - 10);
   const half = Math.min(main.w / 2 + 28, (plan.x1 - plan.x0) / 2 - 6);
   const corridor = (x0: number, z0: number, x1: number, z1: number): void => {
@@ -220,15 +230,28 @@ export function palaceGrounds(g: GeoBuilder, plan: PalacePlan, lv: 0 | 1 | 2): v
       ? plan.x0 + 12 + rng.next() * (xl - plan.x0 - 22)
       : xr + 10 + rng.next() * (plan.x1 - xr - 22);
     const z = plan.z0 + 50 + rng.next() * (plan.z1 - plan.z0 - 64);
-    if (!Number.isFinite(x) || placed.some((p) => Math.hypot(p.x - x, p.z - z) < 24)) continue;
+    const w = 10 + rng.next() * 6;
+    const d = 7 + rng.next() * 3;
+    const h = 4 + rng.next() * 1.5;
+    // Base included, a hall must clear the corridor bands, the inner walls and the other halls.
+    const hx = w / 2 + 3;
+    const hz = d / 2 + 3;
+    const clear =
+      Number.isFinite(x) &&
+      Math.abs(x - xl) > hx + 3 &&
+      Math.abs(x - xr) > hx + 3 &&
+      gaps.every((gz) => Math.abs(z - gz) > hz + 2) &&
+      Math.abs(z - south) > hz + 3 &&
+      !placed.some((p) => Math.hypot(p.x - x, p.z - z) < 24);
+    if (!clear) continue;
     placed.push({ x, z });
-    smallHall(g, x, z, 10 + rng.next() * 6, 7 + rng.next() * 3, 4 + rng.next() * 1.5, 0, lv);
+    smallHall(g, x, z, w, d, h, 0, lv);
   }
 
   // Rear garden in the east of the innermost court, clear of the axis halls.
   const inner = gaps[gaps.length - 1] ?? main.z - main.d / 2 - 8;
   const axisHalf = Math.max(...plan.halls.map((h) => h.w / 2)) + 6;
-  if (lv < 2) garden(g, plan, inner, plan.axisX + axisHalf, rng, lv);
+  if (lv < 2) garden(g, plan, inner, plan.axisX + axisHalf, createRng(plan.seed + 3), lv);
   // Faint warm light along the inside of the outer wall base.
   if (lv === 0) {
     const s = glow(SEOUL_COLORS.uplight, 0.25);

@@ -48,3 +48,17 @@ describe('blank faces (BuildingsApi.faces[].blank)', () => {
     }
   });
 });
+
+describe('media faces', () => {
+  it('a media face is not a blank sign wall', () => {
+    const base = LAYOUT.buildings.find(
+      (b) => b.archetype === 'officeSlab' && b.tiers.length === 1,
+    )!;
+    const spec: BuildingSpec = {
+      ...base,
+      archetype: 'mediaSlab',
+      tags: { ...base.tags, mediaFace: base.front },
+    };
+    expect(faceBlank(spec, base.front, street)).toBe(false);
+  });
+});

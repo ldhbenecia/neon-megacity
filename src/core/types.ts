@@ -87,7 +87,8 @@ export interface BuildingsApi {
    * layout, precomputed once. Neon places signs strictly inside one face:
    * `face.y0 + 2 ≤ y ≤ face.y1 - 2`, 1 m in from the face edges.
    * `blank`: the wall has no window cells and no shop front, decided by the same rule the facade
-   * renderer uses (painted signs, 단지명 and 동 numbers go there).
+   * renderer uses (painted signs, 단지명 and 동 numbers go there). A media face is not blank.
+   * Landmark towers (`tags.landmark`) have no faces: their real shape is not the tier boxes.
    */
   faces: readonly (readonly (BuildingFace & { blank: boolean })[])[];
   /** Highest world y of any building (spires included). */

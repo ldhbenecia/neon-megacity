@@ -161,3 +161,23 @@ describe('palace grounds', () => {
     );
   });
 });
+
+describe('palace grounds across LODs', () => {
+  it('places side halls and garden trees identically at LOD0 and LOD1', () => {
+    const plan = palacePlan(LAYOUT)!;
+    // Hall plinths (0.8 m tall stone boxes) are emitted at every level; compare their tops.
+    const tops = (lv: 0 | 1): string[] => {
+      const g = new GeoBuilder(0, 0);
+      palaceGrounds(g, plan, lv);
+      const geo = g.build()!;
+      const P = geo.getAttribute('position');
+      const out = new Set<string>();
+      for (let i = 0; i < P.count; i++) {
+        if (Math.abs(P.getY(i) - 0.8) < 1e-3)
+          out.add(`${P.getX(i).toFixed(1)},${P.getZ(i).toFixed(1)}`);
+      }
+      return [...out].sort();
+    };
+    expect(tops(0)).toEqual(tops(1));
+  });
+});

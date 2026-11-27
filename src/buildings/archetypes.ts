@@ -164,7 +164,8 @@ function roleOf(spec: BaseSpec, side: Side | null, shops: ReadonlySet<Side>): Ro
 export function faceBlank(raw: BuildingSpec, side: Side, onStreet?: StreetTest): boolean {
   const spec = withBaseArchetype(raw);
   const shops = shopSides(spec, raw.archetype, onStreet);
-  if (side === spec.tags.mediaFace) return true;
+  // A media face is the giant screen's place (neon reads tags.mediaFace), not a sign wall.
+  if (side === spec.tags.mediaFace) return false;
   if (spec.archetype === 'showroomBox' || shops.has(side)) return false;
   return isBlankStyle(windowStyle(spec.archetype, roleOf(spec, side, shops), spec.seed));
 }
