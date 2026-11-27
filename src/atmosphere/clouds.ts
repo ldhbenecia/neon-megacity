@@ -14,7 +14,7 @@ import {
   Vector3,
   type Vector4,
 } from 'three';
-import { SKYLINE_PEAK } from '../city/layout';
+import { CITY, SKYLINE_PEAK } from '../city/layout';
 import { MATERIAL } from '../core/palette';
 import type { Ctx } from '../core/types';
 import { CLOUD_LAYERS, TIME_WRAP, wrapTime } from './logic';
@@ -24,7 +24,8 @@ export const CLOUDS = {
   lowY: CLOUD_LAYERS.lowY,
   highY: CLOUD_LAYERS.highY,
   size: 16000,
-  glowRadius: 1200,
+  /** City light under the low deck: half the map's longer side (v2: 1200 m). */
+  glowRadius: Math.max(CITY.extentX, CITY.extentZ) / 2,
   noiseSize: 256,
 } as const;
 

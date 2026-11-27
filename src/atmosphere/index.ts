@@ -9,6 +9,7 @@ import { installFogChunks } from './fogChunks';
 import {
   CLOUD_LAYERS,
   computeFog,
+  mapFogScale,
   fogBrightness,
   createQualityState,
   rainAltitudeFade,
@@ -31,6 +32,7 @@ const setSrgb = (c: Color, rgb: RGB, k = 1): Color =>
 
 export function init(ctx: Ctx): CityModuleInstance {
   const { scene, camera, gui, env } = ctx;
+  const mapFog = mapFogScale(Math.max(ctx.LAYOUT.extentX, ctx.LAYOUT.extentZ));
   // Low tier (CI SwiftShader): no post chain, rain, clouds or searchlights. Fog and stars stay.
   const low = env.quality === 'ci';
 
@@ -134,7 +136,7 @@ export function init(ctx: Ctx): CityModuleInstance {
       env.rain = stepRain(env.rain, env.rainTarget, dt);
       const r = env.rain;
 
-      const f = computeFog(palette, r, settings.fogScale);
+      const f = computeFog(palette, r, settings.fogScale * mapFog);
       env.fogDensity = f.density;
       setSrgb(env.fogColor, f.color);
       fog.color.copy(env.fogColor);
