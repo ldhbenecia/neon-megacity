@@ -162,11 +162,14 @@ export class QualityController {
     return null;
   }
 
-  /** Back to the boot tier at its DPR cap with a fresh window (debug panel "Auto quality"). */
-  reset(): QualityChange {
+  /**
+   * To `tier` (default: the boot tier) at its DPR cap with a fresh window and climbing unlocked:
+   * the quality picker and the debug panel "Auto quality".
+   */
+  reset(tier: UserTier = this.boot): QualityChange {
     this.climbLocked = false;
     this.lastUp = null;
-    const change = this.apply({ tier: this.boot, dpr: this.capFor(this.boot) });
+    const change = this.apply({ tier, dpr: this.capFor(tier) });
     this.clearWindow();
     return change;
   }
