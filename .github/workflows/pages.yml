@@ -21,8 +21,9 @@ jobs:
     name: gate
     # workflow_run fires for every completed CI run on main (including failures and
     # manual dispatches); only deploy a successful run triggered by a push.
+    # `event == 'push'` also keeps fork PRs from a branch named main out; do not drop it.
     if: >-
-      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
       (github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
@@ -32,7 +33,8 @@ jobs:
     steps:
       # CI runs per main commit can finish out of order: deploying an older commit after a newer
       # one would roll the site back. Only the commit main still points to is deployed; a newer
-      # commit deploys when its own CI run passes.
+      # commit deploys when its own CI run passes. If that newest commit fails CI, deploys pause
+      # (the site stays on the last deployed commit) until main is green again.
       - id: head
         env:
           GH_TOKEN: ${{ github.token }}
