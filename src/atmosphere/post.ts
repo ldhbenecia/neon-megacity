@@ -29,6 +29,7 @@ import { postEnabled } from '../core/gl';
 import { LENS, TIME_WRAP, bloomScaleFor, msaaSamplesFor, wrapTime } from './logic';
 import { HASH_GLSL } from './noise';
 import { shareBlurProgram } from './bloomBlur';
+import { HDR_SAFE_GLSL, guardHighPass } from './hdrGuard';
 
 // UnrealBloomPass.BlurDirectionX/Y exist in JS but not in the type definitions.
 const BLUR_X = new Vector2(1, 0);
@@ -56,10 +57,12 @@ uniform float uVignette;
 uniform float uGrain;
 uniform float uAspect;
 uniform float uDrops;
+uniform float uNanView;
 #include <tonemapping_pars_fragment>
 #include <colorspace_pars_fragment>
 varying vec2 vUv;
 ${HASH_GLSL}
+${HDR_SAFE_GLSL}
 
 vec2 lensDrops( vec2 uv ) {
   vec2 p = uv * vec2( uAspect, 1.0 ) * 7.0;
@@ -83,16 +86,24 @@ vec2 lensDrops( vec2 uv ) {
 
 void main() {
   vec2 uv = vUv;
+  if ( uNanView > 0.5 ) {
+    bool badScene = nonFinite( texture2D( tScene, vUv ).rgb );
+    bool badBloom = uBloomOn > 0.5 && nonFinite( texture2D( tBloom, vUv ).rgb );
+    if ( badScene || badBloom ) {
+      gl_FragColor = badScene ? vec4( 1.0, 0.0, 1.0, 1.0 ) : vec4( 0.0, 1.0, 1.0, 1.0 );
+      return;
+    }
+  }
   if ( uDrops > 0.001 ) uv += lensDrops( uv );
 
   vec2 c = uv - 0.5;
   vec2 off = c * uAberration * ( 0.4 + 3.0 * dot( c, c ) );
   vec3 col = vec3(
-    texture2D( tScene, uv + off ).r,
-    texture2D( tScene, uv ).g,
-    texture2D( tScene, uv - off ).b
+    finiteHdr( texture2D( tScene, uv + off ).rgb ).r,
+    finiteHdr( texture2D( tScene, uv ).rgb ).g,
+    finiteHdr( texture2D( tScene, uv - off ).rgb ).b
   );
-  col += texture2D( tBloom, uv ).rgb * uBloomOn;
+  col += finiteHdr( texture2D( tBloom, uv ).rgb ) * uBloomOn;
 
   vec4 outColor = vec4( col, 1.0 );
   #ifdef LINEAR_TONE_MAPPING
@@ -141,6 +152,11 @@ export interface Post {
   dispose(): void;
 }
 
+function nanView(): boolean {
+  const q = new URLSearchParams(window.location.search);
+  return q.has('debug') && q.has('nan');
+}
+
 function toneMappingDefine(t: ToneMapping): string | null {
   switch (t) {
     case LinearToneMapping:
@@ -184,6 +200,9 @@ export function createPost(ctx: Ctx): Post | null {
 
   const bloom = new UnrealBloomPass(new Vector2(256, 256), 0.7, 0.42, 0.85);
   shareBlurProgram(bloom);
+  bloom.materialHighPassFilter.fragmentShader = guardHighPass(
+    bloom.materialHighPassFilter.fragmentShader,
+  );
   const bloomQuad = new FullScreenQuad();
   const blackClear = new Color(0, 0, 0);
   const oldClear = new Color();
@@ -201,6 +220,8 @@ export function createPost(ctx: Ctx): Post | null {
     uGrain: { value: LENS.grain as number },
     uAspect: { value: 1 },
     uDrops: { value: 0 },
+    // ?debug&nan paints non-finite HDR pixels: magenta in the scene, cyan only in the bloom.
+    uNanView: { value: nanView() ? 1 : 0 },
   };
   const finalMaterial = new RawShaderMaterial({
     name: 'atmosphere.final',
