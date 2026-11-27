@@ -9,6 +9,7 @@ import { chromium, type Browser } from '@playwright/test';
 import { preview } from 'vite';
 import { SWIFTSHADER_ARGS, collectErrors } from '../tests/e2e/helpers';
 import { bundleGzip } from './bundle';
+import { checkScreen, type ScreenCheck } from './screen';
 
 const PRESETS = [
   [1, '강변 히어로'],
@@ -28,7 +29,7 @@ const args = process.argv.slice(2);
 const flags = new Set(args.filter((a) => a.startsWith('--')));
 const opt = (name: string): string | undefined =>
   args.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
-const KNOWN = ['--swiftshader', '--no-build', '--quality=', '--frames=', '--only='];
+const KNOWN = ['--swiftshader', '--no-build', '--no-screen', '--quality=', '--frames=', '--only='];
 const unknown = [...flags].filter(
   (f) => !KNOWN.some((k) => (k.endsWith('=') ? f.startsWith(k) : f === k)),
 );
@@ -41,6 +42,7 @@ if (unknown.length || positional.length > 1) {
   process.exit(2);
 }
 const swiftshader = flags.has('--swiftshader');
+const screen = !flags.has('--no-screen');
 const quality = opt('quality');
 const frames = Number(opt('frames') ?? 240);
 if (!Number.isInteger(frames) || frames <= 0) {
@@ -73,6 +75,7 @@ interface Result {
   stats: { calls: number; triangles: number; programs: number; textures: number; dpr: number };
   memory: ReturnType<Hangang['memory']>;
   cpu: NonNullable<Window['__city']>['cpu'];
+  screen: ScreenCheck | null;
   errors: string[];
 }
 
@@ -104,6 +107,8 @@ async function measure(browser: Browser, name: string, query: string): Promise<R
     if (!r) throw new Error('__hangang missing (needs ?stats)');
     return { deltas, boot, stats: r.stats(), memory: r.memory(), cpu: window.__city?.cpu ?? {} };
   }, frames);
+  // After the frame timing: the motion burst moves the camera.
+  const screenCheck = screen ? await checkScreen(page) : null;
   await page.close();
   const sorted = [...result.deltas].sort((a, b) => a - b);
   const q = (p: number): number =>
@@ -117,8 +122,18 @@ async function measure(browser: Browser, name: string, query: string): Promise<R
     stats: result.stats,
     memory: result.memory,
     cpu: result.cpu,
+    screen: screenCheck,
     errors,
   };
+}
+
+function screenCell(c: ScreenCheck | null): string {
+  if (!c) return '-';
+  const rest = c.shots.filter((s) => /^(idle|rest)/.test(s.tag));
+  const move = c.shots.filter((s) => !/^(idle|rest)/.test(s.tag));
+  const max = (xs: typeof c.shots): number => Math.max(0, ...xs.map((s) => s.black));
+  const lum = Math.min(...c.shots.map((s) => s.lum));
+  return `${max(rest)} / ${max(move)}, ${lum.toFixed(0)}${warn(c.failures.length > 0)}`;
 }
 
 const mb = (b: number): string => (b / 1024 / 1024).toFixed(1);
@@ -127,8 +142,8 @@ const warn = (bad: boolean): string => (bad ? ' ⚠' : '');
 
 function table(results: Result[]): string {
   const rows = [
-    '| scenario | frame ms (mean / p95) | fps | dpr | calls | tris | programs | textures | geo MB | tex MB | canvas MB | update ms |',
-    '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+    '| scenario | frame ms (mean / p95) | fps | dpr | calls | tris | programs | textures | geo MB | tex MB | canvas MB | update ms | black % rest / move, lum |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
   ];
   for (const r of results) {
     const s = r.stats;
@@ -140,7 +155,7 @@ function table(results: Result[]): string {
         `${s.calls}${warn(s.calls > BUDGET.calls)} | ${(s.triangles / 1e6).toFixed(2)} M${warn(s.triangles > BUDGET.triangles)} | ` +
         `${s.programs}${warn(s.programs > BUDGET.programs)} | ${s.textures}${warn(s.textures > BUDGET.textures)} | ` +
         `${mb(r.memory.geometryBytes)} | ${mb(r.memory.textureBytes)} | ` +
-        `${mb(r.memory.canvasBytes)} (×${r.memory.samples}) | ${cpu.toFixed(2)} |`,
+        `${mb(r.memory.canvasBytes)} (×${r.memory.samples}) | ${cpu.toFixed(2)} | ${screenCell(r.screen)} |`,
     );
   }
   const stages = [...new Set(results.flatMap((r) => Object.keys(r.boot)))];
@@ -185,13 +200,14 @@ async function main(): Promise<void> {
       for (const [time, tname] of TIMES) {
         const name = `${preset} ${pname} · ${tname}`;
         if (only && !name.includes(only)) continue;
-        const query = `nogui&stats&preset=${preset}&time=${time}&rain=0.35${quality ? `&quality=${quality}` : ''}`;
+        const query = `nogui&hud=0&stats&preset=${preset}&time=${time}&rain=0.35${quality ? `&quality=${quality}` : ''}`;
         const r = await measure(browser, name, query);
         console.log(
           `${name}: ${r.frame.mean.toFixed(1)} ms, ${r.stats.calls} calls, ` +
             `${(r.stats.triangles / 1e6).toFixed(2)} M tris, boot ${ms(r.boot.interactive)} ms` +
             (r.errors.length ? `, ${r.errors.length} errors` : ''),
         );
+        for (const f of r.screen?.failures ?? []) console.error(`  SCREEN ${name}: ${f}`);
         results.push(r);
       }
     }
@@ -205,6 +221,13 @@ async function main(): Promise<void> {
       resolve('perf-results', `${label}.json`),
       JSON.stringify({ gpu, swiftshader, quality, frames, results, bundle }, null, 2),
     );
+    const failed = results.filter((r) => r.screen?.failures.length);
+    if (failed.length) {
+      console.error(
+        `\nscreen check failed in ${failed.length} scenario(s): ${failed.map((r) => r.name).join(', ')}`,
+      );
+      process.exitCode = 1;
+    }
   } finally {
     await browser.close();
     await server.close();
