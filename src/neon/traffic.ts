@@ -223,6 +223,8 @@ export interface Traffic {
   vehicles: number;
   flying: number;
   trains: number;
+  /** Draw this share (0..1) of cars and drones; trains stay whole. */
+  setShare(share: number): void;
   dispose(): void;
 }
 
@@ -250,13 +252,17 @@ export function buildTraffic(
     ['fly', flyers],
     ['train', trains],
   ];
-  for (const [kind, list] of sets) {
-    if (!list.length) continue;
+  // Cars and drones are drawn in seed order, so any prefix (setShare) spreads over every path.
+  const scaled: { geo: THREE.InstancedBufferGeometry; n: number }[] = [];
+  for (const [kind, raw] of sets) {
+    if (!raw.length) continue;
+    const list = kind === 'train' ? raw : [...raw].sort((a, z) => a.seed - z.seed);
     const flying = kind === 'fly';
     const lg = toInstanced(kind === 'train' ? carLightGeometry() : lightGeometry(flying));
     instanceAttributes(lg, paths, list);
     const bg = toInstanced(kind === 'train' ? carBodyGeometry() : bodyGeometry(flying));
     instanceAttributes(bg, paths, list);
+    if (kind !== 'train') scaled.push({ geo: lg, n: list.length }, { geo: bg, n: list.length });
     const lm = lightMaterial(shared, tex);
     const bm = bodyMaterial(shared, tex);
     const lights = new THREE.Mesh(lg, lm);
@@ -278,6 +284,10 @@ export function buildTraffic(
     vehicles: cars.length,
     flying: flyers.length,
     trains: trains.length / TRAIN_CARS,
+    setShare(share) {
+      for (const s of scaled)
+        s.geo.instanceCount = Math.round(s.n * Math.min(1, Math.max(0, share)));
+    },
     dispose() {
       for (const d of disposables) d.dispose();
     },
