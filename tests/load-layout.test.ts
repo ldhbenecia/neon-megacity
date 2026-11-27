@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { CITY, generateLayout } from '../src/city/layout';
-import { loadLayout, type LayoutWorker } from '../src/city/loadLayout';
-import type { Layout } from '../src/city/types';
+import { loadCity, loadLayout, type CityMessage, type LayoutWorker } from '../src/city/loadLayout';
 
 const reference = generateLayout(CITY.seed);
 
@@ -14,7 +13,10 @@ function fakeWorker(fail = false): LayoutWorker {
     postMessage: ({ seed }) => {
       queueMicrotask(() => {
         if (fail) w.onerror?.({ message: 'boom' } as ErrorEvent);
-        else w.onmessage?.({ data: structuredClone(generateLayout(seed)) } as MessageEvent<Layout>);
+        else
+          w.onmessage?.({
+            data: { kind: 'layout', layout: structuredClone(generateLayout(seed)) },
+          } as MessageEvent<CityMessage>);
       });
     },
     terminate: () => {},
@@ -51,6 +53,13 @@ describe('loadLayout', () => {
     ).toStrictEqual(reference);
     expect(await loadLayout(CITY.seed, () => fakeWorker(true))).toStrictEqual(reference);
     expect(warn).toHaveBeenCalledTimes(2);
+    warn.mockRestore();
+  });
+
+  it('without a working worker there is no prebuilt terrain (terrain builds in init)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(await loadCity(CITY.seed, null).terrain).toBeNull();
+    expect(await loadCity(CITY.seed, () => fakeWorker(true)).terrain).toBeNull();
     warn.mockRestore();
   });
 });

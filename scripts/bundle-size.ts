@@ -1,12 +1,19 @@
 // Usage: npm run size (after npm run build). ART_DIRECTION 11 JS budget, counted on the initial
 // load (scripts index.html references; lazy chunks such as a ?debug-only panel are reported but
 // not counted): target 260 KB gzip (warning), ceiling 400 KB gzip (fails).
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { bundleGzip } from './bundle';
 
 const TARGET_KB = 260;
 const LIMIT_KB = 400;
-/** The city worker without three.core is ~30 KB; above this the three-lite alias stopped working. */
-const WORKER_LIMIT_KB = 35;
+/**
+ * The city worker (layout generator + terrain geometry, three-lite) is ~52 KB. three.core alone
+ * would add ~30 KB, so the reliable sign of a broken three-lite alias is a three.core class name
+ * in the chunk; the size limit only catches large growth.
+ */
+const WORKER_LIMIT_KB = 60;
+const THREE_CORE_MARKER = 'MeshStandardMaterial';
 
 let files;
 try {
@@ -36,10 +43,14 @@ if (!worker) {
   console.error('no city worker chunk (layout.worker) in dist/assets');
   process.exit(1);
 }
-if (worker.gzip / 1024 > WORKER_LIMIT_KB) {
+if (readFileSync(join('dist', worker.file), 'utf8').includes(THREE_CORE_MARKER)) {
   console.error(
-    `city worker ${kb(worker.gzip)} KB gzip is over ${WORKER_LIMIT_KB} KB: is three.core back in it (vite.config.ts threeLite)?`,
+    `city worker contains three.core (${THREE_CORE_MARKER}): the three-lite alias stopped working (vite.config.ts threeLite)`,
   );
+  process.exit(1);
+}
+if (worker.gzip / 1024 > WORKER_LIMIT_KB) {
+  console.error(`city worker ${kb(worker.gzip)} KB gzip is over ${WORKER_LIMIT_KB} KB`);
   process.exit(1);
 }
 if (initial > TARGET_KB) {
