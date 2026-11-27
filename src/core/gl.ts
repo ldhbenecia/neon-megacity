@@ -12,5 +12,5 @@ export function halfFloatTargets(renderer: WebGLRenderer): boolean {
  * condition for post goes here, not into atmosphere alone.
  */
 export function postEnabled(quality: Quality, renderer: WebGLRenderer): boolean {
-  return quality === 'high' && halfFloatTargets(renderer);
+  return quality !== 'ci' && halfFloatTargets(renderer);
 }

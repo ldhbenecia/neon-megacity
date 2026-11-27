@@ -9,8 +9,12 @@ const smoothstep = (a: number, b: number, x: number): number => smooth(clamp01((
 export const CLOUD_LAYERS = { lowY: 650, highY: 1400 } as const;
 
 // Bounded shader time keeps float32 precise. Clouds wrap at 1e5 s because every
-// drift rate times 1e5 is a whole texture tile, so that wrap is seamless.
-export const TIME_WRAP = { rain: 1000, lens: 1000, stars: 1000, clouds: 100000 } as const;
+// drift rate times 1e5 is a whole texture tile, so that wrap is seamless. Star twinkle rates and
+// lens drop periods are snapped in their shaders to whole cycles per wrap, so those wraps are
+// seamless too. Rain cannot be: a slanted drop never returns to a lattice point, so its wrap
+// reshuffles the streaks for one frame; at 1e4 s (2.8 h) that is rare, and float32 still
+// resolves 1 ms of time and 2 cm of rain travel (24 m/s × 1e4 s).
+export const TIME_WRAP = { rain: 10000, lens: 10000, stars: 10000, clouds: 100000 } as const;
 
 export function wrapTime(t: number, period: number): number {
   return ((t % period) + period) % period;
@@ -20,6 +24,17 @@ export const FOG = {
   rainDensityGain: 0.5,
   rainBrighten: 0.12,
 } as const;
+
+/** Map extent (m) the fog densities and the cloud city glow were tuned on (layout v2). */
+export const TUNED_EXTENT = 2400;
+
+/**
+ * Fog density factor for a map `extent` m across. The square root thins the fog less than the map
+ * grows, so the far districts still sink into strong aerial perspective (v2: 1, v3 4000 m: 0.77).
+ */
+export function mapFogScale(extent: number): number {
+  return Math.sqrt(TUNED_EXTENT / Math.max(1, extent));
+}
 
 export function fogBrightness(rain: number): number {
   return 1 + FOG.rainBrighten * clamp01(rain);
@@ -148,15 +163,45 @@ export interface Mount {
 
 const MOUNT_LIFT = 4;
 
-export function searchlightMounts(specs: readonly BuildingSpec[], count = 2): Mount[] {
-  return [...specs]
-    .sort((a, b) => buildingTop(b) - buildingTop(a))
-    .slice(0, count)
-    .flatMap((b) => {
-      let top: Tier | null = null;
-      for (const t of allTiers(b)) if (!top || t.y1 > top.y1) top = t;
-      return top ? [{ x: top.x, y: top.y1 + MOUNT_LIFT, z: top.z }] : [];
-    });
+function topMount(b: BuildingSpec): Mount | null {
+  let top: Tier | null = null;
+  for (const t of allTiers(b)) if (!top || t.y1 > top.y1) top = t;
+  return top ? { x: top.x, y: top.y1 + MOUNT_LIFT, z: top.z } : null;
+}
+
+/**
+ * Mount i stands on the highest tier of the tallest building in `zones[i]`. Slots whose zone the
+ * layout lacks are filled with the tallest buildings left, preferring zones that have no mount
+ * yet so two beams do not share one peak. Buildings without tiers are never picked, so there are
+ * always min(count, buildings with tiers) mounts.
+ */
+export function searchlightMounts(
+  specs: readonly BuildingSpec[],
+  count = 2,
+  zones: readonly string[] = [],
+): Mount[] {
+  const candidates = [...specs]
+    .map((b) => ({ b, m: topMount(b) }))
+    .filter((c): c is { b: BuildingSpec; m: Mount } => c.m !== null)
+    .sort((x, y) => buildingTop(y.b) - buildingTop(x.b));
+  const slots: ({ b: BuildingSpec; m: Mount } | undefined)[] = [];
+  for (let i = 0; i < count; i++) {
+    const zone = zones[i];
+    slots.push(zone === undefined ? undefined : candidates.find((c) => c.b.zoneId === zone));
+  }
+  const used = new Set(slots.flatMap((c) => (c ? [c.b] : [])));
+  const usedZones = new Set([...used].map((b) => b.zoneId));
+  for (let i = 0; i < count; i++) {
+    if (slots[i]) continue;
+    const pick =
+      candidates.find((c) => !used.has(c.b) && !usedZones.has(c.b.zoneId)) ??
+      candidates.find((c) => !used.has(c.b));
+    if (!pick) continue;
+    slots[i] = pick;
+    used.add(pick.b);
+    usedZones.add(pick.b.zoneId);
+  }
+  return slots.flatMap((c) => (c ? [c.m] : []));
 }
 
 export function searchlightDirection(

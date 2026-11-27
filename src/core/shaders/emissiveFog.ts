@@ -7,15 +7,64 @@ export const EMISSIVE_FOG_GLOW = 0.25;
 export const HEIGHT_FOG = {
   heightTop: 260,
   top: 0.35,
+  /**
+   * Height (m) where the air along a steep camera ray is clear. Between heightTop and here the
+   * mean density of a near-vertical ray keeps thinning from `top` to 0, so looking down from far
+   * above (topdown) sees little haze. Near-horizontal rays keep the `top` floor, so distant tower
+   * tops keep their aerial perspective.
+   */
+  clearTop: 1040,
+  /** Ray steepness (|Δy| / distance) over which the clear-air thinning fades in. */
+  clearSteep: [0.6, 0.95],
   water: 1.25,
+  /** Heights (m) over which the water boost ramps in; y = 0 ground stays clear of it. */
+  waterRamp: [-0.5, -2],
 } as const;
+
+const ramp = (a: number, b: number, x: number): number => {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+
+/** ∫₀^y of the thinning (1 − density factor) with the `top` floor: (1 − top)·min(y / heightTop, 1). */
+export function heightFogFloorIntegral(y: number): number {
+  const { heightTop: H, top } = HEIGHT_FOG;
+  if (y <= 0) return 0;
+  return (1 - top) * (y < H ? (y * y) / (2 * H) : y - H / 2);
+}
+
+/**
+ * ∫₀^y of the clear-air thinning: as the floor integral up to heightTop, then rising linearly to 1
+ * at clearTop, 1 above. Shared by the shader (cityFogThin) and the CPU mirror.
+ */
+export function heightFogThinIntegral(y: number): number {
+  const { heightTop: H, top } = HEIGHT_FOG;
+  const C = Math.max(HEIGHT_FOG.clearTop, H + 1);
+  if (y < H) return heightFogFloorIntegral(y);
+  const atH = ((1 - top) * H) / 2;
+  if (y < C) {
+    const t = y - H;
+    return atH + (1 - top) * t + (top * t * t) / (2 * (C - H));
+  }
+  return atH + (1 - top) * (C - H) + (top * (C - H)) / 2 + (y - C);
+}
+
+/** Share of the clear-air thinning a ray of this steepness (|Δy| / distance) gets. */
+export function clearAirWeight(steep: number): number {
+  return ramp(HEIGHT_FOG.clearSteep[0], HEIGHT_FOG.clearSteep[1], steep);
+}
+
+/** Water / park fog boost at height y: 1 on y >= -0.5, HEIGHT_FOG.water from -2 down. */
+export function waterFogBoost(y: number): number {
+  return 1 + (HEIGHT_FOG.water - 1) * ramp(HEIGHT_FOG.waterRamp[0], HEIGHT_FOG.waterRamp[1], y);
+}
 
 export const SUN_SCATTER_POWER = 8;
 
 // Shared Float32Arrays updated in place by atmosphere: UniformsUtils.clone keeps typed arrays
 // by reference, so every material sees the same values. All zeros means plain FogExp2.
 export const FOG_UNIFORMS = {
-  // heightTop, top factor, water factor, enabled (the CPU mirrors read it too).
+  // heightTop, top factor, water factor, enabled (CPU callers pass heightFogEnabled()).
   cityFogHeight: {
     value: new Float32Array([HEIGHT_FOG.heightTop, HEIGHT_FOG.top, HEIGHT_FOG.water, 1]),
   },
@@ -54,8 +103,22 @@ export function applyEmissiveFog(shader: ShaderSource): boolean {
   return true;
 }
 
-export function heightFogScale(worldY: number, cameraY = worldY): number {
-  if ((FOG_UNIFORMS.cityFogHeight.value[3] ?? 0) < 0.5) return 1;
+/** Whether the height fog is on, as the shaders read it (cityFogHeight.w). */
+export function heightFogEnabled(): boolean {
+  return (FOG_UNIFORMS.cityFogHeight.value[3] ?? 0) >= 0.5;
+}
+
+/**
+ * CPU mirror of the shader height fog; pure: pass `enabled` (heightFogEnabled() at run time).
+ * `distance`: camera to point (m); the default treats the ray as vertical.
+ */
+export function heightFogScale(
+  worldY: number,
+  cameraY = worldY,
+  enabled = true,
+  distance = Math.abs(worldY - cameraY),
+): number {
+  if (!enabled) return 1;
   const H = HEIGHT_FOG.heightTop;
   const t = Math.min(1, Math.max(0, worldY / H));
   const s = t * t * (3 - 2 * t);
@@ -63,15 +126,24 @@ export function heightFogScale(worldY: number, cameraY = worldY): number {
   const lo = Math.max(Math.min(worldY, cameraY), 0);
   const hi = Math.max(Math.max(worldY, cameraY), 0);
   if (hi - lo > 1) {
-    const F = (y: number): number => (y < H ? (y * y) / (2 * H) : y - H / 2);
-    k = Math.min(k, 1 - ((1 - HEIGHT_FOG.top) * (F(hi) - F(lo))) / (hi - lo));
+    const d = hi - lo;
+    const floor = 1 - (heightFogFloorIntegral(hi) - heightFogFloorIntegral(lo)) / d;
+    const clear = 1 - (heightFogThinIntegral(hi) - heightFogThinIntegral(lo)) / d;
+    const w = clearAirWeight(Math.abs(worldY - cameraY) / Math.max(distance, 1e-3));
+    k = Math.min(k, floor + (clear - floor) * w);
   }
-  return worldY < 0 ? k * HEIGHT_FOG.water : k;
+  return k * waterFogBoost(worldY);
 }
 
-export function fogFactor(fogDensity: number, depth: number, worldY = 0, cameraY = worldY): number {
+export function fogFactor(
+  fogDensity: number,
+  depth: number,
+  worldY = 0,
+  cameraY = worldY,
+  heightFog = true,
+): number {
   const x = fogDensity * depth;
-  return Math.min(1, (1 - Math.exp(-x * x)) * heightFogScale(worldY, cameraY));
+  return Math.min(1, (1 - Math.exp(-x * x)) * heightFogScale(worldY, cameraY, heightFog, depth));
 }
 
 export function emissiveFogFactor(
@@ -79,6 +151,7 @@ export function emissiveFogFactor(
   depth: number,
   worldY = 0,
   cameraY = worldY,
+  heightFog = true,
 ): number {
-  return fogFactor(fogDensity * EMISSIVE_FOG_DENSITY_SCALE, depth, worldY, cameraY);
+  return fogFactor(fogDensity * EMISSIVE_FOG_DENSITY_SCALE, depth, worldY, cameraY, heightFog);
 }

@@ -1,4 +1,5 @@
-import type { Bridge, Highway, Road, Vec3 } from '../city/layout';
+import * as THREE from 'three';
+import type { Bridge, Highway, Road, SkyLane, Vec3 } from '../city/layout';
 import { createRng } from '../core/random';
 import { isDivided, laneOffsets } from '../infra/profile';
 
@@ -132,6 +133,37 @@ export function railPaths(
   return out;
 }
 
+const SKY_SAMPLES_PER_100M = 4;
+
+// Drone lanes come from the layout (Layout.skyLanes), never from highway ids. Path y is 0, so
+// `altitude` is an absolute height band that vehicleStreams lifts each drone into.
+export function skyPaths(lanes: readonly SkyLane[]): Path[] {
+  const out: Path[] = [];
+  for (const lane of lanes) {
+    // A broken lane must fail loudly, not vanish like hw-ring did.
+    if (lane.points.length < 2) throw new Error(`sky lane ${lane.id} has fewer than 2 points`);
+    const curve = new THREE.CatmullRomCurve3(
+      lane.points.map((p) => new THREE.Vector3(p.x, 0, p.z)),
+      lane.closed,
+      'centripetal',
+    );
+    const n = Math.max(8, Math.round((curve.getLength() / 100) * SKY_SAMPLES_PER_100M));
+    // Closed lanes keep the repeated end point: the shader wraps u with fract().
+    const pts = curve.getSpacedPoints(n).map((v) => ({ x: v.x, y: 0, z: v.z }));
+    const r = resample(pts, pts.length);
+    out.push({
+      id: lane.id,
+      points: r.points,
+      length: r.length,
+      closed: lane.closed,
+      kind: 'flying',
+      fade: lane.closed ? 0 : 30,
+      altitude: lane.altitude,
+    });
+  }
+  return out;
+}
+
 export function highwayPath(
   id: string,
   samples: readonly Vec3[],
@@ -178,7 +210,7 @@ export function vehicleStreams(
 ): Vehicle[] {
   const rng = createRng(opts.seed ?? 6060);
   const hw = new Map(highways.map((h) => [h.id, h]));
-  const density = { ground: 2.2, bridge: 26, highway: 34, flying: 6, rail: 1.2, ...opts.density };
+  const density = { ground: 2.2, bridge: 26, highway: 34, flying: 3, rail: 1.2, ...opts.density };
   const perLane = (p: Path): number => Math.max(1, Math.round((density[p.kind] * p.length) / 1000));
   // Over the cap, side streets lose cars first (some none); arterials shrink only if they alone
   // exceed the cap. A no-op on maps under the cap, so their streams stay identical.

@@ -42,9 +42,11 @@ describe('parseQuery', () => {
     expect(parseQuery('?cam=street&nogui')).toEqual({ cam: 'street', nogui: true });
   });
 
-  it('accepts quality=low|high only', () => {
+  it('accepts the user tiers and the ci tier only', () => {
     expect(parseQuery('?quality=low').quality).toBe('low');
+    expect(parseQuery('?quality=medium').quality).toBe('medium');
     expect(parseQuery('?quality=high').quality).toBe('high');
+    expect(parseQuery('?quality=ci').quality).toBe('ci');
     expect(parseQuery('?quality=ultra').quality).toBeUndefined();
   });
 });

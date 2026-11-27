@@ -10,6 +10,7 @@ interface HangangStats {
   geometries: number;
   fps: number;
   dpr: number;
+  tier: string;
 }
 
 /** Rough GPU memory estimate (bytes) of what the scene graph references, for `npm run perf`. */
@@ -56,6 +57,9 @@ declare global {
       preset(key: number): { position: HangangVec3; target: HangangVec3 };
       /** Uncovered canvas point (client px) whose click picks building `id`, center first. */
       buildingPoint(): { x: number; y: number; id: number } | null;
+      /** Frames whose camera was inside a building volume since load or `resetInside()`. */
+      inside(): { frames: number; last: number | null; at: number[] | null; mode: string | null };
+      resetInside(): void;
     };
   }
 }

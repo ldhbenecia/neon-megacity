@@ -21,6 +21,7 @@ import {
   vehicleStreams,
   type Path,
   railPaths,
+  skyPaths,
 } from './lanes';
 import { createLightPool, type LightCandidate } from './lights';
 import { placeSigns, roadGapIndex, type FlatSign, type Placement } from './placement';
@@ -390,14 +391,7 @@ export function init(ctx: Ctx): CityModuleInstance {
     const s = curveSamples(hw.id);
     if (s) paths.push(highwayPath(hw.id, s, curveFor(hw.id)?.closed ?? hw.closed));
   }
-  const ringS = curveSamples('hw-ring');
-  const riverS = curveSamples('hw-river-north');
-  if (ringS) {
-    paths.push({ ...highwayPath('fly-ring-low', ringS, true, 'flying'), altitude: [80, 140] });
-    paths.push({ ...highwayPath('fly-ring-high', ringS, true, 'flying'), altitude: [200, 260] });
-  }
-  if (riverS)
-    paths.push({ ...highwayPath('fly-river', riverS, false, 'flying'), altitude: [140, 200] });
+  paths.push(...skyPaths(L.skyLanes));
   const tracks = infraExtras(ctx).railTracks;
   if (tracks) paths.push(...railPaths(tracks));
   const vehicles = vehicleStreams(paths, L.highways);

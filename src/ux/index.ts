@@ -1,11 +1,11 @@
 import type { CameraPreset } from '../core/query';
-import type { Ctx } from '../core/types';
+import type { Ctx, Quality } from '../core/types';
 import { createCameraRig, type CameraRig, type RigDebug } from './cameraRig';
 import { createControls } from './controls';
 import { createHud, type Hud } from './hud';
 import { reducedMotion } from './loader';
 import { createPerf, estimateMemory, type FrameStats, type Perf } from './perf';
-import { LAYOUT } from '../city/layout';
+import { LAYOUT, buildingContaining } from '../city/layout';
 import { camPose, DEFAULT_PRESET, rigPreset, rigPresets, safePose } from './presets';
 import { parseUxQuery, poseInLimits } from './query';
 
@@ -28,6 +28,10 @@ export interface Ux {
 export interface UxOptions {
   cam?: CameraPreset;
   resize: () => void;
+  /** env.quality came from ?quality= or a stored pick: the controller leaves it alone. */
+  manualQuality: boolean;
+  /** Runs the ctx.onQuality handlers after a runtime tier change. */
+  emitQuality: (q: Quality) => void;
 }
 
 const POWER_S = 1.2;
@@ -55,8 +59,22 @@ export function initUx(ctx: Ctx, opts: UxOptions): Ux {
     hud,
   });
   const controls = createControls(ctx, rig, hud);
-  const perf = createPerf(ctx, { overlay: q.stats, resize: opts.resize });
+  const perf = createPerf(ctx, {
+    overlay: q.stats,
+    resize: opts.resize,
+    manual: opts.manualQuality,
+    emitQuality: opts.emitQuality,
+  });
 
+  // ?stats only: frames rendered with the camera inside a building volume (tells a collision
+  // miss apart from a rendering fault when the screen goes black).
+  const inside: { frames: number; last: number | null; at: number[] | null; mode: string | null } =
+    {
+      frames: 0,
+      last: null,
+      at: null,
+      mode: null,
+    };
   if (q.stats) {
     window.__hangang = {
       stats: (): FrameStats => perf.stats(),
@@ -70,6 +88,13 @@ export function initUx(ctx: Ctx, opts: UxOptions): Ux {
         return { position: { ...position }, target: { ...target } };
       },
       buildingPoint: () => rig.buildingPoint(),
+      inside: () => ({ ...inside, at: inside.at && [...inside.at] }),
+      resetInside: () => {
+        inside.frames = 0;
+        inside.last = null;
+        inside.at = null;
+        inside.mode = null;
+      },
     };
   }
 
@@ -104,6 +129,16 @@ export function initUx(ctx: Ctx, opts: UxOptions): Ux {
     afterUpdate() {
       hud.update(ctx.env.timeOfDay);
       controls.update();
+      if (q.stats) {
+        const p = ctx.camera.position;
+        const id = buildingContaining(LAYOUT, p.x, p.y, p.z);
+        if (id !== null) {
+          inside.frames++;
+          inside.last = id;
+          inside.at = [p.x, p.y, p.z];
+          inside.mode = rig.mode;
+        }
+      }
     },
     frameStart() {
       perf.frameStart();

@@ -10,8 +10,8 @@ The city is an ORIGINAL design inspired by cyberpunk anime aesthetics.
 - `npm run lint` / `npm test` — ESLint, Vitest unit tests; must pass
 - `npm run build` — typecheck + production build; must pass before any commit
 - `npm run format:check` / `npm run format` — Prettier check / write; must pass
-- `npm run test:e2e` — Playwright smoke tests (builds and serves on :4173)
-- `npm run shots -- [label] [--swiftshader] [--no-build]` — deterministic screenshots into `screenshots/<label>/`
+- `npm run test:e2e` — Playwright smoke tests (builds and serves on a per-worktree port; `E2E_PORT` overrides, and `SHOTS_PORT` / `PERF_PORT` do the same for `shots` and `perf`). An already-running server is never reused
+- `npm run shots -- [label] [--swiftshader|--gpu] [--no-build] [--only=<substring>] [--burst] [--black-limit=<percent>]` — deterministic screenshots into `screenshots/<label>/` (real GPU by default on macOS). Each shot prints its mean luminance and near-black pixel ratio and fails above the limit; `--burst` also shoots frame by frame while zooming, flying and orbiting
 - `npm run perf` — real-GPU measurements (frame time, draw calls, memory, boot time); results and budgets live in `docs/PERF.md`
 - `npm run size` — first-load JS gzip size of `dist/`; fails above 400 KB, warns above the 260 KB target
 - `npm run preview` — serve `dist/`
@@ -25,7 +25,7 @@ Read `docs/ARCHITECTURE.md` before editing. Summary:
 - `src/city/layout.ts` (layout v2, types in `src/city/types.ts`) is the single source of truth for zones, river, bridges, highways, roads and building specs/tiers. Never place objects using hard-coded coordinates that bypass it.
 - `ctx.env` fields have a single owner (see ARCHITECTURE.md and `src/core/types.ts`). Only the owner writes a field; everyone else reads it.
 - `env.timeLocked` is set at boot when `?time=` is given; lighting must then not advance `env.timeOfDay`.
-- URL query hooks (`src/core/query.ts`): `?time=0..1`, `?cam=overview|street|core|topdown|skyline` (poses via `cameraPreset(name)`), `?rain=0..1`, `?nogui`, `?quality=low` (CI tier, `env.quality`).
+- URL query hooks (`src/core/query.ts`): `?time=0..1`, `?cam=overview|street|core|topdown|skyline` (poses via `cameraPreset(name)`), `?rain=0..1`, `?nogui`, `?quality=high|medium|low` (user tier chosen by hand, `env.quality`), `?quality=ci` (software-GL test tier for CI).
 - UX query hooks (`src/ux/query.ts`): `?pose=px,py,pz,tx,ty,tz` (initial camera; wins over `?cam` and `?preset`), `?preset=1..8`, `?hud=0`, `?stats`, `?debug` (lil-gui panel and shader error checks).
 - `window.__city = { ready, frames }` is updated every frame; e2e tests and the screenshot script wait on it. Don't remove it.
 - Colors and exposure constants come from `src/core/palette.ts`; visual targets are in `docs/ART_DIRECTION.md`.
@@ -58,9 +58,9 @@ Read `docs/ARCHITECTURE.md` before editing. Summary:
 
 - Conventional commits (`feat:`, `fix:`, `refactor:`, `chore:`, `docs:`); one logical change per commit. Type/scope in English, subject and body in Korean (e.g. `ci: CI 워크플로 추가`). PR titles follow the same format.
 - Visual changes are verified with screenshots (`npm run shots -- <label>`, script `scripts/screenshot.ts`, output in `screenshots/<label>/`, gitignored), not by reading code alone.
-- CI (`.github/workflows/ci.yml`) runs format:check, lint, typecheck, unit tests, build and the bundle size check (`npm run size`) on every PR and push to main. e2e also runs, except on PRs that change only docs (`docs/**`, `*.md`). e2e boots with `?quality=low` because CI has no GPU (SwiftShader); one scenario runs at full quality to check the performance budget. In e2e, wait on frames or conditions (`waitFrames`, `holdUntil`, `waitMode`), never on wall-clock time.
+- CI (`.github/workflows/ci.yml`) runs format:check, lint, typecheck, unit tests, build and the bundle size check (`npm run size`) on every PR and push to main. e2e also runs, except on PRs that change only docs (`docs/**`, `*.md`). e2e boots with `?quality=ci` because CI has no GPU (SwiftShader); one scenario runs at full quality to check the performance budget. In e2e, wait on frames or conditions (`waitFrames`, `holdUntil`, `waitMode`), never on wall-clock time.
 - Before merging a code PR, merge the latest `main` into it and wait for CI to pass on that commit. Two PRs that are each green can break `main` together. PRs that change only docs are exempt.
-- Shader, post-processing, lighting and material changes are checked at full quality on a real GPU, at noon, sunset and night, both idle and while the camera moves. CI runs on SwiftShader at low quality and does not reproduce NaN artifacts.
+- Shader, post-processing, lighting and material changes are checked at full quality on a real GPU, at noon, sunset and night, both idle and while the camera moves. CI runs on SwiftShader in the `ci` tier and does not reproduce NaN artifacts; `npm run perf` on a real GPU fails when a frame is mostly black.
 - Autofix (`autofix.yml`) pushes `style: 린트 및 포맷 자동 수정` commits as github-actions[bot] to same-repo PR branches, then dispatches CI for them. Pull before pushing again.
 - Pages (`pages.yml`) deploys `main` after CI passes on it (`workflow_run`) to https://ldhbenecia.github.io/neon-megacity/ with `BASE_PATH=/neon-megacity/`; locally `base` stays `./`.
 - Never force-push, never rewrite history, never read `.env` or credentials.

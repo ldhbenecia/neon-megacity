@@ -136,6 +136,18 @@ export interface NamedRoad {
   width: number;
 }
 
+export interface SkyLane {
+  id: string;
+  /** xz control points; neon samples a centripetal Catmull-Rom through them. */
+  points: Vec2[];
+  closed: boolean;
+  /**
+   * Absolute cruise height band (m, world y). The lower bound clears every building within
+   * SKY_LANE_CLEAR m of the lane by SKY_LANE_MARGIN (spires included).
+   */
+  altitude: [number, number];
+}
+
 export type LandmarkId =
   'namsan-mast' | 'jamsil-blade' | 'yongsan-apex' | 'yeouido-gold' | 'palace';
 
@@ -423,4 +435,6 @@ export interface Layout {
   mountains: Mountain[];
   namedRoads: NamedRoad[];
   landmarks: Landmark[];
+  /** Flying-traffic routes (neon reads only these). */
+  skyLanes: SkyLane[];
 }

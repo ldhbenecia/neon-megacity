@@ -28,6 +28,8 @@ uniform vec3 uHorizon;
 uniform vec3 uHorizonAnti;
 uniform vec3 uSunDir;
 uniform float uDay;
+uniform float uRain;
+uniform vec3 uFogColor;
 varying vec3 vColor;
 varying vec3 vWorld;
 varying float vFog;
@@ -39,7 +41,9 @@ void main() {
   vec3 base = mix(vColor, horizon * 0.28, uDay);
   float mist = (1.0 - smoothstep(0.0, 0.7, vTop)) * 0.22;
   float fog = clamp(vFog + (1.0 - vFog) * mist, 0.0, 1.0);
-  gl_FragColor = vec4(mix(base, horizon, fog), 1.0);
+  // Rain thickens the scene fog over the buildings; the ridges sink into it the same way.
+  fog = 1.0 - (1.0 - fog) * (1.0 - 0.75 * uRain);
+  gl_FragColor = vec4(mix(base, mix(horizon, uFogColor, uRain), fog), 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }
@@ -92,6 +96,10 @@ export interface RidgeEnv {
   horizonAnti: THREE.Color;
   sunDirection: THREE.Vector3;
   dayFactor: number;
+  /** env.rain, 0..1. */
+  rain: number;
+  /** env.fogColor (rain-brightened fog). */
+  fogColor: THREE.Color;
 }
 
 function ringGeometry(ridges: readonly Ridge[]): THREE.BufferGeometry {
@@ -167,6 +175,8 @@ export function createRidges(ridges: readonly Ridge[]): Ridges {
     uHorizonAnti: { value: new THREE.Color() },
     uSunDir: { value: new THREE.Vector3(0, 1, 0) },
     uDay: { value: 0 },
+    uRain: { value: 0 },
+    uFogColor: { value: new THREE.Color() },
   };
   const ringMat = new THREE.ShaderMaterial({
     name: 'RidgeSilhouette',
@@ -215,8 +225,10 @@ export function createRidges(ridges: readonly Ridge[]): Ridges {
       ringU.uHorizonAnti.value.copy(env.horizonAnti);
       ringU.uSunDir.value.copy(env.sunDirection);
       ringU.uDay.value = env.dayFactor;
+      ringU.uRain.value = env.rain;
+      ringU.uFogColor.value.copy(env.fogColor);
       beaconU.uTime.value = elapsed;
-      beaconU.uGain.value = 1 - 0.75 * env.dayFactor;
+      beaconU.uGain.value = (1 - 0.75 * env.dayFactor) * (1 - 0.7 * env.rain);
       beaconU.uSize.value = BEACON_PX * pixelRatio;
     },
     dispose() {

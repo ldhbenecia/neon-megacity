@@ -6,7 +6,7 @@ import { buildHighways, hwPath } from './highways';
 import { createParts, type InfraParts } from './parts';
 import { pillarInstances, pillarSpecs } from './pillars';
 
-/** `bridgeDetail` false: no near-only bridge parts (quality 'low'). */
+/** `bridgeDetail` false: no near-only bridge parts (quality 'ci'). */
 export function buildInfra(L: Layout, c: InfraColors, bridgeDetail = true): InfraParts {
   const parts = createParts();
   // Curve sampling is shared by the deck builder and the pillar filters.

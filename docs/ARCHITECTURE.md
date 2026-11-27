@@ -19,15 +19,16 @@ camera rig and HUD), so feature PRs never need to edit `src/main.ts`.
 
 ## Shared context (`ctx`)
 
-| key                                             | meaning                                                                                        |
-| ----------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `THREE, scene, camera, renderer, controls, gui` | standard three.js objects, `gui` is lil-gui (add your own folder)                              |
-| `CITY, LAYOUT`                                  | constants and the deterministic layout v2 from `src/city/layout.ts` (read only)                |
-| `env`                                           | shared environment state, one owner per field (table below)                                    |
-| `buildings`                                     | `BuildingsApi` published by buildings during its init; undefined before that                   |
-| `infra`                                         | `InfraApi` published by infra during its init (highway curves, `deckHeightAt`); else undefined |
-| `render()`                                      | default `renderer.render`; atmosphere replaces with the post-processing composer               |
-| `onResize(fn)`                                  | register `(w, h) => {}`                                                                        |
+| key                                             | meaning                                                                                                                          |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `THREE, scene, camera, renderer, controls, gui` | three.js objects; `gui` is lil-gui with `?debug`, otherwise a chainable no-op stand-in (add your folder, never read values back) |
+| `CITY, LAYOUT`                                  | constants and the deterministic layout v2 from `src/city/layout.ts` (read only)                                                  |
+| `env`                                           | shared environment state, one owner per field (table below)                                                                      |
+| `buildings`                                     | `BuildingsApi` published by buildings during its init; undefined before that                                                     |
+| `infra`                                         | `InfraApi` published by infra during its init (highway curves, `deckHeightAt`); else undefined                                   |
+| `render()`                                      | default `renderer.render`; atmosphere replaces with the post-processing composer                                                 |
+| `onResize(fn)`                                  | register `(w, h) => {}`                                                                                                          |
+| `onQuality(fn)`                                 | register `(quality) => {}` for runtime `env.quality` changes; returns the unsubscribe function                                   |
 
 ### `ctx.env` fields and owners
 
@@ -37,7 +38,7 @@ Only the owner writes a field; everyone else reads it. Types and comments live i
 | ------------------------------ | ---------- | ----------------------------------------------------------------------- |
 | `timeOfDay`                    | lighting\* | 0..1, 0 = midnight, 0.5 = noon. Initial value from `?time`              |
 | `timeLocked`                   | ux (main)  | true when `?time=` was given; lighting must not advance `timeOfDay`     |
-| `quality`                      | ux (main)  | `'high'` or `'low'` (`?quality=low`, CI SwiftShader); fixed at boot     |
+| `quality`                      | ux (main)  | `'high' \| 'medium' \| 'low'` (user, may change) or `'ci'` (CI, fixed)  |
 | `sunDirection`, `sunElevation` | lighting   | unit vector toward the sun, and its y                                   |
 | `dayFactor`, `nightFactor`     | lighting   | 0..1 smooth blend, sum to 1                                             |
 | `horizonColor`, `skyColor`     | lighting   | sky colors (palette)                                                    |
@@ -75,13 +76,13 @@ The only moon disc is drawn by lighting's sky dome; atmosphere draws stars (and 
 Parsed by `parseQuery` in `src/core/query.ts` (pure, unit tested) and applied by `src/main.ts`.
 They exist for deterministic screenshots, e2e tests and debugging.
 
-| param          | effect                                                                        |
-| -------------- | ----------------------------------------------------------------------------- |
-| `?time=0..1`   | initial `env.timeOfDay` and sets `env.timeLocked = true` (cycle paused)       |
-| `?cam=name`    | camera preset from `CAMERA_PRESETS`: overview, street, core, topdown, skyline |
-| `?rain=0..1`   | initial `env.rain` and `env.rainTarget`                                       |
-| `?nogui`       | hides the lil-gui panel                                                       |
-| `?quality=low` | software-GL tier for CI e2e: see below                                        |
+| param         | effect                                                                            |
+| ------------- | --------------------------------------------------------------------------------- |
+| `?time=0..1`  | initial `env.timeOfDay` and sets `env.timeLocked = true` (cycle paused)           |
+| `?cam=name`   | camera preset from `CAMERA_PRESETS`: overview, street, core, topdown, skyline     |
+| `?rain=0..1`  | initial `env.rain` and `env.rainTarget`                                           |
+| `?nogui`      | hides the lil-gui panel                                                           |
+| `?quality=ci` | software-GL test tier for CI e2e: see below; `high\|medium\|low` pick a user tier |
 
 Numbers are clamped to 0..1; invalid values are ignored.
 
@@ -98,7 +99,7 @@ Numbers are clamped to 0..1; invalid values are ignored.
 `maxPolarAngle`, so keep the target below the camera for an exact pose) and is dropped if that
 pulls it out of the distance limits. Like `?cam`, it disables the intro dolly and idle cinematic.
 
-`env.quality === 'low'` is the CI tier (SwiftShader renders the full city at a few fps). Quality
+`env.quality === 'ci'` is the CI tier (SwiftShader renders the full city at a few fps). Quality
 branches are owned by perf and stay minimal: DPR 0.5 and no MSAA (ux/main), no shadow map and one
 lazy 64 px PMREM bake (lighting), no post chain, rain, clouds or searchlights (atmosphere; fog and
 stars stay), flat river water without noise normals (terrain). All e2e specs use it through
@@ -151,6 +152,10 @@ Pure queries: `terrainHeight`, `surfaceHeight`, `riverSignedDistance`, `building
 | ------------------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `.github/workflows/ci.yml`      | pull_request, push to main, dispatch                      | format:check, lint, typecheck, unit tests, build, Playwright e2e (report uploaded on failure); e2e is skipped when a PR (or a dispatch on a PR branch) only changes `docs/**` or `*.md`                    |
 | `.github/workflows/autofix.yml` | pull_request (same-repo only)                             | `lint:fix` + `format`; if anything changed, commits `style: 린트 및 포맷 자동 수정` as github-actions[bot], pushes to the PR branch and dispatches `ci.yml` for it (GITHUB_TOKEN pushes do not trigger CI) |
-| `.github/workflows/pages.yml`   | CI succeeded on a push to main (`workflow_run`), dispatch | checks out the commit CI tested, builds with `BASE_PATH=/neon-megacity/` and deploys `dist/` to GitHub Pages                                                                                               |
+| `.github/workflows/pages.yml`   | CI succeeded on a push to main (`workflow_run`), dispatch | deploys only if the tested commit is still main's head (a failing newest commit pauses deploys), builds it with `BASE_PATH=/neon-megacity/` and deploys `dist/`; dispatch only from main                   |
+
+Local e2e, `npm run shots` and `npm run perf` each serve `dist/` on a per-worktree port
+(`localPort` in `tests/e2e/helpers.ts`, 4200–4979, never reusing a running server). If two worktrees
+hash to the same port the server fails to start: set `E2E_PORT`, `SHOTS_PORT` or `PERF_PORT`.
 
 `vite.config.ts` uses `base: process.env.BASE_PATH ?? './'`, so dev, preview, e2e and screenshots run with a relative base.

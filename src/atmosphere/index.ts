@@ -9,6 +9,7 @@ import { installFogChunks } from './fogChunks';
 import {
   CLOUD_LAYERS,
   computeFog,
+  mapFogScale,
   fogBrightness,
   createQualityState,
   rainAltitudeFade,
@@ -31,8 +32,9 @@ const setSrgb = (c: Color, rgb: RGB, k = 1): Color =>
 
 export function init(ctx: Ctx): CityModuleInstance {
   const { scene, camera, gui, env } = ctx;
+  const mapFog = mapFogScale(Math.max(ctx.LAYOUT.extentX, ctx.LAYOUT.extentZ));
   // Low tier (CI SwiftShader): no post chain, rain, clouds or searchlights. Fog and stars stay.
-  const low = env.quality === 'low';
+  const low = env.quality === 'ci';
 
   const settings = {
     fogScale: 1,
@@ -47,6 +49,7 @@ export function init(ctx: Ctx): CityModuleInstance {
   };
 
   const uninstallFog = installFogChunks();
+  env.fogDensity *= mapFog;
   const fog = new FogExp2(env.fogColor.getHex(), env.fogDensity);
   const previousFog = scene.fog;
   scene.fog = fog;
@@ -134,13 +137,13 @@ export function init(ctx: Ctx): CityModuleInstance {
       env.rain = stepRain(env.rain, env.rainTarget, dt);
       const r = env.rain;
 
-      const f = computeFog(palette, r, settings.fogScale);
+      const f = computeFog(palette, r, settings.fogScale * mapFog);
       env.fogDensity = f.density;
       setSrgb(env.fogColor, f.color);
       fog.color.copy(env.fogColor);
       fog.density = f.density;
 
-      // The CPU fog mirrors read this flag too.
+      // CPU fog callers read this flag through heightFogEnabled().
       height[3] = settings.heightFog ? 1 : 0;
       const ds = env.sunDirection.lengthSq();
       if (ds > 1e-6) sunDir.copy(env.sunDirection).multiplyScalar(1 / Math.sqrt(ds));
@@ -161,7 +164,8 @@ export function init(ctx: Ctx): CityModuleInstance {
 
       stars.update(elapsed, settings.stars ? palette.stars * (1 - 0.6 * Math.min(1, r)) : 0);
 
-      const fogK = Math.min(2, Math.max(0.5, f.density / NIGHT.fogDensity));
+      // Relative to the map-scaled night fog, so a wider map keeps the same beam halo.
+      const fogK = Math.min(2, Math.max(0.5, f.density / (NIGHT.fogDensity * mapFog)));
       searchlights.update(
         elapsed,
         settings.searchlights ? searchlightLevelAt(env.timeOfDay) : 0,
@@ -189,7 +193,10 @@ export function init(ctx: Ctx): CityModuleInstance {
     },
     dispose() {
       if (userData.compile === warmup) delete userData.compile;
+      // Shared uniforms outlive this module in compiled materials: back to the defaults.
       height[3] = 1;
+      sun.set([0, 1, 0, 0]);
+      sunCol.fill(0);
       ctx.render = previousRender;
       post?.dispose();
       rain?.dispose();

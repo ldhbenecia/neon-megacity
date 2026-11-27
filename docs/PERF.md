@@ -8,11 +8,11 @@ every PR that changes performance, with before / after numbers in the PR body.
 ```sh
 npm run perf -- <label>                  # real GPU (Metal ANGLE), builds first
 npm run perf -- <label> --no-build --only=탑다운
-npm run perf -- <label> --quality=low    # the CI tier
+npm run perf -- <label> --quality=ci     # the CI tier
 npm run perf -- <label> --swiftshader    # software GL, slow
 ```
 
-`scripts/perf.ts` serves `dist/` on :4175 and opens headless Chromium at 1600×900, device scale 2
+`scripts/perf.ts` serves `dist/` on its per-worktree port (`localPort`, `PERF_PORT` overrides) and opens headless Chromium at 1600×900, device scale 2
 (the app caps DPR at 1.5, so 2400×1350 pixels). For each preset 1, 2, 3, 5, 8 × time 0.0, 0.78,
 0.5 it boots a fresh page with `?stats`, waits for `__city.powered` and 60 warm-up frames, then:
 
@@ -32,6 +32,41 @@ closure instead of on the material or its `uniforms` (arrays of textures are cou
 
 Results also go to `perf-results/<label>.json` (gitignored). fps above 60 only says how much
 headroom is left: on a real display rAF is capped by vsync.
+
+## Screen verification: full quality, several times of day, while moving
+
+Counts, fps and e2e did not catch the black-rectangle bug (592da37 → #63): a shader `pow()` of a
+slightly negative base gave NaN in the HDR target, and bloom spread it over most of the screen.
+Only real-GPU full quality showed it; the low tier and SwiftShader did not (SwiftShader, 960×540:
+noon overview 0 % black, sunset skyline 9–10 %, night street 12–14 %; Metal: 94 %, 100 % and
+whole-frame flashes while moving).
+
+So every `npm run perf` scenario (presets 1, 2, 3, 5, 8 × night, sunset, noon) also runs
+`scripts/screen.ts`. A rAF callback queued after the app's loop downsamples the WebGL canvas to
+64×36 on **every frame** (a 1–3 frame flash cannot slip between samples), first 1 s at rest, then
+during a short zoom out and back, a W / S flight and a small orbit drag, then 1 s at rest. A pixel
+is black when R + G + B < 6. Limits by time of day (`lightAt`, from Metal runs of the fixed build):
+
+| light               | at rest | moving | why                                                      |
+| ------------------- | ------- | ------ | -------------------------------------------------------- |
+| day 07–17 h         | 30 %    | 50 %   | healthy views ≤ 13 % black                               |
+| dusk 05–07, 17–20 h | 50 %    | 70 %   | street at sunset 26–27 % rest, 46–48 % moving            |
+| night               | 90 %    | 90 %   | street / hillside up to 57–76 %: only whole black frames |
+
+Any frame darker than mean 2 fails too. The run then exits with code 1. The table column is
+`max black % at rest / moving, min brightness`; `--no-screen` skips it. Fixed build (#63 + #64):
+all 15 scenarios pass; main c0fc4be: noon overview 100 % black at rest and moving.
+
+Limit: at night only whole black frames fail, so a partial black block (say 15 % of the screen) at
+night would pass; a follow-up could track the largest connected black region or a sudden jump in
+the black share between frames.
+
+The motion stays small on purpose: wide orbits at street level swing the camera against unlit
+walls (legitimately black at night) and once clipped into a building (99 % black, mean 0.1).
+
+Because SwiftShader does not reproduce GPU-specific NaN or precision bugs, **a full-quality
+`npm run perf` on a real GPU is required before merging** any change to shaders, post-processing,
+lighting or materials; paste its screen column in the PR body. CI keeps its SwiftShader checks.
 
 ## Snapshot: main e2b7fef (lighting, infra, atmosphere, ux; terrain, buildings, neon are stubs)
 
@@ -145,7 +180,176 @@ Budget (ceiling 50 stays the CI gate; team total 45 leaves a reserve):
 | reserve               |                          | 2                   |
 | **total**             | **29**                   | **45**              |
 
+## Baseline: layout v3 (main 0d4c9de, Seoul map)
+
+Apple M4, full quality, `npm run perf -- v3-base` (15 scenarios; machine under load, so frame times
+are indicative). Every scenario passes the screen check.
+
+| item                      | v3 range            | budget (target / ceiling) |
+| ------------------------- | ------------------- | ------------------------- |
+| draw calls                | 79–119              | 220 / 300                 |
+| triangles                 | 0.92–0.98 M         | 1.2 M / 2.0 M             |
+| shader programs           | 37                  | 35 / 50                   |
+| textures                  | 28–29               | 24 / 40                   |
+| geometry / texture memory | 60.7–66.4 / 61.4 MB |                           |
+| boot → interactive        | 2.7–4.5 s           | M1 3 s / 10 s             |
+
+Main thread during boot (`PerformanceObserver('longtask')`, preset 2 night, 3 runs): blocked
+2.8–3.0 s in total, `__city.ready` at 3.1–3.4 s. Longest tasks: JS evaluation + layout generation
+764–811 ms, buildings 585–637 ms, terrain 501–516 ms, neon 351–392 ms, compile 233–289 ms, infra
+207–252 ms. Structured clone of the v3 layout: 31 ms (3.8 MB, 5,662 buildings, plain objects only).
+
+## Module init-time budget (review gate for layout v3 PRs)
+
+A PR may not make a module's boot `init` (and layout generation) more than **1.3×** its v3
+baseline, measured back to back with main on the same machine (`npm run perf -- <label>
+--no-build --no-screen --frames=30 --only="코어 상공"`, three boots; the absolute numbers move with
+machine load, the ratio does not). Baseline (main 0d4c9de, M4, under load): layout 0.8 s,
+buildings 0.6 s, terrain 0.5 s, neon 0.37 s, compile 0.26 s, infra 0.23 s. Over 1.3× the reviewer
+comments on the PR and the manager decides; work moving to the boot worker does not count.
+
+First checks (M4, low load, main 31ead8a measured in the same session; compare ratios only, not
+these absolute numbers with the loaded 0d4c9de baseline above):
+
+| PR                  | module init (ms)  | main (ms) | ratio      |
+| ------------------- | ----------------- | --------- | ---------- |
+| #101 terrain-seoul  | terrain 151–176   | 211–225   | 0.7–0.8×   |
+| #97 buildings-seoul | buildings 293–334 | 259–261   | 1.13–1.28× |
+| #104 infra-seoul    | infra 78–86       | 87–95     | 0.9×       |
+
+Top-down view: #97 triangles 0.92 → 0.93 M, geometry 60.7 → 62.0 MB; #104 0.92 → 0.86 M,
+60.7 → 56.1 MB (bridge LOD). Programs 37 and textures 29 in all three.
+
+**Textures: two budgets (manager decision).** `info.memory.textures` (29) mixes two kinds:
+
+- **Module textures** (neon atlas, car paths, cloud noise, window digits, puddles, …): about 12;
+  **target 14**, counted per module in review.
+- **Render targets and env maps** (bloom bright + 5 + 5 mips = 11, HDR scene target 1, shadow map
+  1, four baked PMREM maps 4): budgeted by **memory** (resolution × format, MB), not by count. At
+  2400×1350 the HDR target alone is ≈ 37 MB (8 B colour + 4 B depth per pixel).
+
+Bloom keeps 5 mips: fewer mips would remove the wide glow around neon in fog, and the count target
+is not a reason to change the picture. The mip count becomes a quality-tier knob instead (high 5,
+medium 4, low 3, by pass count only, no program change), done with env in the per-module knobs.
+
+## Proposal: move boot work off the main thread (Web Worker)
+
+Status: measured and decided (Worker), not implemented. Engine stays three.js; this is about where
+the CPU work runs.
+
+**Measured** (main c0fc4be, M4, preset 2 night, `PerformanceObserver('longtask')`, 3 runs): the
+main thread is blocked 2.1–3.2 s in total during boot, so the loader skeleton cannot update.
+
+| boot slice                                 | blocked (ms)             | shape         |
+| ------------------------------------------ | ------------------------ | ------------- |
+| JS evaluation + layout generation (import) | 394–599                  | one task      |
+| buildings init (LOD1/LOD2 emit + build)    | 444–640                  | one task      |
+| compile (shader link)                      | 248–293 (cold run: 1735) | one task      |
+| neon init                                  | 173–200                  | one task      |
+| lighting, terrain, infra, setup            | 85–171 each              | one task each |
+
+**Decision (manager, #78): one Worker, no build-time JSON.** Precomputed layout data would add a
+download outside the bundle budget (slower than computing on a slow link, and it cannot overlap
+with JS evaluation and shader compiles the way a worker can) and could drift from the generator.
+
+**Design conditions.**
+
+1. **One worker**: it generates the layout, posts it to main, then builds the buildings geometry
+   in the same worker and transfers the `ArrayBuffer`s. The layout is never sent to two workers.
+2. Main needs the layout too (src/city queries: camera collision, neon placement, terrain). It
+   arrives by structured clone; measure the clone cost. If it is large, building specs become a
+   bundle of typed arrays (agree with hangang-seoul, owner of src/city).
+3. Boot becomes asynchronous. The module init order (lighting → terrain → buildings → infra →
+   neon → atmosphere) and the meaning of `window.__city.ready` stay; the loader covers the wait
+   (with hangang-ux). Without workers (old browsers, worker creation failure) the current
+   synchronous main-thread path remains.
+4. Deterministic: the worker and the main path call the same pure functions; a unit test pins
+   that layout and geometry are identical.
+5. Vite `new Worker(new URL(..., import.meta.url), { type: 'module' })`; an e2e run with
+   `BASE_PATH` checks the worker chunk URL; the worker chunk counts in `npm run size`.
+6. Order: (1) buildings geometry worker, built as the single worker of point 1; (2) layout. Both
+   after quality tiers (a). Re-measure on layout v3 (#32) first: more buildings, longer freezes.
+
+**Async boot plan on v3 (goal: no main-thread task over 200 ms, `__city.ready` no later than
+3.1–3.4 s).** Layout and buildings alone leave terrain (0.5 s), neon (0.35–0.4 s), compile and
+infra above 200 ms, so the plan has phases, each measured with the long-task probe:
+
+1. **Bootstrap + layout worker (perf).** A small first chunk shows the loader, starts the city
+   worker and preloads the app chunk (no waterfall). The worker runs `generateLayout` and posts
+   the layout (structured clone, ~31 ms on main); `setLayout()` publishes it before the app chunk
+   runs (`ux/cameraRig` reads `LAYOUT` at import time, so it must come after). Without workers the
+   current synchronous path runs. Removes the 0.76–0.81 s task.
+2. **Buildings geometry in the same worker (perf).** LOD1/LOD2 per chunk come back as
+   transferable typed arrays; the time-sliced LOD0 jobs move too. Removes the 0.59–0.64 s task.
+3. **Terrain and neon pure data in the worker (with hangang-env and hangang-neon).** Ground /
+   channel / ridge arrays and neon placement (`placeSigns`, `planStreet`) are pure; their modules
+   then only wrap arrays. Removes 0.5 s and 0.35–0.4 s.
+4. **Compile.** atmosphere's warm-up hook calls the synchronous `renderer.compile`, so main's
+   `compileAsync` (`KHR_parallel_shader_compile`) is bypassed; switching the hook to
+   `compileAsync` on the HDR target should split the 0.23–0.29 s task. Infra (0.21–0.25 s) is
+   time-sliced if still above 200 ms.
+5. **Lazy neon / atmosphere chunks** (bundle decision #88) ride on the same bootstrap.
+
+**Costs.** A worker chunk duplicates part of three (BufferGeometry and math; est. 40–60 KB gzip,
+lazy, not counted in the initial-load budget). Determinism is unchanged (same code, same seeds;
+`tests/buildings-lod.test.ts` pins sliced vs direct LOD0 bytes, `tests/buildings-passes.test.ts`
+(#57) far / near passes vs the full emit). Debugging spans two threads.
+
+**Verification.** Same longtask probe: the buildings slice must vanish from the main thread, the
+boot → interactive time must not grow, and the loader must keep animating (no task > 100 ms
+during the buildings stage).
+
+## JS bundle: what it is made of, and a proposed target
+
+Measured on main 3db3a31 (neon included): initial JS 298.7 KB gzip (target 260, ceiling 400).
+Attribution from the production source map (`vite build --sourcemap`, minified bytes per source,
+gzip share scaled to the real total):
+
+| part                     | raw KB | gzip KB (share) |
+| ------------------------ | ------ | --------------- |
+| three core               | 715.5  | 173.6           |
+| src/neon                 | 75.2   | 25.7            |
+| src/buildings            | 56.3   | 20.8            |
+| src/city                 | 33.5   | 13.3            |
+| src/ux                   | 30.9   | 12.7            |
+| src/atmosphere           | 29.8   | 10.6            |
+| src/infra                | 21.1   | 8.5             |
+| lil-gui                  | 29.9   | 7.6             |
+| three/examples           | 33.8   | 7.5             |
+| src/terrain              | 14.0   | 5.5             |
+| src/lighting             | 10.4   | 4.3             |
+| src/core, main, unmapped | 21.2   | 8.5             |
+
+three core is 58 % and sets the floor; our modules add ~125 KB. Shader strings and sign text are
+inside their modules (neon's 25.7 KB includes its GLSL and catalogue).
+
+**Options, with their effect on the initial chunk:**
+
+| change                                                          | initial gzip | note                                                     |
+| --------------------------------------------------------------- | ------------ | -------------------------------------------------------- |
+| today                                                           | 298.7 KB     |                                                          |
+| lil-gui only with `?debug` (dynamic import + stub GUI)          | ~291 KB      | the only change that also cuts total download (−7.6 KB)  |
+| + neon and atmosphere as lazy chunks loaded at their boot stage | ~255 KB      | same total download; the first chunk parses ~15 % sooner |
+| + buildings, infra lazy too                                     | ~225 KB      | diminishing returns: every stage waits for its own fetch |
+
+**Decision (manager, #88).** The 400 KB ceiling covers _all_ JS (every chunk, worker chunks
+included); the 260 KB target covers the _first_ chunk. three core (173.6 KB) is the floor, so the
+target is met by splitting, not trimming:
+
+1. lil-gui only with `?debug` (dynamic import, stub panel otherwise): now, small PR.
+2. neon and atmosphere as lazy chunks, designed together with the boot Worker as one "async boot"
+   change after layout v3 (#32), with these conditions: no waterfall (all lazy chunks start
+   downloading as soon as the first chunk runs: `import()` on the first line of boot or
+   modulepreload); first paint and `__city.ready` measured before / after, and dropped if ready
+   gets slower; the init order and the meaning of `__city.ready` stay; a failed chunk download
+   shows an error and retry in the loader (never half a city); an e2e run under `BASE_PATH`
+   checks chunk URLs. `npm run size` already reports first and lazy chunks separately (#45).
+
 ## Findings and candidates
+
+- **Signs in layout v3 always hit the cap.** The sign total stays at its 16,000 cap, so thinning
+  always runs (building signs ~10,300, street panels ~4,070, street lights 1,456 / 1,500, ground
+  traffic 1,199 / 1,200; caps scaled to the map in #67).
 
 - **Day/night scrub stall (fixed).** Toggling the key light's `castShadow` changed the program
   variant of every lit material. With buildings (#11), preset 2, M4: a timeline jump between night
@@ -183,6 +387,6 @@ Budget (ceiling 50 stays the CI gate; team total 45 leaves a reserve):
 - **Cold shader cache.** An early run (whose GPU probe did not boot the app) showed first-frame
   0.5–0.9 s, later runs 31–79 ms; the OS shader cache likely explains it. Re-check once buildings
   and neon add programs.
-- **JS bundle.** 266.5 KB gzip on main after buildings, over the 260 KB target (`npm run size`
-  warns in CI). Candidate: load lil-gui (only shown with `?debug`) lazily; every module calls
-  `ctx.gui.addFolder` at init, so it needs a typed stand-in when the panel is off.
+- **JS bundle.** lil-gui now loads only with `?debug` (#89): first chunk 298.7 → 291.9 KB gzip,
+  lil-gui a 7.7 KB lazy chunk; without `?debug` modules get a chainable no-op stand-in. The rest
+  of the 260 KB target comes from lazy neon / atmosphere chunks (see "JS bundle" above).
