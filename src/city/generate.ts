@@ -366,6 +366,8 @@ interface Lot {
   blockId: number;
   /** Set on tower-field lots of a megacore: fixed height and tier (0 = landmark). */
   tower?: { h: number; tier: number };
+  /** Set on 테헤란로 media-slab lots. */
+  media?: boolean;
   /** Set on bank-row apartment lots: clear gap (m) to the next row toward the land. */
   rowGap?: number;
 }
@@ -567,6 +569,7 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
       palaceHalls(zone);
       continue;
     }
+    if (zone.kind === 'corridor') mediaRow(zone, rng);
     const bank = zoneBank(zone.id);
     if (bank && zone.kind === 'apartment') {
       bankRows(zone, bank, rng);
@@ -812,6 +815,59 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
     }
   }
 
+  /**
+   * 테헤란로's screen canyon (SEOUL.md 4.3): media slabs on both sides of the avenue, long side
+   * along it, alternating sides west to east. Placed before the grid lots, which fill around them.
+   */
+  function mediaRow(zone: DistrictZone, rng: Rng): void {
+    const [ta, tb] = TEHERAN;
+    const len = Math.hypot(tb.x - ta.x, tb.z - ta.z);
+    const ux = (tb.x - ta.x) / len;
+    const uz = (tb.z - ta.z) / len;
+    const rotY = Math.atan2(-uz, ux);
+    const depth = 24;
+    // Road half width (25 m) + sidewalk + half the slab depth.
+    const off = 25 + 6 + depth / 2;
+    let prefer = 1;
+    let placed = 0;
+    const last = { [-1]: -Infinity, [1]: -Infinity } as Record<number, number>;
+    for (let s0 = 30; s0 < len - 30 && placed < MEDIA_SLABS; s0 += 8) {
+      const w = rng.range(MEDIA_MIN_FACE + 2, 56);
+      // Prefer the other side from the last slab (screens face each other across the avenue);
+      // fall back to the same side when that one is blocked here.
+      let obb: Obb | null = null;
+      let side = prefer;
+      for (const sd of [prefer, -prefer]) {
+        if (s0 - (last[sd] as number) < w + 12) continue;
+        const c = { x: ta.x + ux * s0 - uz * off * sd, z: ta.z + uz * s0 + ux * off * sd };
+        const o: Obb = { x: c.x, z: c.z, hw: w / 2, hd: depth / 2, rotY };
+        if (accept(o, zone)) {
+          obb = o;
+          side = sd;
+          break;
+        }
+      }
+      if (!obb) continue;
+      const blockId = blocks.length;
+      blocks.push({
+        id: blockId,
+        zoneId: zone.id,
+        district: zone.kind,
+        x: obb.x,
+        z: obb.z,
+        w,
+        d: depth,
+        rotY,
+        buildingIds: [],
+      });
+      lotHash.insert(lots.length, obbBounds(obb));
+      lots.push({ obb, zone, blockId, media: true });
+      placed++;
+      last[side] = s0;
+      prefer = -side;
+    }
+  }
+
   // Riverside pavilions (매점, 펌프장): a thin row between the embankment and the highway corridor.
   const rng = zoneRng(seed, 'lots:riverside');
   const riverside = zoneById('riverside');
@@ -905,6 +961,12 @@ function bankContour(seed: Vec2, o: number, x0: number, x1: number): Vec2[] {
   };
   return [...trace(false).reverse(), seed, ...trace(true)];
 }
+
+/** Lots this close to 테헤란로's centerline (m) front the avenue. */
+const AVENUE_REACH = 110;
+/** Media slabs down 테헤란로, and their shortest screen (long side) in m. */
+const MEDIA_SLABS = 8;
+const MEDIA_MIN_FACE = 40;
 
 /** Apartment slab depth, gap between slabs in a row, and distance between rows (m). */
 const SLAB_DEPTH = 14;
@@ -1103,16 +1165,30 @@ function draftsFor(zone: DistrictZone, lots: Lot[], rng: Rng): Draft[] {
     }
     case 'corridor': {
       const [ta, tb] = TEHERAN;
+      const onAvenue = (l: Lot): boolean => pointSegmentDistance(l.obb, ta, tb) < AVENUE_REACH;
       for (const lot of lots) {
+        if (lot.media) {
+          // The lot is the slab: keep its full length so the screen spans it.
+          const h = Math.min(rng.range(120, H.tallMax), slenderCap(lot.obb.hw * 2, lot.obb.hd * 2));
+          drafts.push({
+            lot,
+            archetype: 'mediaSlab',
+            w: lot.obb.hw * 1.96,
+            d: lot.obb.hd * 1.96,
+            h,
+            ox: 0,
+            oz: 0,
+            jitter: 0,
+          });
+          continue;
+        }
         if (rng.chance(0.06)) continue;
-        const onAvenue = pointSegmentDistance(lot.obb, ta, tb) < 110;
-        if (onAvenue) {
+        if (onAvenue(lot)) {
           const a = weighted<Archetype>(rng, [
-            ['officeSlab', 35],
-            ['setbackTower', 25],
-            ['mediaSlab', 20],
-            ['bracedTower', 10],
-            ['cantileverTower', 10],
+            ['officeSlab', 40],
+            ['setbackTower', 30],
+            ['bracedTower', 15],
+            ['cantileverTower', 15],
           ]);
           drafts.push(make(lot, a, rng.range(120, H.tallMax)));
         } else {
@@ -1522,7 +1598,13 @@ function buildSpecs(
       seed: Math.floor(rng.next() * 1e9),
       tags,
     };
-    if (d.archetype === 'mediaSlab') spec.tags.mediaFace = spec.front;
+    if (d.archetype === 'mediaSlab') {
+      // The screen is the long side facing 테헤란로 itself, not whatever street is nearest.
+      const t = closestSegmentT({ x, z }, TEHERAN[0], TEHERAN[1]);
+      const qx = TEHERAN[0].x + (TEHERAN[1].x - TEHERAN[0].x) * t;
+      const qz = TEHERAN[0].z + (TEHERAN[1].z - TEHERAN[0].z) * t;
+      spec.tags.mediaFace = sideToward(qx - x, qz - z, rotY);
+    }
     if (d.landmark) spec.tags.landmark = d.landmark;
     if (tr.twin) spec.twin = tr.twin;
     if (tr.skybridge) spec.skybridge = tr.skybridge;

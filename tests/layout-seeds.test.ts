@@ -5,6 +5,8 @@ import {
   RIVER_CLEARANCE,
   SAETGANG,
   ZONES,
+  TEHERAN,
+  buildingFaces,
   buildingsInAabb,
   riverWidthAt,
   generateLayout,
@@ -115,6 +117,37 @@ describe.each(SEEDS)('seed %i', (seed) => {
     for (const id of ['yongsan', 'yeouido', 'jamsil']) {
       expect(band(id, 0, 120), `${id} podiums`).toBeGreaterThan(0);
     }
+  });
+
+  it('lines 테헤란로 with media slabs whose long side screens face the avenue', () => {
+    const media = B.filter((b) => b.archetype === 'mediaSlab');
+    expect(media.length).toBeGreaterThanOrEqual(6);
+    expect(media.length).toBeLessThanOrEqual(10);
+    const [ta, tb] = TEHERAN;
+    const sides = new Set<number>();
+    for (const b of media) {
+      expect(b.tags.mediaFace, `building ${b.id}`).toBeDefined();
+      const face = buildingFaces(b).find(
+        (f) => f.stack === 0 && f.tier === 0 && f.side === b.tags.mediaFace,
+      )!;
+      expect(face.width, `building ${b.id}`).toBeGreaterThanOrEqual(40);
+      // The screen's outward normal points at the closest point of 테헤란로.
+      const ux = tb.x - ta.x;
+      const uz = tb.z - ta.z;
+      const t = Math.max(
+        0,
+        Math.min(1, ((b.x - ta.x) * ux + (b.z - ta.z) * uz) / (ux * ux + uz * uz)),
+      );
+      const dx = ta.x + ux * t - b.x;
+      const dz = ta.z + uz * t - b.z;
+      const dl = Math.hypot(dx, dz);
+      expect((face.normal.x * dx + face.normal.z * dz) / dl, `building ${b.id}`).toBeGreaterThan(
+        0.9,
+      );
+      sides.add(Math.sign(ux * (b.z - ta.z) - uz * (b.x - ta.x)));
+    }
+    // Both sides of the avenue get screens.
+    expect(sides.size).toBe(2);
   });
 
   it('lines the five riverside apartment strips with slab walls', () => {

@@ -89,8 +89,8 @@ describe('layout v3: determinism', () => {
     }).toMatchInlineSnapshot(`
       {
         "blocks": 1403,
-        "buildings": 5653,
-        "digest": "1864fc63",
+        "buildings": 5645,
+        "digest": "2da4ed0d",
         "roads": 1175,
         "slots": 3436,
       }
@@ -393,7 +393,8 @@ describe('layout v3: tiers', () => {
       if (b.district === 'hillside') expect(b.archetype).toBe('hillHouse');
       if (b.district === 'palace') expect(b.archetype).toBe('palaceHall');
       if (b.district === 'palace') expect(b.h).toBeLessThanOrEqual(18);
-      if (b.archetype === 'mediaSlab') expect(b.tags.mediaFace).toBe(b.front);
+      // Media slabs run along 테헤란로 (local x), so the screen is a long side.
+      if (b.archetype === 'mediaSlab') expect(['pz', 'nz']).toContain(b.tags.mediaFace);
       if (b.archetype === 'cylinderTower')
         expect(b.tiers.every((t) => t.shape === 'cylinder')).toBe(true);
       if (b.archetype === 'apartmentSlab') {
