@@ -147,7 +147,8 @@ Budget (ceiling 50 stays the CI gate; team total 45 leaves a reserve):
 
 ## Proposal: move boot work off the main thread (Web Worker)
 
-Status: measured, not implemented. Engine stays three.js; this is about where the CPU work runs.
+Status: measured and decided (Worker), not implemented. Engine stays three.js; this is about where
+the CPU work runs.
 
 **Measured** (main c0fc4be, M4, preset 2 night, `PerformanceObserver('longtask')`, 3 runs): the
 main thread is blocked 2.1–3.2 s in total during boot, so the loader skeleton cannot update.
@@ -160,19 +161,32 @@ main thread is blocked 2.1–3.2 s in total during boot, so the loader skeleton 
 | neon init                                  | 173–200                  | one task      |
 | lighting, terrain, infra, setup            | 85–171 each              | one task each |
 
-**Proposal, in order of payoff:**
+**Decision (manager, #78): one Worker, no build-time JSON.** Precomputed layout data would add a
+download outside the bundle budget (slower than computing on a slow link, and it cannot overlap
+with JS evaluation and shader compiles the way a worker can) and could drift from the generator.
 
-1. **Buildings geometry in a Worker.** `GeoBuilder` and the archetype emitters are pure (layout +
-   three math, no DOM). A worker emits LOD1/LOD2 per chunk and posts the typed arrays back as
-   transferables; main only wraps them in `BufferGeometry`. The time-sliced LOD0 jobs (#53) move
-   too, which also removes the single 12 ms `build()` spike per chunk. Expected: the 0.44–0.64 s
-   freeze disappears; boot overlaps with lighting / infra / neon init (est. 0.2–0.4 s shorter).
-2. **Layout generation off the main thread** once layout v3 lands (Node: ~1.0 s for v3, so likely
-   1–2 s in a laptop browser). Either a Worker that returns the layout as structured-clone data,
-   or a deterministic build-time precompute (needs a decision: it is generated data, not an
-   external asset). Today `LAYOUT` is a module-level constant imported everywhere, so this needs
-   an async boot step that publishes it before modules init.
-3. Neon placement (~0.2 s) can follow the same worker if it grows.
+**Design conditions.**
+
+1. **One worker**: it generates the layout, posts it to main, then builds the buildings geometry
+   in the same worker and transfers the `ArrayBuffer`s. The layout is never sent to two workers.
+2. Main needs the layout too (src/city queries: camera collision, neon placement, terrain). It
+   arrives by structured clone; measure the clone cost. If it is large, building specs become a
+   bundle of typed arrays (agree with hangang-seoul, owner of src/city).
+3. Boot becomes asynchronous. The module init order (lighting → terrain → buildings → infra →
+   neon → atmosphere) and the meaning of `window.__city.ready` stay; the loader covers the wait
+   (with hangang-ux). Without workers (old browsers, worker creation failure) the current
+   synchronous main-thread path remains.
+4. Deterministic: the worker and the main path call the same pure functions; a unit test pins
+   that layout and geometry are identical.
+5. Vite `new Worker(new URL(..., import.meta.url), { type: 'module' })`; an e2e run with
+   `BASE_PATH` checks the worker chunk URL; the worker chunk counts in `npm run size`.
+6. Order: (1) buildings geometry worker, built as the single worker of point 1; (2) layout. Both
+   after quality tiers (a). Re-measure on layout v3 (#32) first: more buildings, longer freezes.
+
+**Expected payoff.** Buildings in the worker remove the 0.44–0.64 s freeze and overlap boot with
+lighting / infra / neon init (est. 0.2–0.4 s shorter); the time-sliced LOD0 jobs (#53) move too,
+removing the 12 ms `build()` spike per chunk. Layout in the worker removes the 0.39–0.60 s import
+task (v3: Node ~1.0 s, likely 1–2 s in a laptop browser).
 
 **Costs.** A worker chunk duplicates part of three (BufferGeometry and math; est. 40–60 KB gzip,
 lazy, not counted in the initial-load budget). Determinism is unchanged (same code, same seeds;
