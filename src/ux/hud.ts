@@ -86,6 +86,10 @@ export function buildingCard(b: BuildingSpec, L: Pick<Layout, 'districts'> = LAY
 
 export interface Hud {
   setMode(mode: RigMode): void;
+  /** Called with true when a building card opens, false when it closes. */
+  onCard(fn: (open: boolean) => void): () => void;
+  /** Called with true when the help sheet opens, false when it closes. */
+  onHelp(fn: (open: boolean) => void): () => void;
   showCard(b: BuildingSpec | null): void;
   toast(text: string): void;
   toggle(force?: boolean): boolean;
@@ -115,6 +119,12 @@ export function createHud(opts: { visible: boolean; onDeselect?: () => void }): 
   let hintTimer = 0;
   let visible = true;
   let helpReturn: HTMLElement | null = null;
+  const cardListeners = new Set<(open: boolean) => void>();
+  const helpListeners = new Set<(open: boolean) => void>();
+  // Overlay layout rules live in style.css, keyed by these attributes on #hud.
+  const mark = (name: 'card' | 'help', open: boolean): void => {
+    if (root) root.dataset[name] = open ? 'open' : 'closed';
+  };
 
   const field = (name: string, text: string): void => {
     const el = card?.querySelector<HTMLElement>(`[data-field="${name}"]`);
@@ -154,15 +164,23 @@ export function createHud(opts: { visible: boolean; onDeselect?: () => void }): 
       modeEl.hidden = label === '';
       if (m !== 'orbit' && m !== 'flight') hideHint();
     },
+    onCard(fn) {
+      cardListeners.add(fn);
+      return () => cardListeners.delete(fn);
+    },
+    onHelp(fn) {
+      helpListeners.add(fn);
+      return () => helpListeners.delete(fn);
+    },
     showCard(b) {
       if (!card) return;
-      if (!b) {
-        card.hidden = true;
-        return;
+      if (b) {
+        const info = buildingCard(b);
+        for (const k of Object.keys(info) as (keyof CardInfo)[]) field(k, info[k]);
       }
-      const info = buildingCard(b);
-      for (const k of Object.keys(info) as (keyof CardInfo)[]) field(k, info[k]);
-      card.hidden = false;
+      card.hidden = !b;
+      mark('card', !!b);
+      for (const fn of cardListeners) fn(!!b);
     },
     toast(text) {
       if (!toastEl) return;
@@ -182,6 +200,8 @@ export function createHud(opts: { visible: boolean; onDeselect?: () => void }): 
       const open = force ?? !isOpen;
       if (open === isOpen) return open;
       help.hidden = !open;
+      mark('help', open);
+      for (const fn of helpListeners) fn(open);
       if (open) {
         hideHint();
         helpReturn = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -204,6 +224,12 @@ export function createHud(opts: { visible: boolean; onDeselect?: () => void }): 
       clearTimeout(hintTimer);
       cardClose?.removeEventListener('click', onCardClose);
       helpClose?.removeEventListener('click', onHelpClose);
+      cardListeners.clear();
+      helpListeners.clear();
+      if (root) {
+        delete root.dataset.card;
+        delete root.dataset.help;
+      }
     },
   };
   hud.toggle(opts.visible);

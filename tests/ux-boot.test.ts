@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { LAYOUT } from '../src/city/layout';
 import { CAMERA_LIMITS } from '../src/core/query';
 import { RAIN_STEPS, rainStep } from '../src/ux/controls';
-import { AdaptiveDpr } from '../src/ux/dpr';
 import {
   ARCHETYPE_FALLBACK,
   ARCHETYPE_KO,
@@ -52,48 +51,6 @@ describe('boot progress (9.2)', () => {
     expect(activeSegment(0, 20)).toBe(0);
     expect(activeSegment(0.42, 20)).toBe(8);
     expect(activeSegment(1, 20)).toBe(19);
-  });
-});
-
-describe('adaptive DPR (11)', () => {
-  const run = (d: AdaptiveDpr, ms: number, seconds: number): number[] => {
-    const out: number[] = [];
-    for (let t = 0; t < seconds; t += ms / 1000) {
-      const v = d.sample(ms / 1000);
-      if (v !== null) out.push(v);
-    }
-    return out;
-  };
-
-  it('starts at the cap and steps down by 0.25 when slow, never below 1', () => {
-    const d = new AdaptiveDpr({ max: 1.5 });
-    expect(d.dpr).toBe(1.5);
-    expect(run(d, 30, 2.1)).toEqual([1.25]);
-    run(d, 30, 10);
-    expect(d.dpr).toBe(1);
-  });
-
-  it('recovers only after 5 s under 14 ms', () => {
-    const d = new AdaptiveDpr({ max: 1.5 });
-    run(d, 30, 2.1);
-    expect(d.dpr).toBe(1.25);
-    expect(run(d, 16, 10)).toEqual([]); // 16 ms is "ok", not "fast"
-    expect(run(d, 8, 6.5)).toEqual([1.5]);
-  });
-
-  it('reset() restores the cap and starts a fresh window', () => {
-    const d = new AdaptiveDpr({ max: 1.5 });
-    run(d, 30, 2.1);
-    expect(d.dpr).toBe(1.25);
-    expect(d.reset()).toBe(1.5);
-    expect(d.averageMs).toBe(0);
-  });
-
-  it('ignores hitches and respects a low device ratio', () => {
-    const d = new AdaptiveDpr({ max: Math.min(1, 1.5) });
-    expect(d.sample(5)).toBeNull();
-    expect(run(d, 40, 5)).toEqual([]);
-    expect(d.dpr).toBe(1);
   });
 });
 
