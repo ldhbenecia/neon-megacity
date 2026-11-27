@@ -8,12 +8,13 @@ import { bundleGzip } from './bundle';
 const TARGET_KB = 260;
 const LIMIT_KB = 400;
 /**
- * The city worker (layout generator + terrain geometry, three-lite) is ~52 KB. three.core alone
- * would add ~30 KB, so the reliable sign of a broken three-lite alias is a three.core class name
- * in the chunk; the size limit only catches large growth.
+ * The city worker (layout generator + terrain geometry, three-lite) is ~53 KB; with a broken
+ * three-lite alias it is ~61 KB, too close for a size limit. The reliable sign is three's entry
+ * module (Three.Core.js), whose import-time `__THREE__` registration survives tree-shaking; the
+ * class modules three-lite uses do not contain it. Checked by building without the alias.
  */
 const WORKER_LIMIT_KB = 60;
-const THREE_CORE_MARKER = 'MeshStandardMaterial';
+const THREE_CORE_MARKER = '__THREE__';
 
 let files;
 try {
@@ -45,7 +46,7 @@ if (!worker) {
 }
 if (readFileSync(join('dist', worker.file), 'utf8').includes(THREE_CORE_MARKER)) {
   console.error(
-    `city worker contains three.core (${THREE_CORE_MARKER}): the three-lite alias stopped working (vite.config.ts threeLite)`,
+    `city worker contains three's entry module (${THREE_CORE_MARKER}): the three-lite alias stopped working (vite.config.ts threeLite)`,
   );
   process.exit(1);
 }

@@ -14,7 +14,7 @@ export function init(ctx: Ctx): CityModuleInstance {
 
   // Roads, sidewalks and plazas laid at the same height must win over the ground. Units only:
   // a slope factor grows to tens of metres at grazing angles and lets buried geometry show through.
-  const pre = takePrebuilt('terrain');
+  const pre = takePrebuilt('terrain', LAYOUT);
   const groundGeo = pre ? unpackGeometry(pre.ground) : buildGround();
   const groundMat = new THREE.MeshStandardMaterial({
     name: 'TerrainGround',
