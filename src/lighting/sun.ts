@@ -173,6 +173,21 @@ export function shadowFrameFor(
   };
 }
 
+/**
+ * Sun shadow per user quality tier (docs/PERF.md). Only the map size, the refresh interval and
+ * whether sun shadows show change: castShadow stays, so no program variant changes at runtime.
+ * Low keeps the map allocated but at intensity 0 and never refreshes it.
+ */
+export function shadowKnobs(quality: string): {
+  mapSize: number;
+  minInterval: number;
+  sunShadows: boolean;
+} {
+  if (quality === 'medium') return { mapSize: 1024, minInterval: 2, sunShadows: true };
+  if (quality === 'low') return { mapSize: 1024, minInterval: 2, sunShadows: false };
+  return { mapSize: 2048, minInterval: SHADOW_REFRESH.minInterval, sunShadows: true };
+}
+
 export const SHADOW_REFRESH = {
   sunEps: 0.5 * DEG,
   minInterval: 1,
@@ -185,10 +200,9 @@ export function shouldRefreshShadow(
   sunAngleSinceLast: number,
   secondsSinceLast: number,
   warmup: boolean,
+  minInterval: number = SHADOW_REFRESH.minInterval,
 ): boolean {
   if (frameChanged || warmup) return true;
-  if (secondsSinceLast >= SHADOW_REFRESH.maxInterval) return true;
-  return (
-    sunAngleSinceLast >= SHADOW_REFRESH.sunEps && secondsSinceLast >= SHADOW_REFRESH.minInterval
-  );
+  if (secondsSinceLast >= Math.max(SHADOW_REFRESH.maxInterval, minInterval)) return true;
+  return sunAngleSinceLast >= SHADOW_REFRESH.sunEps && secondsSinceLast >= minInterval;
 }
