@@ -79,8 +79,11 @@ const MOVE_KEYS = new Set([
   'ArrowRight',
 ]);
 
-/** Above this height no building volume (spires included) can be within the wall margin. */
-const SKY_CLEAR = LAYOUT.buildings.reduce((m, b) => Math.max(m, buildingTop(b)), 0) + WALL_MARGIN;
+// Above this height no building volume (spires included) can be within the wall margin. Computed
+// on first use, not at module evaluation: the layout may still be generating then.
+let skyClear: number | undefined;
+const skyClearY = (): number =>
+  (skyClear ??= LAYOUT.buildings.reduce((m, b) => Math.max(m, buildingTop(b)), 0) + WALL_MARGIN);
 
 const _v = new THREE.Vector3();
 const _w = new THREE.Vector3();
@@ -656,7 +659,7 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
   const clampCamera = (): void => {
     const p = camera.position;
     if (p.equals(resolvedAt)) return;
-    if (p.y <= SKY_CLEAR) {
+    if (p.y <= skyClearY()) {
       const fixed = resolveCollision(LAYOUT, p);
       if (fixed) p.set(fixed.x, fixed.y, fixed.z);
     }
