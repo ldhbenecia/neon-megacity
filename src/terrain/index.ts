@@ -59,6 +59,8 @@ export function init(ctx: Ctx): CityModuleInstance {
     horizonAnti: env.horizonAntiColor ?? env.horizonColor,
     sunDirection: env.sunDirection,
     dayFactor: env.dayFactor,
+    rain: env.rain,
+    fogColor: env.fogColor,
   };
 
   return {
@@ -68,6 +70,7 @@ export function init(ctx: Ctx): CityModuleInstance {
       groundMat.emissive.setRGB(r * k, g * k, b * k);
       channelMat.emissive.setRGB(r * k, g * k, b * k);
       ridgeEnv.dayFactor = env.dayFactor;
+      ridgeEnv.rain = env.rain;
       water.update(elapsed);
       ridges.update(elapsed, ridgeEnv, renderer.getPixelRatio());
     },
