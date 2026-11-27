@@ -12,9 +12,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
-  # Superseded PR runs are cancelled, but every commit on main keeps its run:
-  # Pages deploys from successful main runs (workflow_run).
+  # One group per main commit: a group holds at most one pending run, so with a shared group
+  # back-to-back merges cancelled each other's pending runs even without cancel-in-progress.
+  # Pages only deploys the newest of them (pages.yml gate).
+  group: ci-${{ github.event.pull_request.number || (github.event_name == 'push' && github.sha) || github.ref }}
+  # Superseded PR runs are cancelled; main commits are never cancelled.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:

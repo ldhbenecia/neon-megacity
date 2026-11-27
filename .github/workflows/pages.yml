@@ -17,14 +17,42 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
-    name: build
+  gate:
+    name: gate
     # workflow_run fires for every completed CI run on main (including failures and
     # manual dispatches); only deploy a successful run triggered by a push.
+    # `event == 'push'` also keeps fork PRs from a branch named main out; do not drop it.
     if: >-
-      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
       (github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      latest: ${{ steps.head.outputs.latest }}
+    steps:
+      # CI runs per main commit can finish out of order: deploying an older commit after a newer
+      # one would roll the site back. Only the commit main still points to is deployed; a newer
+      # commit deploys when its own CI run passes. If that newest commit fails CI, deploys pause
+      # (the site stays on the last deployed commit) until main is green again.
+      - id: head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          if [ -z "$SHA" ]; then
+            echo "latest=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          head="$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)"
+          if [ "$head" = "$SHA" ]; then latest=true; else latest=false; fi
+          echo "tested $SHA, main $head, latest=$latest"
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: build
+    needs: gate
+    if: needs.gate.outputs.latest == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
