@@ -2,7 +2,7 @@
 // are this city's own. Each replaces the spec's tier stack and stays inside its footprint.
 import { NEON } from '../core/palette';
 import type { BuildingSpec, LandmarkId } from '../city/types';
-import type { GeoBuilder, Style, V3 } from './builder';
+import { UNIT_CYL12, UNIT_CYL8, type GeoBuilder, type Style, type V3 } from './builder';
 import { band, glow, plain, rectOutline, walls, type Outline, type P2 } from './shapes';
 import { face, frame } from './seoul';
 
@@ -194,7 +194,11 @@ function yeouidoSlab(c: Ctx): void {
   beacon(c, spec.x, y0 + H, spec.z);
 }
 
-/** Namsan mast (SEOUL.md 4.5): thin three-leg lattice, viewing ring low, glowing ring high. */
+/**
+ * Namsan tower (SEOUL.md 4.5): a thick shaft, a disc-shaped viewing pod near its top and an
+ * antenna above, so it reads as a tower on the hill. Silhouette and proportion only: no windows,
+ * colour bands or logos from the real tower.
+ */
 export function namsanMast(
   g: GeoBuilder,
   x: number,
@@ -203,42 +207,39 @@ export function namsanMast(
   h: number,
   lv: 1 | 2,
 ): void {
-  const steel = plain(0x2a2e32, 0.5);
-  const legR = (t: number): number => 7 * (1 - t) + 1.2 * t;
-  const leg = (k: number, t: number): V3 => {
-    const a = (k * Math.PI * 2) / 3;
-    const r = legR(t);
-    return [x + r * Math.cos(a), y0 + t * h, z + r * Math.sin(a)];
-  };
-  const bays = lv === 2 ? 4 : 14;
-  for (let i = 0; i < bays; i++) {
-    const t0 = i / bays;
-    const t1 = (i + 1) / bays;
-    for (let k = 0; k < 3; k++) {
-      g.beam(leg(k, t0), leg(k, t1), 0.7, 0.7, [1, 0, 0], steel);
-      if (lv === 2) continue;
-      g.beam(leg(k, t1), leg((k + 1) % 3, t1), 0.3, 0.3, [0, 1, 0], steel);
-      g.beam(leg(k, t0), leg((k + 1) % 3, t1), 0.22, 0.22, [0, 1, 0], steel);
-    }
+  const concrete = plain(0x8a8c88, 0.75);
+  const dark = plain(0x14181c, 0.4);
+  const segs = lv === 2 ? UNIT_CYL8 : UNIT_CYL12;
+  const shaftTop = y0 + h * 0.62;
+  // Base pavilion, then a shaft that narrows a little toward the pod.
+  g.place(segs, x, y0, z, 9, h * 0.04, 9, 0, dark);
+  g.place(segs, x, y0, z, 4.2, h * 0.35, 4.2, 0, concrete);
+  g.place(segs, x, y0 + h * 0.35, z, 3.4, shaftTop - (y0 + h * 0.35), 3.4, 0, concrete);
+  // Viewing pod: wide disc, a dark glass band and a teal lit rim at night.
+  const podY = y0 + h * 0.52;
+  g.place(segs, x, podY, z, 10, h * 0.025, 10, 0, concrete);
+  g.place(segs, x, podY + h * 0.025, z, 9.4, h * 0.045, 9.4, 0, dark);
+  g.place(segs, x, podY + h * 0.07, z, 10.5, h * 0.03, 10.5, 0, concrete);
+  if (lv === 1) {
+    g.place(segs, x, podY + h * 0.06, z, 10.6, 0.8, 10.6, 0, glow(NEON.neonCyan.hex, 1.2));
   }
-  const ring = (t: number, r: number, hh: number, s: Style): void => {
-    const o: Outline = {
-      pts: Array.from({ length: 12 }, (_, i) => {
-        const a = (i / 12) * Math.PI * 2;
-        return { x: x + r * Math.cos(a), z: z - r * Math.sin(a) };
-      }),
-      sides: Array.from({ length: 12 }, () => null),
-      curved: true,
-      cx: x,
-      cz: z,
-    };
-    walls(g, o, y0 + t * h, y0 + t * h + hh, () => s);
-    g.cap(o.pts, y0 + t * h + hh, s);
-    g.cap(o.pts, y0 + t * h, s, true);
-  };
-  ring(0.42, 9, 5, plain(0x14181c, 0.4));
-  if (lv === 1) ring(0.42 + 2.2 / h, 9.1, 0.6, glow(NEON.neonAmber.hex, 0.9));
-  ring(0.8, 4.5, 1.2, glow(NEON.neonCyan.hex, 1.3));
+  g.place(segs, x, shaftTop, z, 6, 1.5, 6, 0, concrete);
+  // Antenna: two stepped thin masts and the red obstacle light.
+  g.place(segs, x, shaftTop + 1.5, z, 1.6, h * 0.16, 1.6, 0, plain(0xb8bab6, 0.6));
+  g.place(
+    segs,
+    x,
+    shaftTop + 1.5 + h * 0.16,
+    z,
+    0.7,
+    h - (shaftTop - y0) - 1.5 - h * 0.16,
+    0.7,
+    0,
+    plain(0xb8bab6, 0.6),
+  );
+  if (lv === 1) {
+    g.place(segs, x, y0 + h * 0.86, z, 1.9, 0.6, 1.9, 0, glow(NEON.neonRed.hex, 1.0));
+  }
   g.box(x, y0 + h, z, 1.4, 1.4, 1.4, 0, glow(NEON.neonRed.hex, 1.4));
 }
 
