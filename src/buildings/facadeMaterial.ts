@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { MATERIAL, NEON, WINDOW_MIX } from '../core/palette';
+import { MATERIAL, NEON, NIGHT_FILL_AMBIENT, WINDOW_MIX } from '../core/palette';
 import { FACADE_DAY, NIGHT_FILL } from './colors';
 
 const glsl = (v: number): string => v.toFixed(4);
@@ -375,7 +375,7 @@ const FRAG_MAIN = /* glsl */ `
   if (fType < 4.5 || fType > 6.5) {
     // f.y is measured from the window start, about one ground floor above the street.
     float bounce = exp(-max(f.y + 4.0, 0.0) / ${glsl(NIGHT_FILL.bounceFalloff)});
-    fEmit += (${vec3(NIGHT_FILL.ambient)} + ${vec3(NIGHT_FILL.bounce)} * bounce) * uNight;
+    fEmit += (${vec3(NIGHT_FILL_AMBIENT)} + ${vec3(NIGHT_FILL.bounce)} * bounce) * uNight;
   }
   diffuseColor.rgb = fAlbedo;
 `;
