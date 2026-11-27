@@ -12,9 +12,10 @@ describe('postEnabled', () => {
     expect(halfFloatTargets(renderer([]))).toBe(false);
   });
 
-  it('is off in the low tier and without half-float targets', () => {
+  it('is off in the ci tier and without half-float targets', () => {
     expect(postEnabled('high', renderer(['EXT_color_buffer_float']))).toBe(true);
-    expect(postEnabled('low', renderer(['EXT_color_buffer_float']))).toBe(false);
+    expect(postEnabled('ci', renderer(['EXT_color_buffer_float']))).toBe(false);
+    expect(postEnabled('low', renderer(['EXT_color_buffer_float']))).toBe(true);
     expect(postEnabled('high', renderer([]))).toBe(false);
   });
 });

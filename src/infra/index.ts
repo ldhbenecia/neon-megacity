@@ -4,7 +4,7 @@
 // Draw calls (11, budget 12): concrete, steel, lane paint, glow lines, uplight wash (merged
 // meshes) + pillar columns, pillar beams, light points (InstancedMesh) + bridge detail steel,
 // glow and paint (BatchedMesh, one instance per bridge, hidden by distance LOD; not built for
-// quality 'low'). No real lights.
+// quality 'ci'). No real lights.
 import * as THREE from 'three';
 import { deckHeightAt, highwayCurve, type Vec2, type Vec3 } from '../city/layout';
 import { MATERIAL } from '../core/palette';
@@ -58,7 +58,8 @@ function columnGeometry(): THREE.BufferGeometry {
 const WASH_FOG_FRAGMENT = /* glsl */ `
 #ifdef USE_FOG
   #ifdef FOG_EXP2
-    float washFog = 1.0 - exp( - pow( fogDensity * ${EMISSIVE_FOG_DENSITY_SCALE.toFixed(4)} * vFogDepth, 2.0 ) );
+    float washFogD = fogDensity * ${EMISSIVE_FOG_DENSITY_SCALE.toFixed(4)} * vFogDepth;
+    float washFog = 1.0 - exp( - washFogD * washFogD );
   #else
     float washFog = smoothstep( fogNear, fogFar, vFogDepth );
   #endif
@@ -126,7 +127,7 @@ function buildDetail(
 
 export function init(ctx: Ctx): CityModuleInstance {
   const L = ctx.LAYOUT;
-  const parts = buildInfra(L, infraColors(), ctx.env.quality !== 'low');
+  const parts = buildInfra(L, infraColors(), ctx.env.quality !== 'ci');
 
   const group = new THREE.Group();
   group.name = 'infra';
@@ -242,7 +243,7 @@ export function init(ctx: Ctx): CityModuleInstance {
     im.receiveShadow = true;
   }
 
-  // Empty for quality 'low' (buildInfra skipped the detail), so no BatchedMesh is created.
+  // Empty for quality 'ci' (buildInfra skipped the detail), so no BatchedMesh is created.
   const detail = buildDetail(parts.bridgeDetail, {
     steel: steel.material as THREE.Material,
     glow: glowMat,
