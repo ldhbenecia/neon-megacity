@@ -641,7 +641,7 @@ function rangeHeight(r: Range, top: number, x: number, z: number): number {
 }
 
 /** Namsan's summit stays a level pad for the mast (SEOUL.md 4.5). */
-const NAMSAN_PAD = { x: -176, z: -389, r: 35, blend: 30, h: 160 };
+const NAMSAN_PAD = { x: -176, z: -389, r: 35, blend: 30, h: 152 };
 
 /** Width of the embankment and park-edge slopes (m). */
 export const EMBANK_SLOPE = 4;
