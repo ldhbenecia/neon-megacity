@@ -5,6 +5,8 @@ import {
   RIVER_CLEARANCE,
   SAETGANG,
   ZONES,
+  TEHERAN,
+  buildingFaces,
   buildingsInAabb,
   riverWidthAt,
   generateLayout,
@@ -13,7 +15,7 @@ import {
   type BuildingSpec,
   type Layout,
 } from '../src/city/layout';
-import { NEIGHBOUR_GAP, tooSimilar } from '../src/city/generate';
+import { MEDIA_SLABS, NEIGHBOUR_GAP, tooSimilar } from '../src/city/generate';
 import { obbOverlap, obbSegmentDistance } from '../src/city/math';
 import { createRng } from '../src/core/random';
 
@@ -117,6 +119,37 @@ describe.each(SEEDS)('seed %i', (seed) => {
     }
   });
 
+  it('lines 테헤란로 with media slabs whose long side screens face the avenue', () => {
+    const media = B.filter((b) => b.archetype === 'mediaSlab');
+    expect(media.length).toBeGreaterThanOrEqual(6);
+    expect(media.length).toBeLessThanOrEqual(MEDIA_SLABS);
+    const [ta, tb] = TEHERAN;
+    const sides = new Set<number>();
+    for (const b of media) {
+      expect(b.tags.mediaFace, `building ${b.id}`).toBeDefined();
+      const face = buildingFaces(b).find(
+        (f) => f.stack === 0 && f.tier === 0 && f.side === b.tags.mediaFace,
+      )!;
+      expect(face.width, `building ${b.id}`).toBeGreaterThanOrEqual(40);
+      // The screen's outward normal points at the closest point of 테헤란로.
+      const ux = tb.x - ta.x;
+      const uz = tb.z - ta.z;
+      const t = Math.max(
+        0,
+        Math.min(1, ((b.x - ta.x) * ux + (b.z - ta.z) * uz) / (ux * ux + uz * uz)),
+      );
+      const dx = ta.x + ux * t - b.x;
+      const dz = ta.z + uz * t - b.z;
+      const dl = Math.hypot(dx, dz);
+      expect((face.normal.x * dx + face.normal.z * dz) / dl, `building ${b.id}`).toBeGreaterThan(
+        0.9,
+      );
+      sides.add(Math.sign(ux * (b.z - ta.z) - uz * (b.x - ta.x)));
+    }
+    // Both sides of the avenue get screens.
+    expect(sides.size).toBe(2);
+  });
+
   it('lines the five riverside apartment strips with slab walls', () => {
     const slabs = (id: string) =>
       B.filter((b) => b.zoneId === id && b.archetype === 'apartmentSlab').length;
@@ -138,8 +171,9 @@ describe.each(SEEDS)('seed %i', (seed) => {
       yongsan: 20,
       yeouido: 28,
       jamsil: 22,
-      gangnam: 24,
-      cheongdam: 3,
+      // The 테헤란로 media slabs take the avenue frontage: fewer, larger towers.
+      gangnam: 17,
+      cheongdam: 20,
       hongdae: 60,
       itaewon: 140,
       jongno: 230,
@@ -155,6 +189,8 @@ describe.each(SEEDS)('seed %i', (seed) => {
     for (const [id, n] of Object.entries(min)) {
       expect(B.filter((b) => b.zoneId === id).length, id).toBeGreaterThanOrEqual(n);
     }
+    // 청담's showroom streets (SEOUL.md 4.2): glass boxes, not just back-street offices.
+    expect(B.filter((b) => b.archetype === 'showroomBox').length).toBeGreaterThanOrEqual(10);
   });
 
   it('keeps non-megatower heights under their zone caps (heights.tallMax)', () => {

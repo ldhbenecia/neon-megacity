@@ -4,7 +4,7 @@ import type * as THREE from 'three';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type GUI from 'lil-gui';
 import type { CITY } from '../city/layout';
-import type { BuildingFace, BuildingSpec, Layout } from '../city/types';
+import type { BuildingFace, BuildingSpec, Layout, Vec2, Vec3 } from '../city/types';
 
 export type * from '../city/types';
 
@@ -86,8 +86,12 @@ export interface BuildingsApi {
    * Wall faces of every tier, index = building id. Identical to `buildingFaces(spec)` from the
    * layout, precomputed once. Neon places signs strictly inside one face:
    * `face.y0 + 2 ≤ y ≤ face.y1 - 2`, 1 m in from the face edges.
+   * `blank`: the wall has no window cells and no shop front, decided by the same rule the facade
+   * renderer uses (painted signs, 단지명 and 동 numbers go there). A media face is not blank.
+   * `usable`: false where the drawn shape is not the tier box the face comes from (landmark
+   * towers); neon places no face-based signs there.
    */
-  faces: readonly (readonly BuildingFace[])[];
+  faces: readonly (readonly (BuildingFace & { blank: boolean; usable: boolean })[])[];
   /** Highest world y of any building (spires included). */
   maxHeight: number;
   /** Road surface y and sidewalk top y (flat districts). */
@@ -107,14 +111,26 @@ export interface InfraApi {
   /** Root of highways, ramps, pillars, sound walls and bridges. */
   group: THREE.Group;
   /**
-   * Highway centerline curves by highway id (`highwayCurve(hw)` from the layout), y = deck surface.
-   * Neon runs traffic along these with `curve.getPointAt(u)`.
+   * Highway centerline curves by highway id, y = deck surface: the layout's curve (centripetal
+   * Catmull-Rom) through the drawn part only. Decks stop at the map edge, and 내부순환로 ends a few
+   * meters inside its tunnel portal. Neon runs traffic along these with `curve.getPointAt(u)`.
    */
   curves: ReadonlyMap<string, THREE.CatmullRomCurve3>;
   /** Deck slab thickness (m); the underside is at deck y − thickness. */
   deckThickness: number;
   /** Highest deck surface at (x, z) or null; same as layout `deckHeightAt(ctx.LAYOUT, x, z)`. */
   deckHeightAt(x: number, z: number): number | null;
+  /**
+   * Rail tracks by bridge id (rail bridges only), one polyline per track along the rail tops,
+   * approach ramps included where the deck has them (한강철교 four tracks, 동호대교 two in the
+   * middle, 청담대교 two on the lower deck). Neon runs trains along these.
+   */
+  railTracks?: ReadonlyMap<string, readonly { points: readonly Vec3[] }[]>;
+  /**
+   * Fountain nozzle lines by bridge id ('fountain' motif): one per upper deck edge, abutment to
+   * abutment, on the outer fascia just under the deck surface; `outward` points away from the deck.
+   */
+  fountainNozzles?: ReadonlyMap<string, readonly { a: Vec3; b: Vec3; outward: Vec2 }[]>;
 }
 
 export interface Ctx {
@@ -142,6 +158,12 @@ export interface Ctx {
   /** Developer views from the URL (`src/ux/query.ts`); absent or all false for regular visitors. */
   debug?: { readonly nan: boolean };
 }
+
+/**
+ * `scene.userData.compile`, published by atmosphere when its post chain needs program variants
+ * the canvas pass would not compile. main awaits it during boot (the "compile" stage).
+ */
+export type CompileHook = () => void | Promise<void>;
 
 export interface CityModuleInstance {
   update?(dt: number, elapsed: number): void;

@@ -86,6 +86,8 @@ export function buildingCard(b: BuildingSpec, L: Pick<Layout, 'districts'> = LAY
 
 export interface Hud {
   setMode(mode: RigMode): void;
+  /** Name of the zone the camera looks at, next to the brand ('' hides it). */
+  setDistrict(name: string): void;
   /** Called with true when a building card opens, false when it closes. */
   onCard(fn: (open: boolean) => void): () => void;
   /** Called with true when the help sheet opens, false when it closes. */
@@ -119,6 +121,8 @@ export function createHud(opts: { visible: boolean; onDeselect?: () => void }): 
   let hintTimer = 0;
   let visible = true;
   let helpReturn: HTMLElement | null = null;
+  const districtEl = document.getElementById('hud-district');
+  let district = '';
   const cardListeners = new Set<(open: boolean) => void>();
   const helpListeners = new Set<(open: boolean) => void>();
   // Overlay layout rules live in style.css, keyed by these attributes on #hud.
@@ -163,6 +167,11 @@ export function createHud(opts: { visible: boolean; onDeselect?: () => void }): 
       modeEl.textContent = label;
       modeEl.hidden = label === '';
       if (m !== 'orbit' && m !== 'flight') hideHint();
+    },
+    setDistrict(name) {
+      if (name === district || !districtEl) return;
+      district = name;
+      districtEl.textContent = name;
     },
     onCard(fn) {
       cardListeners.add(fn);
