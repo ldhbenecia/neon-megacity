@@ -15,7 +15,7 @@ export const SUN_SCATTER_POWER = 8;
 // Shared Float32Arrays updated in place by atmosphere: UniformsUtils.clone keeps typed arrays
 // by reference, so every material sees the same values. All zeros means plain FogExp2.
 export const FOG_UNIFORMS = {
-  // heightTop, top factor, water factor, enabled (the CPU mirrors read it too).
+  // heightTop, top factor, water factor, enabled (CPU callers pass heightFogEnabled()).
   cityFogHeight: {
     value: new Float32Array([HEIGHT_FOG.heightTop, HEIGHT_FOG.top, HEIGHT_FOG.water, 1]),
   },
@@ -54,8 +54,14 @@ export function applyEmissiveFog(shader: ShaderSource): boolean {
   return true;
 }
 
-export function heightFogScale(worldY: number, cameraY = worldY): number {
-  if ((FOG_UNIFORMS.cityFogHeight.value[3] ?? 0) < 0.5) return 1;
+/** Whether the height fog is on, as the shaders read it (cityFogHeight.w). */
+export function heightFogEnabled(): boolean {
+  return (FOG_UNIFORMS.cityFogHeight.value[3] ?? 0) >= 0.5;
+}
+
+/** CPU mirror of the shader height fog; pure: pass `enabled` (heightFogEnabled() at run time). */
+export function heightFogScale(worldY: number, cameraY = worldY, enabled = true): number {
+  if (!enabled) return 1;
   const H = HEIGHT_FOG.heightTop;
   const t = Math.min(1, Math.max(0, worldY / H));
   const s = t * t * (3 - 2 * t);
@@ -69,9 +75,15 @@ export function heightFogScale(worldY: number, cameraY = worldY): number {
   return worldY < 0 ? k * HEIGHT_FOG.water : k;
 }
 
-export function fogFactor(fogDensity: number, depth: number, worldY = 0, cameraY = worldY): number {
+export function fogFactor(
+  fogDensity: number,
+  depth: number,
+  worldY = 0,
+  cameraY = worldY,
+  heightFog = true,
+): number {
   const x = fogDensity * depth;
-  return Math.min(1, (1 - Math.exp(-x * x)) * heightFogScale(worldY, cameraY));
+  return Math.min(1, (1 - Math.exp(-x * x)) * heightFogScale(worldY, cameraY, heightFog));
 }
 
 export function emissiveFogFactor(
@@ -79,6 +91,7 @@ export function emissiveFogFactor(
   depth: number,
   worldY = 0,
   cameraY = worldY,
+  heightFog = true,
 ): number {
-  return fogFactor(fogDensity * EMISSIVE_FOG_DENSITY_SCALE, depth, worldY, cameraY);
+  return fogFactor(fogDensity * EMISSIVE_FOG_DENSITY_SCALE, depth, worldY, cameraY, heightFog);
 }
