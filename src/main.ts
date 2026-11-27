@@ -87,6 +87,8 @@ async function boot(): Promise<void> {
   // on the driver: a ~500 ms stall the first time the timeline leaves noon (M4, Metal). Kept in
   // dev, under automation (e2e, screenshots) and with ?debug, so shader errors stay diagnosable.
   renderer.debug.checkShaderErrors = import.meta.env.DEV || navigator.webdriver || debug;
+  // Tests and scripts find the city by this id (the control panel has its own minimap canvas).
+  renderer.domElement.id = 'city-canvas';
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
