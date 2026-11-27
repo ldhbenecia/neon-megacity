@@ -109,7 +109,7 @@ const MEGA: Record<string, MegaPlan> = {
     tiers: [
       { count: 1, h: [600, 600], size: [80, 88] },
       { count: 6, h: [280, 450], size: [46, 54] },
-      { count: 16, h: [120, 250], size: [27, 34] },
+      { count: 16, h: [120, 250], size: [26, 32] },
       { count: 18, h: [40, 110], size: [26, 40] },
     ],
     landmark: 'yongsan-apex',

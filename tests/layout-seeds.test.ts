@@ -131,6 +131,32 @@ describe.each(SEEDS)('seed %i', (seed) => {
     expect(B.filter((b) => b.archetype === 'apartmentSlab').length).toBeGreaterThanOrEqual(70);
   });
 
+  it('gives every built zone enough buildings to read as a district', () => {
+    // About 80 % of the 7-seed minimum when set; 마포·공덕 must not be eaten by 용산 again.
+    const min: Record<string, number> = {
+      mapo: 38,
+      yongsan: 20,
+      yeouido: 28,
+      jamsil: 22,
+      gangnam: 24,
+      cheongdam: 3,
+      hongdae: 60,
+      itaewon: 140,
+      jongno: 230,
+      seongsu: 180,
+      wangsimni: 160,
+      seocho: 250,
+      yeongdeungpo: 1200,
+      'fill-north': 1600,
+      'fill-south': 330,
+      riverside: 20,
+      palace: 4,
+    };
+    for (const [id, n] of Object.entries(min)) {
+      expect(B.filter((b) => b.zoneId === id).length, id).toBeGreaterThanOrEqual(n);
+    }
+  });
+
   it('keeps non-megatower heights under their zone caps (heights.tallMax)', () => {
     const cap = new Map(ZONES.map((z) => [z.id, z.heights.tallMax]));
     for (const b of B) {
