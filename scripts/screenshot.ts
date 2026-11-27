@@ -2,7 +2,8 @@
 //   [--black-limit=<percent>]
 // Every city shot prints its mean luminance and near-black pixel ratio; a ratio above the limit
 // (default 60 %, looser for dark night shots) fails the run. --burst also shoots frame by frame
-// while zooming, flying and orbiting, where transient black rectangles show up.
+// while zooming, flying and orbiting, where transient black rectangles show up; only frames
+// over the limit are saved.
 import { execSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -108,18 +109,19 @@ async function burst(
     await waitPowered(page);
     const log: string[] = [];
     const bad: string[] = [];
-    const snap = async (tag: string, keep = false): Promise<void> => {
+    // Only frames over the limit are written to disk; the rest are measured and dropped.
+    const snap = async (tag: string): Promise<void> => {
       const png = await page.screenshot();
       const l = await measure(page, png);
       log.push(`${tag}:${l.black.toFixed(0)}`);
       if (l.black > limit) bad.push(`${tag} ${fmt(l)}`);
-      if (keep || l.black > limit) {
+      if (l.black > limit) {
         writeFileSync(resolve(outDir, `${scene.name}-${tag}.png`), png);
       }
     };
     for (let i = 0; i < 3; i++) {
       await waitFrames(page, 2);
-      await snap(`idle${i}`, i === 0);
+      await snap(`idle${i}`);
     }
     await page.mouse.move(VIEWPORT.width / 2, VIEWPORT.height / 2);
     // One continuous scroll (a screenshot between notches would split it into separate gestures),
@@ -150,7 +152,7 @@ async function burst(
     // Rest: what the user sees after letting go (the rig opens a blocked view within ~1 s).
     for (let i = 0; i < 3; i++) {
       await waitFrames(page, 30);
-      await snap(`rest${i}`, i === 2);
+      await snap(`rest${i}`);
     }
     console.log(`${scene.name} black% ${log.join(' ')}`);
     const out = bad.map((b) => `${scene.name}: black frame ${b}`);
