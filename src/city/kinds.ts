@@ -17,7 +17,9 @@ export type BaseKind =
   | 'palace'
   | 'park';
 
-const BASE: Record<DistrictKind, BaseKind> = {
+// The Record keeps tsc checking that every DistrictKind is listed; lookups go through the Map so
+// keys like '__proto__' or 'constructor' never reach Object.prototype.
+const TABLE: Record<DistrictKind, BaseKind> = {
   core: 'core',
   midtown: 'midtown',
   sangga: 'sangga',
@@ -35,9 +37,19 @@ const BASE: Record<DistrictKind, BaseKind> = {
   park: 'park',
 };
 
-/** Closest v2 kind for a district kind (manager decision, SEOUL.md 7.2). */
+const BASE = new Map<string, BaseKind>(Object.entries(TABLE));
+
+/**
+ * Closest v2 kind for a district kind (manager decision, SEOUL.md 7.2). A kind the table does not
+ * know falls back to 'midtown' (plain lit office blocks) so renderers never fail on new data.
+ */
 export function baseKind(kind: DistrictKind): BaseKind {
-  return BASE[kind];
+  return BASE.get(kind) ?? 'midtown';
+}
+
+/** Like baseKind for untyped input (e.g. strings from data): undefined when the kind is unknown. */
+export function baseKindOf(kind: string): BaseKind | undefined {
+  return BASE.get(kind);
 }
 
 /**
