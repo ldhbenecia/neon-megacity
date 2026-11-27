@@ -5,12 +5,17 @@ import { clockMinutes } from '../core/clock';
 import type { Ctx } from '../core/types';
 import type { CameraRig } from './cameraRig';
 import type { Hud } from './hud';
-import { rigPresets } from './presets';
+import { districtViews, rigPresets } from './presets';
 
 export interface Controls {
   update(): void;
+  /** Marks the chip of the zone the camera looks at ('' for none). */
+  markDistrict(id: string): void;
   dispose(): void;
 }
+
+/** Zone kinds whose chips stand out: the quarters most visitors look for first. */
+const MAJOR_KINDS = new Set(['megacore', 'corridor', 'nightlife', 'brick', 'oldtown']);
 
 export const RAIN_STEPS = [0, 0.35, 1] as const;
 
@@ -130,6 +135,40 @@ export function createControls(ctx: Ctx, rig: CameraRig, hud: Hud): Controls {
     }
   }
 
+  const districtRoot = document.getElementById('district-chips');
+  const districtGroup = document.getElementById('district-group');
+  // On a phone the long list would hide the whole city behind the panel: start folded there.
+  if (districtGroup instanceof HTMLDetailsElement && compact.matches) districtGroup.open = false;
+  let currentDistrict = '';
+  if (districtRoot) {
+    const views = districtViews();
+    for (const [north, label] of [
+      [true, '강북'],
+      [false, '강남'],
+    ] as const) {
+      const row = document.createElement('div');
+      row.className = 'district-row';
+      const head = document.createElement('span');
+      head.className = 'district-side';
+      head.textContent = label;
+      row.append(head);
+      for (const d of views.filter((v) => v.north === north)) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.dataset.district = d.id;
+        if (MAJOR_KINDS.has(d.kind)) b.dataset.major = '';
+        b.textContent = d.name;
+        on(b, 'click', () => {
+          rig.goDistrict(d.id);
+          if (compact.matches) setPanel(false);
+        });
+        row.append(b);
+      }
+      districtRoot.append(row);
+    }
+    cleanup.push(() => districtRoot.replaceChildren());
+  }
+
   on(swCine, 'click', () => {
     rig.setCinematic(rig.mode !== 'cinematic');
     if (rig.mode === 'cinematic') setPanel(false);
@@ -168,6 +207,13 @@ export function createControls(ctx: Ctx, rig: CameraRig, hud: Hud): Controls {
   renderWeather();
 
   return {
+    markDistrict(id) {
+      if (id === currentDistrict || !districtRoot) return;
+      currentDistrict = id;
+      for (const b of districtRoot.querySelectorAll<HTMLButtonElement>('button[data-district]')) {
+        b.setAttribute('aria-current', String(b.dataset.district === id));
+      }
+    },
     update() {
       const mins = clockMinutes(env.timeOfDay);
       if (input && mins !== lastMins && !scrubbing) {

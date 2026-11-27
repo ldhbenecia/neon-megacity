@@ -18,6 +18,7 @@ import {
   bridgeFrame,
   bridgePoint,
   pierStations,
+  railOnly,
   resample,
 } from '../src/infra/bridges';
 import { buildInfra } from '../src/infra/build';
@@ -215,8 +216,10 @@ describe('infra: pillars', () => {
     const total = raised.reduce((n, hw) => n + hw.pillars.length, 0);
     expect(specs.length).toBeGreaterThan(total * 0.9);
     expect(specs.length).toBeLessThanOrEqual(total);
-    // Every highway pillarKind maps to 'Y' (v2: hw-ring) actually gets Y pillars.
-    for (const hw of raised.filter((h) => h.pillars.length > 0 && pillarKind(h) === 'Y')) {
+    // 내부순환로 stands on Y pillars, and every highway pillarKind maps to 'Y' actually gets them.
+    const yRoads = raised.filter((h) => h.pillars.length > 0 && pillarKind(h) === 'Y');
+    expect(yRoads.map((h) => h.id).sort()).toEqual(['hw-naebu-e', 'hw-naebu-w']);
+    for (const hw of yRoads) {
       const ys = specs.filter((s) => s.owner === hw.id && s.kind === 'Y');
       expect(ys.length, hw.id).toBeGreaterThan(hw.pillars.length * 0.5);
     }
@@ -478,7 +481,7 @@ describe('infra: whole build', () => {
     for (const d of parts.bridgeDetail) {
       expect(d.steel.triangleCount, d.id).toBeGreaterThan(0);
       const b = LAYOUT.bridges.find((x) => x.id === d.id)!;
-      if (b.lanes > 0) expect(d.markings.triangleCount, d.id).toBeGreaterThan(0);
+      if (b.lanes > 0 && !railOnly(b)) expect(d.markings.triangleCount, d.id).toBeGreaterThan(0);
       expect(d.center[1]).toBe(b.deckY);
     }
   });

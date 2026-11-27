@@ -88,11 +88,11 @@ describe('layout v3: determinism', () => {
       digest: digest(LAYOUT),
     }).toMatchInlineSnapshot(`
       {
-        "blocks": 1400,
-        "buildings": 5634,
-        "digest": "d9fee9c1",
-        "roads": 1171,
-        "slots": 3448,
+        "blocks": 1409,
+        "buildings": 5653,
+        "digest": "f319e365",
+        "roads": 1184,
+        "slots": 3474,
       }
     `);
   });
@@ -393,7 +393,8 @@ describe('layout v3: tiers', () => {
       if (b.district === 'hillside') expect(b.archetype).toBe('hillHouse');
       if (b.district === 'palace') expect(b.archetype).toBe('palaceHall');
       if (b.district === 'palace') expect(b.h).toBeLessThanOrEqual(18);
-      if (b.archetype === 'mediaSlab') expect(b.tags.mediaFace).toBe(b.front);
+      // Media slabs run along 테헤란로 (local x), so the screen is a long side.
+      if (b.archetype === 'mediaSlab') expect(['pz', 'nz']).toContain(b.tags.mediaFace);
       if (b.archetype === 'cylinderTower')
         expect(b.tiers.every((t) => t.shape === 'cylinder')).toBe(true);
       if (b.archetype === 'apartmentSlab') {
@@ -903,13 +904,17 @@ describe('layout v3: sky lanes', () => {
     for (const lane of lanes) {
       expect(lane.points.length, lane.id).toBeGreaterThanOrEqual(8);
       expect(lane.altitude[1]).toBeGreaterThan(lane.altitude[0]);
-      const n = lane.points.length;
-      const segs = lane.closed ? n : n - 1;
+      const S = lane.samples ?? [];
+      expect(S.length, lane.id).toBeGreaterThan(lane.points.length);
+      if (lane.closed)
+        expect(Math.hypot(S[0]!.x - S.at(-1)!.x, S[0]!.z - S.at(-1)!.z)).toBeLessThan(1e-6);
+      for (let i = 0; i < S.length - 1; i++) {
+        expect(Math.hypot(S[i + 1]!.x - S[i]!.x, S[i + 1]!.z - S[i]!.z)).toBeLessThan(12);
+      }
       for (const b of B) {
         let d = Infinity;
-        for (let i = 0; i < segs; i++) {
-          d = Math.min(d, pointSegmentDistance(b, lane.points[i]!, lane.points[(i + 1) % n]!));
-        }
+        for (let i = 0; i < S.length - 1; i++)
+          d = Math.min(d, pointSegmentDistance(b, S[i]!, S[i + 1]!));
         if (d > SKY_LANE_CLEAR + Math.hypot(b.w, b.d) / 2) continue;
         expect(buildingTop(b) + SKY_LANE_MARGIN, `${lane.id} over ${b.id}`).toBeLessThanOrEqual(
           lane.altitude[0] + 1e-6,

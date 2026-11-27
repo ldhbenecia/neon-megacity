@@ -5,7 +5,7 @@
 // strips are tested by distance from the bank (their offset polygons fold on the inner side of
 // a bend), so their `polygon` is only an outline.
 import { CALLS } from './calls';
-import { clamp, pointInPolygon } from './math';
+import { clamp, pointInPolygon, pointSegmentDistance } from './math';
 import {
   HALF_X,
   HALF_Z,
@@ -54,6 +54,8 @@ interface BankStrip {
   x1: number;
   o0: number;
   o1: number;
+  /** Ground nearer than this (m) to 테헤란로 is left to the avenue's frontage. */
+  avenueClear?: number;
 }
 
 interface ZoneDef {
@@ -104,6 +106,21 @@ function bankStrip(x0: number, x1: number, side: Side, o0: number, o1: number): 
   return [...inner, ...outer.reverse()];
 }
 
+/**
+ * Band between offsets o0 < o1 (m) to the right of a→b (south of 테헤란로), extended by extA
+ * before a and extB past b.
+ */
+function sideBand(a: Vec2, b: Vec2, o0: number, o1: number, extA = 0, extB = extA): Vec2[] {
+  const len = Math.hypot(b.x - a.x, b.z - a.z);
+  const ux = (b.x - a.x) / len;
+  const uz = (b.z - a.z) / len;
+  const p = (q: Vec2, s: number, o: number): Vec2 => ({
+    x: q.x + ux * s - uz * o,
+    z: q.z + uz * s + ux * o,
+  });
+  return [p(a, -extA, o0), p(b, extB, o0), p(b, extB, o1), p(a, -extA, o1)];
+}
+
 /** Rectangle of half widths around segment a→b (a road corridor). */
 function corridor(a: Vec2, b: Vec2, half: number, ext = 0): Vec2[] {
   const dx = b.x - a.x;
@@ -139,6 +156,10 @@ export const TEHERAN: readonly [Vec2, Vec2] = [
   { x: 559, z: 592 },
   { x: 1073, z: 389 },
 ];
+const TEHERAN_MID: Vec2 = {
+  x: (TEHERAN[0].x + TEHERAN[1].x) / 2,
+  z: (TEHERAN[0].z + TEHERAN[1].z) / 2,
+};
 
 const H = (min: number, max: number, tallShare = 0, tallMax = max): ZoneHeights => ({
   min,
@@ -416,7 +437,8 @@ const DEFS: ZoneDef[] = [
     nameEn: 'APGUJEONG',
     side: 'south',
     polygon: bankStrip(440, 1000, 'south', 0, 260),
-    bank: { x0: 440, x1: 1000, o0: 0, o1: 260 },
+    // East of x ~800 the strip would reach 테헤란로; the avenue keeps its frontage there.
+    bank: { x0: 440, x1: 1000, o0: 0, o1: 260, avenueClear: 80 },
     gridAngle: riverAngle(660),
     origin: riverOffset(660, riverWidthAt(660) / 2 + 60),
     pitch: [130, 120],
@@ -445,6 +467,24 @@ const DEFS: ZoneDef[] = [
   },
 
   {
+    id: 'cheongdam',
+    kind: 'showroom',
+    name: '압구정·청담',
+    nameEn: 'CHEONGDAM',
+    side: 'south',
+    // The river bends up to 테헤란로 east of 압구정, so the showroom streets sit behind the
+    // avenue's south frontage (gangnam keeps its 160 m corridor), east half of the avenue.
+    polygon: sideBand(TEHERAN_MID, TEHERAN[1], 160, 380, 60, 0),
+    gridAngle: angleOf(TEHERAN[0], TEHERAN[1]),
+    origin: sideBand(TEHERAN_MID, TEHERAN[1], 160, 160)[0] as Vec2,
+    pitch: [70, 70],
+    roadWidth: 20,
+    roadKind: 'street',
+    heights: H(6, 18, 0.5, 70),
+    coverage: 0.4,
+    litScale: 1,
+  },
+  {
     id: 'gangnam',
     kind: 'corridor',
     name: '강남·테헤란로',
@@ -461,23 +501,7 @@ const DEFS: ZoneDef[] = [
     coverage: 0.45,
     litScale: 1,
   },
-  {
-    id: 'cheongdam',
-    kind: 'showroom',
-    name: '압구정·청담',
-    nameEn: 'CHEONGDAM',
-    side: 'south',
-    polygon: bankStrip(480, 1150, 'south', 260, 430),
-    bank: { x0: 480, x1: 1150, o0: 260, o1: 430 },
-    gridAngle: -10 * DEG,
-    origin: { x: 700, z: 230 },
-    pitch: [80, 80],
-    roadWidth: 20,
-    roadKind: 'street',
-    heights: H(6, 18, 0.5, 70),
-    coverage: 0.4,
-    litScale: 1,
-  },
+
   {
     id: 'jamsil',
     kind: 'megacore',
@@ -697,7 +721,13 @@ function zoneExact(x: number, z: number): DistrictZone {
   for (const zone of list) {
     const bank = BANK_OF.get(zone.id);
     if (bank) {
-      if (p.x >= bank.x0 && p.x <= bank.x1 && !below(bank.o0) && below(bank.o1)) {
+      if (
+        p.x >= bank.x0 &&
+        p.x <= bank.x1 &&
+        !below(bank.o0) &&
+        below(bank.o1) &&
+        !(bank.avenueClear && pointSegmentDistance(p, TEHERAN[0], TEHERAN[1]) < bank.avenueClear)
+      ) {
         return zone;
       }
     } else if (pointInPolygon(p, zone.polygon)) {
