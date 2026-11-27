@@ -349,13 +349,22 @@ const FRAG_MAIN = /* glsl */ `
         fEmit = uShop * (0.3 + 0.35 * b) * step(0.15, b) * dayDim * (1.0 - smoothstep(-1.2, -0.6, f.y));
       }
     }
+    // Daytime material split (ART_DIRECTION 4.3 #6): precast concrete reads lighter, metal panels
+    // catch the sky, and glass reflects it instead of staying a black hole. Night is unchanged.
+    float day = 1.0 - uNight;
+    float matPick = fhash(vec2(fSeed * 53.0, 7.0));
+    float concrete = step(matPick, 0.4);
+    float metal = step(0.4, matPick) * step(matPick, 0.7);
+    float wallRough = mix(0.8, 0.35, metal);
+    fAlbedo *= 1.0 + day * (0.7 * concrete + 0.25 * metal);
     float gm = clamp(mask, 0.0, 1.0) * (1.0 - 0.5 * far);
     float fm = frame * gm * (1.0 - far);
-    fAlbedo = mix(fAlbedo, vec3(0.012, 0.016, 0.02), gm);
+    vec3 glass = mix(vec3(0.012, 0.016, 0.02), vec3(0.045, 0.055, 0.065), day);
+    fAlbedo = mix(fAlbedo, glass, gm);
     fAlbedo = mix(fAlbedo, vec3(0.03), fm);
-    fRough = mix(0.8, 0.05, gm);
+    fRough = mix(wallRough, 0.05, gm);
     fRough = mix(fRough, 0.5, fm);
-    fMetal = mix(0.04, 0.0, gm);
+    fMetal = mix(mix(0.04, 0.45, metal * day), 0.55 * day, gm);
     fMetal = mix(fMetal, 0.6, fm);
   }
   diffuseColor.rgb = fAlbedo;
