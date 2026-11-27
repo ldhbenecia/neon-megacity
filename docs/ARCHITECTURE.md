@@ -28,7 +28,7 @@ camera rig and HUD), so feature PRs never need to edit `src/main.ts`.
 | `infra`                                         | `InfraApi` published by infra during its init (highway curves, `deckHeightAt`); else undefined |
 | `render()`                                      | default `renderer.render`; atmosphere replaces with the post-processing composer               |
 | `onResize(fn)`                                  | register `(w, h) => {}`                                                                        |
-| `onQuality(fn)`                                 | register `(quality) => {}`, called when ux changes `env.quality` at runtime                    |
+| `onQuality(fn)`                                 | register `(quality) => {}` for runtime `env.quality` changes; returns the unsubscribe function |
 
 ### `ctx.env` fields and owners
 

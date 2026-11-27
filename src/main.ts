@@ -131,6 +131,10 @@ async function boot(): Promise<void> {
     },
     onQuality: (fn) => {
       qualityHandlers.push(fn);
+      return () => {
+        const i = qualityHandlers.indexOf(fn);
+        if (i >= 0) qualityHandlers.splice(i, 1);
+      };
     },
   };
 

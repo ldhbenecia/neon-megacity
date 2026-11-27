@@ -134,8 +134,11 @@ export interface Ctx {
   /** Default renderer.render; atmosphere may replace it with a composer render. */
   render: () => void;
   onResize: (fn: (w: number, h: number) => void) => void;
-  /** Register `(quality) => {}`; called after ux changes `env.quality` at runtime (not at boot). */
-  onQuality: (fn: (q: Quality) => void) => void;
+  /**
+   * Register `(quality) => {}`; called after ux changes `env.quality` at runtime (not at boot).
+   * Returns the unsubscribe function: call it in the module's `dispose()`.
+   */
+  onQuality: (fn: (q: Quality) => void) => () => void;
 }
 
 export interface CityModuleInstance {
