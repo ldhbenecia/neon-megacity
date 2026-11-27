@@ -42,11 +42,23 @@ noon overview 0 % black, sunset skyline 9–10 %, night street 12–14 %; Metal:
 whole-frame flashes while moving).
 
 So every `npm run perf` scenario (presets 1, 2, 3, 5, 8 × night, sunset, noon) also runs
-`scripts/screen.ts`: 3 frames at rest, 6 while zooming, 6 while flying forward (W), 6 while
-orbiting, 2 at rest again. Each frame is downsampled to 64×36; a pixel is black when
-R + G + B < 6. The run fails (exit code 1) if any frame at rest is more than 30 % black, any frame
-in motion more than 50 %, or any frame's mean brightness is below 2. The table shows
-`max black % at rest / in motion, min brightness`. `--no-screen` skips it.
+`scripts/screen.ts`. A rAF callback queued after the app's loop downsamples the WebGL canvas to
+64×36 on **every frame** (a 1–3 frame flash cannot slip between samples), first 1 s at rest, then
+during a short zoom out and back, a W / S flight and a small orbit drag, then 1 s at rest. A pixel
+is black when R + G + B < 6. Limits by time of day (`lightAt`, from Metal runs of the fixed build):
+
+| light               | at rest | moving | why                                                      |
+| ------------------- | ------- | ------ | -------------------------------------------------------- |
+| day 07–17 h         | 30 %    | 50 %   | healthy views ≤ 13 % black                               |
+| dusk 05–07, 17–20 h | 50 %    | 70 %   | street at sunset 26–27 % rest, 46–48 % moving            |
+| night               | 90 %    | 90 %   | street / hillside up to 57–76 %: only whole black frames |
+
+Any frame darker than mean 2 fails too. The run then exits with code 1. The table column is
+`max black % at rest / moving, min brightness`; `--no-screen` skips it. Fixed build (#63 + #64):
+all 15 scenarios pass; main c0fc4be: noon overview 100 % black at rest and moving.
+
+The motion stays small on purpose: wide orbits at street level swing the camera against unlit
+walls (legitimately black at night) and once clipped into a building (99 % black, mean 0.1).
 
 Because SwiftShader does not reproduce GPU-specific NaN or precision bugs, **a full-quality
 `npm run perf` on a real GPU is required before merging** any change to shaders, post-processing,
