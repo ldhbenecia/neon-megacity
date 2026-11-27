@@ -23,7 +23,9 @@ const PANEL_MIX: readonly (readonly [NeonName, number])[] = [
   ['neonMagenta', 0.05],
 ];
 
-const TOWER_PANELS = 34;
+const TOWER_PANELS = 26;
+/** Tall panels at any bearing, so east- and west-facing glass and wet roads still catch neon. */
+const SCATTER_PANELS = 10;
 const BRIDGE_PANELS = 10;
 
 const BRIDGE_MIX: readonly (readonly [NeonName, number])[] = [
@@ -65,6 +67,8 @@ function srgb(hex: number, scale = 1): THREE.Color {
 interface PanelSpec {
   az: number;
   el: number;
+  /** Distance from the center; bridges sit nearer so they never cut through a tower panel. */
+  r: number;
   w: number;
   h: number;
   name: NeonName;
@@ -75,23 +79,26 @@ interface PanelSpec {
 function panelSpecs(): PanelSpec[] {
   const rng = createRng(6061);
   const specs: PanelSpec[] = [];
-  for (let i = 0; i < TOWER_PANELS; i++) {
+  for (let i = 0; i < TOWER_PANELS + SCATTER_PANELS; i++) {
     const bank = rng.chance(0.5) ? -Math.PI / 2 : Math.PI / 2;
     specs.push({
-      az: bank + rng.range(-1.15, 1.15),
+      az: i < TOWER_PANELS ? bank + rng.range(-1.0, 1.0) : rng.range(0, Math.PI * 2),
       el: rng.range(0.02, 0.5),
+      r: PANEL_RADIUS,
       w: rng.range(1.2, 3.5),
       h: rng.range(5, 16),
       name: weighted(rng, PANEL_MIX),
     });
   }
+  // About 2 texels tall in the 256 px bake, so the PMREM blur keeps them.
   for (let i = 0; i < BRIDGE_PANELS; i++) {
     const axis = rng.chance(0.5) ? 0 : Math.PI;
     specs.push({
       az: axis + rng.range(-0.6, 0.6),
-      el: rng.range(-0.01, 0.05),
-      w: rng.range(12, 26),
-      h: rng.range(0.4, 0.9),
+      el: rng.range(0.015, 0.06),
+      r: PANEL_RADIUS * 0.85,
+      w: rng.range(10, 22),
+      h: rng.range(1.2, 2.0),
       name: weighted(rng, BRIDGE_MIX),
     });
   }
@@ -114,7 +121,7 @@ function buildPanels(key: PaletteKey): THREE.BufferGeometry {
     for (let v = 0; v < n; v++) colors.set([c.r, c.g, c.b], v * 3);
     g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     pos.set(Math.cos(p.az) * Math.cos(p.el), Math.sin(p.el), Math.sin(p.az) * Math.cos(p.el));
-    pos.multiplyScalar(PANEL_RADIUS);
+    pos.multiplyScalar(p.r);
     look.position.copy(pos);
     look.lookAt(origin);
     look.updateMatrix();
