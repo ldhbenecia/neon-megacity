@@ -73,6 +73,8 @@ jobs:
         run: npm run build
         env:
           BASE_PATH: /neon-megacity/
+          # Public GA4 measurement id (repository variable); empty means no analytics code runs.
+          VITE_GA_ID: ${{ vars.GA_MEASUREMENT_ID }}
 
       - uses: actions/upload-pages-artifact@v5
         with:

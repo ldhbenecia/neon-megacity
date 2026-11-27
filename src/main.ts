@@ -11,6 +11,7 @@ import * as buildings from './buildings/index';
 import * as infra from './infra/index';
 import * as neon from './neon/index';
 import * as atmosphere from './atmosphere/index';
+import { startAnalytics, track } from './ux/analytics';
 import { createGui } from './ux/gui';
 import { createLoader, initUx, nextFrame, parseUxQuery } from './ux/index';
 import { QUALITY_STORAGE_KEY, storedTier, tierFromRenderer } from './ux/quality';
@@ -243,10 +244,14 @@ async function boot(): Promise<void> {
   ux.powerOn();
   renderer.setAnimationLoop(frame);
   await loader.done();
+  // performance.now() is time since navigation: what a visitor waited for the city.
+  startAnalytics({ result: 'ready', readyMs: performance.now() });
+  if (ctx.env.quality !== 'ci') track('quality_tier', { tier: ctx.env.quality });
 }
 
 // Any failure (no WebGL, setup errors) turns the loader red instead of hanging on it.
 // loader.fail is idempotent, so stages that already reported are not logged twice.
 boot().catch((err: unknown) => {
+  startAnalytics({ result: 'error', readyMs: performance.now() });
   loader.fail('boot', err);
 });

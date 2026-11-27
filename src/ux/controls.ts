@@ -4,6 +4,7 @@
 import { clockMinutes } from '../core/clock';
 import type { Ctx } from '../core/types';
 import type { CameraRig } from './cameraRig';
+import { analyticsConfigured, readOptOut, setAnalyticsOptOut } from './analytics';
 import type { Hud } from './hud';
 import { districtViews, rigPresets } from './presets';
 
@@ -15,6 +16,14 @@ export interface Controls {
 }
 
 /** Zone kinds whose chips stand out: the quarters most visitors look for first. */
+const localStorageOrNull = (): Storage | null => {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+};
+
 const MAJOR_KINDS = new Set(['megacore', 'corridor', 'nightlife', 'brick', 'oldtown']);
 
 export const RAIN_STEPS = [0, 0.35, 1] as const;
@@ -167,6 +176,19 @@ export function createControls(ctx: Ctx, rig: CameraRig, hud: Hud): Controls {
       districtRoot.append(row);
     }
     cleanup.push(() => districtRoot.replaceChildren());
+  }
+
+  // Visit statistics opt-out: shown only in builds that carry a measurement id.
+  const swAnalytics = document.getElementById('sw-analytics');
+  if (swAnalytics && analyticsConfigured()) {
+    swAnalytics.hidden = false;
+    let sending = !readOptOut(localStorageOrNull());
+    swAnalytics.setAttribute('aria-checked', String(sending));
+    on(swAnalytics, 'click', () => {
+      sending = !sending;
+      setAnalyticsOptOut(!sending);
+      swAnalytics.setAttribute('aria-checked', String(sending));
+    });
   }
 
   on(swCine, 'click', () => {

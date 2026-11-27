@@ -252,6 +252,19 @@ test('?district= starts at a zone and the title names the zone in view', async (
   );
 });
 
+test('automated runs never contact Google Analytics', async ({ page }) => {
+  const calls: string[] = [];
+  page.on('request', (r) => {
+    if (/googletagmanager\.com|google-analytics\.com/.test(r.url())) calls.push(r.url());
+  });
+  await page.goto(app('nogui&time=0'));
+  await waitForCity(page);
+  // Past the idle window in which the tag would be added.
+  await page.waitForTimeout(6000);
+  expect(calls).toEqual([]);
+  expect(await page.evaluate(() => 'gtag' in window)).toBe(false);
+});
+
 test.describe('camera rig', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto(app('nogui&stats&cam=overview&time=0.0'));
