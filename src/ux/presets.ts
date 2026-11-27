@@ -86,7 +86,7 @@ export function districtView(L: Layout, zone: DistrictZone): DistrictView {
     cz += q.z / pts.length;
   }
   if (own.length >= 3) {
-    // Wrap-around filler zones (서울 북부) have their mean elsewhere: snap to their nearest building.
+    // Wrap-around filler zones (강북권) have their mean elsewhere: snap to their nearest building.
     const mx = cx;
     const mz = cz;
     let bestD = Infinity;
@@ -141,7 +141,7 @@ let districtCache: DistrictView[] | null = null;
 
 /** One view per named zone (the riverside band is reached through the bridge presets). */
 export function districtViews(): readonly DistrictView[] {
-  // Fill zones (서울 북부/남부) are generic padding, not places anyone looks for. West to east.
+  // Fill zones (강북권/강남권) are generic padding, not places anyone looks for. West to east.
   districtCache ??= LAYOUT.districts
     .filter((z) => z.kind !== 'riverside' && !z.id.startsWith('fill'))
     .map((z) => districtView(LAYOUT, z))
