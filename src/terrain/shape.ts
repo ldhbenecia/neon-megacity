@@ -436,8 +436,43 @@ export function sideDistance(x: number, z: number): number {
 }
 
 /** Distance the ground keeps from any water: the main channel and the side channels. */
+/** groundWaterDistance reports at least this far for points outside the river band. */
+export const FAR_FROM_WATER = 60;
+
+// z range the river channel can reach within each 20 m column of x (padded by FAR_FROM_WATER):
+// outside it the exact distance query, the costliest per-vertex call, is skipped.
+const BAND_BIN = 20;
+const BAND = (() => {
+  const halfMax = Math.max(...RIVER.widths) / 2 + FAR_FROM_WATER + 10;
+  const x0 = RIVER_X0 - halfMax;
+  const n = Math.ceil((RIVER_X1 + halfMax - x0) / BAND_BIN) + 1;
+  const lo = new Float64Array(n).fill(Infinity);
+  const hi = new Float64Array(n).fill(-Infinity);
+  for (const q of RIVER.samples) {
+    const a = Math.max(0, Math.floor((q.x - halfMax - x0) / BAND_BIN));
+    const b = Math.min(n - 1, Math.floor((q.x + halfMax - x0) / BAND_BIN));
+    for (let i = a; i <= b; i++) {
+      lo[i] = Math.min(lo[i] ?? Infinity, q.z - halfMax);
+      hi[i] = Math.max(hi[i] ?? -Infinity, q.z + halfMax);
+    }
+  }
+  return { x0, n, lo, hi };
+})();
+
+function outsideRiverBand(x: number, z: number): boolean {
+  // Past the polyline ends the channel runs on straight: no band there, the exact query decides.
+  if (x < RIVER_X0 || x > RIVER_X1) return false;
+  const i = Math.floor((x - BAND.x0) / BAND_BIN);
+  return z < (BAND.lo[i] ?? Infinity) || z > (BAND.hi[i] ?? -Infinity);
+}
+
+/**
+ * Distance the ground keeps from any water: the main channel and the side channels. Exact within
+ * FAR_FROM_WATER of the main channel; beyond it at least FAR_FROM_WATER (enough to drop cells).
+ */
 export function groundWaterDistance(x: number, z: number): number {
-  return Math.min(channelDistance(x, z), sideDistance(x, z));
+  const main = outsideRiverBand(x, z) ? FAR_FROM_WATER : channelDistance(x, z);
+  return Math.min(main, sideDistance(x, z));
 }
 
 /** Slices along a side strip every `step` m; `south` is the left normal of the walking direction. */
@@ -639,6 +674,8 @@ export function groundVertex(x: number, z: number): { x: number; y: number; z: n
   const y = terrainHeight(px, pz);
   const rr = r * k;
   const t = Math.min(1, Math.max(0, (rr - (GROUND_RADIUS - 1300)) / 1250));
+  // The cap only bites far out and on raised ground; ridgeHeight is too costly for every vertex.
+  if (t <= 0 || y <= 0) return { x: px, y, z: pz };
   const fade = t * t * (3 - 2 * t);
   const cap = ridgeHeight(NEAR_RIDGE, Math.atan2(pz, px)) * 0.6 - 15;
   return { x: px, y: y + (Math.min(y, cap) - y) * fade, z: pz };

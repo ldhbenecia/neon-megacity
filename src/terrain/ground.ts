@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { FOREST_LINE, LAYOUT, RIVER, isForest, type Vec2 } from '../city/layout';
+import { LAYOUT, RIVER, isForest, type Vec2 } from '../city/layout';
 import { TERRAIN_COLORS as TC } from '../core/palette';
 import {
   GROUND_RADIUS,
@@ -57,9 +57,21 @@ export function groundPalette(): Record<
 
 type Palette = ReturnType<typeof groundPalette>;
 
+// Crown clumps at a stand scale the 8 m mountain cells resolve (0..1); shared by color and lift.
+function canopyNoise(x: number, z: number): number {
+  return noise2(x / 14 + 31, z / 14 + 7) * 0.7 + noise2(x / 5 + 3, z / 5 + 11) * 0.3;
+}
+
 // Mountains read as dark forest: canopy mottling at a few metres, lighter only on the bare
 // crests and spurs that catch the moon.
-function groundColor(x: number, y: number, z: number, pal: Palette, out: THREE.Color): void {
+function groundColor(
+  x: number,
+  y: number,
+  z: number,
+  canopy: number,
+  pal: Palette,
+  out: THREE.Color,
+): void {
   const hill = Math.min(1, y / 25);
   const outside = Math.min(
     1,
@@ -69,7 +81,6 @@ function groundColor(x: number, y: number, z: number, pal: Palette, out: THREE.C
   const forest = forestAt(y);
   const wood = Math.max(outside, forest, hill * Math.min(1, Math.max(0, (n - 0.45) * 4)));
   out.copy(pal.urban).lerp(pal.hill, hill).lerp(pal.wood, wood).lerp(pal.forest, forest);
-  const canopy = noise2(x / 14 + 31, z / 14 + 7) * 0.7 + noise2(x / 5 + 3, z / 5 + 11) * 0.3;
   // Crowns (high canopy) lighter, the gaps between stands darker.
   out.multiplyScalar((0.85 + 0.3 * n) * (1 - forest * 0.45 + forest * 0.9 * canopy));
 }
@@ -83,30 +94,66 @@ function forestAt(y: number): number {
 const CANOPY = 2.5;
 /** 남산's summit stays level for the transmission tower (buildings): no canopy within this. */
 const SUMMIT_FLAT = 50;
+/** Cell of the baked forest mask (m). */
+const FOREST_CELL = 16;
 
-// Crowns clump at a stand scale the 8 m mountain cells resolve. Only ever raises the ground, so a
-// tree placed on surfaceHeight sinks a little rather than floats.
-function canopyLift(x: number, y: number, z: number): number {
+/**
+ * layout's isForest baked once on a FOREST_CELL grid over each mountain and read bilinearly:
+ * the query costs ~20 µs, too much for every mountain vertex.
+ */
+function forestMask(): (x: number, z: number) => number {
+  const grids = LAYOUT.mountains.map((m) => {
+    const x0 = m.peak.x - m.radius;
+    const z0 = m.peak.z - m.radius;
+    const n = Math.ceil((2 * m.radius) / FOREST_CELL) + 1;
+    const v = new Float32Array(n * n);
+    for (let j = 0; j < n; j++) {
+      for (let i = 0; i < n; i++) {
+        v[j * n + i] = isForest(x0 + i * FOREST_CELL, z0 + j * FOREST_CELL) ? 1 : 0;
+      }
+    }
+    return { x0, z0, n, v };
+  });
+  return (x, z) => {
+    let best = 0;
+    for (const g of grids) {
+      const u = (x - g.x0) / FOREST_CELL;
+      const w = (z - g.z0) / FOREST_CELL;
+      if (u < 0 || w < 0 || u >= g.n - 1 || w >= g.n - 1) continue;
+      const i = Math.floor(u);
+      const j = Math.floor(w);
+      const fu = u - i;
+      const fw = w - j;
+      const at = (a: number, b: number): number => g.v[(j + b) * g.n + i + a] ?? 0;
+      const top = at(0, 0) + (at(1, 0) - at(0, 0)) * fu;
+      const bottom = at(0, 1) + (at(1, 1) - at(0, 1)) * fu;
+      best = Math.max(best, top + (bottom - top) * fw);
+    }
+    return best;
+  };
+}
+
+// Only ever raises the ground, so a tree placed on surfaceHeight sinks a little rather than
+// floats, and only where the layout keeps forest: the mask must be over 0.5 (inside the baked
+// forest edge), so hillside houses below the forest line stand on bare ground.
+function canopyLift(
+  x: number,
+  y: number,
+  z: number,
+  canopy: number,
+  mask: (x: number, z: number) => number,
+): number {
   const f = forestAt(y);
-  // Only where the layout keeps forest: hillside houses below the forest line stand on bare ground.
-  // Above FOREST_LINE it is forest by definition, which spares most of the costly isForest calls.
-  if (f <= 0 || !(aboveForestLine(x, y, z) || isForest(x, z))) return 0;
+  if (f <= 0) return 0;
+  const inside = Math.min(1, Math.max(0, (mask(x, z) - 0.5) * 2));
+  if (inside <= 0) return 0;
   let keep = 1;
   for (const m of LAYOUT.mountains) {
     if (m.id !== 'namsan') continue;
     const d = Math.hypot(x - m.peak.x, z - m.peak.z);
     keep = Math.min(keep, Math.min(1, Math.max(0, (d - SUMMIT_FLAT) / 20)));
   }
-  const n = noise2(x / 14 + 31, z / 14 + 7) * 0.7 + noise2(x / 5 + 3, z / 5 + 11) * 0.3;
-  return CANOPY * f * keep * n;
-}
-
-function aboveForestLine(x: number, y: number, z: number): boolean {
-  for (const m of LAYOUT.mountains) {
-    if (Math.hypot(x - m.peak.x, z - m.peak.z) < m.radius && y > FOREST_LINE * m.height)
-      return true;
-  }
-  return false;
+  return CANOPY * f * inside * keep * canopy;
 }
 
 function nearMountain(x: number, z: number): boolean {
@@ -126,10 +173,12 @@ export function buildGround(): THREE.BufferGeometry {
   const dist: number[] = [];
   const rim: number[] = [];
   const tmp = new THREE.Color();
+  const mask = forestMask();
   const vertex = (x: number, z: number): number => {
     const v = groundVertex(x, z);
-    groundColor(x, v.y, z, pal, tmp);
-    pos.push(v.x, v.y + canopyLift(v.x, v.y, v.z), v.z);
+    const canopy = v.y > 4 ? canopyNoise(v.x, v.z) : 0;
+    groundColor(x, v.y, z, canopy, pal, tmp);
+    pos.push(v.x, v.y + canopyLift(v.x, v.y, v.z, canopy, mask), v.z);
     col.push(tmp.r, tmp.g, tmp.b);
     dist.push(groundWaterDistance(v.x, v.z));
     rim.push(Math.hypot(x, z) > GROUND_RADIUS ? 1 : 0);
