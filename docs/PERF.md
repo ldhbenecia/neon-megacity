@@ -199,6 +199,32 @@ Main thread during boot (`PerformanceObserver('longtask')`, preset 2 night, 3 ru
 764–811 ms, buildings 585–637 ms, terrain 501–516 ms, neon 351–392 ms, compile 233–289 ms, infra
 207–252 ms. Structured clone of the v3 layout: 31 ms (3.8 MB, 5,662 buildings, plain objects only).
 
+## Module init-time budget (review gate for layout v3 PRs)
+
+A PR may not make a module's boot `init` (and layout generation) more than **1.3×** its v3
+baseline, measured back to back with main on the same machine (`npm run perf -- <label>
+--no-build --no-screen --frames=30 --only="코어 상공"`, three boots; the absolute numbers move with
+machine load, the ratio does not). Baseline (main 0d4c9de, M4, under load): layout 0.8 s,
+buildings 0.6 s, terrain 0.5 s, neon 0.37 s, compile 0.26 s, infra 0.23 s. Over 1.3× the reviewer
+comments on the PR and the manager decides; work moving to the boot worker does not count.
+
+First checks (M4, low load, main 31ead8a measured in the same session):
+
+| PR                  | module init (ms)  | main (ms) | ratio      |
+| ------------------- | ----------------- | --------- | ---------- |
+| #101 terrain-seoul  | terrain 151–176   | 211–225   | 0.7–0.8×   |
+| #97 buildings-seoul | buildings 293–334 | 259–261   | 1.13–1.28× |
+| #104 infra-seoul    | infra 78–86       | 87–95     | 0.9×       |
+
+Top-down view: #97 triangles 0.92 → 0.93 M, geometry 60.7 → 62.0 MB; #104 0.92 → 0.86 M,
+60.7 → 56.1 MB (bridge LOD). Programs 37 and textures 29 in all three.
+
+**Textures (29 vs target 24).** No module added textures in the v3 PRs: of the 29, about 17 are
+render targets and env maps (bloom bright + 5 + 5 mips = 11, HDR scene target 1, shadow map 1,
+four baked PMREM maps 4); the rest are module textures (neon atlas, car paths, cloud noise, window
+digits, puddles). The 24 target predates the post chain; options are fewer bloom mips (5 → 3
+saves 4 targets, atmosphere) or counting module textures separately.
+
 ## Proposal: move boot work off the main thread (Web Worker)
 
 Status: measured and decided (Worker), not implemented. Engine stays three.js; this is about where
