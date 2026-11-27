@@ -1,5 +1,12 @@
-import { LAYOUT, highwayCurve, type Layout, type Vec3 } from '../city/layout';
-import { CAMERA_LIMITS, cameraPreset, streetPreset, type CameraPreset } from '../core/query';
+import {
+  LAYOUT,
+  isNorthOfRiver,
+  surfaceHeight,
+  type DistrictZone,
+  type Layout,
+  type Vec3,
+} from '../city/layout';
+import { CAMERA_LIMITS, cameraPreset, type CameraPreset } from '../core/query';
 import { cameraFloor, resolveCollision, targetFloor } from './collision';
 import { clamp, fitPolar, type Pose } from './motion';
 
@@ -34,59 +41,116 @@ export function safePose(L: Layout, pose: Pose): Pose {
   return { position, target: { x: position.x + dx * k, y: floor, z: position.z + dz * k } };
 }
 
-function highwayPose(L: Layout): Pose {
-  const hw = L.highways.find((h) => h.id === 'hw-ring') ?? L.highways[0];
-  if (!hw) return camPose('overview');
-  const curve = highwayCurve(hw);
-  const len = curve.getLength();
-  const u0 = 0.1;
-  const u1 = (u0 + 120 / len) % 1;
-  const a = curve.getPointAt(u0);
-  const b = curve.getPointAt(u1);
-  return { position: { x: a.x, y: a.y + 8, z: a.z }, target: { x: b.x, y: b.y + 1, z: b.z } };
-}
-
-function bridgePose(L: Layout): Pose {
-  const br = L.bridges.find((b) => b.id === 'bridge-b') ?? L.bridges[0];
-  if (!br) return camPose('overview');
-  const cx = (br.a.x + br.b.x) / 2;
-  const cz = (br.a.z + br.b.z) / 2;
-  // Look down the deck past the north abutment (`a`), ~550 m ahead as on layout v2.
-  const ax = br.a.x - cx;
-  const az = br.a.z - cz;
-  const k = 550 / Math.hypot(ax, az);
-  return {
-    position: { x: cx, y: br.deckY + 4, z: cz },
-    target: { x: cx + ax * k, y: br.deckY, z: cz + az * k },
-  };
-}
-
-/** View relative to the first zone of `kind`; offsets reproduce the v2 presets exactly. */
-function zonePose(L: Layout, kind: string, label: string, p: Tuple, t: Tuple): [string, Pose] {
-  const zone = L.districts.find((z) => z.kind === kind);
-  if (!zone) return [label, camPose('overview')];
-  const { x, z } = zone.origin;
-  return [
-    zone.name,
-    {
-      position: { x: x + p[0], y: p[1], z: z + p[2] },
-      target: { x: x + t[0], y: t[1], z: z + t[2] },
-    },
-  ];
-}
+/** SEOUL.md 6: number keys 1-8 (cameraPreset names in brackets). */
+const SEOUL_PRESETS: readonly [string, CameraPreset][] = [
+  ['반포대교 남단', 'banpo'],
+  ['여의도 상공', 'yeouido'],
+  ['남산에서', 'namsan'],
+  ['테헤란로', 'teheran'],
+  ['성수대교 위', 'seongsu'],
+  ['잠실 스카이라인', 'jamsil'],
+  ['홍대 골목', 'hongdae'],
+  ['북악에서', 'bugak'],
+];
 
 function build(L: Layout): RigPreset[] {
-  const raw: [string, Pose][] = [
-    ['강변 히어로', camPose('skyline')],
-    ['코어 상공', camPose('overview')],
-    [`${streetPreset()?.name ?? '골목'} 거리`, camPose('street')],
-    ['고가도로', highwayPose(L)],
-    zonePose(L, 'hillside', '산동네', [500, 140, -330], [740, 80, 450]),
-    zonePose(L, 'apartment', '아파트 단지', [100, 70, 280], [10, 40, 0]),
-    ['다리 위', bridgePose(L)],
-    ['탑다운', camPose('topdown')],
-  ];
-  return raw.map(([name, pose], i) => ({ key: i + 1, name, ...safePose(L, pose) }));
+  return SEOUL_PRESETS.map(([name, cam], i) => ({
+    key: i + 1,
+    name,
+    ...safePose(L, camPose(cam)),
+  }));
+}
+
+export interface DistrictView extends Pose {
+  id: string;
+  name: string;
+  kind: string;
+  /** North of the Han (강북) or south (강남), for grouping the zone list. */
+  north: boolean;
+}
+
+/**
+ * A view of each zone from its river side: target at the zone's centre lifted by a third of
+ * the zone's tallest building, camera back toward the river by a distance that grows with the
+ * zone's size, so the whole quarter and some water fit the frame.
+ */
+export function districtView(L: Layout, zone: DistrictZone): DistrictView {
+  // Centre of the zone's own buildings: a polygon centroid can fall in an enclave (the palace
+  // inside 종로). Parks without buildings use the outline centroid.
+  const own = L.buildings.filter((b) => b.zoneId === zone.id);
+  const pts = own.length >= 3 ? own : zone.polygon;
+  let cx = 0;
+  let cz = 0;
+  for (const q of pts) {
+    cx += q.x / pts.length;
+    cz += q.z / pts.length;
+  }
+  if (own.length >= 3) {
+    // Wrap-around filler zones (서울 북부) have their mean elsewhere: snap to their nearest building.
+    const mx = cx;
+    const mz = cz;
+    let bestD = Infinity;
+    for (const b of own) {
+      const d = Math.hypot(b.x - mx, b.z - mz);
+      if (d < bestD) {
+        bestD = d;
+        cx = b.x;
+        cz = b.z;
+      }
+    }
+  }
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  for (const q of zone.polygon) {
+    minX = Math.min(minX, q.x);
+    maxX = Math.max(maxX, q.x);
+    minZ = Math.min(minZ, q.z);
+    maxZ = Math.max(maxZ, q.z);
+  }
+  let tallest = 0;
+  for (const b of L.buildings)
+    if (b.zoneId === zone.id) tallest = Math.max(tallest, b.h + b.spireH);
+  const north = isNorthOfRiver(cx, cz);
+  // Toward the river: south for 강북 zones, north for 강남 zones.
+  const dz = north ? 1 : -1;
+  const size = Math.hypot(maxX - minX, maxZ - minZ);
+  const back = clamp(size * 0.55, 260, 1100);
+  const ty = surfaceHeight(cx, cz) + tallest / 3;
+  const pose: Pose = {
+    position: { x: cx, y: ty + back * 0.55 + tallest * 0.4, z: cz + dz * back },
+    target: { x: cx, y: ty, z: cz },
+  };
+  // A hill between camera and zone (Namsan in front of 종로): climb until the view clears it.
+  for (let i = 0; i < 20 && !terrainClear(pose); i++) pose.position.y += 40;
+  return { id: zone.id, name: zone.name, kind: zone.kind, north, ...safePose(L, pose) };
+}
+
+/** True when no terrain rises within 3 m of the straight sight line from camera to target. */
+export function terrainClear({ position: p, target: t }: Pose): boolean {
+  for (let i = 1; i < 32; i++) {
+    const f = i / 32;
+    const y = p.y + (t.y - p.y) * f;
+    if (surfaceHeight(p.x + (t.x - p.x) * f, p.z + (t.z - p.z) * f) > y - 3) return false;
+  }
+  return true;
+}
+
+let districtCache: DistrictView[] | null = null;
+
+/** One view per named zone (the riverside band is reached through the bridge presets). */
+export function districtViews(): readonly DistrictView[] {
+  // Fill zones (서울 북부/남부) are generic padding, not places anyone looks for. West to east.
+  districtCache ??= LAYOUT.districts
+    .filter((z) => z.kind !== 'riverside' && !z.id.startsWith('fill'))
+    .map((z) => districtView(LAYOUT, z))
+    .sort((a, b) => a.target.x - b.target.x);
+  return districtCache;
+}
+
+export function districtViewById(id: string): DistrictView | undefined {
+  return districtViews().find((d) => d.id === id);
 }
 
 let cache: RigPreset[] | null = null;
@@ -100,7 +164,8 @@ export function rigPreset(key: number): RigPreset {
   return list[clamp(Math.round(key), 1, list.length) - 1] as RigPreset;
 }
 
-export const CINEMATIC_ORDER = [1, 5, 2, 7, 4, 3, 6] as const;
+/** SEOUL.md 6: 1 -> 3 -> 2 -> 7 -> 8 -> 4 -> 5 -> 6 -> 1. */
+export const CINEMATIC_ORDER = [1, 3, 2, 7, 8, 4, 5, 6] as const;
 
 export const DEFAULT_PRESET = 1;
 

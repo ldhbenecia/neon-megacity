@@ -3,6 +3,8 @@ import type { Pose } from './motion';
 
 export interface UxQuery {
   preset?: number;
+  /** `?district=<zone id>` (e.g. jongno): start at that zone's view; unknown ids are ignored. */
+  district?: string;
   /** `?pose=px,py,pz,tx,ty,tz`; ignored unless 6 finite numbers within the orbit distance limits. */
   pose?: Pose;
   hud: boolean;
@@ -34,6 +36,8 @@ export function parseUxQuery(search: string, presetCount = 8): UxQuery {
     nan: false,
   };
   out.nan = out.debug && flag('nan', false);
+  const district = params.get('district')?.trim().toLowerCase();
+  if (district && /^[a-z0-9-]{1,40}$/.test(district)) out.district = district;
   const raw = params.get('preset');
   if (raw !== null && /^\d+$/.test(raw.trim())) {
     const n = Number(raw);
