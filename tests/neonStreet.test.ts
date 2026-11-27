@@ -8,6 +8,7 @@ import {
   highwayPath,
   packPaths,
   pathPoint,
+  GROUND_CAP,
   resample,
   vehicleStreams,
   type Path,
@@ -18,7 +19,13 @@ import {
   pickLights,
   type LightCandidate,
 } from '../src/neon/lights';
-import { POOL_LIFT, planStreet } from '../src/neon/streetPlan';
+import { LAMP_CAP, POOL_LIFT, lampBudget, planStreet } from '../src/neon/streetPlan';
+
+/** Arterial plus street length (km): the roads that carry lights, stops and traffic. */
+const roadKm =
+  LAYOUT.roads
+    .filter((r) => r.kind === 'arterial' || r.kind === 'street')
+    .reduce((n, r) => n + Math.hypot(r.b.x - r.a.x, r.b.z - r.a.z), 0) / 1000;
 
 const cat = buildCatalog(LAYOUT);
 const SIDEWALK = 0.2;
@@ -38,16 +45,19 @@ describe('neon street props', () => {
     for (const p of streetPools) expect(p.y).toBeGreaterThanOrEqual(SIDEWALK + POOL_LIFT - 1e-6);
   });
 
-  it('counts follow 6.2', () => {
+  it('counts follow 6.2, scaled by road length', () => {
     const lamps = plan.lamps.filter((l) => l.scale === 1).length;
-    expect(lamps).toBeGreaterThanOrEqual(400);
-    expect(lamps).toBeLessThanOrEqual(650);
-    expect(plan.stalls.length).toBeGreaterThanOrEqual(40);
-    expect(plan.stalls.length).toBeLessThanOrEqual(70);
-    expect(plan.busStops.length).toBeGreaterThanOrEqual(30);
-    expect(plan.busStops.length).toBeLessThanOrEqual(50);
-    expect(plan.poles.length).toBeGreaterThanOrEqual(150);
-    expect(plan.poles.length).toBeLessThanOrEqual(250);
+    expect(lamps).toBeLessThanOrEqual(lampBudget(LAYOUT));
+    expect(lampBudget(LAYOUT)).toBeLessThanOrEqual(LAMP_CAP);
+    const perKm = (n: number): number => n / roadKm;
+    expect(perKm(lamps)).toBeGreaterThanOrEqual(4);
+    expect(perKm(lamps)).toBeLessThanOrEqual(14);
+    expect(perKm(plan.stalls.length)).toBeGreaterThanOrEqual(0.3);
+    expect(perKm(plan.stalls.length)).toBeLessThanOrEqual(1.2);
+    expect(perKm(plan.busStops.length)).toBeGreaterThanOrEqual(0.25);
+    expect(perKm(plan.busStops.length)).toBeLessThanOrEqual(0.9);
+    expect(perKm(plan.poles.length)).toBeGreaterThanOrEqual(1.5);
+    expect(perKm(plan.poles.length)).toBeLessThanOrEqual(4.5);
   });
 
   it('street light arms reach toward a road', () => {
@@ -91,20 +101,35 @@ describe('neon traffic lanes', () => {
     }
   });
 
-  it('stream sizes follow 6.2 (ground 400–700, highway 60–120 per lane)', () => {
+  it('stream sizes follow 6.2 (ground 4–12 per road km up to the cap, highway 25–45 per lane km)', () => {
     const ground = vehicles.filter((v) => paths[v.path]!.kind === 'ground').length;
-    expect(ground).toBeGreaterThanOrEqual(400);
-    expect(ground).toBeLessThanOrEqual(700);
+    expect(ground).toBeLessThanOrEqual(GROUND_CAP);
+    expect(ground / roadKm).toBeGreaterThanOrEqual(4);
+    expect(ground / roadKm).toBeLessThanOrEqual(12);
     const rn = paths.findIndex((p) => p.id === 'hw-river-north');
     const perLane = new Map<string, number>();
     for (const v of vehicles.filter((k) => k.path === rn)) {
       const key = `${v.dir}:${v.lane}`;
       perLane.set(key, (perLane.get(key) ?? 0) + 1);
     }
+    const km = paths[rn]!.length / 1000;
+    expect(perLane.size).toBeGreaterThan(0);
     for (const n of perLane.values()) {
-      expect(n).toBeGreaterThanOrEqual(60);
-      expect(n).toBeLessThanOrEqual(120);
+      expect(n / km).toBeGreaterThanOrEqual(25);
+      expect(n / km).toBeLessThanOrEqual(45);
     }
+  });
+
+  it('the ground cap also thins arterials when they alone exceed it', () => {
+    const arterialLanes = vehicles.filter(
+      (v) => paths[v.path]!.kind === 'ground' && paths[v.path]!.arterial,
+    ).length;
+    const cap = Math.floor(arterialLanes / 2);
+    const few = vehicleStreams(paths, LAYOUT.highways, { groundCap: cap });
+    const ground = few.filter((v) => paths[v.path]!.kind === 'ground');
+    expect(ground.length).toBeLessThanOrEqual(cap);
+    expect(ground.length).toBeGreaterThan(cap * 0.8);
+    expect(ground.every((v) => paths[v.path]!.arterial)).toBe(true);
   });
 
   it('resample keeps endpoints and packPaths stores the sample count', () => {

@@ -95,7 +95,7 @@ void main() {
   int i = int( vBeam + 0.5 );
   vec3 V = normalize( cameraPosition - vWorld );
   float facing = pow( abs( dot( normalize( vNormalW ), V ) ), 1.5 );
-  float along = pow( 1.0 - vT, 1.4 ) * smoothstep( 0.0, 0.01, vT );
+  float along = pow( max( 1.0 - vT, 0.0 ), 1.4 ) * smoothstep( 0.0, 0.01, vT );
   float nearFade = smoothstep( 8.0, 60.0, length( cameraPosition - vWorld ) );
   float a = facing * along * nearFade * uOrigin[ i ].w;
   gl_FragColor = vec4( uColor[ i ] * a, 1.0 );

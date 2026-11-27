@@ -2,6 +2,7 @@
 //   aFace (u along the face, y above windowY) in m, float32: values reach ~600 m.
 //   aWin  (cellW, cellH, winW, winH); FACADE.dong: (number, digits, height, 0). Half float.
 //   aInfo (type * 2 + storefront, seed, lit factor, param). Half float.
+//   color sRGB-encoded normalized bytes; the vertex shader decodes them to linear.
 import * as THREE from 'three';
 import type { FacadeType } from './params';
 
@@ -251,9 +252,9 @@ export class GeoBuilder {
     const n = this.count;
     const nrm = new Int8Array(n * 3);
     for (let i = 0; i < n * 3; i++) nrm[i] = Math.round((this.nrm.arr[i] ?? 0) * 127);
+    // sRGB-encoded bytes (decoded in the vertex shader): linear bytes band the dark facades.
     const col = new Uint8Array(n * 3);
-    for (let i = 0; i < n * 3; i++)
-      col[i] = Math.round(Math.min(1, Math.max(0, this.col.arr[i] ?? 0)) * 255);
+    for (let i = 0; i < n * 3; i++) col[i] = Math.round(linearToSrgb(this.col.arr[i] ?? 0) * 255);
     g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3, true));
     g.setAttribute('color', new THREE.BufferAttribute(col, 3, true));
     g.setAttribute('aFace', new THREE.BufferAttribute(this.face.arr.slice(0, this.face.len), 2));
@@ -269,6 +270,11 @@ export class GeoBuilder {
     g.computeBoundingBox();
     return g;
   }
+}
+
+function linearToSrgb(v: number): number {
+  const c = Math.min(1, Math.max(0, v));
+  return c <= 0.0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - 0.055;
 }
 
 // Float16BufferAttribute's constructor takes raw half bits; passing floats truncates them.

@@ -5,17 +5,11 @@ import { SIDEWALK } from '../city/generate';
 import { toLocal } from '../city/math';
 import { GridHash, segmentBounds, type Bounds } from '../city/spatial';
 import type { Block, BuildingSpec, Layout, Road } from '../city/types';
+import { ROAD } from './colors';
 import { mergeIntervals } from './params';
 
 export const ROAD_Y = 0.03;
 export const SIDEWALK_H = 0.15;
-
-const ASPHALT = 0x16181a;
-const ALLEY = 0x24262a;
-const MARK_WHITE = 0x9a9c98;
-const MARK_YELLOW = 0x9a7a2a;
-const PAVEMENT = 0x2c2e30;
-const CURB = 0x3c3e3e;
 
 class FlatBuilder {
   pos: number[] = [];
@@ -67,6 +61,20 @@ function crossT(a: Road['a'], b: Road['a'], c: Road['a'], d: Road['a']): number 
   return t;
 }
 
+/**
+ * Length of road `r` covered by crossing road `o` (each side of the crossing point). At an angle θ
+ * the other road's width spans w / sin θ along `r`, and `r`'s own half width adds hw · cot θ.
+ * Very shallow crossings clear the whole road rather than leave lane marks on the other one.
+ */
+export function crossingHalf(r: Road, o: Road): number {
+  const rl = Math.hypot(r.b.x - r.a.x, r.b.z - r.a.z) || 1;
+  const ol = Math.hypot(o.b.x - o.a.x, o.b.z - o.a.z) || 1;
+  const cross = ((r.b.x - r.a.x) * (o.b.z - o.a.z) - (r.b.z - r.a.z) * (o.b.x - o.a.x)) / (rl * ol);
+  const sin = Math.max(1e-3, Math.abs(cross));
+  const cos = Math.sqrt(Math.max(0, 1 - sin * sin));
+  return Math.min(rl, (o.width / 2 + (r.width / 2) * cos) / sin + 1);
+}
+
 function strip(
   B: FlatBuilder,
   r: Road,
@@ -102,7 +110,7 @@ export function buildRoads(L: Layout): THREE.BufferGeometry {
     if (len < 0.5) continue;
     const hw = r.width / 2;
     const step = isHill(r) ? 6 : len;
-    const color = r.kind === 'alley' ? ALLEY : ASPHALT;
+    const color = r.kind === 'alley' ? ROAD.alley : ROAD.asphalt;
     for (let s = 0; s < len - 1e-6; s += step)
       strip(B, r, s, Math.min(len, s + step), -hw, hw, 0, color);
     if (r.kind === 'alley' || isHill(r)) continue;
@@ -112,7 +120,7 @@ export function buildRoads(L: Layout): THREE.BufferGeometry {
       const o = roads[id];
       if (!o || o === r || o.kind === 'alley') continue;
       const t = crossT(r.a, r.b, o.a, o.b);
-      if (t !== null) crossings.push({ t, half: o.width / 2 + 1 });
+      if (t !== null) crossings.push({ t, half: crossingHalf(r, o) });
     }
     const iv = mergeIntervals(crossings, len);
     const free: [number, number][] = [];
@@ -135,24 +143,25 @@ export function buildRoads(L: Layout): THREE.BufferGeometry {
         const z0 = edge + dir * 0.6;
         const z1 = edge + dir * 3.6;
         for (let l = -hw + 0.8; l < hw - 0.8; l += 1.2) {
-          strip(B, r, Math.min(z0, z1), Math.max(z0, z1), l, l + 0.6, lift, MARK_WHITE);
+          strip(B, r, Math.min(z0, z1), Math.max(z0, z1), l, l + 0.6, lift, ROAD.markWhite);
         }
       }
       const m0 = f0 + 4.5;
       const m1 = f1 - 4.5;
       if (m1 - m0 < 2) continue;
       if (r.kind === 'arterial') {
-        strip(B, r, m0, m1, -0.35, -0.2, lift, MARK_YELLOW);
-        strip(B, r, m0, m1, 0.2, 0.35, lift, MARK_YELLOW);
+        strip(B, r, m0, m1, -0.35, -0.2, lift, ROAD.markYellow);
+        strip(B, r, m0, m1, 0.2, 0.35, lift, ROAD.markYellow);
         for (const lane of [-hw / 2, hw / 2]) {
           for (let s = m0; s < m1 - 3; s += 9)
-            strip(B, r, s, s + 3, lane - 0.075, lane + 0.075, lift, MARK_WHITE);
+            strip(B, r, s, s + 3, lane - 0.075, lane + 0.075, lift, ROAD.markWhite);
         }
       } else {
-        for (let s = m0; s < m1 - 3; s += 8) strip(B, r, s, s + 3, -0.075, 0.075, lift, MARK_WHITE);
+        for (let s = m0; s < m1 - 3; s += 8)
+          strip(B, r, s, s + 3, -0.075, 0.075, lift, ROAD.markWhite);
       }
-      strip(B, r, m0, m1, hw - 0.55, hw - 0.4, lift, MARK_WHITE);
-      strip(B, r, m0, m1, -hw + 0.4, -hw + 0.55, lift, MARK_WHITE);
+      strip(B, r, m0, m1, hw - 0.55, hw - 0.4, lift, ROAD.markWhite);
+      strip(B, r, m0, m1, -hw + 0.4, -hw + 0.55, lift, ROAD.markWhite);
     }
   }
   return B.build();
@@ -222,7 +231,7 @@ function slab(
     block.z - s * lx + c * lz,
   ];
   const y = SIDEWALK_H;
-  B.quad([W(r.x0, r.z1, y), W(r.x1, r.z1, y), W(r.x1, r.z0, y), W(r.x0, r.z0, y)], PAVEMENT);
+  B.quad([W(r.x0, r.z1, y), W(r.x1, r.z1, y), W(r.x1, r.z0, y), W(r.x0, r.z0, y)], ROAD.pavement);
   const edges: [number, number, number, number][] = [
     [r.x0, r.z1, r.x1, r.z1],
     [r.x1, r.z1, r.x1, r.z0],
@@ -234,7 +243,7 @@ function slab(
     const b0 = W(bx, bz, 0);
     const len = Math.hypot(b0[0] - a0[0], b0[2] - a0[2]);
     const n: [number, number, number] = [-(b0[2] - a0[2]) / len, 0, (b0[0] - a0[0]) / len];
-    B.quad([a0, b0, W(bx, bz, y), W(ax, az, y)], CURB, n);
+    B.quad([a0, b0, W(bx, bz, y), W(ax, az, y)], ROAD.curb, n);
   }
 }
 

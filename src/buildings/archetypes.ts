@@ -47,6 +47,7 @@ import {
   type Outline,
   type P2,
 } from './shapes';
+import { FACADE_TINT, PROP } from './colors';
 import { NullBuilder } from './lod';
 
 export interface Targets {
@@ -107,21 +108,13 @@ function facadeHex(spec: BuildingSpec, rng: Rng): number {
   const t = rng.next();
   switch (spec.archetype) {
     case 'apartmentSlab':
-      return mixHex(MATERIAL.facadeLight, 0x6b6e6c, 0.35 + 0.3 * t);
+      return mixHex(MATERIAL.facadeLight, FACADE_TINT.apartment, 0.35 + 0.3 * t);
     case 'hillHouse':
-      return mixHex(
-        MATERIAL.facadeLight,
-        rng.pick([0x5a4a40, 0x4e5450, 0x5c5850, 0x3f4a4c]),
-        0.4 + 0.4 * t,
-      );
+      return mixHex(MATERIAL.facadeLight, rng.pick(FACADE_TINT.hillHouse), 0.4 + 0.4 * t);
     case 'sangga':
-      return mixHex(
-        MATERIAL.facadeDark,
-        rng.pick([0x3a3430, 0x34383a, 0x40383a, 0x2e3436]),
-        0.4 + 0.6 * t,
-      );
+      return mixHex(MATERIAL.facadeDark, rng.pick(FACADE_TINT.sangga), 0.4 + 0.6 * t);
     case 'warehouse':
-      return mixHex(MATERIAL.facadeLight, rng.pick([0x3c4a50, 0x504a3e, 0x3a3f42]), 0.5 * t + 0.3);
+      return mixHex(MATERIAL.facadeLight, rng.pick(FACADE_TINT.warehouse), 0.5 * t + 0.3);
     default:
       return mixHex(MATERIAL.facadeDark, MATERIAL.facadeLight, t);
   }
@@ -475,7 +468,7 @@ function roofMechanical(g: GeoBuilder, b: Bld, rng: Rng): void {
   const { spec } = b;
   const stacks = tierStacks(spec);
   const dark = plain(scaleHex(b.roof, 0.8), 0.7);
-  const metal = plain(0x2e3236, 0.5);
+  const metal = plain(PROP.roofPlant, 0.5);
   for (const tiers of stacks) {
     const t = tiers[tiers.length - 1];
     if (!t) continue;
@@ -520,7 +513,7 @@ function roofMechanical(g: GeoBuilder, b: Bld, rng: Rng): void {
 }
 
 function crane(g: GeoBuilder, t: Tier, rotY: number, rng: Rng): void {
-  const steel = plain(0x4a3a1c, 0.6);
+  const steel = plain(PROP.craneSteel, 0.6);
   const p = toWorldP(t.x, t.z, rotY, t.w * 0.25, -t.d * 0.2);
   const h = rng.range(18, 30);
   g.beam([p.x, t.y1, p.z], [p.x, t.y1 + h, p.z], 1.6, 1.6, [1, 0, 0], steel);
@@ -535,14 +528,14 @@ function crane(g: GeoBuilder, t: Tier, rotY: number, rng: Rng): void {
     [0, 1, 0],
     steel,
   );
-  g.box(p.x - dx * 9, t.y1 + h - 3, p.z - dz * 9, 3, 3, 3, yaw, plain(0x2a2c2e));
+  g.box(p.x - dx * 9, t.y1 + h - 3, p.z - dz * 9, 3, 3, 3, yaw, plain(PROP.craneWeight));
 }
 
 function helipad(g: GeoBuilder, b: Bld): void {
   const t = b.spec.tiers[b.spec.tiers.length - 1];
   if (!t) return;
   const r = t.w / 2 - 1.5;
-  g.place(UNIT_CYL12, t.x, t.y1, t.z, r, 0.6, r, 0, plain(0x1c2022, 0.6));
+  g.place(UNIT_CYL12, t.x, t.y1, t.z, r, 0.6, r, 0, plain(PROP.helipad, 0.6));
   const o = tierOutline({ ...t, w: 2 * r, d: 2 * r }, 0, 24);
   band(g, o, t.y1 + 0.6, 0.15, 0.05, glow(NEON.neonTeal.hex, 1.2));
 }
@@ -571,7 +564,7 @@ function waterTank(
   h: number,
   hex: number,
 ): void {
-  g.box(x, y, z, r * 1.9, 0.5, r * 1.9, 0, plain(0x1e2022, 0.7));
+  g.box(x, y, z, r * 1.9, 0.5, r * 1.9, 0, plain(PROP.tankBase, 0.7));
   g.place(UNIT_CYL8, x, y + 0.5, z, r, h, r, 0, plain(hex, 0.55));
   g.place(UNIT_CONE8, x, y + 0.5 + h, z, r * 1.02, r * 0.35, r * 1.02, 0, plain(hex, 0.55));
 }
@@ -579,14 +572,14 @@ function waterTank(
 // 동 numbers travel in a half-float attribute: integers are exact only below 2048.
 export const MAX_HALF_INT = 2048;
 
-const TANK_COLORS = [0x2c6f7a, 0x2a5a8c, 0x3a7a6a, 0x8a8f8c, 0x2f6a8a];
+const TANK_COLORS = PROP.tanks;
 
 function sanggaProps(g: GeoBuilder, b: Bld, rng: Rng): void {
   const { spec } = b;
   const t = spec.tiers[0];
   if (!t) return;
   const y = t.y1;
-  const metal = plain(0x2a2d30, 0.5);
+  const metal = plain(PROP.sanggaMetal, 0.5);
   if (rng.chance(0.65)) {
     const p = toWorldP(t.x, t.z, spec.rotY, rng.range(-0.25, 0.25) * t.w, -0.2 * t.d);
     g.box(p.x, y, p.z, 3.4, 2.8, 4.2, spec.rotY, plain(scaleHex(b.wall, 1.1)));
@@ -617,7 +610,7 @@ function sanggaProps(g: GeoBuilder, b: Bld, rng: Rng): void {
     g.beam([pa[0], y + h * 0.35, pa[2]], [pb[0], y + h, pb[2]], 0.12, 0.12, n3, metal);
     g.beam([pb[0], y + h * 0.35, pb[2]], [pa[0], y + h, pa[2]], 0.12, 0.12, n3, metal);
   }
-  const ac = plain(0x8a8e8e, 0.6);
+  const ac = plain(PROP.acUnit, 0.6);
   for (const side of ALL_SIDES) {
     if (side === spec.front) continue;
     const ff = frontFrame(spec, t, side);
@@ -637,7 +630,14 @@ function sanggaProps(g: GeoBuilder, b: Bld, rng: Rng): void {
       const a = (rng.chance(0.5) ? 0.46 : -0.46) * ff.width;
       const x = ff.mid.x + ff.along.x * a + ff.out.x * 0.15;
       const z = ff.mid.z + ff.along.z * a + ff.out.z * 0.15;
-      g.beam([x, t.y0, z], [x, t.y1, z], 0.15, 0.15, [ff.out.x, 0, ff.out.z], plain(0x3a3e40, 0.5));
+      g.beam(
+        [x, t.y0, z],
+        [x, t.y1, z],
+        0.15,
+        0.15,
+        [ff.out.x, 0, ff.out.z],
+        plain(PROP.greyMetal, 0.5),
+      );
     }
   }
   if (spec.h < 35 && rng.chance(0.15)) fireEscape(g, b, t);
@@ -646,7 +646,7 @@ function sanggaProps(g: GeoBuilder, b: Bld, rng: Rng): void {
 function fireEscape(g: GeoBuilder, b: Bld, t: Tier): void {
   const { spec } = b;
   const f = frontFrame(spec, t, OPPOSITE[spec.front]);
-  const steel = plain(0x24272a, 0.5);
+  const steel = plain(PROP.fireEscape, 0.5);
   const n3: V3 = [f.out.x, 0, f.out.z];
   const w = 3;
   const dep = 1.3;
@@ -707,9 +707,7 @@ function storefront(g: GeoBuilder, b: Bld, rng: Rng, side: Side): void {
   const depth = rng.range(1.5, 3);
   const y = t.y0 + gh - 0.85;
   const striped = rng.chance(0.3);
-  const top = striped
-    ? style(FACADE.awning, rng.pick([0x5a1a1a, 0x1a4a44, 0x5a3a12, 0x1a2a4a]))
-    : plain(0x1a1c1e, 0.6);
+  const top = striped ? style(FACADE.awning, rng.pick(PROP.awnings)) : plain(PROP.canopy, 0.6);
   const p0 = { x: a.x, z: a.z };
   const p1 = { x: c.x, z: c.z };
   const q0 = { x: a.x + f.out.x * depth, z: a.z + f.out.z * depth };
@@ -810,7 +808,7 @@ function apartment(g: GeoBuilder, b: Bld, rng: Rng): void {
     );
   }
   const p = toWorldP(t.x, t.z, spec.rotY, longX ? len * 0.3 : 0, longX ? 0 : len * 0.3);
-  waterTank(g, p.x, t.y1, p.z, 1.6, 2.4, 0x8a8f8c);
+  waterTank(g, p.x, t.y1, p.z, 1.6, 2.4, PROP.tankGrey);
 }
 
 function warehouseRoof(g: GeoBuilder, b: Bld): void {
@@ -892,7 +890,7 @@ function warehouseProps(g: GeoBuilder, b: Bld, rng: Rng): void {
   const { spec } = b;
   const t = spec.tiers[0];
   if (!t) return;
-  const metal = plain(0x3a3e40, 0.5);
+  const metal = plain(PROP.greyMetal, 0.5);
   const n = rng.int(2, 6);
   for (let i = 0; i < n; i++) {
     const p = toWorldP(t.x, t.z, spec.rotY, rng.range(-0.4, 0.4) * t.w, rng.range(-0.4, 0.4) * t.d);
@@ -908,12 +906,22 @@ export function industrialStacks(spec: BuildingSpec, T: Targets): void {
   const p = toWorldP(t.x, t.z, spec.rotY, t.w * 0.35, t.d * 0.3);
   const h = rng.range(25, 50);
   const r = rng.range(1.2, 2);
-  const body = plain(0x4a4c4a, 0.8);
+  const body = plain(PROP.chimney, 0.8);
   // Taller than the warehouse itself, so it must stay in LOD2 for the skyline.
   for (const g of [T.l0, T.l1, T.l2]) {
     if (discards(g)) continue;
     g.place(UNIT_CYL8, p.x, t.y0, p.z, r, h, r, 0, body);
-    g.place(UNIT_CYL8, p.x, t.y0 + h - 5, p.z, r * 1.02, 2, r * 1.02, 0, plain(0x6a1a1a, 0.7));
+    g.place(
+      UNIT_CYL8,
+      p.x,
+      t.y0 + h - 5,
+      p.z,
+      r * 1.02,
+      2,
+      r * 1.02,
+      0,
+      plain(PROP.chimneyBand, 0.7),
+    );
     g.box(p.x, t.y0 + h, p.z, 0.6, 0.6, 0.6, 0, glow(NEON.neonRed.hex, 2.5));
   }
 }
@@ -950,15 +958,7 @@ function hillHouse(b: Bld, T: Targets): void {
       rng.range(-0.25, 0.25) * t.w,
       rng.range(-0.25, 0.25) * t.d,
     );
-    waterTank(
-      g,
-      p.x,
-      t.y1,
-      p.z,
-      0.8,
-      rng.range(1.1, 1.6),
-      rng.pick([0x1f8a96, 0x2a6ab0, 0x2a8a9a, 0x3a5aa0]),
-    );
+    waterTank(g, p.x, t.y1, p.z, 0.8, rng.range(1.1, 1.6), rng.pick(PROP.hillTanks));
   }
   if (rng.chance(0.35)) {
     const p = toWorldP(t.x, t.z, spec.rotY, -0.25 * t.w, 0.2 * t.d);
@@ -975,13 +975,13 @@ function hillHouse(b: Bld, T: Targets): void {
       0.45,
       0.5,
       rng.range(0, 3),
-      plain(rng.chance(0.5) ? 0x1c2a1c : 0x3a2a22),
+      plain(rng.chance(0.5) ? PROP.planters[0] : PROP.planters[1]),
     );
   }
   if (rng.chance(0.3)) {
     const a = toWorldP(t.x, t.z, spec.rotY, -0.35 * t.w, 0.35 * t.d);
     const c = toWorldP(t.x, t.z, spec.rotY, 0.35 * t.w, 0.35 * t.d);
-    const pole = plain(0x3a3a3a);
+    const pole = plain(PROP.pole);
     g.beam([a.x, t.y1, a.z], [a.x, t.y1 + 1.8, a.z], 0.06, 0.06, [1, 0, 0], pole);
     g.beam([c.x, t.y1, c.z], [c.x, t.y1 + 1.8, c.z], 0.06, 0.06, [1, 0, 0], pole);
     g.beam([a.x, t.y1 + 1.7, a.z], [c.x, t.y1 + 1.7, c.z], 0.03, 0.03, [0, 1, 0], pole);
@@ -1003,7 +1003,7 @@ function hillHouse(b: Bld, T: Targets): void {
       1.0,
       0.25,
       [f.out.x, 0, f.out.z],
-      plain(0x3a3c3c),
+      plain(PROP.outsideStair),
     );
   }
 }
