@@ -19,16 +19,16 @@ camera rig and HUD), so feature PRs never need to edit `src/main.ts`.
 
 ## Shared context (`ctx`)
 
-| key                                             | meaning                                                                                        |
-| ----------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `THREE, scene, camera, renderer, controls, gui` | standard three.js objects, `gui` is lil-gui (add your own folder)                              |
-| `CITY, LAYOUT`                                  | constants and the deterministic layout v2 from `src/city/layout.ts` (read only)                |
-| `env`                                           | shared environment state, one owner per field (table below)                                    |
-| `buildings`                                     | `BuildingsApi` published by buildings during its init; undefined before that                   |
-| `infra`                                         | `InfraApi` published by infra during its init (highway curves, `deckHeightAt`); else undefined |
-| `render()`                                      | default `renderer.render`; atmosphere replaces with the post-processing composer               |
-| `onResize(fn)`                                  | register `(w, h) => {}`                                                                        |
-| `onQuality(fn)`                                 | register `(quality) => {}` for runtime `env.quality` changes; returns the unsubscribe function |
+| key                                             | meaning                                                                                                                          |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `THREE, scene, camera, renderer, controls, gui` | three.js objects; `gui` is lil-gui with `?debug`, otherwise a chainable no-op stand-in (add your folder, never read values back) |
+| `CITY, LAYOUT`                                  | constants and the deterministic layout v2 from `src/city/layout.ts` (read only)                                                  |
+| `env`                                           | shared environment state, one owner per field (table below)                                                                      |
+| `buildings`                                     | `BuildingsApi` published by buildings during its init; undefined before that                                                     |
+| `infra`                                         | `InfraApi` published by infra during its init (highway curves, `deckHeightAt`); else undefined                                   |
+| `render()`                                      | default `renderer.render`; atmosphere replaces with the post-processing composer                                                 |
+| `onResize(fn)`                                  | register `(w, h) => {}`                                                                                                          |
+| `onQuality(fn)`                                 | register `(quality) => {}` for runtime `env.quality` changes; returns the unsubscribe function                                   |
 
 ### `ctx.env` fields and owners
 
@@ -153,5 +153,9 @@ Pure queries: `terrainHeight`, `surfaceHeight`, `riverSignedDistance`, `building
 | `.github/workflows/ci.yml`      | pull_request, push to main, dispatch                      | format:check, lint, typecheck, unit tests, build, Playwright e2e (report uploaded on failure); e2e is skipped when a PR (or a dispatch on a PR branch) only changes `docs/**` or `*.md`                    |
 | `.github/workflows/autofix.yml` | pull_request (same-repo only)                             | `lint:fix` + `format`; if anything changed, commits `style: 린트 및 포맷 자동 수정` as github-actions[bot], pushes to the PR branch and dispatches `ci.yml` for it (GITHUB_TOKEN pushes do not trigger CI) |
 | `.github/workflows/pages.yml`   | CI succeeded on a push to main (`workflow_run`), dispatch | deploys only if the tested commit is still main's head (a failing newest commit pauses deploys), builds it with `BASE_PATH=/neon-megacity/` and deploys `dist/`; dispatch only from main                   |
+
+Local e2e, `npm run shots` and `npm run perf` each serve `dist/` on a per-worktree port
+(`localPort` in `tests/e2e/helpers.ts`, 4200–4979, never reusing a running server). If two worktrees
+hash to the same port the server fails to start: set `E2E_PORT`, `SHOTS_PORT` or `PERF_PORT`.
 
 `vite.config.ts` uses `base: process.env.BASE_PATH ?? './'`, so dev, preview, e2e and screenshots run with a relative base.

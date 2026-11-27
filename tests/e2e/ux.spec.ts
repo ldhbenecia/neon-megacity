@@ -155,10 +155,14 @@ test('first entry shows a controls hint that fades out', async ({ page }) => {
 test('lil-gui is a developer panel: hidden by default, shown with ?debug', async ({ page }) => {
   await page.goto(app());
   await waitForCity(page);
-  await expect(page.locator('.lil-gui.lil-root')).toBeHidden();
+  await expect(page.locator('.lil-gui')).toHaveCount(0);
   await page.goto(app('debug'));
   await waitForCity(page);
   await expect(page.locator('.lil-gui.lil-root')).toBeVisible();
+  // ?nogui wins: the panel is not even fetched.
+  await page.goto(app('debug&nogui'));
+  await waitForCity(page);
+  await expect(page.locator('.lil-gui')).toHaveCount(0);
 });
 
 test.describe('city controls', () => {
@@ -316,6 +320,36 @@ test.describe('camera rig', () => {
     const p = (await cam(page)).position;
     const home = await page.evaluate(() => window.__hangang!.preset(1).position);
     expect(dist(p, home)).toBeLessThan(2);
+  });
+
+  test('the camera never renders from inside a building while zooming, flying and orbiting', async ({
+    page,
+  }) => {
+    test.setTimeout(240_000);
+    const at = await page.evaluate(() => window.__hangang?.buildingPoint() ?? null);
+    expect(at, 'no building under the central viewport').not.toBeNull();
+    await page.evaluate(() => window.__hangang!.resetInside());
+    // Zoom toward the cursor on a building as far as the rig lets it.
+    await page.mouse.move(at!.x, at!.y);
+    for (let i = 0; i < 6; i++) {
+      await page.mouse.wheel(0, -1200);
+      await waitFrames(page, 1);
+    }
+    await page.keyboard.down('w');
+    await waitFrames(page, 20);
+    await page.keyboard.up('w');
+    await page.mouse.move(800, 450);
+    await page.mouse.down();
+    await page.mouse.move(1100, 480, { steps: 12 });
+    await page.mouse.up();
+    await page.keyboard.press('f');
+    await waitMode(page, 'fly');
+    await page.keyboard.down('w');
+    await waitFrames(page, 20);
+    await page.keyboard.up('w');
+    await waitFrames(page, 5);
+    const inside = await page.evaluate(() => window.__hangang!.inside());
+    expect(inside.frames, `camera inside building: ${JSON.stringify(inside)}`).toBe(0);
   });
 
   test('F toggles fly mode, C toggles the cinematic and any input stops it', async ({ page }) => {

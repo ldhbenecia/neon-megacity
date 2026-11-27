@@ -2,9 +2,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   MEGA_MIN_H,
-  RIVER,
   RIVER_CLEARANCE,
+  SAETGANG,
+  ZONES,
   buildingsInAabb,
+  riverWidthAt,
   generateLayout,
   highwaySamples,
   type Block,
@@ -36,13 +38,22 @@ describe.each(SEEDS)('seed %i', (seed) => {
   });
 
   it('keeps block rectangles out of the river and the highway corridors', () => {
-    const c = L.river.centerline;
+    const c = L.river.samples;
+    const sg = SAETGANG.centerline;
     const segs = L.highways.map((hw) => ({ hw, s: highwaySamples(hw, 8) }));
     for (const bl of L.blocks) {
       const o = blockObb(bl);
       for (let i = 0; i < c.length - 1; i++) {
-        const d = obbSegmentDistance(o, c[i]!, c[i + 1]!);
-        expect(d - RIVER.width / 2, `block ${bl.id}`).toBeGreaterThanOrEqual(RIVER_CLEARANCE);
+        const a = c[i]!;
+        const e = c[i + 1]!;
+        if (Math.abs(a.x - bl.x) > 900) continue;
+        const half = Math.max(riverWidthAt(a.x), riverWidthAt(e.x)) / 2;
+        const d = obbSegmentDistance(o, a, e);
+        expect(d - half, `block ${bl.id}`).toBeGreaterThanOrEqual(RIVER_CLEARANCE - 1e-6);
+      }
+      for (let i = 0; i < sg.length - 1; i++) {
+        const d = obbSegmentDistance(o, sg[i]!, sg[i + 1]!);
+        expect(d - SAETGANG.width / 2, `block ${bl.id}`).toBeGreaterThanOrEqual(RIVER_CLEARANCE);
       }
       for (const { hw, s } of segs) {
         for (let i = 0; i < s.length - 1; i++) {
@@ -64,14 +75,15 @@ describe.each(SEEDS)('seed %i', (seed) => {
       expect(bl.w).toBeLessThanOrEqual(300);
       expect(bl.d).toBeLessThanOrEqual(300);
     }
-  });
+  }, 60_000);
 
   it('applies the block height rules (ratio ≥ 3, touching neighbours differ > 10 %)', () => {
     for (const bl of L.blocks) {
-      if (!['core', 'midtown', 'sangga'].includes(bl.district) || bl.buildingIds.length < 2) {
-        continue;
-      }
+      const RATIO = ['core', 'megacore', 'corridor', 'midtown', 'sangga', 'nightlife'];
+      if (!RATIO.includes(bl.district) || bl.buildingIds.length < 2) continue;
       const bs = bl.buildingIds.map((id) => B[id]!);
+      // Blocks of megatowers only have no low building to compare against.
+      if (bs.every((b) => b.tags.corp)) continue;
       const hs = bs.map((b) => b.h);
       expect(Math.max(...hs) / Math.min(...hs), `block ${bl.id}`).toBeGreaterThanOrEqual(3 - 1e-9);
       for (let i = 0; i < bs.length; i++) {
@@ -86,12 +98,72 @@ describe.each(SEEDS)('seed %i', (seed) => {
     }
   });
 
-  it('keeps non-megatower heights under their district caps', () => {
-    const cap: Record<string, number> = { core: 245, midtown: 210, sangga: 70 };
+  it('builds every megacore tower tier as planned, with podiums between the towers', () => {
+    const band = (id: string, lo: number, hi: number) =>
+      B.filter((b) => b.zoneId === id && b.h >= lo && b.h < hi).length;
+    expect([
+      band('yongsan', 600, 601),
+      band('yongsan', 280, 451),
+      band('yongsan', 120, 251),
+    ]).toEqual([1, 6, 16]);
+    expect([
+      band('yeouido', 430, 431),
+      band('yeouido', 300, 361),
+      band('yeouido', 120, 221),
+    ]).toEqual([1, 4, 18]);
+    expect([band('jamsil', 500, 501), band('jamsil', 150, 301)]).toEqual([1, 10]);
+    for (const id of ['yongsan', 'yeouido', 'jamsil']) {
+      expect(band(id, 0, 120), `${id} podiums`).toBeGreaterThan(0);
+    }
+  });
+
+  it('lines the five riverside apartment strips with slab walls', () => {
+    const slabs = (id: string) =>
+      B.filter((b) => b.zoneId === id && b.archetype === 'apartmentSlab').length;
+    const min: Record<string, number> = {
+      'apt-ichon': 5,
+      'apt-banpo': 20,
+      'apt-apgu': 7,
+      'apt-jamsil': 7,
+      'apt-gwangjin': 18,
+    };
+    for (const [id, n] of Object.entries(min)) expect(slabs(id), id).toBeGreaterThanOrEqual(n);
+    expect(B.filter((b) => b.archetype === 'apartmentSlab').length).toBeGreaterThanOrEqual(70);
+  });
+
+  it('gives every built zone enough buildings to read as a district', () => {
+    // About 80 % of the 7-seed minimum when set; 마포·공덕 must not be eaten by 용산 again.
+    const min: Record<string, number> = {
+      mapo: 38,
+      yongsan: 20,
+      yeouido: 28,
+      jamsil: 22,
+      gangnam: 24,
+      cheongdam: 3,
+      hongdae: 60,
+      itaewon: 140,
+      jongno: 230,
+      seongsu: 180,
+      wangsimni: 160,
+      seocho: 250,
+      yeongdeungpo: 1200,
+      'fill-north': 1600,
+      'fill-south': 330,
+      riverside: 20,
+      palace: 4,
+    };
+    for (const [id, n] of Object.entries(min)) {
+      expect(B.filter((b) => b.zoneId === id).length, id).toBeGreaterThanOrEqual(n);
+    }
+  });
+
+  it('keeps non-megatower heights under their zone caps (heights.tallMax)', () => {
+    const cap = new Map(ZONES.map((z) => [z.id, z.heights.tallMax]));
     for (const b of B) {
       if (b.tags.corp) continue;
-      const c = cap[b.district];
-      if (c !== undefined) expect(b.h, `building ${b.id}`).toBeLessThanOrEqual(c + 1e-9);
+      // A piloti ground floor can add 2.2 m to an apartment slab.
+      const extra = b.archetype === 'apartmentSlab' ? 2.2 : 0;
+      expect(b.h, `building ${b.id}`).toBeLessThanOrEqual(cap.get(b.zoneId)! + extra + 1e-9);
     }
   });
 });
