@@ -825,10 +825,6 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
     }
   }
 
-  /**
-   * Palace halls on the court's north–south axis, gate to throne hall to inner halls (SEOUL.md
-   * 4.3): a generic order of sizes, not any real palace's plan. Each hall is a one-lot block.
-   */
   /** 경복궁's buildings at their places in the plan (palace.ts); each is a one-lot block. */
   function palaceHalls(zone: DistrictZone): void {
     for (const b of PALACE_BUILDINGS) {

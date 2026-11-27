@@ -99,7 +99,7 @@ describe('layout v3: determinism', () => {
       {
         "blocks": 1427,
         "buildings": 5652,
-        "digest": "c67e3fa8",
+        "digest": "ec480d1",
         "roads": 1181,
         "slots": 3474,
       }
@@ -894,17 +894,18 @@ describe('layout v3: palace grounds', () => {
     for (const w of inner) expect(palaceWallAt(LAYOUT, PALACE_AXIS_X, w.a.z)).toBeNull();
     // 근정전's two-tier terrace: the lower one wider, the upper one higher, both ending at its face.
     const terrace = walls.filter((w) => w.kind === 'terrace');
-    expect(terrace.map((t) => t.height)).toEqual([1, 2]);
+    expect(terrace.map((t) => t.height)).toEqual([0.8, 1.4]);
     expect(terrace[0]!.width).toBeGreaterThan(terrace[1]!.width);
-    // Gates stand in their openings; nothing walls the axis between 광화문 and the terrace.
+    // Gates stand in openings: no wall or corridor crosses the axis between 광화문 and the
+    // terrace (the 흥례문 cross wall and the south corridor are open there).
     const t = terrace[0]!;
-    const gates = palace.filter((b) => b.tags.palacePart === 'gate');
-    const inGate = (z: number) =>
-      gates.some((g) => Math.abs(z - g.z) <= g.d / 2 && Math.abs(g.x - PALACE_AXIS_X) < 1);
     for (let z = south - 1; z > Math.max(t.a.z, t.b.z) + 0.5; z -= 1) {
-      if (inGate(z)) continue;
       expect(palaceWallAt(LAYOUT, PALACE_AXIS_X, z), `axis z ${z}`).toBeNull();
     }
+    // Both terrace tiers stay below 근정전's stone base, and their north ends differ.
+    const hall = palace.find((b) => b.tags.palaceId === 'geunjeongjeon')!;
+    for (const tt of terrace) expect(tt.height).toBeLessThan(hall.tiers[0]!.y1 - hall.baseY);
+    expect(terrace[0]!.b.z).not.toBeCloseTo(terrace[1]!.b.z, 3);
   });
 
   it('opens the outer wall wherever a road reaches it', () => {
