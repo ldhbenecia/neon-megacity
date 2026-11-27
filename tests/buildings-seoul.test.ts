@@ -5,6 +5,7 @@ import { districtLitFactor, zoneLitScale } from '../src/buildings/params';
 import { targets, windingAgreement } from './buildings-helpers';
 import { GeoBuilder } from '../src/buildings/builder';
 import { palaceGrounds, palacePlan } from '../src/buildings/palace';
+import { palaceForm } from '../src/buildings/gyeongbok';
 
 const NEW: Archetype[] = [
   'taperTower',
@@ -228,5 +229,29 @@ describe('palace garden across LODs', () => {
     const t1 = treeVerts(1);
     expect(t1.size).toBeGreaterThan(0);
     for (const v of t1) expect(t0.has(v)).toBe(true);
+  });
+});
+
+describe('Gyeongbokgung hall forms', () => {
+  it('maps hall ids to their rank forms', () => {
+    expect(palaceForm('geunjeongjeon', 'hall')).toBe('main');
+    expect(palaceForm('gangnyeongjeon', 'hall')).toBe('quarters');
+    expect(palaceForm('gyeonghoeru', 'pavilion')).toBe('gyeonghoeru');
+    expect(palaceForm('geonchunmun', 'gate')).toBe('minor');
+  });
+
+  it('draws Gwanghwamun, Gyeonghoeru and Hyangwonjeong at every LOD, outward and in place', () => {
+    for (const id of ['gwanghwamun', 'gyeonghoeru', 'hyangwonjeong'] as const) {
+      const spec = LAYOUT.buildings.find((b) => b.tags.palaceId === id)!;
+      expect(spec, id).toBeDefined();
+      const { g0, g1 } = emitted(spec);
+      for (const g of [g0, g1]) {
+        expect(windingAgreement(g!), id).toBeGreaterThan(0.97);
+        g!.computeBoundingBox();
+        const bb = g!.boundingBox!;
+        expect(bb.max.y, id).toBeGreaterThanOrEqual(spec.baseY + spec.h - 0.5);
+        expect(Math.abs((bb.min.x + bb.max.x) / 2 - spec.x), id).toBeLessThan(2);
+      }
+    }
   });
 });
