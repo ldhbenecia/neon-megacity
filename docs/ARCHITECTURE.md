@@ -28,6 +28,7 @@ camera rig and HUD), so feature PRs never need to edit `src/main.ts`.
 | `infra`                                         | `InfraApi` published by infra during its init (highway curves, `deckHeightAt`); else undefined |
 | `render()`                                      | default `renderer.render`; atmosphere replaces with the post-processing composer               |
 | `onResize(fn)`                                  | register `(w, h) => {}`                                                                        |
+| `onQuality(fn)`                                 | register `(quality) => {}`, called when ux changes `env.quality` at runtime                    |
 
 ### `ctx.env` fields and owners
 
@@ -37,7 +38,7 @@ Only the owner writes a field; everyone else reads it. Types and comments live i
 | ------------------------------ | ---------- | ----------------------------------------------------------------------- |
 | `timeOfDay`                    | lighting\* | 0..1, 0 = midnight, 0.5 = noon. Initial value from `?time`              |
 | `timeLocked`                   | ux (main)  | true when `?time=` was given; lighting must not advance `timeOfDay`     |
-| `quality`                      | ux (main)  | `'high'` or `'low'` (`?quality=low`, CI SwiftShader); fixed at boot     |
+| `quality`                      | ux (main)  | `'high' \| 'medium' \| 'low'` (user, may change) or `'ci'` (CI, fixed)  |
 | `sunDirection`, `sunElevation` | lighting   | unit vector toward the sun, and its y                                   |
 | `dayFactor`, `nightFactor`     | lighting   | 0..1 smooth blend, sum to 1                                             |
 | `horizonColor`, `skyColor`     | lighting   | sky colors (palette)                                                    |
@@ -75,13 +76,13 @@ The only moon disc is drawn by lighting's sky dome; atmosphere draws stars (and 
 Parsed by `parseQuery` in `src/core/query.ts` (pure, unit tested) and applied by `src/main.ts`.
 They exist for deterministic screenshots, e2e tests and debugging.
 
-| param          | effect                                                                        |
-| -------------- | ----------------------------------------------------------------------------- |
-| `?time=0..1`   | initial `env.timeOfDay` and sets `env.timeLocked = true` (cycle paused)       |
-| `?cam=name`    | camera preset from `CAMERA_PRESETS`: overview, street, core, topdown, skyline |
-| `?rain=0..1`   | initial `env.rain` and `env.rainTarget`                                       |
-| `?nogui`       | hides the lil-gui panel                                                       |
-| `?quality=low` | software-GL tier for CI e2e: see below                                        |
+| param         | effect                                                                            |
+| ------------- | --------------------------------------------------------------------------------- |
+| `?time=0..1`  | initial `env.timeOfDay` and sets `env.timeLocked = true` (cycle paused)           |
+| `?cam=name`   | camera preset from `CAMERA_PRESETS`: overview, street, core, topdown, skyline     |
+| `?rain=0..1`  | initial `env.rain` and `env.rainTarget`                                           |
+| `?nogui`      | hides the lil-gui panel                                                           |
+| `?quality=ci` | software-GL test tier for CI e2e: see below; `high\|medium\|low` pick a user tier |
 
 Numbers are clamped to 0..1; invalid values are ignored.
 
@@ -98,7 +99,7 @@ Numbers are clamped to 0..1; invalid values are ignored.
 `maxPolarAngle`, so keep the target below the camera for an exact pose) and is dropped if that
 pulls it out of the distance limits. Like `?cam`, it disables the intro dolly and idle cinematic.
 
-`env.quality === 'low'` is the CI tier (SwiftShader renders the full city at a few fps). Quality
+`env.quality === 'ci'` is the CI tier (SwiftShader renders the full city at a few fps). Quality
 branches are owned by perf and stay minimal: DPR 0.5 and no MSAA (ux/main), no shadow map and one
 lazy 64 px PMREM bake (lighting), no post chain, rain, clouds or searchlights (atmosphere; fog and
 stars stay), flat river water without noise normals (terrain). All e2e specs use it through

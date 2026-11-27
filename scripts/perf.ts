@@ -1,4 +1,4 @@
-// Usage: npm run perf -- [label] [--swiftshader] [--no-build] [--quality=low] [--frames=240]
+// Usage: npm run perf -- [label] [--swiftshader] [--no-build] [--quality=ci|low|medium|high] [--frames=240]
 //   [--only=<substring>]
 // Boots the production build in headless Chromium on the real GPU (Metal ANGLE) for each scenario
 // and prints a markdown table (docs/PERF.md) plus perf-results/<label>.json.
@@ -50,7 +50,7 @@ if (!Number.isInteger(frames) || frames <= 0) {
 const only = opt('only');
 const label = (positional[0] ?? new Date().toISOString()).replace(/[^\p{L}\p{N}_.-]+/gu, '-');
 const PORT = 4175;
-const expectedDpr = quality === 'low' ? 0.5 : 1.5;
+const expectedDpr = quality === 'ci' ? 0.5 : 1.5;
 const BASE = `http://localhost:${PORT}/`;
 // 1600×900 at DPR 2 (a retina laptop): the app caps it to 1.5.
 const VIEWPORT = { width: 1600, height: 900 };

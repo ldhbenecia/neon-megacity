@@ -5,7 +5,7 @@ import { CITY, LAYOUT } from './city/layout';
 import { postEnabled } from './core/gl';
 import { NIGHT } from './core/palette';
 import { CAMERA_LIMITS, parseQuery } from './core/query';
-import type { CityModule, CityModuleInstance, Ctx } from './core/types';
+import type { CityModule, CityModuleInstance, Ctx, Quality } from './core/types';
 import * as lighting from './lighting/index';
 import * as terrain from './terrain/index';
 import * as buildings from './buildings/index';
@@ -40,7 +40,7 @@ function createRenderer(): THREE.WebGLRenderer {
   const make = (antialias: boolean): THREE.WebGLRenderer =>
     new THREE.WebGLRenderer({ antialias, powerPreference: 'high-performance' });
   const renderer = make(false);
-  if (quality === 'low' || postEnabled(quality, renderer)) return renderer;
+  if (quality === 'ci' || postEnabled(quality, renderer)) return renderer;
   renderer.dispose();
   renderer.forceContextLoss();
   return make(true);
@@ -82,6 +82,8 @@ async function boot(): Promise<void> {
   if (query.nogui || !debug) gui.hide();
 
   const resizeHandlers: ((w: number, h: number) => void)[] = [];
+  // Filled by modules; ux calls them after changing env.quality (the controller lands with ux).
+  const qualityHandlers: ((q: Quality) => void)[] = [];
   const resize = (): void => {
     const w = window.innerWidth;
     const h = window.innerHeight;
@@ -126,6 +128,9 @@ async function boot(): Promise<void> {
     render: () => renderer.render(scene, camera),
     onResize: (fn) => {
       resizeHandlers.push(fn);
+    },
+    onQuality: (fn) => {
+      qualityHandlers.push(fn);
     },
   };
 
