@@ -111,8 +111,10 @@ export {
 export { toWorld, toLocal, sideNormal } from './math';
 export { CORPS } from './archetypes';
 export {
-  PALACE_PLAN,
+  PALACE_BUILDINGS,
+  PALACE_AXIS,
   PALACE_AXIS_X,
+  palaceCenter,
   PALACE_GATE_HALF,
   palaceWallAt,
   palaceWallDistance,
