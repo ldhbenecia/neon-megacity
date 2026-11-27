@@ -263,6 +263,8 @@ export function createPost(ctx: Ctx): Post | null {
     );
     const s = bloomScaleFor(pixelRatio, tier);
     bloom.setSize(Math.max(2, Math.round(w * s)), Math.max(2, Math.round(h * s)));
+    // Resized targets come back with undefined contents: clear the skipped mips again.
+    staleMips = true;
     aspect.value = w / Math.max(1, h);
   }
 
