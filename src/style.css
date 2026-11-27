@@ -1,7 +1,9 @@
 :root {
   --c-bg: #020a0b;
   --c-glass: rgba(3, 20, 22, 0.66);
-  --c-glass-strong: rgba(3, 20, 22, 0.84);
+  /* Panel, card, timeline: >= 4.5:1 for body text over the brightest blurred scene. */
+  --c-glass-strong: rgba(3, 20, 22, 0.92);
+  --c-glass-solid: rgba(3, 20, 22, 0.97);
   --c-edge: rgba(25, 242, 230, 0.16);
   --c-edge-hi: rgba(25, 242, 230, 0.42);
   --c-cyan: #19f2e6;
@@ -15,6 +17,14 @@
   --gutter: max(16px, env(safe-area-inset-left));
   --gutter-r: max(16px, env(safe-area-inset-right));
   --bottom: max(16px, env(safe-area-inset-bottom));
+  --top: max(12px, env(safe-area-inset-top));
+  /* Floating HUD layers, low to high. One place so no two surfaces fight over the same spot. */
+  --z-base: 1;
+  --z-panel: 2;
+  --z-card: 3;
+  --z-toast: 4;
+  --z-help: 5;
+  --z-debug: 10;
   --glass-shadow:
     inset 0 0 0 1px var(--c-edge), inset 0 1px 0 rgba(255, 255, 255, 0.04),
     0 8px 28px rgba(0, 0, 0, 0.45);
@@ -97,10 +107,25 @@ body {
   -webkit-backdrop-filter: blur(10px) saturate(1.2);
 }
 
+.panel,
+.card,
+.timeline {
+  backdrop-filter: blur(16px) saturate(1.1);
+  -webkit-backdrop-filter: blur(16px) saturate(1.1);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .panel,
+  .card,
+  .timeline,
+  .help {
+    background: var(--c-glass-solid);
+  }
+}
+
 .hud-brand {
   position: absolute;
   left: var(--gutter);
-  top: 16px;
+  top: calc(var(--top) + 4px);
   display: flex;
   align-items: center;
   gap: 10px;
@@ -140,7 +165,8 @@ body {
 .panel-toggle {
   position: absolute;
   right: var(--gutter-r);
-  top: 12px;
+  top: var(--top);
+  z-index: var(--z-panel);
   display: grid;
   place-items: center;
   width: 40px;
@@ -173,10 +199,15 @@ body {
 .panel {
   position: absolute;
   right: var(--gutter-r);
-  top: 60px;
-  width: 288px;
-  max-height: calc(100vh - 160px);
+  top: calc(var(--top) + 48px);
+  z-index: var(--z-panel);
+  box-sizing: border-box;
+  width: 316px;
+  max-height: calc(100vh - var(--top) - 48px - var(--bottom) - 76px);
+  max-height: calc(100dvh - var(--top) - 48px - var(--bottom) - 76px);
   overflow: auto;
+  overscroll-behavior: contain;
+  background: var(--c-glass-strong);
   padding: 14px;
   border-radius: 16px;
   pointer-events: auto;
@@ -350,6 +381,8 @@ body {
 
 .timeline {
   position: absolute;
+  z-index: var(--z-base);
+  background: var(--c-glass-strong);
   left: 50%;
   bottom: var(--bottom);
   translate: -50% 0;
@@ -500,6 +533,7 @@ body {
 
 .hint {
   position: absolute;
+  z-index: var(--z-base);
   left: 50%;
   bottom: calc(var(--bottom) + 70px);
   translate: -50% 0;
@@ -542,12 +576,15 @@ body {
 
 .help {
   position: absolute;
+  z-index: var(--z-help);
   left: 50%;
   top: 50%;
   translate: -50% -50%;
   width: min(600px, calc(100vw - 32px));
-  max-height: calc(100vh - 140px);
+  max-height: calc(100vh - var(--top) - var(--bottom) - 120px);
+  max-height: calc(100dvh - var(--top) - var(--bottom) - 120px);
   overflow: auto;
+  overscroll-behavior: contain;
   box-sizing: border-box;
   padding: 18px 20px 20px;
   border-radius: 18px;
@@ -624,16 +661,19 @@ body {
 }
 
 .card {
+  /* Bottom left, above the timeline: clear of the panel (top right) on every wide screen. */
   position: absolute;
-  right: var(--gutter-r);
-  top: 50%;
+  z-index: var(--z-card);
+  left: var(--gutter);
+  bottom: calc(var(--bottom) + 64px);
   width: 240px;
   box-sizing: border-box;
   padding: 16px 16px 14px;
   border-radius: 16px;
+  background: var(--c-glass-strong);
   pointer-events: auto;
   opacity: 1;
-  translate: 0 -50%;
+  translate: 0 0;
   transition:
     opacity 250ms var(--ease),
     translate 250ms var(--ease);
@@ -652,7 +692,7 @@ body {
 .card[hidden] {
   display: block;
   opacity: 0;
-  translate: 16px -50%;
+  translate: 0 12px;
   visibility: hidden;
   transition:
     opacity 180ms var(--ease),
@@ -704,8 +744,9 @@ body {
 
 .toast {
   position: absolute;
+  z-index: var(--z-toast);
   left: 50%;
-  top: 14px;
+  top: calc(var(--top) + 2px);
   translate: -50% -4px;
   padding: 7px 14px;
   border-radius: 999px;
@@ -725,6 +766,7 @@ body {
 .touch-pad {
   display: none;
   position: absolute;
+  z-index: var(--z-base);
   right: var(--gutter-r);
   bottom: calc(var(--bottom) + 72px);
   flex-direction: column;
@@ -751,7 +793,7 @@ body {
 .hud-stats {
   position: fixed;
   left: var(--gutter);
-  top: 48px;
+  top: calc(var(--top) + 36px);
   margin: 0;
   padding: 6px 9px;
   border-radius: 8px;
@@ -764,7 +806,7 @@ body {
   font-variant-numeric: tabular-nums;
   color: #9fffe0;
   pointer-events: none;
-  z-index: 10;
+  z-index: var(--z-debug);
 }
 
 @media (pointer: coarse) {
@@ -806,21 +848,50 @@ body {
     width: auto;
   }
   .card {
-    top: auto;
-    bottom: calc(var(--bottom) + 64px);
-    left: var(--gutter);
     right: var(--gutter-r);
     width: auto;
-    translate: 0 0;
-  }
-  .card[hidden] {
-    translate: 0 12px;
   }
   .help-cols {
     grid-template-columns: 1fr;
   }
   .hint {
     display: none !important;
+  }
+}
+
+/*
+ * Overlay rules (state attributes set by src/ux on #hud). A surface hidden here keeps its own
+ * state and comes back when the covering one closes.
+ * - The hint never shares the screen with the panel, the card or the help sheet.
+ * - The help sheet is modal: card and touch pad step aside.
+ * - Compact screens (narrow or short; same query as controls.ts): panel and card take turns,
+ *   and the touch pad yields to both.
+ */
+#hud[data-panel='open'] .hint,
+#hud[data-card='open'] .hint,
+#hud[data-help='open'] .hint,
+#hud[data-help='open'] .card,
+#hud[data-help='open'] .touch-pad,
+#hud[data-panel='open'] .touch-pad {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+/* Debug ?stats readout (a sibling after #hud) steps aside for the help sheet, and on compact
+   screens for the panel and the card too. */
+#hud[data-help='open'] ~ .hud-stats {
+  visibility: hidden;
+}
+@media (max-width: 640px), (max-height: 520px) {
+  #hud[data-panel='open'] ~ .hud-stats,
+  #hud[data-card='open'] ~ .hud-stats {
+    visibility: hidden;
+  }
+  #hud[data-panel='open'] .card,
+  #hud[data-card='open'] .touch-pad {
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
   }
 }
 

@@ -41,7 +41,7 @@ import {
   type Tier,
   type Vec2,
 } from '../src/city/layout';
-import { MAX_SLENDER, fitScale } from '../src/city/generate';
+import { MAX_SLENDER, SKY_LANE_CLEAR, SKY_LANE_MARGIN, fitScale } from '../src/city/generate';
 import {
   PALACE_RECT,
   TALL_GROUND,
@@ -88,11 +88,11 @@ describe('layout v3: determinism', () => {
       digest: digest(LAYOUT),
     }).toMatchInlineSnapshot(`
       {
-        "blocks": 1403,
-        "buildings": 5653,
-        "digest": "1864fc63",
-        "roads": 1175,
-        "slots": 3436,
+        "blocks": 1402,
+        "buildings": 5662,
+        "digest": "42ae98f3",
+        "roads": 1176,
+        "slots": 3452,
       }
     `);
   });
@@ -734,6 +734,13 @@ describe('layout v3: water and islands', () => {
       }
     }
     for (const s of LAYOUT.slots) expect(s.y, s.kind).toBeGreaterThan(RIVER.waterY + 0.5);
+    // At-grade highways too (elevated decks may cross water).
+    for (const hw of LAYOUT.highways.filter((h) => h.kind === 'atGrade')) {
+      for (const p of highwaySamples(hw, 4)) {
+        if (Math.abs(p.x) > CITY.halfX || Math.abs(p.z) > CITY.halfZ) continue;
+        expect(surfaceHeight(p.x, p.z), `${hw.id} at ${Math.round(p.x)}`).toBeGreaterThan(-1);
+      }
+    }
   }, 60_000);
 
   it('keeps island outlines and the 샛강 centerline free of self-intersections', () => {
@@ -839,6 +846,34 @@ describe('layout v3: mountains stay wooded', () => {
       for (let z = r.z0; z <= r.z1; z += 11) expect(terrainHeight(x, z)).toBe(0);
     }
     expect(LAYOUT.roads.filter((r) => r.zoneId === 'palace')).toHaveLength(0);
+  });
+});
+
+describe('layout v3: sky lanes', () => {
+  it('routes flying traffic around the clusters and over the river, clear of every tower', () => {
+    const lanes = LAYOUT.skyLanes;
+    expect(lanes.map((l) => l.id)).toEqual([
+      'sky-yongsan-ring',
+      'sky-yeouido-ring',
+      'sky-gangnam-loop',
+      'sky-river',
+    ]);
+    for (const lane of lanes) {
+      expect(lane.points.length, lane.id).toBeGreaterThanOrEqual(8);
+      expect(lane.altitude[1]).toBeGreaterThan(lane.altitude[0]);
+      const n = lane.points.length;
+      const segs = lane.closed ? n : n - 1;
+      for (const b of B) {
+        let d = Infinity;
+        for (let i = 0; i < segs; i++) {
+          d = Math.min(d, pointSegmentDistance(b, lane.points[i]!, lane.points[(i + 1) % n]!));
+        }
+        if (d > SKY_LANE_CLEAR + Math.hypot(b.w, b.d) / 2) continue;
+        expect(buildingTop(b) + SKY_LANE_MARGIN, `${lane.id} over ${b.id}`).toBeLessThanOrEqual(
+          lane.altitude[0] + 1e-6,
+        );
+      }
+    }
   });
 });
 

@@ -2,6 +2,7 @@
 // The centerline passes through the projected bridge centres (OSM, SEOUL.md 2.1 projection)
 // and stays strictly increasing in x, so `riverZ(x)` is a function of x.
 import { CatmullRomCurve3, Vector3 } from 'three';
+import { CALLS } from './calls';
 import { fbm1 } from './noise';
 import { clamp, closestSegmentT, pointInPolygon, pointSegmentDistance, smoothstep } from './math';
 import type { Island, Mountain, River, SideChannel, Vec2 } from './types';
@@ -174,7 +175,49 @@ const LB_NX = Math.ceil((2 * HALF_X + 800) / LB_CELL) + 1;
 const LB_NZ = Math.ceil((2 * HALF_Z + 800) / LB_CELL) + 1;
 const LB = new Float32Array(LB_NX * LB_NZ).fill(-1);
 
-/** Exact distance at the nearest grid corner and the offset to it, or null off the grid. */
+// The grid stores distances to a coarse polyline (every COARSE-th sample). The fine and coarse
+// polylines are within COARSE_EPS of each other both ways, so the fine distance is within
+// COARSE_EPS of the stored one; `off` carries that slack.
+const COARSE = 10;
+const COARSE_PTS: Vec2[] = SAMPLES.filter((_, i) => i % COARSE === 0 || i === SAMPLES.length - 1);
+
+function coarseDistance(x: number, z: number): number {
+  const p = { x, z };
+  let best = Infinity;
+  for (let i = 0; i < COARSE_PTS.length - 1; i++) {
+    best = Math.min(
+      best,
+      pointSegmentDistance(p, COARSE_PTS[i] as Vec2, COARSE_PTS[i + 1] as Vec2),
+    );
+  }
+  return best;
+}
+
+const COARSE_EPS = (() => {
+  let eps = 0;
+  for (let c = 0; c < COARSE_PTS.length - 1; c++) {
+    const a = COARSE_PTS[c] as Vec2;
+    const b = COARSE_PTS[c + 1] as Vec2;
+    const i0 = c * COARSE;
+    const i1 = Math.min(i0 + COARSE, SAMPLES.length - 1);
+    // fine -> chord: the fine vertices (the segments between them bulge less than the chord gap).
+    for (let i = i0; i <= i1; i++)
+      eps = Math.max(eps, pointSegmentDistance(SAMPLES[i] as Vec2, a, b));
+    // chord -> fine: points along the chord every metre.
+    const len = Math.hypot(b.x - a.x, b.z - a.z);
+    for (let t = 0; t <= len; t += 1) {
+      const q = { x: a.x + ((b.x - a.x) * t) / len, z: a.z + ((b.z - a.z) * t) / len };
+      let d = Infinity;
+      for (let i = i0; i < i1; i++) {
+        d = Math.min(d, pointSegmentDistance(q, SAMPLES[i] as Vec2, SAMPLES[i + 1] as Vec2));
+      }
+      eps = Math.max(eps, d);
+    }
+  }
+  return eps + 0.01;
+})();
+
+/** Distance at the nearest grid corner and the bound on |p − corner| plus slack, or null off the grid. */
 function cornerDistance(x: number, z: number): { d: number; off: number } | null {
   const i = Math.round((x - LB_X0) / LB_CELL);
   const k = Math.round((z - LB_Z0) / LB_CELL);
@@ -184,11 +227,11 @@ function cornerDistance(x: number, z: number): { d: number; off: number } | null
   const czw = LB_Z0 + k * LB_CELL;
   let d = LB[idx] as number;
   if (d < 0) {
-    d = nearestScan(cxw, czw, Infinity).d;
+    d = coarseDistance(cxw, czw);
     LB[idx] = d;
   }
   // + 0.01 covers the Float32 rounding of the cached value.
-  return { d, off: Math.hypot(x - cxw, z - czw) + 0.01 };
+  return { d, off: Math.hypot(x - cxw, z - czw) + COARSE_EPS + 0.01 };
 }
 
 /** A value ≤ the distance from (x, z) to the centerline (cheap, cached). */
@@ -320,6 +363,8 @@ function saetgangOffset(x: number): number {
 }
 
 const SAETGANG_WIDTH = 50;
+/** Shortest distance (m) of the 샛강 centerline offset from the south bank (clear of 올림픽대로). */
+const SAETGANG_MOUTH = 75;
 
 /**
  * z of the south embankment on the vertical line at x (first point south of the centerline where
@@ -342,7 +387,10 @@ function southBankZ(x: number): number {
 function saetgangLine(): Vec2[] {
   const pts: Vec2[] = [];
   for (let x = SAETGANG_X0; x <= SAETGANG_X1 + 1e-6; x += 12) {
-    pts.push({ x, z: southBankZ(x) + saetgangOffset(x) + SAETGANG_WIDTH / 2 - 20 });
+    // The mouths stop SAETGANG_MOUTH m south of the bank: 올림픽대로 runs along the bank on an
+    // embankment, and 샛강 passes under it in culverts rather than as open water.
+    const off = Math.max(saetgangOffset(x), SAETGANG_MOUTH);
+    pts.push({ x, z: southBankZ(x) + off + SAETGANG_WIDTH / 2 - 20 });
   }
   return pts;
 }
@@ -362,8 +410,19 @@ function sideChannelDistance(ch: SideChannel, x: number, z: number): number {
   if (x < first.x - 200 || x > last.x + 200 || z < first.z - 600 || z > first.z + 900) {
     return Infinity;
   }
-  let best = Infinity;
-  for (let i = 0; i < c.length - 1; i++) {
+  // The centerline is x-monotonic: scan outward from x until |dx| exceeds the best distance.
+  let lo = 0;
+  let hi = c.length - 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if ((c[mid] as Vec2).x <= x) lo = mid;
+    else hi = mid;
+  }
+  let best = pointSegmentDistance(p, c[lo] as Vec2, c[hi] as Vec2);
+  for (let i = lo - 1; i >= 0 && x - (c[i + 1] as Vec2).x < best; i--) {
+    best = Math.min(best, pointSegmentDistance(p, c[i] as Vec2, c[i + 1] as Vec2));
+  }
+  for (let i = hi; i < c.length - 1 && (c[i] as Vec2).x - x < best; i++) {
     best = Math.min(best, pointSegmentDistance(p, c[i] as Vec2, c[i + 1] as Vec2));
   }
   return best - ch.width / 2;
@@ -475,6 +534,7 @@ export const EMBANK_SLOPE = 4;
  * plain. Continuous everywhere.
  */
 export function terrainHeight(x: number, z: number): number {
+  CALLS.terrainHeight++;
   let h = 0;
   for (const m of MOUNTAINS) {
     const d = Math.hypot(x - m.peak.x, z - m.peak.z);
@@ -534,10 +594,13 @@ export function isForest(x: number, z: number): boolean {
  * and the water surface (y -4). Use it for props, cameras and anything resting on the ground.
  */
 export function surfaceHeight(x: number, z: number): number {
+  CALLS.surfaceHeight++;
   const isl = islandAt(x, z);
   if (isl && isl.kind !== 'land') return isl.y;
-  const { f: d, cx } = bankScan(x, z);
   const ds = sideChannelDistance(SAETGANG, x, z);
+  // Clearly beyond the embankment: the exact scan would take the terrain branch anyway.
+  if (ds >= 0 && riverBeyondBounds(x, z).lo >= 0) return terrainHeight(x, z);
+  const { f: d, cx } = bankScan(x, z);
   if (ds < 0) {
     const t = clamp(-ds / EMBANK_SLOPE, 0, 1);
     return RIVER.waterY * t;
