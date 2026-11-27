@@ -13,7 +13,7 @@ export const SEOUL_COLORS = {
   tile: 0x1a1d1f,
   palaceTile: 0x2a3036,
   dancheong: 0x1f5a55,
-  paving: [0x6e685e, 0x766f64, 0x645f57, 0x7c7468],
+  paving: [0x58544d, 0x5d5850, 0x55514b, 0x605a52],
   water: 0x0b1a1e,
   foliage: 0x16261c,
   column: 0x5a1a14,

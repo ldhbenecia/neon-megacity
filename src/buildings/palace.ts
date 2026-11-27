@@ -108,11 +108,18 @@ function paving(g: GeoBuilder, plan: PalacePlan, rng: Rng, lv: 0 | 1 | 2): void 
   }
 }
 
-function garden(g: GeoBuilder, plan: PalacePlan, north: number, rng: Rng, lv: 0 | 1 | 2): void {
+function garden(
+  g: GeoBuilder,
+  plan: PalacePlan,
+  north: number,
+  west: number,
+  rng: Rng,
+  lv: 0 | 1 | 2,
+): void {
   const zA = plan.z0 + 4;
   const zB = north - 4;
   if (zB - zA < 12) return;
-  const cx = plan.axisX + (plan.x1 - plan.axisX) * 0.45;
+  const cx = (west + plan.x1) / 2;
   const cz = (zA + zB) / 2;
   const r = Math.min(14, (zB - zA) / 2 - 2);
   const pts: V3[] = [];
@@ -137,7 +144,7 @@ function garden(g: GeoBuilder, plan: PalacePlan, north: number, rng: Rng, lv: 0 
   const n = lv === 0 ? 40 : 18;
   const leaf = plain(SEOUL_COLORS.foliage, 0.95);
   for (let i = 0; i < n; i++) {
-    const x = plan.x0 + 6 + rng.next() * (plan.x1 - plan.x0 - 12);
+    const x = west + rng.next() * (plan.x1 - 6 - west);
     const z = zA + rng.next() * (zB - zA);
     if (Math.hypot((x - cx) / 1.4, z - cz) < r + 4) continue;
     const s = 3 + rng.next() * 3;
@@ -217,8 +224,10 @@ export function palaceGrounds(g: GeoBuilder, plan: PalacePlan, lv: 0 | 1 | 2): v
     smallHall(g, x, z, 10 + rng.next() * 6, 7 + rng.next() * 3, 4 + rng.next() * 1.5, 0, lv);
   }
 
-  const lastHall = plan.halls[plan.halls.length - 1] as BuildingSpec;
-  if (lv < 2) garden(g, plan, lastHall.z - lastHall.d / 2 - 6, rng, lv);
+  // Rear garden in the east of the innermost court, clear of the axis halls.
+  const inner = gaps[gaps.length - 1] ?? main.z - main.d / 2 - 8;
+  const axisHalf = Math.max(...plan.halls.map((h) => h.w / 2)) + 6;
+  if (lv < 2) garden(g, plan, inner, plan.axisX + axisHalf, rng, lv);
   // Faint warm light along the inside of the outer wall base.
   if (lv === 0) {
     const s = glow(SEOUL_COLORS.uplight, 0.25);
