@@ -195,3 +195,19 @@ for (const vp of VIEWPORTS) {
     });
   });
 }
+
+test('the title row never reaches the panel toggle, even with the longest zone name in fly mode', async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  // 용산 국제업무지구 is the longest zone name; fly mode adds its label to the same row.
+  await page.goto(app('nogui&stats&district=yongsan&time=0'));
+  await waitForCity(page);
+  await expect(page.locator('#hud-district')).toHaveText('용산 국제업무지구');
+  await page.keyboard.press('f');
+  await waitMode(page, 'fly');
+  for (const vp of VIEWPORTS) {
+    await page.setViewportSize({ width: vp.width, height: vp.height });
+    await expectNoOverlap(page, `title row at ${vp.width}x${vp.height}`);
+  }
+});
