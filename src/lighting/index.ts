@@ -1,11 +1,13 @@
 import * as THREE from 'three';
-import { paletteAt, type PaletteSample, type RGB } from '../core/palette';
+import { NIGHT_FILL_AMBIENT, paletteAt, type PaletteSample, type RGB } from '../core/palette';
 import type { Ctx, CityModuleInstance } from '../core/types';
 import { createEnvMaps } from './envMap';
 import { createSky } from './sky';
 import {
   advanceTime,
   dayFactorAt,
+  fillColorAt,
+  fillFactorAt,
   envKeyAt,
   keyLightAt,
   moonDirectionAt,
@@ -73,6 +75,10 @@ export function init(ctx: Ctx): CityModuleInstance {
   const moonDir = new THREE.Vector3();
   const horizonAnti = new THREE.Color();
   env.horizonAntiColor = horizonAnti;
+  const fillColor = new THREE.Color(0, 0, 0);
+  const fillRgb: [number, number, number] = [0, 0, 0];
+  env.fillColor = fillColor;
+  env.fillFactor = 0;
   const lastShadowSun = new THREE.Vector3(0, -1, 0);
   let lastShadowFrame: ShadowFrame | null = null;
   let secondsSinceShadow = 0;
@@ -121,10 +127,14 @@ export function init(ctx: Ctx): CityModuleInstance {
     moonDirectionAt(t, moonDir);
     env.dayFactor = dayFactorAt(env.sunElevation);
     env.nightFactor = 1 - env.dayFactor;
+    env.fillFactor = fillFactorAt(env.sunElevation);
 
     setSrgb(env.horizonColor, pal.horizonColor);
     setSrgb(env.skyColor, pal.skyColor);
     setSrgb(horizonAnti, pal.horizonAntiSun);
+    const zenith = env.skyColor;
+    fillColorAt(env.sunElevation, [zenith.r, zenith.g, zenith.b], NIGHT_FILL_AMBIENT, fillRgb);
+    fillColor.setRGB(fillRgb[0], fillRgb[1], fillRgb[2]);
     env.neonGain = pal.neonGain;
     env.windowLitRatio = pal.windowLitRatio;
 

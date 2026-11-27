@@ -6,5 +6,6 @@ export default defineConfig({
     exclude: ['tests/e2e/**'],
     // Layout generation takes about a second and stretches past the 5 s default on a loaded machine.
     testTimeout: 30_000,
+    setupFiles: ['tests/setup-layout.ts'],
   },
 });
