@@ -41,7 +41,14 @@ import {
   type Tier,
   type Vec2,
 } from '../src/city/layout';
-import { MAX_SLENDER, SKY_LANE_CLEAR, SKY_LANE_MARGIN, fitScale } from '../src/city/generate';
+import {
+  MAX_SLENDER,
+  PALACE_PLAN,
+  SKY_LANE_CLEAR,
+  SKY_LANE_MARGIN,
+  fitScale,
+} from '../src/city/generate';
+import { PALACE_HALLS } from '../src/city/archetypes';
 import {
   PALACE_RECT,
   TALL_GROUND,
@@ -90,7 +97,7 @@ describe('layout v3: determinism', () => {
       {
         "blocks": 1402,
         "buildings": 5662,
-        "digest": "5f1f9f53",
+        "digest": "52d66e11",
         "roads": 1176,
         "slots": 3452,
       }
@@ -816,10 +823,21 @@ describe('layout v3: building names', () => {
     expect(named('hongdae').some((n) => /전자상가|시장/u.test(n))).toBe(false);
     expect(named('seongsu').some((n) => n.includes('벽돌창고'))).toBe(false);
     expect(named('jongno').some((n) => n.includes('트레이드센터'))).toBe(false);
-    // Complexes group neighbouring slabs and are numbered per strip.
+    expect(PALACE_PLAN.length).toBe(PALACE_HALLS.length);
+    // Complexes group up to 4 neighbouring slabs of one row, numbered per strip.
     const banpo = B.filter((b) => b.zoneId === 'apt-banpo' && b.archetype === 'apartmentSlab');
     expect(banpo[0]?.tags.name).toBe('반포 1단지 101동');
-    expect(new Set(banpo.map((b) => b.tags.complex)).size).toBe(Math.ceil(banpo.length / 4));
+    const byComplex = new Map<string, typeof B>();
+    for (const b of B.filter((x) => x.archetype === 'apartmentSlab')) {
+      const k = b.tags.complex as string;
+      byComplex.set(k, [...(byComplex.get(k) ?? []), b]);
+    }
+    for (const [k, slabs] of byComplex) {
+      expect(slabs.length, k).toBeLessThanOrEqual(4);
+      // Same row: rows sit at bank distances 72 m apart, slabs of one row share theirs.
+      const off = slabs.map((b) => riverSignedDistance(b.x, b.z));
+      expect(Math.max(...off) - Math.min(...off), k).toBeLessThan(36);
+    }
     for (const b of B.filter((x) => x.archetype === 'hillHouse')) {
       expect(b.tags.name).toMatch(/^[^·]+ \d+번지$/u);
     }

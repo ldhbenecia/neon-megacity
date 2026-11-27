@@ -258,7 +258,7 @@ export const CORPS = [
 ] as const;
 
 /** Fictional halls (gate, throne, council, residence): not copies of any real palace's names. */
-const PALACE_HALLS = ['한빛문', '정운전', '사현전', '평안전'] as const;
+export const PALACE_HALLS = ['한빛문', '정운전', '사현전', '평안전'] as const;
 const OLDTOWN_SUFFIX = ['빌딩', '회관', '상사', '인쇄소', '귀금속', '악기상가'];
 const NIGHTLIFE_SUFFIX = ['라운지', '클럽', '포차', '라이브홀', '빌딩'];
 const BRICK_SUFFIX = [' 공방', ' 로스터리', ' 스튜디오', '제화', ' 창고'];
@@ -267,8 +267,8 @@ const SHOWROOM_SUFFIX = [' 쇼룸', ' 갤러리', ' 플래그십', ' 아틀리�
 /**
  * Fictional building name for the building card. `zone` gives the display name (real Seoul
  * place names are allowed) and kind, so names follow the quarter's character (SEOUL.md 4.2):
- * 종로's printers and jewellers, 홍대's clubs, 성수's workshops, 청담's showrooms. `index` is the
- * building's order among the palace halls, south to north.
+ * 종로's printers and jewellers, 홍대's clubs, 성수's workshops, 청담's showrooms. `index` is a
+ * palace hall's slot in PALACE_PLAN.
  */
 export function fictionalName(
   rng: Rng,
@@ -295,7 +295,7 @@ export function fictionalName(
     case 'showroomBox':
       return `${stem}${rng.pick(SHOWROOM_SUFFIX)}`;
     case 'palaceHall':
-      return PALACE_HALLS[Math.min(index, PALACE_HALLS.length - 1)] as string;
+      return PALACE_HALLS[index] ?? `${stem}전`;
     case 'warehouse':
       return `운해물류 제${rng.int(1, 40)}창고`;
     case 'pavilion':

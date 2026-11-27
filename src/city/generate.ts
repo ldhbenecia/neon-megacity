@@ -369,6 +369,13 @@ interface Lot {
   tower?: { h: number; tier: number };
   /** Set on bank-row apartment lots: clear gap (m) to the next row toward the land. */
   rowGap?: number;
+  /**
+   * Set on bank-row apartment lots: unbroken run of neighbouring slabs (new per row, and again
+   * after a rejected slab), so a named complex never spans a row change or a gap.
+   */
+  aptRun?: number;
+  /** Set on palace hall lots: slot in the south-to-north hall plan (names follow the slot). */
+  hall?: number;
 }
 
 export const SIDEWALK: Record<string, number> = {
@@ -735,7 +742,9 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
   ): void {
     const side = zoneSide(zone.id) === 'north' ? -1 : 1;
     const first = Math.max(bank.o0, RIVER.bandWidth) + 4 + SLAB_DEPTH / 2;
+    let run = 0;
     for (let o = first; o + SLAB_DEPTH / 2 <= bank.o1; o += ROW_PITCH) {
+      run++;
       // Seed on the row as close to the middle of the strip (world x) as the normal offsets
       // reach (they bunch up or spread out on bends), then trace both ways.
       const mid = (bank.x0 + bank.x1) / 2;
@@ -778,7 +787,10 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
         const len = Math.hypot(b.x - a.x, b.z - a.z);
         const rotY = Math.atan2(-(b.z - a.z), b.x - a.x);
         const obb: Obb = { x: c.x, z: c.z, hw: len / 2, hd: SLAB_DEPTH / 2, rotY };
-        if (!accept(obb, zone)) continue;
+        if (!accept(obb, zone)) {
+          run++;
+          continue;
+        }
         const blockId = blocks.length;
         blocks.push({
           id: blockId,
@@ -792,7 +804,7 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
           buildingIds: [],
         });
         lotHash.insert(lots.length, obbBounds(obb));
-        lots.push({ obb, zone, blockId, rowGap: ROW_PITCH - SLAB_DEPTH });
+        lots.push({ obb, zone, blockId, rowGap: ROW_PITCH - SLAB_DEPTH, aptRun: run });
       }
     }
   }
@@ -803,14 +815,7 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
    */
   function palaceHalls(zone: DistrictZone): void {
     const cx = (PALACE_RECT.x0 + PALACE_RECT.x1) / 2;
-    // [distance north of the south wall, width, depth, height] per hall.
-    const halls: readonly (readonly [number, number, number, number])[] = [
-      [20, 34, 12, 10],
-      [62, 48, 26, 18],
-      [104, 40, 22, 15],
-      [138, 30, 16, 11],
-    ];
-    for (const [k, w, d, h] of halls) {
+    for (const [hall, [k, w, d, h]] of PALACE_PLAN.entries()) {
       const obb: Obb = { x: cx, z: PALACE_RECT.z1 - k, hw: w / 2, hd: d / 2, rotY: 0 };
       if (!accept(obb, zone)) continue;
       const blockId = blocks.length;
@@ -826,7 +831,7 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
         buildingIds: [],
       });
       lotHash.insert(lots.length, obbBounds(obb));
-      lots.push({ obb, zone, blockId, tower: { h, tier: 0 } });
+      lots.push({ obb, zone, blockId, tower: { h, tier: 0 }, hall });
     }
   }
 
@@ -1453,6 +1458,17 @@ function frontSide(
 
 const STOREFRONT_KINDS = new Set<DistrictZone['kind']>(['core', 'megacore', 'midtown', 'corridor']);
 
+/**
+ * Palace halls south to north (gate, throne, council, residence), one per PALACE_HALLS name:
+ * [distance north of the south wall, width, depth, height].
+ */
+export const PALACE_PLAN: readonly (readonly [number, number, number, number])[] = [
+  [20, 34, 12, 10],
+  [62, 48, 26, 18],
+  [104, 40, 22, 15],
+  [138, 30, 16, 11],
+];
+
 /** Apartment slabs per named complex (단지). */
 const COMPLEX_SIZE = 4;
 
@@ -1471,8 +1487,7 @@ function buildSpecs(
   const rng = zoneRng(seed, 'specs');
   applyBlockHeightRules(drafts, rng);
 
-  const aptCount = new Map<string, number>();
-  let palaceIndex = 0;
+  const aptState = new Map<string, { run: number; n: number; dongs: number }>();
   return drafts.map((d, id): BuildingSpec => {
     const { lot } = d;
     const obb = draftObb(d);
@@ -1499,12 +1514,7 @@ function buildSpecs(
         d.archetype === 'showroomBox' ||
         (STOREFRONT_KINDS.has(lot.zone.kind) && rng.chance(0.4)) ||
         (d.archetype === 'hillHouse' && rng.chance(0.1)),
-      name: fictionalName(
-        rng,
-        d.archetype,
-        lot.zone,
-        d.archetype === 'palaceHall' ? palaceIndex++ : 0,
-      ),
+      name: fictionalName(rng, d.archetype, lot.zone, lot.hall ?? 0),
     };
     if (d.archetype === 'hillHouse' || d.archetype === 'sangga') {
       if (rng.chance(0.07)) tags.cross = true;
@@ -1514,13 +1524,17 @@ function buildSpecs(
       tags.name = `${d.corp} 타워`;
     }
     if (d.archetype === 'apartmentSlab') {
-      // Every slab is its own block; consecutive slabs of a strip (traced along the bank) form
-      // complexes of COMPLEX_SIZE, numbered per strip: 반포 1단지 101~104동, 반포 2단지 ...
-      const c = aptCount.get(lot.zone.id) ?? 0;
-      aptCount.set(lot.zone.id, c + 1);
-      const n = Math.floor(c / COMPLEX_SIZE) + 1;
-      const dong = 101 + (c % COMPLEX_SIZE);
-      tags.complex = `${lot.zone.name} ${n}단지`;
+      // Neighbouring slabs of one run form complexes of up to COMPLEX_SIZE, numbered per strip:
+      // 반포 1단지 101~104동, 반포 2단지 ... A new row or a gap starts a new complex.
+      const prev = aptState.get(lot.zone.id);
+      const run = lot.aptRun ?? -lot.blockId - 1;
+      const fresh = !prev || prev.run !== run || prev.dongs >= COMPLEX_SIZE;
+      const cur = fresh
+        ? { run, n: (prev?.n ?? 0) + 1, dongs: 1 }
+        : { run, n: prev.n, dongs: prev.dongs + 1 };
+      aptState.set(lot.zone.id, cur);
+      const dong = 100 + cur.dongs;
+      tags.complex = `${lot.zone.name} ${cur.n}단지`;
       tags.dong = dong;
       tags.name = `${tags.complex} ${dong}동`;
     }
