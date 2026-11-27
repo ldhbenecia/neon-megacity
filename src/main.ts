@@ -15,6 +15,9 @@ import * as atmosphere from './atmosphere/index';
 import { startAnalytics, track } from './ux/analytics';
 import { createGui } from './ux/gui';
 import { createLoader, initUx, nextFrame, parseUxQuery } from './ux/index';
+
+/** Without ?time= the visit opens just before sunset (18:14) and runs into the night. */
+const START_TIME = 0.76;
 import { QUALITY_STORAGE_KEY, storedTier, tierFromRenderer } from './ux/quality';
 
 const BOOT_WEIGHTS = { setup: 5, compile: 15, firstFrame: 3 } as const;
@@ -136,7 +139,7 @@ async function boot(): Promise<void> {
     LAYOUT,
     debug: { nan: uxQuery.nan },
     env: {
-      timeOfDay: query.time ?? 0.9,
+      timeOfDay: query.time ?? START_TIME,
       timeLocked: query.time !== undefined,
       quality,
       sunDirection: new THREE.Vector3(0, -1, 0),
