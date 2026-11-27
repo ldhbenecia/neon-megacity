@@ -51,6 +51,7 @@ import {
 } from '../src/city/river';
 import {
   hashString,
+  obbCorners,
   obbOverlap,
   obbSegmentDistance,
   pointSegmentDistance,
@@ -847,6 +848,19 @@ describe('layout v3: mountain slopes', () => {
 });
 
 describe('layout v3: mountains stay wooded', () => {
+  it('seats every building at its lowest footprint corner (slopes get a retaining base)', () => {
+    for (const b of B) {
+      const corners = obbCorners(obb(b)).map((p) => terrainHeight(p.x, p.z));
+      expect(b.baseY, b.id.toString()).toBeLessThanOrEqual(Math.min(...corners) + 1e-6);
+    }
+  });
+
+  it("keeps 남산's summit pad clear for the mast", () => {
+    const n = MOUNTAINS.find((m) => m.id === 'namsan')!;
+    expect(isForest(n.peak.x, n.peak.z)).toBe(true);
+    for (const b of B) expect(Math.hypot(b.x - n.peak.x, b.z - n.peak.z)).toBeGreaterThan(35);
+  });
+
   it('builds nothing on slopes over 25 % or above the forest line', () => {
     for (const b of B) {
       const o = obb(b);
