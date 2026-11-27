@@ -330,11 +330,9 @@ export function pierBlocksHighway(c: ColumnInstance, highways: readonly HwPath[]
 const MIN_PIER_H = 1.5;
 
 /**
- * River piers (`w` × `d`, up to `topY`, a height or one per station) and ground piers under the
- * approaches and a stop island.
- * Returns the river stations actually placed.
+ * Axis-aligned box around a bridge and its approaches, padded by `pad` (m). Every pier station lies
+ * between the landings (tests check that each placed column is inside).
  */
-/** Axis-aligned box around a bridge and its approaches, padded by `pad` (m). */
 function footprintBox(
   b: Bridge,
   pad: number,
@@ -347,6 +345,11 @@ function footprintBox(
   };
 }
 
+/**
+ * River piers (`w` × `d`, up to `topY`, a height or one per station) and ground piers under the
+ * approaches and a stop island.
+ * Returns the river stations actually placed.
+ */
 export function pushPiers(
   b: Bridge,
   f: BridgeFrame,

@@ -52,8 +52,8 @@ export interface DeckRing {
 /** Path samples of a highway for nearest-point queries. */
 export interface HwPath {
   hw: Highway;
-  curve: CatmullRomCurve3;
-  pts: V3[];
+  readonly curve: CatmullRomCurve3;
+  readonly pts: readonly V3[];
   minX: number;
   maxX: number;
   minZ: number;
@@ -82,7 +82,7 @@ function drawnRange(pts: readonly V3[]): [number, number] {
   return best;
 }
 
-/** Path samples of `hw` every `step` m; the default step is computed once per highway object. */
+/** Path samples of `hw` every `step` m. Shared per Highway object: do not mutate a highway after the first call. */
 export function hwPath(hw: Highway, step = RING_STEP): HwPath {
   if (step !== RING_STEP) return makePath(hw, step);
   let path = pathCache.get(hw);
