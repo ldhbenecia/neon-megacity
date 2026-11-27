@@ -358,12 +358,14 @@ export function init(ctx: Ctx): CityModuleInstance {
   const api: BuildingsApi = {
     group,
     specs,
-    // Landmark towers are drawn from their own geometry, not the tier boxes buildingFaces sees,
-    // so they expose no faces and neon leaves them alone.
+    // Landmark towers are drawn from their own geometry, not the tier boxes buildingFaces sees:
+    // their faces are not usable for signs.
     faces: specs.map((s) =>
-      s.tags.landmark
-        ? []
-        : buildingFaces(s).map((f) => ({ ...f, blank: faceBlank(s, f.side, onStreet) })),
+      buildingFaces(s).map((f) => ({
+        ...f,
+        blank: faceBlank(s, f.side, onStreet),
+        usable: !s.tags.landmark,
+      })),
     ),
     maxHeight: specs.reduce((m, s) => Math.max(m, buildingTop(s)), 0),
     roadY: ROAD_Y,
