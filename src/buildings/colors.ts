@@ -52,3 +52,13 @@ export const FACADE_DAY = {
   concreteGain: 0.7,
   metalGain: 0.25,
 } as const;
+
+/**
+ * Warm bounce on facades at night from shop fronts and street lights, fading with height (linear
+ * HDR, far below bloom). The teal ambient floor is NIGHT_FILL_AMBIENT in core/palette.ts, shared
+ * with the ground.
+ */
+export const NIGHT_FILL = {
+  bounce: [0.012, 0.0075, 0.0035],
+  bounceFalloff: 9,
+} as const;

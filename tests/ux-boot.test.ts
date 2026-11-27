@@ -98,6 +98,12 @@ describe('adaptive DPR (11)', () => {
 });
 
 describe('parseUxQuery', () => {
+  it('turns on the NaN view only together with ?debug', () => {
+    expect(parseUxQuery('?debug&nan').nan).toBe(true);
+    expect(parseUxQuery('?nan').nan).toBe(false);
+    expect(parseUxQuery('?debug&nan=0').nan).toBe(false);
+  });
+
   it('parses ?pose= only when it has 6 finite numbers', () => {
     expect(parseUxQuery('?pose=100,200,300,4,5,6').pose).toEqual({
       position: { x: 100, y: 200, z: 300 },
@@ -120,7 +126,7 @@ describe('parseUxQuery', () => {
   });
 
   it('defaults', () => {
-    expect(parseUxQuery('')).toEqual({ hud: true, stats: false, debug: false });
+    expect(parseUxQuery('')).toEqual({ hud: true, stats: false, debug: false, nan: false });
   });
   it('parses preset, hud and stats', () => {
     expect(parseUxQuery('?preset=3&hud=0&stats=1&debug')).toEqual({
@@ -128,6 +134,7 @@ describe('parseUxQuery', () => {
       hud: false,
       stats: true,
       debug: true,
+      nan: false,
     });
     expect(parseUxQuery('?stats').stats).toBe(true);
     expect(parseUxQuery('?stats=0').stats).toBe(false);
