@@ -196,18 +196,48 @@ for (const vp of VIEWPORTS) {
   });
 }
 
-test('the title row never reaches the panel toggle, even with the longest zone name in fly mode', async ({
-  page,
-}) => {
-  test.setTimeout(240_000);
-  // 용산 국제업무지구 is the longest zone name; fly mode adds its label to the same row.
-  await page.goto(app('nogui&stats&district=yongsan&time=0'));
-  await waitForCity(page);
-  await expect(page.locator('#hud-district')).toHaveText('용산 국제업무지구');
-  await page.keyboard.press('f');
-  await waitMode(page, 'fly');
-  for (const vp of VIEWPORTS) {
-    await page.setViewportSize({ width: vp.width, height: vp.height });
-    await expectNoOverlap(page, `title row at ${vp.width}x${vp.height}`);
-  }
-});
+for (const touch of [true, false]) {
+  test.describe(`title row on ${touch ? 'touch' : 'mouse'} screens`, () => {
+    test.use({ viewport: { width: 390, height: 844 }, hasTouch: touch, isMobile: touch });
+
+    test('never reaches the panel toggle and never cuts the mode label', async ({ page }) => {
+      test.setTimeout(240_000);
+      // 용산 국제업무지구 is the longest zone name; fly mode adds its label to the same row.
+      await page.goto(app('nogui&stats&district=yongsan&time=0'));
+      await waitForCity(page);
+      await expect(page.locator('#hud-district')).toHaveText('용산 국제업무지구');
+      await page.keyboard.press('f');
+      await waitMode(page, 'fly');
+      for (const vp of [{ width: 320, height: 640 }, ...VIEWPORTS]) {
+        const at = `${vp.width}x${vp.height}`;
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        await expectNoOverlap(page, `title row at ${at}`);
+        const row = await page.evaluate(() => {
+          const brand = document.querySelector<HTMLElement>('.hud-brand')!;
+          const toggle = document.getElementById('panel-toggle')!.getBoundingClientRect();
+          const right = (id: string): number => {
+            const el = document.getElementById(id);
+            return el && !el.hidden ? el.getBoundingClientRect().right : 0;
+          };
+          return {
+            overflow: brand.scrollWidth - brand.clientWidth,
+            mode: right('hud-mode'),
+            exit: right('hud-mode-exit'),
+            toggle: toggle.left,
+          };
+        });
+        expect(row.overflow, `title row overflows at ${at}`).toBeLessThanOrEqual(0.5);
+        expect(row.mode, `mode label reaches the toggle at ${at}`).toBeLessThan(row.toggle);
+        expect(row.exit, `× reaches the toggle at ${at}`).toBeLessThan(row.toggle);
+      }
+      const exit = page.locator('#hud-mode-exit');
+      if (touch) {
+        await expect(exit).toBeVisible();
+        await exit.click();
+        await waitMode(page, 'orbit');
+      } else {
+        await expect(exit).toBeHidden();
+      }
+    });
+  });
+}

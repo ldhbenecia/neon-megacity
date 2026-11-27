@@ -64,6 +64,10 @@ export function initUx(ctx: Ctx, opts: UxOptions): Ux {
   const hud = createHud({
     visible: q.hud,
     onDeselect: () => rig.select(null),
+    onModeExit: () => {
+      if (rig.mode === 'fly') rig.setFly(false);
+      else if (rig.mode === 'cinematic') rig.setCinematic(false);
+    },
   });
   const initial = custom
     ? custom

@@ -18,6 +18,8 @@
   --gutter-r: max(16px, env(safe-area-inset-right));
   --bottom: max(16px, env(safe-area-inset-bottom));
   --top: max(12px, env(safe-area-inset-top));
+  --toggle-size: 40px;
+  --touch-target: 44px;
   /* Floating HUD layers, low to high. One place so no two surfaces fight over the same spot. */
   --z-base: 1;
   --z-panel: 2;
@@ -129,8 +131,8 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
-  /* Never reach the panel toggle (44 px at the right gutter, plus 12 px air). */
-  max-width: calc(100vw - var(--gutter) - var(--gutter-r) - 56px);
+  /* Never reach the panel toggle (its size plus 12 px air). */
+  max-width: calc(100vw - var(--gutter) - var(--gutter-r) - var(--toggle-size) - 12px);
   min-width: 0;
 }
 .brand-mark {
@@ -157,6 +159,7 @@ body {
 .hud-district {
   flex: 0 1 auto;
   min-width: 0;
+  max-width: 34vw;
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--c-dim);
@@ -171,10 +174,8 @@ body {
   color: var(--c-faint);
 }
 .hud-mode {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* The zone name gives way first: the mode label (how to leave the mode) is never cut. */
+  flex: 0 0 auto;
   white-space: nowrap;
   padding: 2px 9px;
   border-radius: 999px;
@@ -186,6 +187,23 @@ body {
 .hud-mode[hidden] {
   display: none;
 }
+.hud-mode-exit {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: var(--touch-target);
+  height: var(--touch-target);
+  margin: -12px 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--c-cyan);
+  pointer-events: auto;
+}
+.hud-mode-exit[hidden] {
+  display: none;
+}
 
 .panel-toggle {
   position: absolute;
@@ -194,8 +212,8 @@ body {
   z-index: var(--z-panel);
   display: grid;
   place-items: center;
-  width: 40px;
-  height: 40px;
+  width: var(--toggle-size);
+  height: var(--toggle-size);
   padding: 0;
   border: 0;
   border-radius: 12px;
@@ -904,9 +922,8 @@ body {
   .hint {
     display: none !important;
   }
-  .panel-toggle {
-    width: 44px;
-    height: 44px;
+  :root {
+    --toggle-size: 44px;
   }
   .chips button,
   .switch,
@@ -965,6 +982,24 @@ body {
   opacity: 0;
   pointer-events: none;
 }
+/*
+ * Title row on narrow screens: while a mode label shows, the zone name steps aside (and on the
+ * narrowest phones the "// HANGANG" half of the brand), so the label and its × never reach the
+ * panel toggle.
+ */
+@media (max-width: 640px) {
+  #hud[data-mode='fly'] .hud-district,
+  #hud[data-mode='cinematic'] .hud-district {
+    display: none;
+  }
+}
+@media (max-width: 420px) {
+  #hud[data-mode='fly'] .brand-en,
+  #hud[data-mode='cinematic'] .brand-en {
+    display: none;
+  }
+}
+
 /* Debug ?stats readout (a sibling after #hud) steps aside for the help sheet, and on compact
    screens for the panel and the card too. */
 #hud[data-help='open'] ~ .hud-stats {
