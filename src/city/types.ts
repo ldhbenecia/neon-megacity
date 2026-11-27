@@ -462,6 +462,6 @@ export interface Layout {
   skyLanes: SkyLane[];
   /** Palace walls, covered corridors and the throne-hall terrace (gate openings are gaps). */
   palaceWalls: PalaceWall[];
-  /** Palace pond outlines (water drawn by terrain; the pavilion is a building). */
+  /** Palace pond outlines (water drawn by buildings for now; the pavilion is a building). */
   palacePonds: Vec2[][];
 }
