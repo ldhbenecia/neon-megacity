@@ -54,8 +54,9 @@ export interface Env {
    */
   horizonAntiColor?: THREE.Color;
   /**
-   * Shadow fill weight 0..1: night, and the low sun of a late sunset (backlit surfaces). Every
-   * module's fill reads this instead of nightFactor. Owner: lighting (set in lighting init).
+   * Shadow fill weight 0..1: night, and a low sun at either end of the day (backlit surfaces).
+   * Shadow fills read this (or fillColor) instead of nightFactor. Owner: lighting (set in lighting
+   * init).
    */
   fillFactor?: number;
   /**
