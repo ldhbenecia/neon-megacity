@@ -9,6 +9,7 @@ export type GlowMode = (typeof GlowMode)[keyof typeof GlowMode];
 
 const VERTEX = /* glsl */ `
   ${COMMON_PARS}
+  #define HALO_GROW_MAX 2.0
   ${PATH_PARS}
   uniform float uMode;
   uniform vec3 uHead; uniform vec3 uTail; uniform vec3 uGlowA; uniform vec3 uGlowB;
@@ -26,7 +27,8 @@ const VERTEX = /* glsl */ `
     if (uMode < 0.5) {
       mvPosition = viewMatrix * vec4(iPos.xyz, 1.0);
       float dist = -mvPosition.z;
-      float r = iPos.w * (1.0 + dist / 400.0);
+      // Grows with distance to stay visible, but capped: from high views it bloomed into blobs.
+      float r = iPos.w * min(1.0 + dist / 400.0, HALO_GROW_MAX);
       // Pulled toward the camera so the disc does not clip into the wall behind the sign.
       mvPosition.xyz *= max(0.2, 1.0 - min(r * 0.6, dist * 0.3) / max(dist, 1.0));
       mvPosition.xy += position.xy * r;
