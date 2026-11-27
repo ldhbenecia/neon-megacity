@@ -37,10 +37,10 @@ describe('baseKind', () => {
     }
   });
 
-  it('never reads Object.prototype for odd keys and reports unknown kinds', () => {
+  it('never reads Object.prototype for odd keys; unknown kinds fall back to midtown', () => {
     for (const k of ['__proto__', 'constructor', 'toString', 'hasOwnProperty', 'nope']) {
       expect(baseKindOf(k), k).toBeUndefined();
-      expect(() => baseKind(k as DistrictKind), k).toThrow();
+      expect(baseKind(k as DistrictKind), k).toBe('midtown');
     }
     expect(baseKindOf('megacore')).toBe('core');
   });
