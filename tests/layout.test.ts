@@ -10,6 +10,7 @@ import {
   ZONES,
   ISLANDS,
   MOUNTAINS,
+  MOUNTAIN_RANGES,
   TERRAIN,
   islandAt,
   parkWidthAt,
@@ -89,10 +90,10 @@ describe('layout v3: determinism', () => {
       digest: digest(LAYOUT),
     }).toMatchInlineSnapshot(`
       {
-        "blocks": 1409,
-        "buildings": 5653,
-        "digest": "f319e365",
-        "roads": 1184,
+        "blocks": 1415,
+        "buildings": 5640,
+        "digest": "a8658955",
+        "roads": 1181,
         "slots": 3474,
       }
     `);
@@ -845,6 +846,24 @@ describe('layout v3: mountain slopes', () => {
       expect(foot, `${m.id} foot`).toBeLessThanOrEqual(0.15);
     }
   }, 120_000);
+});
+
+describe('layout v3: mountain feet and the river', () => {
+  // terrain splits ground cells where the ground rises over 2 m and drops cells within 40 m of the
+  // water (bankReach); raised ground stays two coarse cells (2 × 24 m) beyond that, so the split
+  // cells never meet the dropped waterside cells.
+  it('keeps raised ground (> 2 m) at least 88 m from the water', () => {
+    for (const r of MOUNTAIN_RANGES) {
+      for (let x = r.x0; x <= r.x1; x += 8) {
+        for (let z = r.z0; z <= r.z1; z += 8) {
+          if (terrainHeight(x, z) <= 2) continue;
+          expect(waterSignedDistance(x, z), `${r.ids.join('+')} ${x},${z}`).toBeGreaterThanOrEqual(
+            88,
+          );
+        }
+      }
+    }
+  });
 });
 
 describe('layout v3: mountains stay wooded', () => {

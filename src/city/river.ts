@@ -550,10 +550,10 @@ const RANGES: readonly Range[] = [
     // A long, low north-south ridge.
     ids: ['achasan'],
     nodes: [
-      { x: 1660, z: -980, h: 75 },
-      { x: 1625, z: -860, h: 94 },
-      { x: 1615, z: -740, h: 106 },
-      { x: 1595, z: -630, h: 74 },
+      { x: 1660, z: -1040, h: 75 },
+      { x: 1625, z: -920, h: 94 },
+      { x: 1615, z: -800, h: 106 },
+      { x: 1605, z: -750, h: 74, w: 280 },
     ],
     width: 330,
   },
@@ -572,7 +572,7 @@ const PEAKS: readonly { id: string; name: string; peak: Vec2; height: number }[]
   { id: 'namsan', name: '남산', peak: { x: -176, z: -389 }, height: 100 },
   { id: 'bugak', name: '북악산', peak: { x: -200, z: -1180 }, height: 128 },
   { id: 'inwang', name: '인왕산', peak: { x: -530, z: -1050 }, height: 125 },
-  { id: 'achasan', name: '아차산', peak: { x: 1615, z: -740 }, height: 106 },
+  { id: 'achasan', name: '아차산', peak: { x: 1615, z: -800 }, height: 106 },
   // North of 강변북로 (which runs ~ z -490 here), under the 홍대 alleys.
   { id: 'wausan', name: '와우산', peak: { x: -1010, z: -700 }, height: 25 },
 ];
