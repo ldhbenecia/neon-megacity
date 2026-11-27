@@ -163,9 +163,16 @@ export function buildScreens(
         else if (scene < 1.5) col = sceneWalk(p * 0.8, hue, seed, t);
         else col = sceneType(cuv, hue, t);
         if (glitch > 0.5) col = vec3(col.r * 1.4, col.g * 0.7, col.b * 1.3) + hue * 0.2 * nHash(floor(cuv.y * 40.0) + t);
-        vec2 led = fract(uv * cells);
+        vec2 ledUv = uv * cells;
+        vec2 led = fract(ledUv);
         float mask = smoothstep(0.0, 0.18, led.x) * smoothstep(1.0, 0.82, led.x) * smoothstep(0.0, 0.18, led.y) * smoothstep(1.0, 0.82, led.y);
-        float scan = 0.85 + 0.15 * sin(uv.y * vSize.y * 1.3 - t * 2.0);
+        // Once an LED cell shrinks toward a pixel, fade the dot grid and scanlines to their mean
+        // (0.672 and 0.85) so distant walls do not shimmer with moire.
+        vec2 fw = fwidth(ledUv);
+        float aa = smoothstep(0.25, 0.7, max(fw.x, fw.y));
+        mask = mix(mask, 0.672, aa);
+        float scanW = fwidth(uv.y * vSize.y * 1.3);
+        float scan = 0.85 + 0.15 * sin(uv.y * vSize.y * 1.3 - t * 2.0) * (1.0 - smoothstep(0.8, 2.5, scanW));
         float bright = mix(1.5, 2.2, fract(seed * 13.0));
         col *= mix(0.45, 1.0, mask) * scan * bright * uScreenGain * vPower;
         float edge = min(min(vUv.x, 1.0 - vUv.x) * vSize.x, min(vUv.y, 1.0 - vUv.y) * vSize.y);

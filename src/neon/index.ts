@@ -197,8 +197,8 @@ function lightCandidates(P: Placement, street: StreetPlan): LightCandidate[] {
       x: s.x + s.nx * 18,
       y: s.y - s.h * 0.25,
       z: s.z + s.nz * 18,
-      color: hdrColor(NEON[SCREEN_HUES[s.hue] ?? 'neonCyan'].hex, 1),
-      intensity: 9000,
+      color: screenLightColor(NEON[SCREEN_HUES[s.hue] ?? 'neonCyan'].hex),
+      intensity: SCREEN_LIGHT_INTENSITY,
       distance: 140,
     });
   }
@@ -521,6 +521,19 @@ const TRAFFIC_SHARE: Readonly<Record<UserTier, number>> = { high: 1, medium: 0.7
 
 function instances(m: THREE.Mesh): number {
   return m.geometry instanceof THREE.InstancedBufferGeometry ? m.geometry.instanceCount : 0;
+}
+
+/**
+ * Media-screen spill on the street: half white, so white and yellow road markings keep their own
+ * color under a weak tint instead of turning the screen's hue.
+ */
+const SCREEN_LIGHT_INTENSITY = 3500;
+const SCREEN_LIGHT_WHITE = 0.5;
+
+function screenLightColor(hex: number): [number, number, number] {
+  const [r, g, b] = hdrColor(hex, 1);
+  const w = SCREEN_LIGHT_WHITE;
+  return [r + (1 - r) * w, g + (1 - g) * w, b + (1 - b) * w];
 }
 
 function countDrawables(root: THREE.Object3D): number {
