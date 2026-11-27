@@ -166,29 +166,38 @@ function topMount(b: BuildingSpec): Mount | null {
 }
 
 /**
- * One mount per zone in `zones`, on the highest tier of that zone's tallest building; zones the
- * layout lacks (or that have no buildings) fall back to the tallest buildings left, so there are
- * always min(count, buildings) mounts.
+ * Mount i stands on the highest tier of the tallest building in `zones[i]`. Slots whose zone the
+ * layout lacks are filled with the tallest buildings left, preferring zones that have no mount
+ * yet so two beams do not share one peak. Buildings without tiers are never picked, so there are
+ * always min(count, buildings with tiers) mounts.
  */
 export function searchlightMounts(
   specs: readonly BuildingSpec[],
   count = 2,
   zones: readonly string[] = [],
 ): Mount[] {
-  const byHeight = [...specs].sort((a, b) => buildingTop(b) - buildingTop(a));
-  const picked: BuildingSpec[] = [];
-  for (const zone of zones.slice(0, count)) {
-    const b = byHeight.find((s) => s.zoneId === zone && !picked.includes(s));
-    if (b) picked.push(b);
+  const candidates = [...specs]
+    .map((b) => ({ b, m: topMount(b) }))
+    .filter((c): c is { b: BuildingSpec; m: Mount } => c.m !== null)
+    .sort((x, y) => buildingTop(y.b) - buildingTop(x.b));
+  const slots: ({ b: BuildingSpec; m: Mount } | undefined)[] = [];
+  for (let i = 0; i < count; i++) {
+    const zone = zones[i];
+    slots.push(zone === undefined ? undefined : candidates.find((c) => c.b.zoneId === zone));
   }
-  for (const b of byHeight) {
-    if (picked.length >= count) break;
-    if (!picked.includes(b)) picked.push(b);
+  const used = new Set(slots.flatMap((c) => (c ? [c.b] : [])));
+  const usedZones = new Set([...used].map((b) => b.zoneId));
+  for (let i = 0; i < count; i++) {
+    if (slots[i]) continue;
+    const pick =
+      candidates.find((c) => !used.has(c.b) && !usedZones.has(c.b.zoneId)) ??
+      candidates.find((c) => !used.has(c.b));
+    if (!pick) continue;
+    slots[i] = pick;
+    used.add(pick.b);
+    usedZones.add(pick.b.zoneId);
   }
-  return picked.flatMap((b) => {
-    const m = topMount(b);
-    return m ? [m] : [];
-  });
+  return slots.flatMap((c) => (c ? [c.m] : []));
 }
 
 export function searchlightDirection(

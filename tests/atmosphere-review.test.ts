@@ -17,12 +17,14 @@ import {
 } from '../src/core/shaders/emissiveFog';
 
 describe('searchlight mounts', () => {
-  it('stand on the highest tier (setback / twin aware) of the tallest buildings', () => {
-    const tallest = [...LAYOUT.buildings].sort((a, b) => buildingTop(b) - buildingTop(a));
+  it('stand on the highest tier (setback / twin aware) of the tallest peaks, one per zone', () => {
+    const byHeight = [...LAYOUT.buildings].sort((a, b) => buildingTop(b) - buildingTop(a));
+    const first = byHeight[0]!;
+    const second = byHeight.find((b) => b.zoneId !== first.zoneId)!;
     const mounts = searchlightMounts(LAYOUT.buildings, 2);
     expect(mounts).toHaveLength(2);
     for (let i = 0; i < 2; i++) {
-      const b = tallest[i]!;
+      const b = [first, second][i]!;
       const m = mounts[i]!;
       const tiers = allTiers(b);
       const top = Math.max(...tiers.map((t) => t.y1));
@@ -34,24 +36,27 @@ describe('searchlight mounts', () => {
     expect(searchlightMounts([], 2)).toEqual([]);
   });
 
-  it('take each named zone’s tallest building, then fall back to the tallest left', () => {
+  it('keep beam i on zone i, filling missing zones from other peaks', () => {
     const tallestIn = (zone: string) =>
       [...LAYOUT.buildings]
         .filter((b) => b.zoneId === zone)
         .sort((a, b) => buildingTop(b) - buildingTop(a))[0]!;
+    const host = (m: { x: number; y: number; z: number }) =>
+      LAYOUT.buildings[buildingContaining(LAYOUT, m.x, m.y - 5, m.z)!]!;
     const zones = [...new Set(LAYOUT.buildings.map((b) => b.zoneId))].slice(0, 2);
-    const mounts = searchlightMounts(LAYOUT.buildings, 3, [...zones, 'no-such-zone']);
+    const mounts = searchlightMounts(LAYOUT.buildings, 3, [zones[0]!, 'no-such-zone', zones[1]!]);
     expect(mounts).toHaveLength(3);
-    zones.forEach((zone, i) => {
-      const b = tallestIn(zone);
-      expect(buildingContaining(LAYOUT, mounts[i]!.x, mounts[i]!.y - 5, mounts[i]!.z)).toBe(b.id);
-    });
-    const used = zones.map((z) => tallestIn(z).id);
-    const rest = [...LAYOUT.buildings]
-      .filter((b) => !used.includes(b.id))
-      .sort((a, b) => buildingTop(b) - buildingTop(a))[0]!;
-    const m = mounts[2]!;
-    expect(buildingContaining(LAYOUT, m.x, m.y - 5, m.z)).toBe(rest.id);
+    expect(host(mounts[0]!).id).toBe(tallestIn(zones[0]!).id);
+    expect(host(mounts[2]!).id).toBe(tallestIn(zones[1]!).id);
+    // The missing zone's slot goes to a peak in a zone without a beam yet.
+    expect(zones).not.toContain(host(mounts[1]!).zoneId);
+  });
+
+  it('skip buildings without tiers', () => {
+    const [a, b] = [...LAYOUT.buildings].sort((x, y) => buildingTop(y) - buildingTop(x));
+    const bare = { ...a!, id: -1, tiers: [], twin: undefined } as unknown as typeof a;
+    const mounts = searchlightMounts([bare!, b!], 2);
+    expect(mounts).toHaveLength(1);
   });
 });
 

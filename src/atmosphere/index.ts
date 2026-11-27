@@ -49,6 +49,7 @@ export function init(ctx: Ctx): CityModuleInstance {
   };
 
   const uninstallFog = installFogChunks();
+  env.fogDensity *= mapFog;
   const fog = new FogExp2(env.fogColor.getHex(), env.fogDensity);
   const previousFog = scene.fog;
   scene.fog = fog;
@@ -163,7 +164,8 @@ export function init(ctx: Ctx): CityModuleInstance {
 
       stars.update(elapsed, settings.stars ? palette.stars * (1 - 0.6 * Math.min(1, r)) : 0);
 
-      const fogK = Math.min(2, Math.max(0.5, f.density / NIGHT.fogDensity));
+      // Relative to the map-scaled night fog, so a wider map keeps the same beam halo.
+      const fogK = Math.min(2, Math.max(0.5, f.density / (NIGHT.fogDensity * mapFog)));
       searchlights.update(
         elapsed,
         settings.searchlights ? searchlightLevelAt(env.timeOfDay) : 0,
