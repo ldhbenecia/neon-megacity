@@ -138,3 +138,19 @@ jobs:
             test-results/
           retention-days: 7
           if-no-files-found: ignore
+
+  # Always reported under one name, so a required check never goes missing when e2e is skipped.
+  e2e-result:
+    name: e2e-result
+    needs: [changes, e2e]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - env:
+          CHANGES: ${{ needs.changes.result }}
+          E2E: ${{ needs.e2e.result }}
+        run: |
+          echo "changes=$CHANGES e2e=$E2E"
+          [ "$CHANGES" = success ] || exit 1
+          [ "$E2E" = success ] || [ "$E2E" = skipped ] || exit 1
