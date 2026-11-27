@@ -43,6 +43,7 @@ Only the owner writes a field; everyone else reads it. Types and comments live i
 | `dayFactor`, `nightFactor`     | lighting   | 0..1 smooth blend, sum to 1                                             |
 | `horizonColor`, `skyColor`     | lighting   | sky colors (palette)                                                    |
 | `horizonAntiColor`             | lighting   | horizon away from the sun (optional; set in lighting init)              |
+| `fillFactor`, `fillColor`      | lighting   | shadow fill: weight 0..1 (night and late sunset) and its linear color   |
 | `neonGain`                     | lighting   | sign brightness multiplier: night 1.0, sunset 0.7, day 0.3              |
 | `windowLitRatio`               | lighting   | city-wide lit window ratio; buildings applies per-district factors      |
 | `rain`                         | atmosphere | 0..1 rain intensity this frame, eased toward `rainTarget`               |
@@ -116,6 +117,8 @@ wait on it before asserting or capturing. Keep it in place.
 
 Y up, ground at `y = 0`, 1 unit = 1 m, north = -Z, east = +X. The map spans `[-1200, 1200]` on X and Z (`CITY.extent = 2400`).
 `rotY` / `gridAngle` follow three.js `rotation.y`; `w` is the local X extent and `d` the local Z extent.
+
+`LAYOUT` is published once at boot: `src/boot.ts` (the entry in `index.html`) generates it in the city worker (`src/city/loadLayout.ts`, main-thread fallback), calls `setLayout`, and only then imports `src/main.ts`. It is `undefined` before that, so no module may read it while it is evaluated; derive layout constants on first use. Tests publish it in `tests/setup-layout.ts`. The layout must stay plain data (no class instances or functions) so the worker's structured clone keeps it intact (`tests/load-layout.test.ts`).
 
 `src/city/` is the single source of truth (data types in `src/city/types.ts`, all re-exported by `src/city/layout.ts`):
 

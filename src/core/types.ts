@@ -53,6 +53,17 @@ export interface Env {
    * before lighting runs. Owner: lighting.
    */
   horizonAntiColor?: THREE.Color;
+  /**
+   * Shadow fill weight 0..1: night, and a low sun at either end of the day (backlit surfaces).
+   * Shadow fills read this (or fillColor) instead of nightFactor. Owner: lighting (set in lighting
+   * init).
+   */
+  fillFactor?: number;
+  /**
+   * Linear HDR shadow fill to add as emission, fillFactor already applied: night teal, dusk sky
+   * tint (NIGHT_FILL_AMBIENT strength). Owner: lighting (set in lighting init).
+   */
+  fillColor?: THREE.Color;
   /** Emissive brightness multiplier for signs: night 1.0, sunset 0.7, day 0.3 (palette). Owner: lighting. */
   neonGain: number;
   /** City-wide lit-window ratio 0..1 (night median 0.32); buildings multiplies per district. Owner: lighting. */
