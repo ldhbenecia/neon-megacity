@@ -224,8 +224,8 @@ const FRAG_MAIN = /* glsl */ `
     fAlbedo = mix(fAlbedo, vec3(0.42, 0.40, 0.36), s * 0.7);
     fRough = 0.7;
   } else {
-    float cw = vWin.x;
-    float chh = vWin.y;
+    float cw = max(vWin.x, 0.05);
+    float chh = max(vWin.y, 0.05);
     vec2 c = vec2(f.x / cw, f.y / chh);
     vec2 fw = fwidth(c);
     vec2 id = floor(c);
@@ -310,13 +310,17 @@ const FRAG_MAIN = /* glsl */ `
     if (far < 0.99 && mask > 0.001) {
       vec3 nV = normalize(vNormal);
       vec3 upV = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
-      vec3 tV = normalize(cross(upV, nV));
+      // A window face parallel to view-up would make the tangent normalize(0) = NaN, which bloom
+      // spreads into black blocks; fall back to any perpendicular axis.
+      vec3 cr = cross(upV, nV);
+      vec3 tV = dot(cr, cr) > 1e-8 ? normalize(cr) : normalize(cross(vec3(1.0, 0.0, 0.0), nV) + vec3(0.0, 0.0, 1e-4));
       vec3 dv = normalize(-vViewPosition);
       vec3 dl = vec3(dot(dv, tV), dot(dv, upV), dot(dv, nV));
       float roomW = roomCells * cw;
       float rx = roomCells > 1.5 ? fract(c.x / roomCells) * roomW : fr.x * cw;
       vec3 R = vec3(roomW, chh, 3.5 + 4.0 * fhash(key + 23.1));
-      vec3 room = roomInterior(vec3(rx, fr.y * chh, 0.0), dl, R, key, lightC, lit);
+      // dv points at the camera; the room ray runs the other way, into the building (-z).
+      vec3 room = roomInterior(vec3(rx, fr.y * chh, 0.0), -dl, R, key, lightC, lit);
       float hCur = fhash(key + 9.1);
       if (hCur < 0.2) {
         float level = 1.0 - (0.25 + 0.5 * fhash(key + 3.3));
