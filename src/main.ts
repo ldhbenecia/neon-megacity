@@ -4,7 +4,7 @@ import { CITY, LAYOUT } from './city/layout';
 import { postEnabled } from './core/gl';
 import { NIGHT } from './core/palette';
 import { CAMERA_FAR, CAMERA_FOV, CAMERA_LIMITS, parseQuery } from './core/query';
-import type { CityModule, CityModuleInstance, Ctx, Quality } from './core/types';
+import type { CityModule, CityModuleInstance, CompileHook, Ctx, Quality } from './core/types';
 import * as lighting from './lighting/index';
 import * as terrain from './terrain/index';
 import * as buildings from './buildings/index';
@@ -190,15 +190,17 @@ async function boot(): Promise<void> {
 
   loader.stage('compile', BOOT_WEIGHTS.compile);
   await nextFrame();
+  // The post chain (atmosphere) renders into an HDR target, a different program variant than the
+  // canvas: when it publishes `scene.userData.compile`, that warms up exactly what will be drawn.
+  // Awaited so parallel shader linking (KHR_parallel_shader_compile, SwiftShader) finishes here and
+  // not inside the first frame. A failed warm-up is not fatal (programs then link on first use)
+  // but logs an error so e2e collectErrors fails on it.
   try {
-    // The post chain (atmosphere) renders into an HDR target, a different program variant than the
-    // canvas: when it publishes `scene.userData.compile`, that warms up exactly what will be drawn.
-    const compileScene = (scene.userData as { compile?: () => void }).compile;
-    if (compileScene) compileScene();
+    const compileScene = (scene.userData as { compile?: CompileHook }).compile;
+    if (compileScene) await compileScene();
     else await renderer.compileAsync(scene, camera);
   } catch (err) {
-    loader.fail('compile', err);
-    throw err;
+    console.error('shader warm-up failed; programs will link on first draw', err);
   }
 
   loader.stage('first-frame', BOOT_WEIGHTS.firstFrame);
