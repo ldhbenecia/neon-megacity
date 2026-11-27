@@ -193,3 +193,75 @@ function yeouidoSlab(c: Ctx): void {
   }
   beacon(c, spec.x, y0 + H, spec.z);
 }
+
+/** Namsan mast (SEOUL.md 4.5): thin three-leg lattice, viewing ring low, glowing ring high. */
+export function namsanMast(
+  g: GeoBuilder,
+  x: number,
+  y0: number,
+  z: number,
+  h: number,
+  lv: 1 | 2,
+): void {
+  const steel = plain(0x2a2e32, 0.5);
+  const legR = (t: number): number => 7 * (1 - t) + 1.2 * t;
+  const leg = (k: number, t: number): V3 => {
+    const a = (k * Math.PI * 2) / 3;
+    const r = legR(t);
+    return [x + r * Math.cos(a), y0 + t * h, z + r * Math.sin(a)];
+  };
+  const bays = lv === 2 ? 4 : 14;
+  for (let i = 0; i < bays; i++) {
+    const t0 = i / bays;
+    const t1 = (i + 1) / bays;
+    for (let k = 0; k < 3; k++) {
+      g.beam(leg(k, t0), leg(k, t1), 0.7, 0.7, [1, 0, 0], steel);
+      if (lv === 2) continue;
+      g.beam(leg(k, t1), leg((k + 1) % 3, t1), 0.3, 0.3, [0, 1, 0], steel);
+      g.beam(leg(k, t0), leg((k + 1) % 3, t1), 0.22, 0.22, [0, 1, 0], steel);
+    }
+  }
+  const ring = (t: number, r: number, hh: number, s: Style): void => {
+    const o: Outline = {
+      pts: Array.from({ length: 12 }, (_, i) => {
+        const a = (i / 12) * Math.PI * 2;
+        return { x: x + r * Math.cos(a), z: z - r * Math.sin(a) };
+      }),
+      sides: Array.from({ length: 12 }, () => null),
+      curved: true,
+      cx: x,
+      cz: z,
+    };
+    walls(g, o, y0 + t * h, y0 + t * h + hh, () => s);
+    g.cap(o.pts, y0 + t * h + hh, s);
+    g.cap(o.pts, y0 + t * h, s, true);
+  };
+  ring(0.42, 9, 5, plain(0x14181c, 0.4));
+  if (lv === 1) ring(0.42 + 2.2 / h, 9.1, 0.6, glow(NEON.neonAmber.hex, 0.9));
+  ring(0.8, 4.5, 1.2, glow(NEON.neonCyan.hex, 1.3));
+  g.box(x, y0 + h, z, 1.4, 1.4, 1.4, 0, glow(NEON.neonRed.hex, 1.4));
+}
+
+/** Low palace wall with a dark tile coping from a to b; open where `gate` (a road) says so. */
+export function palaceWall(
+  g: GeoBuilder,
+  a: P2,
+  b: P2,
+  ground: (x: number, z: number) => number,
+  gate: (x: number, z: number) => boolean,
+): void {
+  const len = Math.hypot(b.x - a.x, b.z - a.z);
+  if (len < 0.5) return;
+  const n = Math.max(1, Math.ceil(len / 16));
+  const rot = Math.atan2(-(b.z - a.z), b.x - a.x);
+  const wall = plain(0x5a5650, 0.9);
+  const tile = plain(0x1a1d1f, 0.6);
+  for (let i = 0; i < n; i++) {
+    const p = { x: a.x + ((b.x - a.x) * (i + 0.5)) / n, z: a.z + ((b.z - a.z) * (i + 0.5)) / n };
+    if (gate(p.x, p.z)) continue;
+    const seg = len / n;
+    const y0 = ground(p.x, p.z) - 0.6;
+    g.box(p.x, y0, p.z, seg + 0.6, 4.6, 1.1, rot, wall);
+    g.box(p.x, y0 + 4.6, p.z, seg + 0.6, 0.5, 1.9, rot, tile);
+  }
+}

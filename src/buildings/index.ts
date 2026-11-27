@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { buildingFaces, buildingTop } from '../city/layout';
+import { buildingFaces, buildingTop, terrainHeight } from '../city/layout';
 import { pointSegmentDistance } from '../city/math';
 import { GridHash, segmentBounds } from '../city/spatial';
 import type { BuildingsApi, CityModuleInstance, Ctx, Road } from '../core/types';
@@ -15,6 +15,7 @@ import {
   type Lod0Job,
 } from './lod';
 import { emitBuilding, industrialStacks } from './archetypes';
+import { namsanMast, palaceWall } from './landmarks';
 import { createFacadeMaterial, createFacadeUniforms } from './facadeMaterial';
 import {
   LOD_DISTANCES,
@@ -92,6 +93,21 @@ function collectChunks(LAYOUT: Ctx['LAYOUT'], grid: ChunkGrid): Chunk[] {
     if (r.kind === 'stair') chunkAt(mx, mz).lod0.push((b) => stair(b, r));
     else if (r.district === 'hillside' && r.kind === 'alley')
       chunkAt(mx, mz).lod0.push((b) => alleyRetaining(b, r));
+  }
+  for (const l of LAYOUT.landmarks) {
+    if (l.id !== 'namsan-mast') continue;
+    const c = chunkAt(l.x, l.z);
+    const y0 = terrainHeight(l.x, l.z);
+    namsanMast(c.l1, l.x, y0, l.z, l.h, 1);
+    namsanMast(c.l2, l.x, y0, l.z, l.h, 2);
+  }
+  for (const zone of LAYOUT.districts) {
+    if (zone.kind !== 'palace') continue;
+    zone.polygon.forEach((a, i) => {
+      const b = zone.polygon[(i + 1) % zone.polygon.length];
+      if (!b) return;
+      palaceWall(chunkAt((a.x + b.x) / 2, (a.z + b.z) / 2).l1, a, b, terrainHeight, onStreet);
+    });
   }
   return [...chunks.values()];
 }
