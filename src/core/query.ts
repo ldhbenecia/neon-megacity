@@ -8,9 +8,9 @@
 import {
   CITY,
   LAYOUT,
-  SKYLINE_PEAK,
   surfaceHeight,
   type DistrictZone,
+  type LandmarkId,
   type Road,
   type Vec2,
 } from '../city/layout';
@@ -27,22 +27,38 @@ type Pose = CameraPose;
 
 /** Map-relative presets: the same framing whichever layout version is loaded. */
 const TOPDOWN_Y = Math.max(CITY.extentX, CITY.extentZ) / 2 + 700;
+/** Polar margin every preset keeps under maxPolarAngle (rad), shared with ux `fitPolar`. */
+export const POLAR_MARGIN = 0.01;
 
 /**
  * OrbitControls limits applied by main.ts. Every camera preset must satisfy them,
  * otherwise controls.update() silently moves the camera on the first frame.
  * The camera always looks down at (or level with) its target: polar angle is
  * measured from +Y, so maxPolarAngle just under PI/2 keeps it above the horizon.
- * maxDistance leaves 700 m of zoom-out beyond the topdown preset (v2: 2600).
+ * maxDistance lets the whole map fit the 55 deg view: the sphere around the map's half-diagonal
+ * spans the vertical field of view, with 10 % to spare (v3 ~5700 m). Zoom-out scales around the
+ * orbit target, and the camera itself stays inside CAMERA_RING (see below).
  */
+export const CAMERA_FOV = 55;
+const FIT_DISTANCE = Math.ceil(
+  (Math.hypot(CITY.extentX, CITY.extentZ) / 2 / Math.sin(((CAMERA_FOV / 2) * Math.PI) / 180)) * 1.1,
+);
 export const CAMERA_LIMITS = {
   minDistance: 20,
-  maxDistance: TOPDOWN_Y + 700,
+  maxDistance: Math.max(FIT_DISTANCE, TOPDOWN_Y + 700),
   maxPolarAngle: Math.PI * 0.495,
 } as const;
 
-/** Used when no suitable street exists (e.g. a different layout seed): 8.4 preset 3 as written. */
-export const STREET_FALLBACK: CameraPose = { position: [-760, 6, -360], target: [-700, 1, -470] };
+const NEAREST_RIDGE = Math.min(...LAYOUT.ridges.map((r) => r.radius));
+const FARTHEST_RIDGE = Math.max(...LAYOUT.ridges.map((r) => r.radius));
+/**
+ * The camera stays this far (horizontally) from the map centre: inside the nearest ridge ring and
+ * the ground disc, so their edges never stand between the camera and the city. A low zoom-out
+ * therefore stops at the ring; looking down, the full maxDistance is reachable.
+ */
+export const CAMERA_RING = NEAREST_RIDGE - 150;
+/** Far plane: the farthest ridge seen from the zoom-out limit across the map. */
+export const CAMERA_FAR = CAMERA_LIMITS.maxDistance + FARTHEST_RIDGE + 500;
 
 export interface StreetAnchor {
   kind: string;
@@ -84,7 +100,7 @@ function streetLook(road: Road, t: number, reverse: boolean): Pose {
   };
 }
 
-const MIN_DROP = Math.tan(Math.PI / 2 - CAMERA_LIMITS.maxPolarAngle) * 1.1;
+const MIN_DROP = Math.tan(Math.PI / 2 - CAMERA_LIMITS.maxPolarAngle + POLAR_MARGIN);
 
 /** Inside maxPolarAngle (with margin) and no terrain crest hides the target. */
 function streetViewClear({ position: p, target: t }: Pose): boolean {
@@ -120,50 +136,161 @@ export function streetPose(roads: readonly Road[], anchor: StreetAnchor): Pose |
   return null;
 }
 
-function findStreet(): { pose: Pose; name: string } | null {
+function findStreet(): { pose: Pose; anchor: StreetAnchor } | null {
   for (const anchor of streetAnchors(LAYOUT.districts)) {
     const pose = streetPose(LAYOUT.roads, anchor);
-    if (pose) return { pose, name: anchor.name };
+    if (pose) return { pose, anchor };
   }
   return null;
 }
 
-let streetCache: { pose: Pose; name: string } | null | undefined;
+let streetCache: { pose: Pose; anchor: StreetAnchor } | null | undefined;
 
 /** First anchor with a clear street view, or null (the preset then uses STREET_FALLBACK). */
-export function streetPreset(): { pose: Pose; name: string } | null {
+export function streetPreset(): { pose: Pose; anchor: StreetAnchor } | null {
   if (streetCache === undefined) streetCache = findStreet();
   return streetCache;
 }
 
-/**
- * Offsets from SKYLINE_PEAK, kept above the terrain; on layout v2 these reproduce
- * ART_DIRECTION 8.4 exactly.
- */
-const fromPeak = (position: Tuple, target: Tuple): Pose => {
-  const { x, z } = SKYLINE_PEAK;
-  const px = x + position[0];
-  const pz = z + position[2];
-  const tx = x + target[0];
-  const tz = z + target[2];
-  return {
-    position: [px, Math.max(position[1], surfaceHeight(px, pz) + 5), pz],
-    target: [tx, Math.max(target[1], surfaceHeight(tx, tz) + 1), tz],
-  };
+const lifted = (x: number, y: number, z: number, clear: number): [number, number, number] => [
+  x,
+  Math.max(y, surfaceHeight(x, z) + clear),
+  z,
+];
+
+/** Lowers the target just enough that the view keeps POLAR_MARGIN under maxPolarAngle. */
+function levelFit(pose: Pose): Pose {
+  const [px, py, pz] = pose.position;
+  const [tx, ty, tz] = pose.target;
+  const horiz = Math.hypot(tx - px, tz - pz);
+  const maxY = py - horiz * MIN_DROP;
+  return ty <= maxY ? pose : { position: pose.position, target: [tx, maxY, tz] };
+}
+
+/** Pose kept above the terrain (camera 5 m, target 1 m) and inside the polar limit. */
+const pose = (p: Tuple, t: Tuple): Pose =>
+  levelFit({
+    position: lifted(p[0], p[1], p[2], 5),
+    target: lifted(t[0], t[1], t[2], 1),
+  });
+
+const landmark = (id: LandmarkId): Vec2 => {
+  const l = LAYOUT.landmarks.find((m) => m.id === id);
+  if (!l) throw new Error(`layout has no landmark ${id}`);
+  return { x: l.x, z: l.z };
 };
 
+const mountain = (id: string): Vec2 => {
+  const m = LAYOUT.mountains.find((q) => q.id === id);
+  if (!m) throw new Error(`layout has no mountain ${id}`);
+  return m.peak;
+};
+
+const bridge = (id: string): (typeof LAYOUT.bridges)[number] => {
+  const br = LAYOUT.bridges.find((q) => q.id === id);
+  if (!br) throw new Error(`layout has no bridge ${id}`);
+  return br;
+};
+
+/** Above the traffic on a named road's centre line, 8 % along it, looking 250 m down the road. */
+function roadPose(id: string): Pose {
+  const r = LAYOUT.namedRoads.find((n) => n.id === id);
+  const a = r?.points[0];
+  const b = r?.points[1];
+  const len = a && b ? Math.hypot(b.x - a.x, b.z - a.z) : 0;
+  if (!a || !b || len < 1) throw new Error(`layout has no usable road ${id}`);
+  const ux = (b.x - a.x) / len;
+  const uz = (b.z - a.z) / len;
+  const px = a.x + ux * len * 0.08;
+  const pz = a.z + uz * len * 0.08;
+  const tx = px + ux * 250;
+  const tz = pz + uz * 250;
+  return levelFit({
+    position: [px, surfaceHeight(px, pz) + 9, pz],
+    target: [tx, surfaceHeight(tx, tz) + 3, tz],
+  });
+}
+
+/**
+ * SEOUL.md 6 viewpoints, keyed by `?cam=` name, all derived from layout features (bridges,
+ * landmarks, mountain peaks, named roads, map extents) so the framing follows layout changes.
+ * Heights over hills are terrain-relative, so lower mountains move the cameras with them.
+ */
+function seoulPoses(): Record<
+  | 'banpo'
+  | 'yeouido'
+  | 'namsan'
+  | 'teheran'
+  | 'seongsu'
+  | 'jamsil'
+  | 'bugak'
+  | 'overview'
+  | 'topdown',
+  Pose
+> {
+  const banpo = bridge('br-banpo');
+  // South abutment (b) plus 20 m down the span, looking back across to the north landing.
+  const bu = Math.hypot(banpo.b.x - banpo.a.x, banpo.b.z - banpo.a.z);
+  const bx = banpo.b.x + ((banpo.b.x - banpo.a.x) / bu) * 20;
+  const bz = banpo.b.z + ((banpo.b.z - banpo.a.z) / bu) * 20;
+  const mast = landmark('namsan-mast');
+  const apex = landmark('yongsan-apex');
+  const gold = landmark('yeouido-gold');
+  const blade = landmark('jamsil-blade');
+  const bugak = mountain('bugak');
+  const seongsu = bridge('br-seongsu');
+  const sx = (seongsu.a.x + seongsu.b.x) / 2;
+  const sz = (seongsu.a.z + seongsu.b.z) / 2;
+  return {
+    banpo: pose([bx, 18, bz], [banpo.landA.x, 10, banpo.landA.z]),
+    // Over the river east of the island, looking down at the cluster around the gold tower.
+    yeouido: pose([gold.x + 510, 260, gold.z - 120], [gold.x, 140, gold.z]),
+    // Just off the summit, over Yongsan's towers toward Yeouido and the river bend.
+    namsan: pose(
+      [mast.x + 26, surfaceHeight(mast.x + 26, mast.z + 29) + 80, mast.z + 29],
+      [(apex.x + gold.x) / 2, 60, (apex.z + gold.z) / 2],
+    ),
+    teheran: roadPose('rd-teheran'),
+    // Above the truss at mid-span, looking upstream to the Jamsil landmark.
+    seongsu: levelFit({ position: [sx, seongsu.deckY + 20, sz], target: [blade.x, 10, blade.z] }),
+    jamsil: pose([blade.x - 450, 70, blade.z - 720], [blade.x, 50, blade.z]),
+    // From Bugak's ridge over the palace and old town to the Namsan mast.
+    bugak: pose(
+      [bugak.x, surfaceHeight(bugak.x, bugak.z + 10) + 40, bugak.z + 10],
+      [mast.x, 60, mast.z],
+    ),
+    overview: pose([CITY.halfX * 0.9, 900, CITY.halfZ * 1.15], [0, 80, -CITY.halfZ * 0.08]),
+    topdown: { position: [0, TOPDOWN_Y, 1], target: [0, 0, 0] },
+  };
+}
+
+const SEOUL_POSES = seoulPoses();
+
+/**
+ * Used when no street of any anchor gives a clear view: eye level at the first anchor point
+ * (홍대's grid origin), looking 70 m north-east.
+ */
+export const STREET_FALLBACK: CameraPose = (() => {
+  const w = streetAnchors(LAYOUT.districts)[0]?.want ?? { x: 0, z: 0 };
+  return pose([w.x, surfaceHeight(w.x, w.z) + 4, w.z], [w.x + 45, 0, w.z - 50]);
+})();
+
 export const CAMERA_PRESETS = {
-  /** ART_DIRECTION 8.4 preset 2 (코어 상공). */
-  overview: fromPeak([580, 420, 760], [20, 120, 20]),
-  get street(): Pose {
+  ...SEOUL_POSES,
+  /** 홍대 alley: the nearest clear nightlife street (see `streetPreset`). */
+  get hongdae(): Pose {
     return streetPreset()?.pose ?? STREET_FALLBACK;
   },
-  /** Between the megatowers around the skyline peak. */
-  core: fromPeak([240, 220, 260], [0, 160, 0]),
-  /** 8.4 preset 8. */
-  topdown: { position: [0, TOPDOWN_Y, 1], target: [0, 0, 0] },
-  /** 8.4 preset 1 (강변 히어로), target lowered to satisfy the polar limit. */
-  skyline: fromPeak([-360, 38, 680], [0, 20, 80]),
+  /** Aliases kept for e2e, screenshots and old links. */
+  get skyline(): Pose {
+    return SEOUL_POSES.banpo;
+  },
+  get core(): Pose {
+    return SEOUL_POSES.yeouido;
+  },
+  get street(): Pose {
+    return CAMERA_PRESETS.hongdae;
+  },
 } as const satisfies Record<string, Pose>;
 
 export type CameraPreset = keyof typeof CAMERA_PRESETS;

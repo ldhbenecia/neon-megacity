@@ -1,181 +1,51 @@
-// Bridges (ART_DIRECTION 2.3): two-span tied arch, Warren truss and double-deck girder, plus a
-// plain girder for any kind this module does not know yet, with their static lights. Original
-// designs, not copies of real bridges. Pure: reads a Bridge from the layout and writes InfraParts.
-import { RIVER, bridgeDeckY, surfaceHeight, type Bridge, type Road } from '../city/layout';
-import { obbSegmentDistance } from '../city/math';
+// Bridges (SEOUL.md 3.3): one builder per structural kind, plus a plain girder for any kind this
+// module does not know yet, with their static lights. Each follows only the real bridge's
+// structural type and position; proportions and decoration are original. Pure: reads a Bridge
+// from the layout and writes InfraParts.
+import { RIVER, type Bridge, type Road } from '../city/layout';
+import { buildArch, buildDeckArch, buildTiedArch } from './bridgeArches';
+import { buildCableStayed } from './bridgeCable';
+import {
+  ABUT,
+  bridgeFrame,
+  bridgePoint,
+  bridgeShape,
+  buildPierWashes,
+  islandWashColor,
+  deckYAt,
+  lowerDeckY,
+  pushPiers,
+  type BridgeBuilder,
+  type BridgeFrame,
+  type BridgeParts,
+  type BridgeShape,
+  bridgeS,
+} from './bridgeFrame';
+import { buildTruss } from './bridgeTrusses';
 import type { InfraColors } from './colors';
 import type { HwPath } from './highways';
+import { DiscardMeshData, MeshData, framesAlong, type Frame, type RGB, type V3 } from './mesh';
+import type { InfraParts } from './parts';
 import {
-  DiscardMeshData,
-  MeshData,
-  framesAlong,
-  len,
-  sub,
-  type Frame,
-  type RGB,
-  type V3,
-} from './mesh';
-import type { ColumnInstance, DetailParts, InfraParts } from './parts';
-import { DECK_THICKNESS, boxEdges, markingLines, slabEdges, slabLoop } from './profile';
+  DECK_THICKNESS,
+  boxEdges,
+  markingLines,
+  openBoxEdges,
+  slabEdges,
+  slabLoop,
+} from './profile';
 
-/**
- * Bridge builders write the always-drawn parts (deck, piers, structural silhouette, lights) into
- * InfraParts and the fine parts (rails, posts, lane paint, bracing) into `detail`.
- */
-type BridgeParts = InfraParts & { detail: DetailParts };
+export * from './bridgeFrame';
 
-/** Lower road deck height of a double-deck bridge when the layout leaves it unset. */
-const LOWER_DECK_Y = 4;
+/** Rail-only bridge (한강철교): tracks across the whole deck, no road. */
+export const railOnly = (b: Bridge): boolean => b.motif === 'railTruss';
 
-/** Bridge-local frame: s along a → b (south), l lateral (right of a → b), y world height. */
-export interface BridgeFrame {
-  mid: V3;
-  u: V3;
-  v: V3;
-  /** Half span between the abutments. */
-  spanHalf: number;
-  /** s of the north (landA, negative) and south (landB, positive) approach landings. */
-  landA: number;
-  landB: number;
-}
+/** Track bed width of the subway in the middle of a road bridge (two tracks). */
+export const TRACK_BED = 8;
+/** Rail gauge center to center (m). */
+const GAUGE = 1.5;
 
-export function bridgeFrame(b: Bridge): BridgeFrame {
-  const mid: V3 = [(b.a.x + b.b.x) / 2, 0, (b.a.z + b.b.z) / 2];
-  const d = sub([b.b.x, 0, b.b.z], [b.a.x, 0, b.a.z]);
-  const span = len(d);
-  const u: V3 = [d[0] / span, 0, d[2] / span];
-  const v: V3 = [-u[2], 0, u[0]];
-  const along = (q: { x: number; z: number }): number =>
-    (q.x - mid[0]) * u[0] + (q.z - mid[2]) * u[2];
-  return { mid, u, v, spanHalf: span / 2, landA: along(b.landA), landB: along(b.landB) };
-}
-
-export function bridgePoint(f: BridgeFrame, s: number, l: number, y: number): V3 {
-  return [f.mid[0] + f.u[0] * s + f.v[0] * l, y, f.mid[2] + f.u[2] * s + f.v[2] * l];
-}
-
-/** Deck surface y on the bridge axis at s, from the layout's bridgeDeckY (0 off the ends). */
-export function deckYAt(b: Bridge, f: BridgeFrame, s: number): number {
-  const p = bridgePoint(f, s, 0, 0);
-  return Math.max(0, bridgeDeckY(b, p[0], p[2]) ?? 0);
-}
-
-/** Builder key for a bridge. Unknown kinds (newer layouts) fall back to 'girder'. */
-export type BridgeShape = 'arch' | 'truss' | 'doubleDeck' | 'girder';
-
-export function bridgeShape(b: Bridge): BridgeShape {
-  // Widened to string so a layout whose BridgeKind union drops a name still compiles.
-  const kind: string = b.kind;
-  if (kind === 'arch' || kind === 'truss' || kind === 'doubleDeck') return kind;
-  return 'girder';
-}
-
-/**
- * Lower deck surface y, or undefined for a single-deck bridge. 'arch' ignores `lowerDeckY`:
- * its center pier and rib springings sit at the upper deck and would cut a lower road.
- */
-export function lowerDeckY(b: Bridge): number | undefined {
-  const shape = bridgeShape(b);
-  if (shape === 'arch') return undefined;
-  return b.lowerDeckY ?? (shape === 'doubleDeck' ? LOWER_DECK_Y : undefined);
-}
-
-/**
- * Minimum span count per shape (truss: continuous three-span Warren), and the typical span (m)
- * used only when the layout's `spans` is not a finite number.
- */
-const SPANS: Record<BridgeShape, { len: number; min: number }> = {
-  arch: { len: Infinity, min: 2 },
-  truss: { len: 80, min: 3 },
-  doubleDeck: { len: 40, min: 2 },
-  girder: { len: 70, min: 2 },
-};
-
-/** Shortest span `spans` may ask for (m); bounds the pier count for a bad layout value. */
-const MIN_SPAN = 10;
-
-/**
- * Pier-to-pier spans between the abutments: the layout's `spans`, clamped to the shape minimum
- * and span/MIN_SPAN, or a count from the span length when it is not a finite number. 'arch'
- * always has two (the builder draws two arches over one center pier).
- */
-export function spanCount(b: Bridge, f: BridgeFrame): number {
-  const shape = bridgeShape(b);
-  const { len, min } = SPANS[shape];
-  if (shape === 'arch') return min;
-  if (!Number.isFinite(b.spans)) return Math.max(min, Math.round((2 * f.spanHalf) / len));
-  const most = Math.max(min, Math.floor((2 * f.spanHalf) / MIN_SPAN));
-  return Math.min(most, Math.max(min, Math.round(b.spans)));
-}
-
-/** River piers (s positions), evenly spaced; abutments are separate blocks at ±spanHalf. */
-export function pierStations(b: Bridge, f: BridgeFrame): number[] {
-  const h = f.spanHalf;
-  const n = spanCount(b, f);
-  return Array.from({ length: n - 1 }, (_, i) => ((2 * (i + 1) - n) / n) * h);
-}
-
-/** Approach pier spacing on the long south ramp, beyond the riverside highway. */
-const APPROACH_BAY = 35;
-
-/** First ramp pier past the riverside highway, measured from the abutment (m). */
-const APPROACH_START = 55;
-
-/**
- * Approach piers: one per side just outside the abutment, then every APPROACH_BAY m from
- * APPROACH_START past the abutment, stopping 20 m short of the landing. Stations that fall on
- * a highway are dropped later in `pushPiers`.
- */
-export function approachStations(f: BridgeFrame): number[] {
-  const near = f.spanHalf + 13;
-  const out = [-near, near];
-  for (const [sgn, land] of [
-    [-1, -f.landA],
-    [1, f.landB],
-  ] as const) {
-    for (let s = f.spanHalf + APPROACH_START; s < land - 20; s += APPROACH_BAY) out.push(sgn * s);
-  }
-  return out.sort((a, b) => a - b);
-}
-
-/** Abutment block depth along s (m). */
-const ABUT = 8;
-
-/** Points every `step` m (arc length) along a polyline. */
-export function resample(pts: readonly V3[], step: number): V3[] {
-  const out: V3[] = [];
-  let carry = 0;
-  for (let i = 0; i < pts.length - 1; i++) {
-    const a = pts[i] as V3;
-    const b = pts[i + 1] as V3;
-    const seg = len(sub(b, a));
-    if (seg < 1e-9) continue; // repeated point: nothing to walk
-    let t = carry;
-    while (t <= seg) {
-      const k = t / seg;
-      out.push([a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k]);
-      t += step;
-    }
-    carry = t - seg;
-  }
-  return out;
-}
-
-/** Parabolic arch rib between s0 and s1: spring at `springY`, crown at `crownY`. */
-export function archY(s: number, s0: number, s1: number, springY: number, crownY: number): number {
-  const c = (s0 + s1) / 2;
-  const h = (s1 - s0) / 2;
-  const k = (s - c) / h;
-  return springY + (crownY - springY) * Math.max(0, 1 - k * k);
-}
-
-function deckPath(
-  b: Bridge,
-  f: BridgeFrame,
-  from: number,
-  to: number,
-  y: (s: number) => number,
-): V3[] {
+function deckPath(f: BridgeFrame, from: number, to: number, y: (s: number) => number): V3[] {
   // Break points (ends, abutments where the ramp slope starts) win over 6 m stations near them:
   // a station a few centimetres from a slope break makes a sliver ring whose sides flip.
   const r = (s: number): number => Math.round(s * 1000) / 1000;
@@ -187,9 +57,21 @@ function deckPath(
   return [...stations].sort((p, q) => p - q).map((s) => bridgePoint(f, s, 0, y(s)));
 }
 
-/** Slab, curbs, rails, posts and lane paint of one deck level. */
+/** What runs on a deck: road lanes, a subway down the middle, or tracks only. */
+/** Track bed top above the deck surface ('all': one bed per track, 'center': a shared bed). */
+const BED_TOP = { all: 0.25, center: 0.3 } as const;
+/** Rail height above its bed. neon runs trains on the rail tops (InfraApi.railTracks). */
+const RAIL_H = 0.16;
+
+interface DeckUse {
+  width: number;
+  lanes: number;
+  /** Tracks, evenly spread over the deck ('all') or two in a center bed ('center'). */
+  tracks: 'none' | 'center' | 'all';
+}
+
+/** Slab, curbs, rails, posts, lane paint and tracks of one deck level. */
 function buildDeck(
-  b: Bridge,
   f: BridgeFrame,
   parts: BridgeParts,
   c: InfraColors,
@@ -197,12 +79,13 @@ function buildDeck(
   to: number,
   y: (s: number) => number,
   railColor: RGB,
+  use: DeckUse,
 ): void {
-  const pts = deckPath(b, f, from, to, y);
+  const pts = deckPath(f, from, to, y);
   const frames = framesAlong(pts);
-  const half = b.width / 2;
-  parts.concrete.sweep(frames, slabEdges(b.width, c));
-  const loop = slabLoop(b.width);
+  const half = use.width / 2;
+  parts.concrete.sweep(frames, slabEdges(use.width, c));
+  const loop = slabLoop(use.width);
   parts.concrete.cap(frames[0] as Frame, loop, c.concrete, -1);
   parts.concrete.cap(frames[frames.length - 1] as Frame, loop, c.concrete, 1);
   for (const sgn of [-1, 1] as const) {
@@ -211,8 +94,7 @@ function buildDeck(
     const rl = sgn * (half - 0.2);
     parts.detail.steel.sweep(frames, boxEdges(rl - 0.08, rl + 0.08, 1.05, 1.2, railColor));
   }
-  // Rail posts every 3 m.
-  for (let s = Math.ceil(from / 3) * 3; s <= to; s += 3) {
+  for (let s = Math.ceil(from / 6) * 6; s <= to; s += 6) {
     for (const sgn of [-1, 1] as const) {
       const l = sgn * (half - 0.2);
       const yy = y(s);
@@ -225,23 +107,76 @@ function buildDeck(
       );
     }
   }
-  // Lane paint (bridges: no median barrier, double yellow center line).
-  for (const line of markingLines({ lanes: b.lanes, kind: 'elevated', width: b.width })) {
-    const color = line.yellow ? c.paintYellow : c.paintWhite;
-    const edge = [
-      { a: [line.l - 0.075, 0.02] as const, b: [line.l + 0.075, 0.02] as const, color },
-    ];
-    if (!line.dashed) {
-      parts.detail.markings.sweep(frames, edge);
-      continue;
+  const tracks = trackCenters(use);
+  if (use.tracks === 'center') {
+    const b = TRACK_BED / 2;
+    parts.concrete.sweep(frames, openBoxEdges(-b, b, -0.02, BED_TOP.center, c.underside));
+  }
+  const top = use.tracks === 'all' ? BED_TOP.all : BED_TOP.center;
+  for (const t of tracks) {
+    if (use.tracks === 'all') {
+      parts.concrete.sweep(frames, openBoxEdges(t - 1.6, t + 1.6, -0.02, top, c.underside));
     }
-    for (let s = from + 4; s + 6 < to; s += 15) {
-      parts.detail.markings.sweep(
-        framesAlong([s, s + 3, s + 6].map((k) => bridgePoint(f, k, 0, y(k)))),
-        edge,
+    for (const g of [-GAUGE / 2, GAUGE / 2]) {
+      parts.detail.steel.sweep(
+        frames,
+        openBoxEdges(t + g - 0.06, t + g + 0.06, top, top + RAIL_H, c.steel),
       );
     }
   }
+  if (use.tracks === 'all') return;
+  // Lane paint (bridges: no median barrier, double yellow center line). A center subway bed
+  // splits the road into two one-way halves.
+  const roads =
+    use.tracks === 'center'
+      ? [-1, 1].map((sgn) => {
+          const w = (use.width - TRACK_BED) / 2;
+          return {
+            off: sgn * (TRACK_BED / 2 + w / 2),
+            w,
+            lanes: Math.max(1, Math.floor(use.lanes / 2)),
+          };
+        })
+      : [{ off: 0, w: use.width, lanes: use.lanes }];
+  for (const road of roads) {
+    const kind = use.tracks === 'center' ? 'ramp' : 'elevated';
+    for (const line of markingLines({ lanes: road.lanes, kind, width: road.w })) {
+      const color = line.yellow ? c.paintYellow : c.paintWhite;
+      const l = road.off + line.l;
+      const edge = [{ a: [l - 0.075, 0.02] as const, b: [l + 0.075, 0.02] as const, color }];
+      if (!line.dashed) {
+        parts.detail.markings.sweep(frames, edge);
+        continue;
+      }
+      for (let s = from + 4; s + 6 < to; s += 15) {
+        parts.detail.markings.sweep(
+          framesAlong([s, s + 3, s + 6].map((k) => bridgePoint(f, k, 0, y(k)))),
+          edge,
+        );
+      }
+    }
+  }
+}
+
+export function trackCenters(use: DeckUse): number[] {
+  if (use.tracks === 'center') return [-TRACK_BED / 4, TRACK_BED / 4];
+  if (use.tracks === 'none') return [];
+  const n = Math.max(1, Math.round(use.lanes));
+  return Array.from({ length: n }, (_, i) => -use.width / 2 + (use.width * (i + 0.5)) / n);
+}
+
+function upperUse(b: Bridge): DeckUse {
+  if (railOnly(b)) return { width: b.width, lanes: b.lanes, tracks: 'all' };
+  // A rail double-deck bridge carries its trains on the lower deck.
+  const center = b.rail && bridgeShape(b) !== 'doubleDeck' && b.width >= TRACK_BED + 12;
+  return { width: b.width, lanes: b.lanes, tracks: center ? 'center' : 'none' };
+}
+
+/** Lower deck use: a two-track subway deck for rail bridges, otherwise a road up to 18 m wide. */
+export function lowerUse(b: Bridge): DeckUse {
+  if (b.rail) return { width: Math.min(b.width, 12), lanes: 2, tracks: 'all' };
+  const width = Math.min(b.width, 18);
+  return { width, lanes: Math.max(2, Math.min(b.lanes, 4)), tracks: 'none' };
 }
 
 /** Concrete abutment blocks at both banks (top just under the deck). */
@@ -250,7 +185,7 @@ function buildAbutments(
   f: BridgeFrame,
   parts: BridgeParts,
   c: InfraColors,
-  portalY?: number,
+  portal?: { y: number; width: number },
 ): void {
   for (const sgn of [-1, 1] as const) {
     const s0 = sgn * f.spanHalf;
@@ -266,230 +201,41 @@ function buildAbutments(
       c.concrete,
       f.v,
     );
-    if (portalY !== undefined) {
+    if (portal !== undefined) {
       // Dark portal where the lower deck runs into the abutment.
       const s = s0 - sgn * 0.05;
-      const w = b.width / 2 - 1;
+      const w = portal.width / 2 - 1;
       const p = (l: number, yy: number): V3 => bridgePoint(f, s, l, yy);
-      const y0 = portalY;
-      const y1 = Math.min(top - 0.6, portalY + 4.6);
+      const y0 = portal.y;
+      const y1 = Math.min(top - 0.6, portal.y + 4.6);
+      if (y1 - y0 < 0.5) continue;
       if (sgn === -1) parts.concrete.quad(p(w, y0), p(-w, y0), p(-w, y1), p(w, y1), c.underside);
       else parts.concrete.quad(p(-w, y0), p(w, y0), p(w, y1), p(-w, y1), c.underside);
     }
   }
 }
 
-/** True when an approach pier footprint would stand on (or within 0.5 m of) a ground road. */
-export function approachPierBlocksRoad(
-  c: { x: number; z: number; w: number; d: number; rotY: number },
-  roads: readonly Road[],
-): boolean {
-  const obb = { x: c.x, z: c.z, hw: c.w / 2, hd: c.d / 2, rotY: c.rotY };
-  const r = Math.hypot(c.w, c.d);
-  return roads.some((road) => {
-    const minX = Math.min(road.a.x, road.b.x) - road.width;
-    const maxX = Math.max(road.a.x, road.b.x) + road.width;
-    const minZ = Math.min(road.a.z, road.b.z) - road.width;
-    const maxZ = Math.max(road.a.z, road.b.z) + road.width;
-    if (c.x + r < minX || c.x - r > maxX || c.z + r < minZ || c.z - r > maxZ) return false;
-    return obbSegmentDistance(obb, road.a, road.b) < road.width / 2 + 0.5;
-  });
-}
+/** Lower decks this close above the water rise in the middle to let boats under (m). */
+const LOW_WATER_GAP = 6;
+const LOWER_HUMP = 4;
+/** Headroom kept under the upper deck over the lower deck's rails (m). */
+const LOWER_HEADROOM = 5;
 
 /**
- * True when a pier footprint would stand on (or within 0.5 m of) a highway deck that runs below
- * the pier top. Decks passing over the pier (above the bridge) do not block it.
+ * Lower deck surface at s. A deck near the water (잠수교) rises by up to LOWER_HUMP over the
+ * middle third of the span; everywhere else it is flat at `lowY`.
  */
-export function pierBlocksHighway(c: ColumnInstance, highways: readonly HwPath[]): boolean {
-  const obb = { x: c.x, z: c.z, hw: c.w / 2, hd: c.d / 2, rotY: c.rotY };
-  const r = Math.hypot(c.w, c.d) / 2;
-  return highways.some((path) => {
-    const pad = path.hw.width / 2 + r + 0.5;
-    if (c.x < path.minX - pad || c.x > path.maxX + pad) return false;
-    if (c.z < path.minZ - pad || c.z > path.maxZ + pad) return false;
-    const pts = path.pts;
-    for (let i = 0; i < pts.length - 1; i++) {
-      const a = pts[i] as V3;
-      const e = pts[i + 1] as V3;
-      if (Math.min(a[1], e[1]) >= c.y1) continue;
-      if (c.x < Math.min(a[0], e[0]) - pad || c.x > Math.max(a[0], e[0]) + pad) continue;
-      if (c.z < Math.min(a[2], e[2]) - pad || c.z > Math.max(a[2], e[2]) + pad) continue;
-      const d = obbSegmentDistance(obb, { x: a[0], z: a[2] }, { x: e[0], z: e[2] });
-      if (d < path.hw.width / 2 + 0.5) return true;
-    }
-    return false;
-  });
+export function lowerDeckAt(b: Bridge, f: BridgeFrame, lowY: number, s: number): number {
+  if (lowY - RIVER.waterY >= LOW_WATER_GAP) return lowY;
+  const room = b.deckY - DECK_THICKNESS - LOWER_HEADROOM - 1.2 - lowY;
+  const hump = Math.max(0, Math.min(LOWER_HUMP, room));
+  const k = Math.abs(s) / (f.spanHalf * 0.36);
+  if (k >= 1) return lowY;
+  if (k <= 0.5) return lowY + hump;
+  return lowY + hump * (0.5 + 0.5 * Math.cos((Math.PI * (k - 0.5)) / 0.5));
 }
 
-/** What pier placement must keep clear of. */
-interface Obstacles {
-  roads: readonly Road[];
-  highways: readonly HwPath[];
-}
-
-function pushPiers(
-  b: Bridge,
-  f: BridgeFrame,
-  parts: BridgeParts,
-  topY: number,
-  w: number,
-  d: number,
-  { roads, highways }: Obstacles,
-): number[] {
-  const rotY = Math.atan2(-f.v[2], f.v[0]);
-  const blocked = (c: ColumnInstance): boolean =>
-    approachPierBlocksRoad(c, roads) || pierBlocksHighway(c, highways);
-  // River piers can land outside the water when the span is wider than the channel.
-  const placed: number[] = [];
-  for (const s of pierStations(b, f)) {
-    const p = bridgePoint(f, s, 0, 0);
-    const column = { x: p[0], z: p[2], y0: -8, y1: topY, w, d, rotY, owner: b.id };
-    if (blocked(column)) continue;
-    parts.columns.push(column);
-    placed.push(s);
-  }
-  for (const s of approachStations(f)) {
-    const p = bridgePoint(f, s, 0, 0);
-    const foot = surfaceHeight(p[0], p[2]);
-    const top = deckYAt(b, f, s) - DECK_THICKNESS;
-    if (top - foot < 1.5) continue;
-    const column = {
-      x: p[0],
-      z: p[2],
-      y0: foot - 1,
-      y1: top,
-      w: b.width * 0.55,
-      d: 1.8,
-      rotY,
-      owner: b.id,
-    };
-    if (!blocked(column)) parts.columns.push(column);
-  }
-  return placed;
-}
-
-/** A: two parabolic arch spans over a center pier, white ribs, cyan points, white hangers. */
-function buildArch(
-  b: Bridge,
-  f: BridgeFrame,
-  parts: BridgeParts,
-  c: InfraColors,
-  obstacles: Obstacles,
-): void {
-  const h = f.spanHalf;
-  const springY = b.deckY - 1;
-  const crownY = b.deckY + b.structureH;
-  const ribL = b.width / 2 + 1.2;
-  for (const [s0, s1] of [
-    [-h, 0],
-    [0, h],
-  ] as const) {
-    for (const sgn of [-1, 1] as const) {
-      const l = sgn * ribL;
-      const pts: V3[] = [];
-      for (let i = 0; i <= 32; i++) {
-        const s = s0 + ((s1 - s0) * i) / 32;
-        pts.push(bridgePoint(f, s, l, archY(s, s0, s1, springY, crownY)));
-      }
-      parts.steel.sweep(framesAlong(pts), boxEdges(-0.8, 0.8, -1.1, 1.1, c.archSteel));
-      // Cyan points along the rib crest, every 6 m of arc length.
-      for (const p of resample(pts, 6)) {
-        parts.points.push({
-          p: [p[0], p[1] + 1.25, p[2]],
-          size: [0.7, 0.7, 0.7],
-          rotY: 0,
-          color: c.archPoint,
-        });
-      }
-      // White hangers every 6 m where the rib clears the deck.
-      for (let s = s0 + 6; s < s1 - 3; s += 6) {
-        const ry = archY(s, s0, s1, springY, crownY) - 1.1;
-        if (ry - b.deckY < 2) continue;
-        parts.glow.beam(
-          bridgePoint(f, s, l, b.deckY + 0.3),
-          bridgePoint(f, s, l, ry),
-          0.14,
-          0.14,
-          c.hanger,
-        );
-      }
-    }
-    // Wind bracing between the ribs near the crown.
-    for (let s = s0 + 12; s < s1 - 6; s += 12) {
-      const ry = archY(s, s0, s1, springY, crownY);
-      if (ry - b.deckY < 10) continue;
-      parts.detail.steel.beam(
-        bridgePoint(f, s, -ribL, ry),
-        bridgePoint(f, s, ribL, ry),
-        0.9,
-        0.9,
-        c.archSteel,
-      );
-    }
-  }
-  // Rib springings rest on wide pier / abutment heads.
-  pushPiers(b, f, parts, b.deckY - DECK_THICKNESS, b.width + 5, 6, obstacles);
-}
-
-/** B: continuous Warren truss over three spans, orange top chord line, white rail dots. */
-function buildTruss(
-  b: Bridge,
-  f: BridgeFrame,
-  parts: BridgeParts,
-  c: InfraColors,
-  obstacles: Obstacles,
-): void {
-  const h = f.spanHalf;
-  const panel = (2 * h) / Math.max(1, Math.round((2 * h) / 10));
-  const yb = b.deckY - 0.4;
-  const yt = b.deckY + b.structureH;
-  const lt = b.width / 2 + 0.5;
-  for (const sgn of [-1, 1] as const) {
-    const l = sgn * lt;
-    const P = (s: number, y: number): V3 => bridgePoint(f, s, l, y);
-    parts.steel.beam(P(-h, yb), P(h, yb), 0.9, 1.0, c.archSteel, f.v);
-    parts.steel.beam(P(-h + panel / 2, yt), P(h - panel / 2, yt), 0.9, 0.9, c.archSteel, f.v);
-    for (let s = -h; s < h - 1e-6; s += panel) {
-      const m = s + panel / 2;
-      parts.steel.beam(P(s, yb), P(m, yt), 0.7, 0.7, c.archSteel, f.v);
-      parts.steel.beam(P(m, yt), P(s + panel, yb), 0.7, 0.7, c.archSteel, f.v);
-    }
-    // Orange line along the top chord crest.
-    parts.glow.beam(
-      P(-h + panel / 2, yt + 0.5),
-      P(h - panel / 2, yt + 0.5),
-      0.3,
-      0.12,
-      c.trussLine,
-      f.v,
-    );
-    // White dots on the rail every 4 m, approaches included.
-    for (let s = f.landA + 2; s <= f.landB - 2; s += 4) {
-      const y = deckYAt(b, f, s);
-      parts.points.push({
-        p: bridgePoint(f, s, sgn * (b.width / 2 - 0.2), y + 1.3),
-        size: [0.2, 0.2, 0.2],
-        rotY: 0,
-        color: c.railDot,
-      });
-    }
-  }
-  // Top lateral struts at every top node.
-  for (let s = -h + panel / 2; s <= h - panel / 2 + 1e-6; s += panel) {
-    parts.detail.steel.beam(
-      bridgePoint(f, s, -lt, yt),
-      bridgePoint(f, s, lt, yt),
-      0.5,
-      0.6,
-      c.archSteel,
-    );
-  }
-  const lowY = lowerDeckY(b);
-  const top = lowY === undefined ? b.deckY - DECK_THICKNESS - 0.4 : lowY - DECK_THICKNESS;
-  pushPiers(b, f, parts, top, b.width - 2, 4, obstacles);
-}
-
-/** Lower deck between the abutments, posts up to the upper deck, red band on both fascias. */
+/** Lower deck between the abutments, posts up to the upper deck, fascia lights by motif. */
 function buildLowerDeck(
   b: Bridge,
   f: BridgeFrame,
@@ -498,100 +244,168 @@ function buildLowerDeck(
   lowY: number,
 ): void {
   const h = f.spanHalf;
-  const half = b.width / 2;
-  buildDeck(b, f, parts, c, -h - ABUT / 2, h + ABUT / 2, () => lowY, c.steel);
+  const use = lowerUse(b);
+  const half = use.width / 2;
+  const y = (s: number): number => lowerDeckAt(b, f, lowY, s);
+  buildDeck(f, parts, c, -h - ABUT / 2, h + ABUT / 2, y, c.steel, use);
+  const under = b.deckY - DECK_THICKNESS;
   for (let s = -h + 5; s < h; s += 10) {
     for (const sgn of [-1, 1] as const) {
       const l = sgn * (half - 0.7);
-      parts.steel.beam(
-        bridgePoint(f, s, l, lowY + 1.2),
-        bridgePoint(f, s, l, b.deckY - DECK_THICKNESS),
-        0.8,
-        0.8,
-        c.steel,
-      );
+      const y0 = y(s) + 1.2;
+      if (under - y0 < 0.5) continue;
+      parts.steel.beam(bridgePoint(f, s, l, y0), bridgePoint(f, s, l, under), 0.8, 0.8, c.steel);
     }
   }
-  const lowFrames = framesAlong([
-    bridgePoint(f, -h, 0, lowY),
-    bridgePoint(f, 0, 0, lowY),
-    bridgePoint(f, h, 0, lowY),
-  ]);
+  if (b.motif === 'fountain') {
+    for (let s = -h; s <= h; s += 8) {
+      parts.points.push({
+        p: bridgePoint(f, s, 0, y(s) + 0.12),
+        size: [0.35, 0.12, 0.35],
+        rotY: 0,
+        color: c.laneLamp,
+      });
+    }
+    return;
+  }
+  if (b.motif === 'subwayDeck') {
+    // White band along both upper fascias; the lower deck's train windows are neon's.
+    const upper = framesAlong([-h, 0, h].map((s) => bridgePoint(f, s, 0, b.deckY)));
+    for (const sgn of [-1, 1] as const) {
+      const l0 = sgn === 1 ? b.width / 2 : -b.width / 2 - 0.06;
+      parts.glow.sweep(upper, boxEdges(l0, l0 + 0.06, -0.55, -0.3, c.deckBand));
+    }
+    return;
+  }
+  const lowFrames = framesAlong(deckPath(f, -h, h, y));
   for (const sgn of [-1, 1] as const) {
     const l0 = sgn === 1 ? half : -half - 0.06;
     parts.glow.sweep(lowFrames, boxEdges(l0, l0 + 0.06, -0.62, -0.32, c.lowerDeckBand));
   }
 }
 
-/** Cyan uplight washes on both river-facing faces of the river piers at `stations`. */
-function buildPierWashes(
-  f: BridgeFrame,
-  parts: BridgeParts,
-  c: InfraColors,
-  stations: readonly number[],
-  pierW: number,
-  pierD: number,
-  top: number,
-): void {
-  const waterY = RIVER.waterY;
-  // A pier head this close to the water leaves no face to light.
-  if (top - waterY < 2) return;
-  for (const s0 of stations) {
-    for (const sgn of [-1, 1] as const) {
-      const s = s0 + sgn * (pierD / 2 + 0.06);
-      const w = pierW * 0.29;
-      const p = (l: number, y: number): V3 => bridgePoint(f, s, l, y);
-      const n: V3 = [f.u[0] * sgn, 0, f.u[2] * sgn];
-      // Soft-edged wash: bright at the waterline, gone by the deck, dark at both sides.
-      const cols = [-1, -0.6, 0.6, 1];
-      const colK = [0, 1, 1, 0];
-      const rows = [waterY, waterY + (top - waterY) * 0.35, top];
-      const rowK = [1, 0.3, 0];
-      const base = parts.wash.vertexCount;
-      for (const [ri, y] of rows.entries()) {
-        for (const [ci, k] of cols.entries()) {
-          const m = (rowK[ri] ?? 0) * (colK[ci] ?? 0);
-          const col: RGB = [c.uplight[0] * m, c.uplight[1] * m, c.uplight[2] * m];
-          parts.wash.vertex(p(-sgn * k * w, y), n, col);
-        }
-      }
-      for (let r = 0; r < rows.length - 1; r++) {
-        for (let k = 0; k < cols.length - 1; k++) {
-          const a = base + r * cols.length + k;
-          const d = a + cols.length;
-          parts.wash.tri(a, a + 1, d + 1);
-          parts.wash.tri(a, d + 1, d);
-        }
-      }
-      // Fixture strip at the waterline.
-      parts.glow.beam(p(-w, waterY + 0.4), p(w, waterY + 0.4), 0.25, 0.25, c.uplightStrip);
-    }
-  }
-}
+/** Deepest box girder under the slab, over a support (m). */
+const HAUNCH = 3.8;
+const GIRDER_DEPTH = 1.6;
+/** Haunch length on each side of a support (m). */
+const HAUNCH_LEN = 28;
 
-/** Girder piers under the lowest deck, with uplights. Used by 'doubleDeck' and unknown kinds. */
-function buildGirder(
+/**
+ * Haunched box girder under the slab between the abutments: GIRDER_DEPTH at mid-span, deepening
+ * to HAUNCH over piers and abutments, never closer than 1 m to the water.
+ */
+function buildBoxGirder(
   b: Bridge,
   f: BridgeFrame,
   parts: BridgeParts,
   c: InfraColors,
-  obstacles: Obstacles,
+  supports: readonly number[],
 ): void {
-  const pierW = Math.max(4, b.width - 4);
-  const pierD = 3.5;
-  const top = (lowerDeckY(b) ?? b.deckY) - DECK_THICKNESS;
-  const stations = pushPiers(b, f, parts, top, pierW, pierD, obstacles);
-  buildPierWashes(f, parts, c, stations, pierW, pierD, top - 0.2);
+  const h = f.spanHalf;
+  const top = b.deckY - DECK_THICKNESS + 0.05;
+  const most = top - (RIVER.waterY + 1);
+  if (most < 0.5) return;
+  const depth = (s: number): number => {
+    let k = 0;
+    for (const p of [-h, ...supports, h]) k = Math.max(k, 1 - Math.abs(s - p) / HAUNCH_LEN);
+    return Math.min(most, GIRDER_DEPTH + (HAUNCH - GIRDER_DEPTH) * k * k);
+  };
+  const w = b.width * 0.27;
+  const stations = new Set<number>([-h, h, ...supports]);
+  for (let s = -h; s < h; s += 6) stations.add(s);
+  for (const p of supports) for (const d of [-HAUNCH_LEN, HAUNCH_LEN]) stations.add(p + d);
+  const list = [...stations].filter((s) => s >= -h && s <= h).sort((p, q) => p - q);
+  for (let i = 0; i < list.length - 1; i++) {
+    const s0 = list[i] as number;
+    const s1 = list[i + 1] as number;
+    if (s1 - s0 < 0.2) continue;
+    const P = (s: number, l: number, yy: number): V3 => bridgePoint(f, s, l, yy);
+    const b0 = top - depth(s0);
+    const b1 = top - depth(s1);
+    // Two sides and the bottom (the top is hidden under the slab).
+    parts.concrete.quad(P(s0, w, top), P(s0, w, b0), P(s1, w, b1), P(s1, w, top), c.underside);
+    parts.concrete.quad(P(s0, -w, top), P(s1, -w, top), P(s1, -w, b1), P(s0, -w, b0), c.underside);
+    parts.concrete.quad(P(s0, -w, b0), P(s1, -w, b1), P(s1, w, b1), P(s0, w, b0), c.underside);
+  }
 }
 
-const BUILDERS: Record<
-  BridgeShape,
-  (b: Bridge, f: BridgeFrame, parts: BridgeParts, c: InfraColors, o: Obstacles) => void
-> = {
+/** Piers under the lowest deck with uplights; a box girder under a single deck. */
+const buildGirder: BridgeBuilder = (b, f, parts, c, obstacles) => {
+  const pierW = Math.max(4, Math.min(b.width - 4, lowerUse(b).width + 4));
+  const pierD = 3.5;
+  const low = lowerDeckY(b);
+  const top = (s: number): number =>
+    (low === undefined ? b.deckY : lowerDeckAt(b, f, low, s)) - DECK_THICKNESS;
+  const stations = pushPiers(b, f, parts, top, pierW, pierD, obstacles);
+  if (low === undefined) buildBoxGirder(b, f, parts, c, stations);
+  // The fountain (neon) is the hero of a 'fountain' bridge: no pier uplights competing with it.
+  if (b.motif === 'fountain') return;
+  buildPierWashes(
+    f,
+    parts,
+    c,
+    stations,
+    pierW,
+    pierD,
+    (s) => top(s) - 0.2,
+    islandWashColor(b, f, c),
+  );
+};
+
+/**
+ * Rail top polylines of every track on a bridge (InfraApi.railTracks): upper deck tracks over
+ * the whole deck and its ramps, lower deck tracks abutment to abutment.
+ */
+export function railTracks(b: Bridge): V3[][] {
+  const f = bridgeFrame(b);
+  const out: V3[][] = [];
+  const add = (use: DeckUse, from: number, to: number, y: (s: number) => number): void => {
+    if (use.tracks === 'none') return;
+    const path = deckPath(f, from, to, y);
+    const top = BED_TOP[use.tracks] + RAIL_H;
+    for (const t of trackCenters(use)) {
+      out.push(
+        path.map((p): V3 => {
+          return bridgePoint(f, bridgeS(f, p[0], p[2]), t, p[1] + top);
+        }),
+      );
+    }
+  };
+  add(upperUse(b), f.landA, f.landB, (s) => deckYAt(b, f, s));
+  const low = lowerDeckY(b);
+  if (low !== undefined) {
+    const h = f.spanHalf + ABUT / 2;
+    add(lowerUse(b), -h, h, (s) => lowerDeckAt(b, f, low, s));
+  }
+  return out;
+}
+
+/** Nozzle line depth under the deck surface on the outer fascia (m). */
+const NOZZLE_DROP = 0.3;
+
+/** Fountain nozzle lines along both upper deck edges (InfraApi.fountainNozzles). */
+export function fountainNozzles(b: Bridge): { a: V3; b: V3; outward: V3 }[] {
+  if (b.motif !== 'fountain') return [];
+  const f = bridgeFrame(b);
+  const h = f.spanHalf;
+  return ([-1, 1] as const).map((sgn) => {
+    const l = sgn * (b.width / 2 + 0.05);
+    return {
+      a: bridgePoint(f, -h, l, b.deckY - NOZZLE_DROP),
+      b: bridgePoint(f, h, l, b.deckY - NOZZLE_DROP),
+      outward: [f.v[0] * sgn, 0, f.v[2] * sgn],
+    };
+  });
+}
+
+const BUILDERS: Record<BridgeShape, BridgeBuilder> = {
   arch: buildArch,
   truss: buildTruss,
   doubleDeck: buildGirder,
   girder: buildGirder,
+  deckArch: buildDeckArch,
+  tiedArch: buildTiedArch,
+  cableStayed: buildCableStayed,
 };
 
 /**
@@ -615,8 +429,15 @@ export function buildBridge(
   const shape = bridgeShape(b);
   const lowY = lowerDeckY(b);
   const deckY = (s: number): number => deckYAt(b, f, s);
-  buildDeck(b, f, parts, c, f.landA, f.landB, deckY, shape === 'arch' ? c.archSteel : c.steel);
-  buildAbutments(b, f, parts, c, lowY);
+  const rail = shape === 'arch' || shape === 'tiedArch' ? c.archSteel : c.steel;
+  buildDeck(f, parts, c, f.landA, f.landB, deckY, rail, upperUse(b));
+  buildAbutments(
+    b,
+    f,
+    parts,
+    c,
+    lowY === undefined ? undefined : { y: lowY, width: lowerUse(b).width },
+  );
   if (lowY !== undefined) buildLowerDeck(b, f, parts, c, lowY);
   BUILDERS[shape](b, f, parts, c, { roads, highways });
   return f;

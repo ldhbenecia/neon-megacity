@@ -19,16 +19,16 @@ camera rig and HUD), so feature PRs never need to edit `src/main.ts`.
 
 ## Shared context (`ctx`)
 
-| key                                             | meaning                                                                                                                          |
-| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `THREE, scene, camera, renderer, controls, gui` | three.js objects; `gui` is lil-gui with `?debug`, otherwise a chainable no-op stand-in (add your folder, never read values back) |
-| `CITY, LAYOUT`                                  | constants and the deterministic layout v2 from `src/city/layout.ts` (read only)                                                  |
-| `env`                                           | shared environment state, one owner per field (table below)                                                                      |
-| `buildings`                                     | `BuildingsApi` published by buildings during its init; undefined before that                                                     |
-| `infra`                                         | `InfraApi` published by infra during its init (highway curves, `deckHeightAt`); else undefined                                   |
-| `render()`                                      | default `renderer.render`; atmosphere replaces with the post-processing composer                                                 |
-| `onResize(fn)`                                  | register `(w, h) => {}`                                                                                                          |
-| `onQuality(fn)`                                 | register `(quality) => {}` for runtime `env.quality` changes; returns the unsubscribe function                                   |
+| key                                             | meaning                                                                                                                                           |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `THREE, scene, camera, renderer, controls, gui` | three.js objects; `gui` is lil-gui with `?debug`, otherwise a chainable no-op stand-in (add your folder, never read values back)                  |
+| `CITY, LAYOUT`                                  | constants and the deterministic layout v2 from `src/city/layout.ts` (read only)                                                                   |
+| `env`                                           | shared environment state, one owner per field (table below)                                                                                       |
+| `buildings`                                     | `BuildingsApi` published by buildings during its init; undefined before that                                                                      |
+| `infra`                                         | `InfraApi` published by infra during its init (drawn highway curves, `deckHeightAt`, optional `railTracks` and `fountainNozzles`); else undefined |
+| `render()`                                      | default `renderer.render`; atmosphere replaces with the post-processing composer                                                                  |
+| `onResize(fn)`                                  | register `(w, h) => {}`                                                                                                                           |
+| `onQuality(fn)`                                 | register `(quality) => {}` for runtime `env.quality` changes; returns the unsubscribe function                                                    |
 
 ### `ctx.env` fields and owners
 
