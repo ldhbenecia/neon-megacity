@@ -6,6 +6,7 @@ import type { Layout } from './types';
 export interface LayoutWorker {
   onmessage: ((e: MessageEvent<Layout>) => void) | null;
   onerror: ((e: ErrorEvent) => void) | null;
+  onmessageerror: ((e: MessageEvent) => void) | null;
   postMessage(data: { seed: number }): void;
   terminate(): void;
 }
@@ -22,6 +23,10 @@ function inWorker(seed: number, worker: LayoutWorker): Promise<Layout> {
     };
     worker.onerror = (e) => {
       reject(new Error(e.message || 'city worker failed'));
+      worker.terminate();
+    };
+    worker.onmessageerror = () => {
+      reject(new Error('city worker: layout could not be deserialized'));
       worker.terminate();
     };
     worker.postMessage({ seed });

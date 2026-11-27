@@ -19,7 +19,7 @@ function preloadApp(): Plugin {
         if (!bundle) return [];
         const chunks = Object.values(bundle).filter((c) => c.type === 'chunk');
         const app = chunks.find((c) => c.facadeModuleId?.endsWith('/src/main.ts'));
-        if (!app) return [];
+        if (!app) throw new Error('hangang-preload-app: no chunk for src/main.ts');
         const files = new Set<string>();
         const visit = (file: string): void => {
           if (files.has(file)) return;
@@ -44,6 +44,6 @@ export default defineConfig({
   base: process.env.BASE_PATH ?? './',
   plugins: [preloadApp()],
   build: { target: 'es2022', chunkSizeWarningLimit: 1500 },
-  // The city worker is an ES module worker (it shares the layout generator chunk).
+  // The city worker is an ES module worker, bundled on its own (it carries its own generator copy).
   worker: { format: 'es' },
 });

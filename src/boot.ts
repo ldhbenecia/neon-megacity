@@ -1,13 +1,13 @@
-// First chunk: generates the layout in the city worker while the app chunks download, then runs
-// the app. Layout generation (~0.8 s on v3) used to block the main thread during JS evaluation;
-// here the boot skeleton keeps animating meanwhile. Without workers it falls back to generating
-// on the main thread, as before.
+// Entry point. Order contract: the layout is generated (city worker, or the main thread as a
+// fallback), published with setLayout, and only then is the app (src/main.ts) evaluated.
 import { loadLayout } from './city/loadLayout';
 import { CITY_SEED } from './city/seed';
 
 // The generator chunk carries most of three.js and never reads LAYOUT: evaluate it now, while the
 // worker runs, instead of after.
 const warm = import('./city/generate');
+// Handled here so a failure before `await warm` is not an unhandled rejection; it still rejects there.
+warm.catch(() => {});
 
 // The app chunks are already downloading (modulepreload links, see vite.config.ts); the import
 // below only evaluates them, after the layout is published (some modules read LAYOUT while being
