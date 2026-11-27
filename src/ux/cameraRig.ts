@@ -31,7 +31,7 @@ import {
   rigPreset,
   rigPresets,
 } from './presets';
-import { CAMERA_FOV, CAMERA_LIMITS, CAMERA_RING } from '../core/query';
+import { CAMERA_FOV, CAMERA_LIMITS, cameraRing } from '../core/query';
 
 export interface RigDebug {
   mode: RigMode;
@@ -122,6 +122,7 @@ function isTyping(target: EventTarget | null): boolean {
 export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
   // Above this height no building volume (spires included) can be within the wall margin. Read
   // here, with the rig, not at module evaluation: the rig is created once the layout exists.
+  const ring = cameraRing();
   const skyClear = LAYOUT.buildings.reduce((m, b) => Math.max(m, buildingTop(b)), 0) + WALL_MARGIN;
   const { camera, controls, gui, renderer, env } = ctx;
   const { hud } = opts;
@@ -720,13 +721,13 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
       // as the ridge ring (a low view stops at the ring, a high one reaches maxDistance).
       const out = (k: number): THREE.Vector3 =>
         _w.copy(camera.position).sub(controls.target).multiplyScalar(k).add(controls.target);
-      if (Math.hypot(out(s).x, _w.z) > CAMERA_RING) {
+      if (Math.hypot(out(s).x, _w.z) > ring) {
         // Go as far as the ring this frame (bisection on the scale), then stop the gesture.
         let lo = 1;
         let hi = s;
         for (let i = 0; i < 16; i++) {
           const mid = (lo + hi) / 2;
-          if (Math.hypot(out(mid).x, _w.z) > CAMERA_RING) hi = mid;
+          if (Math.hypot(out(mid).x, _w.z) > ring) hi = mid;
           else lo = mid;
         }
         out(lo);
@@ -751,9 +752,9 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
     const p = camera.position;
     if (p.equals(resolvedAt)) return;
     const r = Math.hypot(p.x, p.z);
-    if (r > CAMERA_RING) {
+    if (r > ring) {
       // Moving past the ring (keys, pan): slide camera and target back together, view unchanged.
-      const k = (r - CAMERA_RING) / r;
+      const k = (r - ring) / r;
       const dx = p.x * k;
       const dz = p.z * k;
       p.x -= dx;

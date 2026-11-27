@@ -1,7 +1,8 @@
 import { expect, test, type Page } from '@playwright/test';
 import { PerspectiveCamera, Vector3 } from 'three';
 import { CITY } from '../../src/city/layout';
-import { CAMERA_LIMITS, CAMERA_RING } from '../../src/core/query';
+import { CAMERA_LIMITS, cameraRing } from '../../src/core/query';
+import '../setup-layout';
 import { app, waitForCity, waitFrames } from './helpers';
 
 type Cam = ReturnType<NonNullable<Window['__hangang']>['camera']>;
@@ -96,7 +97,7 @@ test.describe('zoom out', () => {
     const before = await cam(page);
     await stream(page, 600, 20, false, { fx: 0.97, fy: 0.9 });
     const c = await settled(page);
-    expect(Math.hypot(c.position.x, c.position.z)).toBeLessThanOrEqual(CAMERA_RING + 1);
+    expect(Math.hypot(c.position.x, c.position.z)).toBeLessThanOrEqual(cameraRing() + 1);
     expect(Math.hypot(c.target.x - before.target.x, c.target.z - before.target.z)).toBeLessThan(1);
     expect(orbit(c)).toBeGreaterThan(orbit(before));
     // A zoom-in right after reaching the limit reacts at once.

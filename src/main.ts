@@ -3,7 +3,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { CITY, LAYOUT } from './city/layout';
 import { postEnabled } from './core/gl';
 import { NIGHT } from './core/palette';
-import { CAMERA_FAR, CAMERA_FOV, CAMERA_LIMITS, parseQuery } from './core/query';
+import { CAMERA_FOV, CAMERA_LIMITS, cameraFar, parseQuery } from './core/query';
 import type { CityModule, CityModuleInstance, CompileHook, Ctx, Quality } from './core/types';
 import * as lighting from './lighting/index';
 import * as terrain from './terrain/index';
@@ -92,7 +92,7 @@ async function boot(): Promise<void> {
     CAMERA_FOV,
     window.innerWidth / window.innerHeight,
     0.5,
-    Math.max(8000, CAMERA_FAR),
+    Math.max(8000, cameraFar()),
   );
 
   const controls = new OrbitControls(camera, renderer.domElement);
