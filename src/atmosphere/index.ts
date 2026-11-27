@@ -32,7 +32,7 @@ const setSrgb = (c: Color, rgb: RGB, k = 1): Color =>
 export function init(ctx: Ctx): CityModuleInstance {
   const { scene, camera, gui, env } = ctx;
   // Low tier (CI SwiftShader): no post chain, rain, clouds or searchlights. Fog and stars stay.
-  const low = env.quality === 'low';
+  const low = env.quality === 'ci';
 
   const settings = {
     fogScale: 1,
