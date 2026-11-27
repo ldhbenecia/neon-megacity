@@ -38,9 +38,14 @@ const SIDE_REACH = 20;
 
 const c = (hex: number): THREE.Color => new THREE.Color().setHex(hex);
 
-export function groundPalette(): Record<'urban' | 'hill' | 'wood' | ChannelPart, THREE.Color> {
+export function groundPalette(): Record<
+  'urban' | 'hill' | 'wood' | 'forest' | 'rock' | ChannelPart,
+  THREE.Color
+> {
   return {
     urban: c(TC.groundUrban),
+    rock: c(TC.groundRock),
+    forest: c(TC.groundForest),
     bank: c(TC.groundUrban),
     hill: c(TC.groundHill),
     wood: c(TC.groundWood),
@@ -61,11 +66,37 @@ function groundColor(x: number, y: number, z: number, pal: Palette, out: THREE.C
     Math.max(0, Math.max(Math.abs(x) - MAP_HALF_X, Math.abs(z) - MAP_HALF_Z) / 200),
   );
   const n = noise2(x / 90, z / 90) * 0.65 + noise2(x / 23, z / 23) * 0.35;
-  const forest = Math.min(1, Math.max(0, (y - 4) / 20));
+  const forest = forestAt(y);
   const wood = Math.max(outside, forest, hill * Math.min(1, Math.max(0, (n - 0.45) * 4)));
-  out.copy(pal.urban).lerp(pal.hill, hill).lerp(pal.wood, wood);
-  const canopy = noise2(x / 7, z / 7) * 0.6 + noise2(x / 2.7, z / 2.7) * 0.4;
-  out.multiplyScalar((0.85 + 0.3 * n) * (1 - forest * 0.35 + forest * 0.5 * canopy));
+  out.copy(pal.urban).lerp(pal.hill, hill).lerp(pal.wood, wood).lerp(pal.forest, forest);
+  const canopy = noise2(x / 14 + 31, z / 14 + 7) * 0.7 + noise2(x / 5 + 3, z / 5 + 11) * 0.3;
+  // Crowns (high canopy) lighter, the gaps between stands darker.
+  out.multiplyScalar((0.85 + 0.3 * n) * (1 - forest * 0.45 + forest * 0.9 * canopy));
+}
+
+/** Forest weight of ground at height y: 0 on the plain and low foothills, 1 from 24 m up. */
+function forestAt(y: number): number {
+  return Math.min(1, Math.max(0, (y - 4) / 20));
+}
+
+/** Height of tree crowns over forest ground (m); visual only, never negative. */
+const CANOPY = 2.5;
+/** 남산's summit stays level for the transmission tower (buildings): no canopy within this. */
+const SUMMIT_FLAT = 50;
+
+// Crowns clump at a stand scale the 8 m mountain cells resolve. Only ever raises the ground, so a
+// tree placed on surfaceHeight sinks a little rather than floats.
+function canopyLift(x: number, y: number, z: number): number {
+  const f = forestAt(y);
+  if (f <= 0) return 0;
+  let keep = 1;
+  for (const m of LAYOUT.mountains) {
+    if (m.id !== 'namsan') continue;
+    const d = Math.hypot(x - m.peak.x, z - m.peak.z);
+    keep = Math.min(keep, Math.min(1, Math.max(0, (d - SUMMIT_FLAT) / 20)));
+  }
+  const n = noise2(x / 14 + 31, z / 14 + 7) * 0.7 + noise2(x / 5 + 3, z / 5 + 11) * 0.3;
+  return CANOPY * f * keep * n;
 }
 
 function nearMountain(x: number, z: number): boolean {
@@ -88,7 +119,7 @@ export function buildGround(): THREE.BufferGeometry {
   const vertex = (x: number, z: number): number => {
     const v = groundVertex(x, z);
     groundColor(x, v.y, z, pal, tmp);
-    pos.push(v.x, v.y, v.z);
+    pos.push(v.x, v.y + canopyLift(v.x, v.y, v.z), v.z);
     col.push(tmp.r, tmp.g, tmp.b);
     dist.push(groundWaterDistance(v.x, v.z));
     rim.push(Math.hypot(x, z) > GROUND_RADIUS ? 1 : 0);
@@ -171,8 +202,26 @@ export function buildGround(): THREE.BufferGeometry {
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   g.setIndex(idx);
   g.computeVertexNormals();
+  tintRock(g, pal);
   g.computeBoundingSphere();
   return g;
+}
+
+// Steep forest ground (cliffs, crests, gully walls) shows bare rock, a touch lighter so ridge lines
+// catch the moon while the wooded slopes stay a dark mass.
+function tintRock(g: THREE.BufferGeometry, pal: Palette): void {
+  const pos = g.getAttribute('position');
+  const nor = g.getAttribute('normal');
+  const col = g.getAttribute('color');
+  const c = new THREE.Color();
+  for (let i = 0; i < pos.count; i++) {
+    const f = forestAt(pos.getY(i));
+    if (f <= 0) continue;
+    const steep = Math.min(1, Math.max(0, (1 - nor.getY(i) - 0.12) / 0.2));
+    if (steep <= 0) continue;
+    c.setRGB(col.getX(i), col.getY(i), col.getZ(i)).lerp(pal.rock, steep * f * 0.8);
+    col.setXYZ(i, c.r, c.g, c.b);
+  }
 }
 
 // Signed area in x-z of triangle (a, b, c) as wound for an up-facing face; 0 counts as up.
