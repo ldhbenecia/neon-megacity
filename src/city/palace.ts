@@ -43,12 +43,12 @@ export const PALACE_BUILDINGS: readonly PalaceBuilding[] = [
   { id: 'gyeonghoeru', name: '경회루', part: 'pavilion', dx: -85, k: 128, w: 28, d: 22, h: 14 },
   { id: 'hyangwonjeong', name: '향원정', part: 'pavilion', dx: 45, k: 151, w: 7, d: 7, h: 6 },
   // Wall gates: 건춘문 east, 영추문 west, 신무문 north (on the axis).
-  { id: 'geonchunmun', name: '건춘문', part: 'gate', dx: HALF_W - 4.5, k: 40, w: 8, d: 16, h: 8 },
+  { id: 'geonchunmun', name: '건춘문', part: 'gate', dx: HALF_W - 5.5, k: 40, w: 8, d: 16, h: 8 },
   {
     id: 'yeongchumun',
     name: '영추문',
     part: 'gate',
-    dx: -(HALF_W - 4.5),
+    dx: -(HALF_W - 5.5),
     k: 40,
     w: 8,
     d: 16,
@@ -159,9 +159,10 @@ function roadCuts(
 }
 
 /**
- * Outer wall (south side broken by the main gate on the axis), inner walls (axis gates), the
- * covered corridor around the main court (opening on the axis) and the terrace in front of the
- * throne hall (a: south end, b: north end on the axis).
+ * 경복궁's walls: the outer wall (opening at 광화문, 건춘문, 영추문, 신무문 and where roads reach
+ * it), the cross wall of 흥례문, the corridor (행각) around the 근정전 court (근정문 in its south
+ * side, 사정문's opening in the north), the inner wall behind 사정전, and 근정전's two-tier terrace
+ * (월대; a: south end, b: north end on the axis).
  */
 export function palaceWalls(roads: readonly PalaceRoad[] = []): PalaceWall[] {
   const { x0, x1, z0, z1 } = PALACE_RECT;
@@ -227,8 +228,9 @@ export function palaceWalls(roads: readonly PalaceRoad[] = []): PalaceWall[] {
   const a2 = { x: xl, z: zk(WALL_B) };
   const b2 = { x: xr, z: zk(WALL_B) };
   out.push(...cutWall(a2, b2, [open(a2, b2, { x: ax, z: a2.z }, 7)], 'wall', 3.2, 1.2));
-  // 근정전's two-tier terrace (월대): the lower one wider, the upper one on it; both end at the
-  // hall's south face.
+  // 근정전's two-tier terrace (월대): the lower one wider, the upper one on it. Both stay below the
+  // hall's stone base (palaceHall plinth: at least 1.5 m); the upper one stops 0.5 m short of the
+  // hall so the two never end on one plane.
   const hall = by('geunjeongjeon');
   const face = hall.k - hall.d / 2;
   out.push(
@@ -236,14 +238,14 @@ export function palaceWalls(roads: readonly PalaceRoad[] = []): PalaceWall[] {
       a: { x: ax, z: zk(COURT.south + 6) },
       b: { x: ax, z: zk(face) },
       kind: 'terrace',
-      height: 1,
+      height: 0.8,
       width: hall.w + 8,
     },
     {
       a: { x: ax, z: zk(COURT.south + 11) },
-      b: { x: ax, z: zk(face) },
+      b: { x: ax, z: zk(face - 0.5) },
       kind: 'terrace',
-      height: 2,
+      height: 1.4,
       width: hall.w - 6,
     },
   );
