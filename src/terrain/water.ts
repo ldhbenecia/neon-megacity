@@ -79,20 +79,23 @@ const WATER_LIGHT = /* glsl */ `
   reflectedLight.indirectSpecular *= mix(1.0, 2.0, uNight);
   #ifdef ENVMAP_TYPE_PMREM
   {
-    // Seen from high up (overview, topdown) the mirror ray points into the dark upper sky, so the
-    // river went black. At night the ray is flattened toward the horizon, where the city and
-    // bridge light panels sit, and added in by how steeply the camera looks down: the river
-    // keeps its streaks of bank light from any height.
+    // Night city light seen from above: the mirror ray, laid down to the panels' elevation.
     vec3 rv = transformDirectionByInverseViewMatrix(reflect(-geometryViewDir, geometryNormal), viewMatrix);
     vec3 look = transformDirectionByInverseViewMatrix(-geometryViewDir, viewMatrix);
-    float steep = smoothstep(0.3, 0.85, -look.y);
-    vec3 flatRay = normalize(vec3(rv.x, min(rv.y, 0.22), rv.z));
-    // A blurred sample: the ripples scatter the ray, and a sharp one mostly hits sky between panels.
+    // Elevation pinned at most 0.22 rad (sin) and the heading rebuilt, so a ray straight up works.
+    float h = clamp(rv.y, 0.0, 0.22);
+    float lh = length(rv.xz);
+    vec2 d = lh > 1e-4 ? rv.xz / lh : vec2(1.0, 0.0);
+    vec3 flatRay = vec3(d.x * sqrt(1.0 - h * h), h, d.y * sqrt(1.0 - h * h));
+    // Blurred: ripples scatter the ray, a sharp sample mostly hits sky between panels.
     vec3 city = textureLod(envMap, envMapRotation * flatRay, roughnessToMip(0.3)).rgb * envMapIntensity;
-    // Far off the ripples flatten and the ray locks onto one panel (a solid band to the map edge).
-    // Horizontal distance: the topdown camera hangs 2.7 km up, right over the river.
+    // Only for cameras looking steeply down from well above the water.
+    float steep = smoothstep(0.3, 0.85, -look.y) * smoothstep(60.0, 250.0, cameraPosition.y);
+    // Faded with horizontal distance, where calm far ripples would lock the ray onto one panel.
     float near = 1.0 - smoothstep(1400.0, 2600.0, length(look.xz) * length(vViewPosition));
-    reflectedLight.indirectSpecular += city * steep * near * uNight * 2.2;
+    // Schlick Fresnel for water (F0 0.02), lifted so the streaks read from above.
+    float fres = 0.02 + 0.98 * pow(1.0 - clamp(-look.y, 0.0, 1.0), 5.0);
+    reflectedLight.indirectSpecular += city * steep * near * uNight * (0.6 + 8.0 * fres);
   }
   #endif
 }
