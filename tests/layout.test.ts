@@ -90,7 +90,7 @@ describe('layout v3: determinism', () => {
       {
         "blocks": 1402,
         "buildings": 5662,
-        "digest": "42ae98f3",
+        "digest": "5f1f9f53",
         "roads": 1176,
         "slots": 3452,
       }
@@ -799,6 +799,29 @@ describe('layout v3: water and islands', () => {
         if (Math.abs(local.z) < b.d) continue;
         expect(gap, `${b.id} vs ${o.id}`).toBeGreaterThanOrEqual(0.8 * Math.max(b.h, o.h) - 1e-6);
       }
+    }
+  });
+});
+
+describe('layout v3: building names', () => {
+  it('names buildings after their quarter', () => {
+    const named = (zone: string) => B.filter((b) => b.zoneId === zone).map((b) => b.tags.name);
+    expect(B.filter((b) => b.archetype === 'palaceHall').map((b) => b.tags.name)).toEqual([
+      '한빛문',
+      '정운전',
+      '사현전',
+      '평안전',
+    ]);
+    for (const b of B) expect(b.tags.name, b.archetype).not.toMatch(/[\u4e00-\u9fff]/u);
+    expect(named('hongdae').some((n) => /전자상가|시장/u.test(n))).toBe(false);
+    expect(named('seongsu').some((n) => n.includes('벽돌창고'))).toBe(false);
+    expect(named('jongno').some((n) => n.includes('트레이드센터'))).toBe(false);
+    // Complexes group neighbouring slabs and are numbered per strip.
+    const banpo = B.filter((b) => b.zoneId === 'apt-banpo' && b.archetype === 'apartmentSlab');
+    expect(banpo[0]?.tags.name).toBe('반포 1단지 101동');
+    expect(new Set(banpo.map((b) => b.tags.complex)).size).toBe(Math.ceil(banpo.length / 4));
+    for (const b of B.filter((x) => x.archetype === 'hillHouse')) {
+      expect(b.tags.name).toMatch(/^[^·]+ \d+번지$/u);
     }
   });
 });

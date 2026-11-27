@@ -1453,6 +1453,9 @@ function frontSide(
 
 const STOREFRONT_KINDS = new Set<DistrictZone['kind']>(['core', 'megacore', 'midtown', 'corridor']);
 
+/** Apartment slabs per named complex (단지). */
+const COMPLEX_SIZE = 4;
+
 function buildSpecs(
   seed: number,
   lots: Lot[],
@@ -1468,8 +1471,8 @@ function buildSpecs(
   const rng = zoneRng(seed, 'specs');
   applyBlockHeightRules(drafts, rng);
 
-  const complexes = new Map<number, number>();
-  const dongs = new Map<number, number>();
+  const aptCount = new Map<string, number>();
+  let palaceIndex = 0;
   return drafts.map((d, id): BuildingSpec => {
     const { lot } = d;
     const obb = draftObb(d);
@@ -1496,7 +1499,12 @@ function buildSpecs(
         d.archetype === 'showroomBox' ||
         (STOREFRONT_KINDS.has(lot.zone.kind) && rng.chance(0.4)) ||
         (d.archetype === 'hillHouse' && rng.chance(0.1)),
-      name: fictionalName(rng, d.archetype, lot.zone.name),
+      name: fictionalName(
+        rng,
+        d.archetype,
+        lot.zone,
+        d.archetype === 'palaceHall' ? palaceIndex++ : 0,
+      ),
     };
     if (d.archetype === 'hillHouse' || d.archetype === 'sangga') {
       if (rng.chance(0.07)) tags.cross = true;
@@ -1506,13 +1514,12 @@ function buildSpecs(
       tags.name = `${d.corp} 타워`;
     }
     if (d.archetype === 'apartmentSlab') {
-      let n = complexes.get(lot.blockId);
-      if (n === undefined) {
-        n = complexes.size + 1;
-        complexes.set(lot.blockId, n);
-      }
-      const dong = (dongs.get(lot.blockId) ?? 100) + 1;
-      dongs.set(lot.blockId, dong);
+      // Every slab is its own block; consecutive slabs of a strip (traced along the bank) form
+      // complexes of COMPLEX_SIZE, numbered per strip: 반포 1단지 101~104동, 반포 2단지 ...
+      const c = aptCount.get(lot.zone.id) ?? 0;
+      aptCount.set(lot.zone.id, c + 1);
+      const n = Math.floor(c / COMPLEX_SIZE) + 1;
+      const dong = 101 + (c % COMPLEX_SIZE);
       tags.complex = `${lot.zone.name} ${n}단지`;
       tags.dong = dong;
       tags.name = `${tags.complex} ${dong}동`;

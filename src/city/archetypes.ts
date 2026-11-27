@@ -2,7 +2,15 @@
 // ART_DIRECTION 4.1, 4.2. Tiers live in the layout so buildings and neon share one truth.
 import type { Rng } from '../core/random';
 import { toWorld } from './math';
-import type { Archetype, Cantilever, Side, Skybridge, Tier, TierShape } from './types';
+import type {
+  Archetype,
+  Cantilever,
+  DistrictKind,
+  Side,
+  Skybridge,
+  Tier,
+  TierShape,
+} from './types';
 
 /** Floor heights per archetype: [typical floor, ground floor]. */
 export const FLOOR_H: Record<Archetype, [number, number]> = {
@@ -249,22 +257,45 @@ export const CORPS = [
   '청람로보틱스',
 ] as const;
 
-/** Fictional building name; `place` is the zone's display name (real Seoul place names are allowed). */
-export function fictionalName(rng: Rng, archetype: Archetype, place: string): string {
+/** Fictional halls (gate, throne, council, residence): not copies of any real palace's names. */
+const PALACE_HALLS = ['한빛문', '정운전', '사현전', '평안전'] as const;
+const OLDTOWN_SUFFIX = ['빌딩', '회관', '상사', '인쇄소', '귀금속', '악기상가'];
+const NIGHTLIFE_SUFFIX = ['라운지', '클럽', '포차', '라이브홀', '빌딩'];
+const BRICK_SUFFIX = [' 공방', ' 로스터리', ' 스튜디오', '제화', ' 창고'];
+const SHOWROOM_SUFFIX = [' 쇼룸', ' 갤러리', ' 플래그십', ' 아틀리에'];
+
+/**
+ * Fictional building name for the building card. `zone` gives the display name (real Seoul
+ * place names are allowed) and kind, so names follow the quarter's character (SEOUL.md 4.2):
+ * 종로's printers and jewellers, 홍대's clubs, 성수's workshops, 청담's showrooms. `index` is the
+ * building's order among the palace halls, south to north.
+ */
+export function fictionalName(
+  rng: Rng,
+  archetype: Archetype,
+  zone: { name: string; kind: DistrictKind },
+  index = 0,
+): string {
   const stem = `${rng.pick(SYL_A)}${rng.pick(SYL_B)}`;
+  // "이태원·해방촌" → "해방촌": a street address names one neighbourhood.
+  const place = zone.name.split('·').at(-1) ?? zone.name;
   switch (archetype) {
     case 'sangga':
+      if (zone.kind === 'nightlife') return `${stem}${rng.pick(NIGHTLIFE_SUFFIX)}`;
+      if (zone.kind === 'oldtown') return `${stem}${rng.pick(OLDTOWN_SUFFIX)}`;
       return `${stem}${rng.pick(SANGGA_SUFFIX)}`;
+    case 'lowOffice':
+      return `${stem}${rng.pick(OLDTOWN_SUFFIX)}`;
     case 'hillHouse':
       return `${place} ${rng.int(1, 300)}번지`;
     case 'hanokRow':
-      return `${stem}${rng.pick(['상회', '약재상', '서점', '다방'])}`;
+      return `${stem}${rng.pick(['상회', '약재상', '서점', '다방', '공방'])}`;
     case 'brickWarehouse':
-      return `${stem} 벽돌창고`;
+      return `${stem}${rng.pick(BRICK_SUFFIX)}`;
     case 'showroomBox':
-      return `${stem} 쇼룸`;
+      return `${stem}${rng.pick(SHOWROOM_SUFFIX)}`;
     case 'palaceHall':
-      return `${stem}전`;
+      return PALACE_HALLS[Math.min(index, PALACE_HALLS.length - 1)] as string;
     case 'warehouse':
       return `운해물류 제${rng.int(1, 40)}창고`;
     case 'pavilion':
