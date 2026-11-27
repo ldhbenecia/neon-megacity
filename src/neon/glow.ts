@@ -1,6 +1,27 @@
 import * as THREE from 'three';
 import { ADDITIVE_TAIL, COMMON_PARS, PATH_PARS, neonMaterial, type NeonUniforms } from './glsl';
+import { NEON } from '../core/palette';
 import { PAINT_BELOW, PAINT_PAD_X, PAINT_RISE } from './placement';
+
+/** Halo diameter cap as a share of screen height: near (≤ HALO_NEAR_M) and far (≥ HALO_FAR_M). */
+export const HALO_SCREEN_NEAR = 0.1;
+export const HALO_SCREEN_FAR = 0.006;
+export const HALO_NEAR_M = 250;
+export const HALO_FAR_M = 900;
+/** Far halos keep this share of their brightness and blend this far toward warm window light. */
+export const HALO_FAR_GAIN = 0.45;
+export const HALO_FAR_WARM = 0.4;
+
+const warm = new THREE.Color(NEON.windowWarm.hex);
+const HALO_DEFS = /* glsl */ `
+  #define HALO_SCREEN_NEAR ${HALO_SCREEN_NEAR.toFixed(4)}
+  #define HALO_SCREEN_FAR ${HALO_SCREEN_FAR.toFixed(4)}
+  #define HALO_NEAR_M ${HALO_NEAR_M.toFixed(1)}
+  #define HALO_FAR_M ${HALO_FAR_M.toFixed(1)}
+  #define HALO_FAR_GAIN ${HALO_FAR_GAIN.toFixed(3)}
+  #define HALO_FAR_WARM ${HALO_FAR_WARM.toFixed(3)}
+  #define HALO_WARM vec3(${warm.r.toFixed(3)}, ${warm.g.toFixed(3)}, ${warm.b.toFixed(3)})
+`;
 
 // Halos, holograms, ground reflections, vehicle lights, fountains and wall paint share one shader program (perf budget: every
 // distinct source or define is another program). `uMode` picks the branch at run time, so
@@ -17,6 +38,7 @@ const PAINT_DEFS = /* glsl */ `
 const VERTEX = /* glsl */ `
   ${COMMON_PARS}
   ${PAINT_DEFS}
+  ${HALO_DEFS}
   #define HALO_GROW_MAX_M 28.0
   ${PATH_PARS}
   uniform float uMode;
@@ -38,6 +60,11 @@ const VERTEX = /* glsl */ `
       // Radius capped at max(1.5x, 28 m): far views otherwise bloom big halos into blobs over the
       // towers, while small halos keep growing enough to read from afar.
       float r = min(iPos.w * (1.0 + dist / 400.0), max(iPos.w * 1.5, HALO_GROW_MAX_M));
+      // Screen-size cap shrinking with distance (projectionMatrix[1][1] = 1 / tan(fov / 2)), so far
+      // districts read as small points next to their windows instead of blobs bigger than towers.
+      float far = smoothstep(HALO_NEAR_M, HALO_FAR_M, dist);
+      float capFrac = mix(HALO_SCREEN_NEAR, HALO_SCREEN_FAR, far);
+      r = min(r, capFrac * max(dist, 1.0) / projectionMatrix[1][1]);
       // Pulled toward the camera so the disc does not clip into the wall behind the sign.
       mvPosition.xyz *= max(0.2, 1.0 - min(r * 0.6, dist * 0.3) / max(dist, 1.0));
       mvPosition.xy += position.xy * r;
@@ -48,8 +75,10 @@ const VERTEX = /* glsl */ `
           fogE = 1.0 - exp(-fd * fd);
         #endif
       #endif
-      vAlpha = (0.02 + fogE * 0.35) * powerOn(iColor.w, 3.0) * uGain;
-      vCol = iColor.rgb;
+      vAlpha = (0.02 + fogE * 0.35 * (1.0 - far)) * mix(1.0, HALO_FAR_GAIN, far)
+        * powerOn(iColor.w, 3.0) * uGain;
+      float lum = max(iColor.r, max(iColor.g, iColor.b));
+      vCol = mix(iColor.rgb, HALO_WARM * lum, far * HALO_FAR_WARM);
       vUv = position.xy;
     } else if (uMode < 1.5) {
       float ang = uTime * iParam.x + iParam.z * 6.28;
