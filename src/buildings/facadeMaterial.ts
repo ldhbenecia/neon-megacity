@@ -50,7 +50,7 @@ varying vec2 vFace;
 varying vec4 vWin;
 varying vec4 vInfo;
 vec3 srgbToLinear(vec3 c) {
-  return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c));
+  return mix(c / 12.92, pow(max((c + 0.055) / 1.055, vec3(0.0)), vec3(2.4)), step(0.04045, c));
 }
 `;
 
