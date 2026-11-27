@@ -42,7 +42,14 @@ import {
   type Tier,
   type Vec2,
 } from '../src/city/layout';
-import { MAX_SLENDER, SKY_LANE_CLEAR, SKY_LANE_MARGIN, fitScale } from '../src/city/generate';
+import {
+  MAX_SLENDER,
+  PALACE_PLAN,
+  SKY_LANE_CLEAR,
+  SKY_LANE_MARGIN,
+  fitScale,
+} from '../src/city/generate';
+import { PALACE_HALLS } from '../src/city/archetypes';
 import {
   PALACE_RECT,
   TALL_GROUND,
@@ -92,7 +99,7 @@ describe('layout v3: determinism', () => {
       {
         "blocks": 1415,
         "buildings": 5640,
-        "digest": "a8658955",
+        "digest": "7c0f728c",
         "roads": 1181,
         "slots": 3474,
       }
@@ -802,6 +809,40 @@ describe('layout v3: water and islands', () => {
         if (Math.abs(local.z) < b.d) continue;
         expect(gap, `${b.id} vs ${o.id}`).toBeGreaterThanOrEqual(0.8 * Math.max(b.h, o.h) - 1e-6);
       }
+    }
+  });
+});
+
+describe('layout v3: building names', () => {
+  it('names buildings after their quarter', () => {
+    const named = (zone: string) => B.filter((b) => b.zoneId === zone).map((b) => b.tags.name);
+    expect(B.filter((b) => b.archetype === 'palaceHall').map((b) => b.tags.name)).toEqual([
+      '한빛문',
+      '정운전',
+      '사현전',
+      '평안전',
+    ]);
+    for (const b of B) expect(b.tags.name, b.archetype).not.toMatch(/[\u4e00-\u9fff]/u);
+    expect(named('hongdae').some((n) => /전자상가|시장/u.test(n))).toBe(false);
+    expect(named('seongsu').some((n) => n.includes('벽돌창고'))).toBe(false);
+    expect(named('jongno').some((n) => n.includes('트레이드센터'))).toBe(false);
+    expect(PALACE_PLAN.length).toBe(PALACE_HALLS.length);
+    // Complexes group up to 4 neighbouring slabs of one row, numbered per strip.
+    const banpo = B.filter((b) => b.zoneId === 'apt-banpo' && b.archetype === 'apartmentSlab');
+    expect(banpo[0]?.tags.name).toBe('반포 1단지 101동');
+    const byComplex = new Map<string, typeof B>();
+    for (const b of B.filter((x) => x.archetype === 'apartmentSlab')) {
+      const k = b.tags.complex as string;
+      byComplex.set(k, [...(byComplex.get(k) ?? []), b]);
+    }
+    for (const [k, slabs] of byComplex) {
+      expect(slabs.length, k).toBeLessThanOrEqual(4);
+      // Same row: rows sit at bank distances 72 m apart, slabs of one row share theirs.
+      const off = slabs.map((b) => riverSignedDistance(b.x, b.z));
+      expect(Math.max(...off) - Math.min(...off), k).toBeLessThan(36);
+    }
+    for (const b of B.filter((x) => x.archetype === 'hillHouse')) {
+      expect(b.tags.name).toMatch(/^[^·]+ \d+번지$/u);
     }
   });
 });
