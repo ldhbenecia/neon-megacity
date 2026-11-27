@@ -58,9 +58,42 @@ export interface HwPath {
   maxX: number;
   minZ: number;
   maxZ: number;
+  /**
+   * Index range of `pts` that is drawn: the longest run inside the map edge pad (every sample of a
+   * closed road). Decks, traffic curves and tunnel portals all end at it.
+   */
+  drawn: readonly [number, number];
 }
 
+const pathCache = new WeakMap<Highway, HwPath>();
+
+/** Longest run of `pts` inside the map edge pad, as an inclusive index range ([0, -1] if none). */
+function drawnRange(pts: readonly V3[]): [number, number] {
+  let best: [number, number] = [0, -1];
+  let start = -1;
+  pts.forEach((p, i) => {
+    if (!inMap(p)) {
+      start = -1;
+      return;
+    }
+    if (start < 0) start = i;
+    if (i - start > best[1] - best[0]) best = [start, i];
+  });
+  return best;
+}
+
+/** Path samples of `hw` every `step` m; the default step is computed once per highway object. */
 export function hwPath(hw: Highway, step = RING_STEP): HwPath {
+  if (step !== RING_STEP) return makePath(hw, step);
+  let path = pathCache.get(hw);
+  if (!path) {
+    path = makePath(hw, step);
+    pathCache.set(hw, path);
+  }
+  return path;
+}
+
+function makePath(hw: Highway, step: number): HwPath {
   const curve = highwayCurve(hw);
   const n = Math.max(2, Math.ceil(curve.getLength() / step));
   const pts = curve.getSpacedPoints(n).map((v): V3 => [v.x, v.y, v.z]);
@@ -74,7 +107,8 @@ export function hwPath(hw: Highway, step = RING_STEP): HwPath {
     minZ = Math.min(minZ, p[2]);
     maxZ = Math.max(maxZ, p[2]);
   }
-  return { hw, curve, pts, minX, maxX, minZ, maxZ };
+  const drawn: [number, number] = hw.closed ? [0, pts.length - 1] : drawnRange(pts);
+  return { hw, curve, pts, minX, maxX, minZ, maxZ, drawn };
 }
 
 /** Horizontal distance from (x, z) to a highway centerline polyline, and the deck y there. */
@@ -280,8 +314,9 @@ function buildHighway(
   c: InfraColors,
 ): void {
   const { hw } = path;
-  const rings = deckRings(path, others).map((r) =>
-    inMap(r.p) ? r : { ...r, hidden: true, barrierL: false, barrierR: false },
+  const [d0, d1] = path.drawn;
+  const rings = deckRings(path, others).map((r, i) =>
+    i >= d0 && i <= d1 ? r : { ...r, hidden: true, barrierL: false, barrierR: false },
   );
   const sparse = sparseRings(rings);
   const half = hw.width / 2;
@@ -328,7 +363,7 @@ function buildHighway(
 
   buildMarkings(path, rings, sparse, parts, c);
   if (isDivided(hw) && isRaised(hw)) buildLamps(path, rings, parts, c);
-  if (isRaised(hw)) buildPortals(hw, rings, parts, c);
+  if (isRaised(hw)) buildPortals(path, rings, parts, c);
 }
 
 /** Traffic runs this far into a tunnel portal block (which hides it) before its curve ends (m). */
@@ -345,17 +380,7 @@ const portalEnd = (hw: Highway, outside: V3): boolean =>
 export function visiblePoints(path: HwPath): V3[] {
   const { hw, pts } = path;
   if (hw.closed) return pts.slice();
-  let best: [number, number] = [0, -1];
-  let start = -1;
-  pts.forEach((p, i) => {
-    if (!inMap(p)) {
-      start = -1;
-      return;
-    }
-    if (start < 0) start = i;
-    if (i - start > best[1] - best[0]) best = [start, i];
-  });
-  const [i0, i1] = best;
+  const [i0, i1] = path.drawn;
   if (i1 < i0) return [];
   const out = pts.slice(i0, i1 + 1);
   const extend = (inside: V3, outside: V3): V3 | null => {
@@ -378,17 +403,21 @@ const PORTAL = { depth: 18, above: 9, opening: 7 } as const;
  * ends in a tunnel portal: a concrete block with a dark opening and a row of orange tunnel lamps.
  */
 function buildPortals(
-  hw: Highway,
+  path: HwPath,
   rings: readonly DeckRing[],
   parts: InfraParts,
   c: InfraColors,
 ): void {
-  for (let i = 0; i < rings.length - 1; i++) {
-    const a = rings[i] as DeckRing;
-    const b = rings[i + 1] as DeckRing;
-    if (inMap(a.p) === inMap(b.p)) continue;
-    const [inside, outside] = inMap(a.p) ? [a, b] : [b, a];
-    if (!portalEnd(hw, outside.p)) continue;
+  const { hw } = path;
+  const [d0, d1] = path.drawn;
+  if (hw.closed || d1 < d0) return;
+  for (const [i, j] of [
+    [d0, d0 - 1],
+    [d1, d1 + 1],
+  ] as const) {
+    const inside = rings[i];
+    const outside = rings[j];
+    if (!inside || !outside || !portalEnd(hw, outside.p)) continue;
     const dir = norm([outside.p[0] - inside.p[0], 0, outside.p[2] - inside.p[2]]);
     const lat: V3 = [-dir[2], 0, dir[0]];
     const p = inside.p;
