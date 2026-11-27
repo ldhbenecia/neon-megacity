@@ -8,10 +8,11 @@ import { bundleGzip } from './bundle';
 const TARGET_KB = 260;
 const LIMIT_KB = 400;
 /**
- * The city worker (layout generator + terrain geometry, three-lite) is ~53 KB; with a broken
- * three-lite alias it is ~61 KB, too close for a size limit. The reliable sign is three's entry
+ * The city worker (layout generator, terrain and road geometry, three-lite) is ~54 KB; with a
+ * broken three-lite alias it grows by ~8 KB, too little for a size limit to tell apart. The reliable sign is three's entry
  * module (Three.Core.js), whose import-time `__THREE__` registration survives tree-shaking; the
- * class modules three-lite uses do not contain it. Checked by building without the alias.
+ * class modules three-lite uses do not contain it. Checked by building without the alias. The
+ * size limit only catches large growth (e.g. a whole new module pulled into the worker).
  */
 const WORKER_LIMIT_KB = 60;
 const THREE_CORE_MARKER = '__THREE__';
