@@ -33,6 +33,25 @@ closure instead of on the material or its `uniforms` (arrays of textures are cou
 Results also go to `perf-results/<label>.json` (gitignored). fps above 60 only says how much
 headroom is left: on a real display rAF is capped by vsync.
 
+## Screen verification: full quality, several times of day, while moving
+
+Counts, fps and e2e did not catch the black-rectangle bug (592da37 → #63): a shader `pow()` of a
+slightly negative base gave NaN in the HDR target, and bloom spread it over most of the screen.
+Only real-GPU full quality showed it; the low tier and SwiftShader did not (SwiftShader, 960×540:
+noon overview 0 % black, sunset skyline 9–10 %, night street 12–14 %; Metal: 94 %, 100 % and
+whole-frame flashes while moving).
+
+So every `npm run perf` scenario (presets 1, 2, 3, 5, 8 × night, sunset, noon) also runs
+`scripts/screen.ts`: 3 frames at rest, 6 while zooming, 6 while flying forward (W), 6 while
+orbiting, 2 at rest again. Each frame is downsampled to 64×36; a pixel is black when
+R + G + B < 6. The run fails (exit code 1) if any frame at rest is more than 30 % black, any frame
+in motion more than 50 %, or any frame's mean brightness is below 2. The table shows
+`max black % at rest / in motion, min brightness`. `--no-screen` skips it.
+
+Because SwiftShader does not reproduce GPU-specific NaN or precision bugs, **a full-quality
+`npm run perf` on a real GPU is required before merging** any change to shaders, post-processing,
+lighting or materials; paste its screen column in the PR body. CI keeps its SwiftShader checks.
+
 ## Snapshot: main e2b7fef (lighting, infra, atmosphere, ux; terrain, buildings, neon are stubs)
 
 Apple M4 (Metal ANGLE), 2400×1350 (DPR 1.5 held for every run), full quality, canvas 4× MSAA
