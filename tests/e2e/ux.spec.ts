@@ -258,12 +258,18 @@ test('minimap: drawn in the panel, and clicking a zone flies there', async ({ pa
   const n = zone.polygon.length;
   const c = zone.polygon.reduce((a, q) => ({ x: a.x + q.x / n, z: a.z + q.z / n }), { x: 0, z: 0 });
   expect(zoneAt(c.x, c.z).id).toBe('yeouido');
+  const errors = collectErrors(page);
+  // The ResizeObserver loop warning arrives as a window error event, not a page error.
+  await page.addInitScript(() => {
+    const seen: string[] = [];
+    (window as unknown as { __winErrors: string[] }).__winErrors = seen;
+    window.addEventListener('error', (e) => seen.push(e.message));
+  });
   await page.goto(app('nogui&district=jongno&time=0'));
   await waitForCity(page);
   await page.click('#panel-toggle');
   const map = page.locator('#minimap');
   await expect(map).toBeVisible();
-  // Something besides the empty background was painted.
   await expect
     .poll(() =>
       map.evaluate((el) => {
@@ -285,6 +291,12 @@ test('minimap: drawn in the panel, and clicking a zone flies there', async ({ pa
     },
   });
   await expect(page.locator('#hud-district')).toHaveText('여의도', { timeout: 30_000 });
+  await page.setViewportSize({ width: 1100, height: 720 });
+  await waitFrames(page, 10);
+  expect(
+    await page.evaluate(() => (window as unknown as { __winErrors: string[] }).__winErrors),
+  ).toEqual([]);
+  expect(errors).toEqual([]);
 });
 
 test.describe('camera rig', () => {

@@ -1,12 +1,13 @@
 // Ownership (ARCHITECTURE env table): `timeLocked` and `rainTarget` are ux-owned. A user scrub
 // writes `timeOfDay` only while `timeLocked` is true (the documented exception: lighting does
 // not advance it while locked). Weather buttons set `rainTarget`; atmosphere eases `rain` to it.
+import { Vector3 } from 'three';
 import { clockMinutes } from '../core/clock';
 import type { Ctx } from '../core/types';
 import type { CameraRig } from './cameraRig';
 import type { Hud } from './hud';
 import { createMinimap } from './minimap';
-import { districtViewById, districtViews, rigPresets } from './presets';
+import { MAJOR_KINDS, districtViewById, districtViews, rigPresets } from './presets';
 
 export interface Controls {
   update(): void;
@@ -14,9 +15,6 @@ export interface Controls {
   markDistrict(id: string): void;
   dispose(): void;
 }
-
-/** Zone kinds whose chips stand out: the quarters most visitors look for first. */
-const MAJOR_KINDS = new Set(['megacore', 'corridor', 'nightlife', 'brick', 'oldtown']);
 
 export const RAIN_STEPS = [0, 0.35, 1] as const;
 
@@ -136,6 +134,7 @@ export function createControls(ctx: Ctx, rig: CameraRig, hud: Hud): Controls {
     }
   }
 
+  const viewDir = new Vector3();
   const minimapCanvas = document.getElementById('minimap');
   const minimap =
     minimapCanvas instanceof HTMLCanvasElement
@@ -230,8 +229,8 @@ export function createControls(ctx: Ctx, rig: CameraRig, hud: Hud): Controls {
     },
     update() {
       if (minimap && panel?.hidden === false) {
-        const d = rig.debug();
-        minimap.update(d.position, d.target);
+        ctx.camera.getWorldDirection(viewDir);
+        minimap.update(ctx.camera.position.x, ctx.camera.position.z, viewDir.x, viewDir.z);
       }
       const mins = clockMinutes(env.timeOfDay);
       if (input && mins !== lastMins && !scrubbing) {

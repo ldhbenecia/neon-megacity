@@ -1,6 +1,7 @@
 // Small map of the city in the control panel: zones, river and bridges drawn once from the
 // layout, plus the camera's position and heading. Clicking a zone flies there.
-import { CITY, LAYOUT, riverWidthAt, zoneAt, type Vec3 } from '../city/layout';
+import { CITY, LAYOUT, riverWidthAt, zoneAt } from '../city/layout';
+import { MAJOR_KINDS } from './presets';
 
 export interface MapTransform {
   toMap(x: number, z: number): { px: number; py: number };
@@ -17,12 +18,9 @@ export function mapTransform(halfX: number, halfZ: number, w: number, h: number)
   };
 }
 
-/** Major quarters drawn a little brighter, matching the emphasised zone chips. */
-const MAJOR_KINDS = new Set(['megacore', 'corridor', 'nightlife', 'brick', 'oldtown']);
-
 export interface Minimap {
-  /** Redraws the camera marker when the camera moved enough to show. */
-  update(camera: Vec3, target: Vec3): void;
+  /** Camera ground position and view direction (XZ); redraws only when the change would show. */
+  update(x: number, z: number, dirX: number, dirZ: number): void;
   dispose(): void;
 }
 
@@ -31,18 +29,20 @@ export function createMinimap(
   onPick: (zoneId: string) => void,
   canPick: (zoneId: string) => boolean,
 ): Minimap {
+  // Set once here, not in the resize callback: changing the observed box there loops the observer.
+  canvas.style.aspectRatio = `${CITY.halfX} / ${CITY.halfZ}`;
   const ctx = canvas.getContext('2d');
   const base = document.createElement('canvas');
   let t = mapTransform(CITY.halfX, CITY.halfZ, 1, 1);
-  let last = { x: NaN, z: NaN, yaw: NaN };
-  let cam: Vec3 = { x: 0, y: 0, z: 0 };
-  let tgt: Vec3 = { x: 0, y: 0, z: -1 };
+  let cam = { x: NaN, z: NaN };
+  // null while looking almost straight down: no meaningful heading to show.
+  let yaw: number | null = null;
+  let width = 0;
+  let dpr = 0;
 
   const drawBase = (): void => {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const w = canvas.clientWidth;
-    const h = Math.round(w * (CITY.halfZ / CITY.halfX));
-    canvas.style.height = `${h}px`;
+    const w = width;
+    const h = w * (CITY.halfZ / CITY.halfX);
     canvas.width = base.width = Math.round(w * dpr);
     canvas.height = base.height = Math.round(h * dpr);
     t = mapTransform(CITY.halfX, CITY.halfZ, canvas.width, canvas.height);
@@ -95,19 +95,19 @@ export function createMinimap(
   };
 
   const draw = (): void => {
-    if (!ctx) return;
+    if (!ctx || width === 0) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(base, 0, 0);
-    const dpr = canvas.width / Math.max(1, canvas.clientWidth);
+    if (!Number.isFinite(cam.x)) return;
     const p = t.toMap(cam.x, cam.z);
-    const yaw = Math.atan2(tgt.z - cam.z, tgt.x - cam.x);
-    // Heading wedge, then the position dot.
-    ctx.fillStyle = 'rgba(255, 42, 58, 0.35)';
-    ctx.beginPath();
-    ctx.moveTo(p.px, p.py);
-    ctx.arc(p.px, p.py, 16 * dpr, yaw - 0.45, yaw + 0.45);
-    ctx.closePath();
-    ctx.fill();
+    if (yaw !== null) {
+      ctx.fillStyle = 'rgba(255, 42, 58, 0.35)';
+      ctx.beginPath();
+      ctx.moveTo(p.px, p.py);
+      ctx.arc(p.px, p.py, 16 * dpr, yaw - 0.45, yaw + 0.45);
+      ctx.closePath();
+      ctx.fill();
+    }
     ctx.fillStyle = '#ff2a3a';
     ctx.beginPath();
     ctx.arc(p.px, p.py, 3 * dpr, 0, Math.PI * 2);
@@ -132,27 +132,46 @@ export function createMinimap(
   canvas.addEventListener('click', onClick as EventListener);
   canvas.addEventListener('pointermove', onMove);
 
-  // The panel starts hidden (0 px wide): draw once it has a size, and again on resizes.
-  const ro = new ResizeObserver(() => {
-    if (canvas.clientWidth === 0) return;
+  // The panel starts hidden (0 px wide): draw once it has a size, and again when its width or the
+  // pixel ratio changes. The height comes from CSS aspect-ratio, never from here.
+  const resize = (): void => {
+    const w = canvas.clientWidth;
+    const r = Math.min(window.devicePixelRatio || 1, 2);
+    if (w === 0 || (w === width && r === dpr)) return;
+    width = w;
+    dpr = r;
     drawBase();
     draw();
-  });
+  };
+  const ro = new ResizeObserver(resize);
   ro.observe(canvas);
+  let dprQuery: MediaQueryList | null = null;
+  const watchDpr = (): void => {
+    dprQuery?.removeEventListener('change', onDpr);
+    dprQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+    dprQuery.addEventListener('change', onDpr);
+  };
+  function onDpr(): void {
+    resize();
+    watchDpr();
+  }
+  watchDpr();
 
   return {
-    update(camera, target) {
-      const yaw = Math.atan2(target.z - camera.z, target.x - camera.x);
-      if (Math.hypot(camera.x - last.x, camera.z - last.z) < 8 && Math.abs(yaw - last.yaw) < 0.05) {
-        return;
-      }
-      last = { x: camera.x, z: camera.z, yaw };
-      cam = camera;
-      tgt = target;
-      if (canvas.clientWidth > 0) draw();
+    update(x, z, dirX, dirZ) {
+      const nextYaw = Math.hypot(dirX, dirZ) < 0.05 ? null : Math.atan2(dirZ, dirX);
+      const turned =
+        (nextYaw === null) !== (yaw === null) ||
+        (nextYaw !== null && yaw !== null && Math.abs(nextYaw - yaw) >= 0.05);
+      if (Math.hypot(x - cam.x, z - cam.z) < 8 && !turned) return;
+      cam = { x, z };
+      yaw = nextYaw;
+      draw();
     },
     dispose() {
       ro.disconnect();
+      dprQuery?.removeEventListener('change', onDpr);
+      base.width = base.height = 0;
       canvas.removeEventListener('click', onClick as EventListener);
       canvas.removeEventListener('pointermove', onMove);
     },
