@@ -57,6 +57,9 @@ declare global {
       preset(key: number): { position: HangangVec3; target: HangangVec3 };
       /** Uncovered canvas point (client px) whose click picks building `id`, center first. */
       buildingPoint(): { x: number; y: number; id: number } | null;
+      /** Frames whose camera was inside a building volume since load or `resetInside()`. */
+      inside(): { frames: number; last: number | null; at: number[] | null; mode: string | null };
+      resetInside(): void;
     };
   }
 }
