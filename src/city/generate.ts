@@ -849,7 +849,8 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
     const off = 25 + 6 + depth / 2;
     let prefer = 1;
     let placed = 0;
-    const last = { [-1]: -Infinity, [1]: -Infinity } as Record<number, number>;
+    // Along-avenue end of the last slab on each side; a new slab starts 12 m past it.
+    const lastEnd = { [-1]: -Infinity, [1]: -Infinity } as Record<number, number>;
     for (let s0 = 30; s0 < len - 30 && placed < MEDIA_SLABS; s0 += 8) {
       const w = rng.range(MEDIA_MIN_FACE + 2, 56);
       // Prefer the other side from the last slab (screens face each other across the avenue);
@@ -857,7 +858,7 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
       let obb: Obb | null = null;
       let side = prefer;
       for (const sd of [prefer, -prefer]) {
-        if (s0 - (last[sd] as number) < w + 12) continue;
+        if (s0 - w / 2 < (lastEnd[sd] as number) + 12) continue;
         const c = { x: ta.x + ux * s0 - uz * off * sd, z: ta.z + uz * s0 + ux * off * sd };
         const o: Obb = { x: c.x, z: c.z, hw: w / 2, hd: depth / 2, rotY };
         if (accept(o, zone)) {
@@ -882,7 +883,7 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
       lotHash.insert(lots.length, obbBounds(obb));
       lots.push({ obb, zone, blockId, media: true });
       placed++;
-      last[side] = s0;
+      lastEnd[side] = s0 + w / 2;
       prefer = -side;
     }
   }
@@ -984,7 +985,7 @@ function bankContour(seed: Vec2, o: number, x0: number, x1: number): Vec2[] {
 /** Lots this close to 테헤란로's centerline (m) front the avenue. */
 const AVENUE_REACH = 110;
 /** Media slabs down 테헤란로, and their shortest screen (long side) in m. */
-const MEDIA_SLABS = 8;
+export const MEDIA_SLABS = 8;
 const MEDIA_MIN_FACE = 40;
 
 /** Apartment slab depth, gap between slabs in a row, and distance between rows (m). */
@@ -1070,10 +1071,6 @@ function footprint(rng: Rng, a: Archetype, lw: number, ld: number): { w: number;
       return { w: Math.min(rng.range(55, 90), lw * 0.95), d: rng.range(12, 14) };
     case 'pavilion':
       return { w: lw, d: ld };
-    case 'mediaSlab': {
-      const d = Math.min(ld * f, (lw * f) / 2);
-      return { w: lw * f, d };
-    }
     case 'hanokRow':
       return { w: lw * 0.9, d: clamp(ld * 0.55, 6, 14) };
     case 'palaceHall':
@@ -1812,13 +1809,17 @@ function makeSkyLanes(buildings: readonly BuildingSpec[], hash: GridHash): SkyLa
   return defs.map((d) => {
     const samples = laneSamples(d.points, d.closed);
     let top = 0;
+    // Neighbouring samples query overlapping boxes; a building already counted is skipped.
+    const counted = new Set<number>();
     for (let i = 0; i < samples.length - 1; i++) {
       const a = samples[i] as Vec2;
       const b = samples[i + 1] as Vec2;
       for (const id of hash.query(segmentBounds(a, b, SKY_LANE_CLEAR + 60))) {
+        if (counted.has(id)) continue;
         const bd = buildings[id] as BuildingSpec;
         const reach = SKY_LANE_CLEAR + Math.hypot(bd.w, bd.d) / 2;
         if (pointSegmentDistance(bd, a, b) > reach) continue;
+        counted.add(id);
         top = Math.max(top, bd.baseY + bd.h + bd.spireH);
       }
     }

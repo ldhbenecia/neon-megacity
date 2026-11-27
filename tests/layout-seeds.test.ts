@@ -15,7 +15,7 @@ import {
   type BuildingSpec,
   type Layout,
 } from '../src/city/layout';
-import { NEIGHBOUR_GAP, tooSimilar } from '../src/city/generate';
+import { MEDIA_SLABS, NEIGHBOUR_GAP, tooSimilar } from '../src/city/generate';
 import { obbOverlap, obbSegmentDistance } from '../src/city/math';
 import { createRng } from '../src/core/random';
 
@@ -122,7 +122,7 @@ describe.each(SEEDS)('seed %i', (seed) => {
   it('lines 테헤란로 with media slabs whose long side screens face the avenue', () => {
     const media = B.filter((b) => b.archetype === 'mediaSlab');
     expect(media.length).toBeGreaterThanOrEqual(6);
-    expect(media.length).toBeLessThanOrEqual(10);
+    expect(media.length).toBeLessThanOrEqual(MEDIA_SLABS);
     const [ta, tb] = TEHERAN;
     const sides = new Set<number>();
     for (const b of media) {
