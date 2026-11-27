@@ -859,18 +859,30 @@ function placeHolo(
 }
 
 const MEDIA_MAX = 24;
+const MEDIA_MAIN_GAP = 40;
 const BANNER_MAX = 400;
 
 // Teheran-ro canyon: one street-facing screen per mid-rise tower; a tagged media face is covered
 // edge to edge (SEOUL.md 4.3 mediaSlab).
-function placeMediaScreen(c: Ctx, b: BuildingSpec, rng: Rng, zone: number): boolean {
+function placeMediaScreen(
+  c: Ctx,
+  b: BuildingSpec,
+  rng: Rng,
+  zone: number,
+  mainGap: (x: number, z: number) => number,
+): boolean {
   const media = b.tags.mediaFace;
+  // Faces looking onto the arterial (Teheran-ro itself) first, then the biggest wall.
+  const toMain = (f: BuildingFace): number =>
+    Math.min(MEDIA_MAIN_GAP, mainGap(f.center.x + f.normal.x * 8, f.center.z + f.normal.z * 8));
   const cands = (c.faces[b.id] ?? [])
-    .map((f, fi) => ({ f, fi }))
+    .map((f, fi) => ({ f, fi, main: toMain(f) }))
     .filter(
       ({ f }) => f.shape !== 'cylinder' && f.stack === 0 && (media ? f.side === media : f.street),
     )
-    .sort((a, z) => z.f.width * (z.f.y1 - z.f.y0) - a.f.width * (a.f.y1 - a.f.y0));
+    .sort(
+      (a, z) => a.main - z.main || z.f.width * (z.f.y1 - z.f.y0) - a.f.width * (a.f.y1 - a.f.y0),
+    );
   for (const { f, fi } of cands) {
     const tierH = f.y1 - f.y0 - 2 * TIER_MARGIN;
     const h = media ? Math.min(150, tierH) : Math.min(90, tierH * 0.6);
@@ -1049,6 +1061,12 @@ export function placeSigns(
   const maxScreens = opts.maxScreens ?? 20;
   let ringBudget = opts.maxRings ?? 14;
   let mediaCount = 0;
+  let mediaGapIndex: ((x: number, z: number) => number) | undefined;
+  const mediaGap = (): ((x: number, z: number) => number) =>
+    (mediaGapIndex ??= roadGapIndex(
+      { roads: L.roads.filter((r) => r.kind === 'arterial') },
+      MEDIA_MAIN_GAP,
+    ));
   const maxHolos = opts.maxHolos ?? 36;
 
   // Unbuilt districts (palace grounds, parks) stay dark: no sign of any kind.
@@ -1072,7 +1090,7 @@ export function placeSigns(
     if (mediaCount < MEDIA_MAX && b.h >= 50 && districtSigns(b.district).media) {
       const a = baseArchetype(b);
       if (TOWERS.has(a) || a === 'officeSlab')
-        mediaCount += placeMediaScreen(c, b, rng, zone) ? 1 : 0;
+        mediaCount += placeMediaScreen(c, b, rng, zone, mediaGap()) ? 1 : 0;
     }
   }
 
