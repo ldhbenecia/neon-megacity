@@ -91,7 +91,8 @@ export const buildDeckArch: BridgeBuilder = (b, f, parts, c, obstacles) => {
   const rise = b.structureH > 0 ? b.structureH : DECK_ARCH_RISE;
   const spring = Math.max(RIVER.waterY + 1 + ribH / 2, crown - rise);
   const ribL = Math.max(1, b.width / 2 - 3);
-  const spans = spanList(b, f);
+  const placed = pushPiers(b, f, parts, under, b.width * 0.7, DECK_ARCH_PIER_D, obstacles);
+  const spans = spanList(b, f, placed);
   for (const [i, sp] of spans.entries()) {
     // Ribs start at the pier faces; the abutment blocks hide the outer ends.
     const s0 = sp.s0 + (i === 0 ? 0 : DECK_ARCH_PIER_D / 2);
@@ -137,7 +138,6 @@ export const buildDeckArch: BridgeBuilder = (b, f, parts, c, obstacles) => {
       );
     }
   }
-  pushPiers(b, f, parts, under, b.width * 0.7, DECK_ARCH_PIER_D, obstacles);
 };
 
 /**
@@ -173,7 +173,11 @@ export const buildTiedArch: BridgeBuilder = (b, f, parts, c, obstacles) => {
   const rise = b.structureH > 0 ? b.structureH : TIED_RISE;
   const ribL = b.width / 2 + 1;
   const springY = b.deckY + 0.2;
-  const spans = spanList(b, f);
+  const pierW = b.width * 0.6;
+  const pierD = 4;
+  const top = b.deckY - DECK_THICKNESS;
+  const placed = pushPiers(b, f, parts, top, pierW, pierD, obstacles);
+  const spans = spanList(b, f, placed);
   const arched = archSpans(spans, rise);
   const landmark = arched.length === 1 && spans.length > 1;
   const line: RGB = b.motif === 'redArch' ? c.archRed : c.archWhite;
@@ -199,7 +203,6 @@ export const buildTiedArch: BridgeBuilder = (b, f, parts, c, obstacles) => {
         // Glow is single-sided: keep the sides so the line still shows from below.
         openBoxEdges(-lw, lw, ribHalf * 1.3 - 0.02, ribHalf * 1.3 + 0.12, line),
       );
-      // Tie girder along the deck edge.
       parts.steel.beam(
         bridgePoint(f, sp.s0, l, b.deckY - 0.3),
         bridgePoint(f, sp.s1, l, b.deckY - 0.3),
@@ -241,9 +244,5 @@ export const buildTiedArch: BridgeBuilder = (b, f, parts, c, obstacles) => {
       }
     }
   }
-  const pierW = b.width * 0.6;
-  const pierD = 4;
-  const top = b.deckY - DECK_THICKNESS;
-  const placed = pushPiers(b, f, parts, top, pierW, pierD, obstacles);
   buildPierWashes(f, parts, c, placed, pierW, pierD, top - 0.2, islandWashColor(b, f, c));
 };

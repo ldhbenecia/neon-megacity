@@ -203,10 +203,13 @@ export interface Span {
   island: boolean;
 }
 
-/** Spans between consecutive piers / abutments. */
-export function spanList(b: Bridge, f: BridgeFrame): Span[] {
+/**
+ * Spans between consecutive piers / abutments. Builders pass the piers `pushPiers` actually placed,
+ * so a span whose pier was dropped (it would stand on a road) becomes one longer span.
+ */
+export function spanList(b: Bridge, f: BridgeFrame, piers = pierStations(b, f)): Span[] {
   const isl = islandRange(b, f);
-  const ends = [-f.spanHalf, ...pierStations(b, f), f.spanHalf];
+  const ends = [-f.spanHalf, ...piers, f.spanHalf];
   return ends.slice(1).map((s1, i) => {
     const s0 = ends[i] as number;
     return { s0, s1, island: isl !== undefined && s0 === isl.s0 && s1 === isl.s1 };

@@ -22,7 +22,6 @@ export const buildCableStayed: BridgeBuilder = (b, f, parts, c, obstacles) => {
   const ends = [-f.spanHalf, ...placed, f.spanHalf];
   for (const [i, s0] of placed.entries()) {
     const P = (l: number, y: number, ds = 0): V3 => bridgePoint(f, s0 + ds, l, y);
-    // Pier cap under the deck joins the leg feet.
     parts.concrete.beam(P(-legL, under - 1), P(legL, under - 1), 2.2, 2, c.concrete, f.u);
     for (const sgn of [-1, 1] as const) {
       const foot = P(sgn * legL, under - 2);

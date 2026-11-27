@@ -138,9 +138,10 @@ export const buildTruss: BridgeBuilder = (b, f, parts, c, obstacles) => {
   const color = style.color(c);
   const yb = b.deckY - 0.4;
   const H = b.structureH > 0 ? b.structureH : 10;
+  const placed = pushPiers(b, f, parts, b.deckY - DECK_THICKNESS - 0.4, b.width - 2, 4, obstacles);
   const runs = style.continuous
     ? [{ s0: -f.spanHalf, s1: f.spanHalf }]
-    : spanList(b, f).filter((sp) => !sp.island);
+    : spanList(b, f, placed).filter((sp) => !sp.island);
   const planes = trussPlanes(b);
   for (const run of runs) {
     const mid = (run.s0 + run.s1) / 2;
@@ -197,5 +198,4 @@ export const buildTruss: BridgeBuilder = (b, f, parts, c, obstacles) => {
       }
     }
   }
-  pushPiers(b, f, parts, b.deckY - DECK_THICKNESS - 0.4, b.width - 2, 4, obstacles);
 };

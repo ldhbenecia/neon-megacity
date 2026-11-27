@@ -19,7 +19,7 @@ import {
 import { trussPlanes } from '../src/infra/bridgeTrusses';
 import { buildInfra } from '../src/infra/build';
 import { infraColors } from '../src/infra/colors';
-import { deckRings, hwPath, sparseRings } from '../src/infra/highways';
+import { deckRings, hwPath, sparseRings, visiblePoints } from '../src/infra/highways';
 import type { MeshData } from '../src/infra/mesh';
 import { createParts, type InfraParts } from '../src/infra/parts';
 import { DECK_THICKNESS } from '../src/infra/profile';
@@ -211,6 +211,19 @@ describe('infra: tunnel portals and sparse rings', () => {
     expect(sparse[0]).toBe(rings[0]);
     expect(sparse[sparse.length - 1]).toBe(rings[rings.length - 1]);
     expect(sparse.length).toBeLessThan(rings.length * 0.6);
+    // Dashes ride the true curve 0.02 m up: the sparse chords must not sag above it by that much.
+    for (let j = 0; j < sparse.length - 1; j++) {
+      const a = sparse[j]!.p;
+      const b = sparse[j + 1]!.p;
+      const i0 = rings.indexOf(sparse[j]!);
+      const i1 = rings.indexOf(sparse[j + 1]!);
+      for (let i = i0 + 1; i < i1; i++) {
+        const p = rings[i]!.p;
+        const u =
+          Math.hypot(p[0] - a[0], p[2] - a[2]) / (Math.hypot(b[0] - a[0], b[2] - a[2]) || 1);
+        expect(Math.abs(a[1] + (b[1] - a[1]) * u - p[1])).toBeLessThan(0.015);
+      }
+    }
     const kept = new Set(sparse);
     for (let i = 1; i < rings.length; i++) {
       const a = rings[i - 1]!;
@@ -218,6 +231,32 @@ describe('infra: tunnel portals and sparse rings', () => {
       if (a.barrierL !== b.barrierL || a.barrierR !== b.barrierR || a.hidden !== b.hidden) {
         expect(kept.has(a) && kept.has(b)).toBe(true);
       }
+    }
+  });
+});
+
+describe('infra: traffic curves stop where the decks stop', () => {
+  const inMap = (p: readonly number[], pad: number): boolean =>
+    Math.abs(p[0]!) <= CITY.halfX + pad && Math.abs(p[2]!) <= CITY.halfZ + pad;
+
+  it('each highway has one drawn stretch; its curve covers it and nothing beyond', () => {
+    for (const path of paths) {
+      const vis = visiblePoints(path);
+      const inside = path.pts.filter((p) => inMap(p, 10));
+      expect(path.hw.closed, path.hw.id).toBe(false);
+      // One run: every sample inside the map is on the curve (no second stretch dropped).
+      const onCurve = vis.filter((p) => inMap(p, 10));
+      expect(onCurve.length, path.hw.id).toBe(inside.length);
+      // Only a tunnel portal extension may poke past the pad, by PORTAL_TRAFFIC.
+      for (const p of vis) expect(inMap(p, 10 + 6 + 1e-6), path.hw.id).toBe(true);
+    }
+  });
+
+  it('내부순환로 traffic ends inside its tunnel portal block', () => {
+    for (const id of ['hw-naebu-w', 'hw-naebu-e']) {
+      const vis = visiblePoints(paths.find((p) => p.hw.id === id)!);
+      const north = vis.reduce((a, b) => (b[2] < a[2] ? b : a));
+      expect(north[2]).toBeLessThan(-CITY.halfZ);
     }
   });
 });

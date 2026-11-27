@@ -123,6 +123,11 @@ const sameFlags = (a: DeckRing, b: DeckRing): boolean =>
 const SPARSE_TOL = 0.12;
 /** ...and turn at most this much from the ring before them (cos of 1.5°). */
 const SPARSE_COS = Math.cos((1.5 * Math.PI) / 180);
+/**
+ * ...and stay this close to it vertically: dashes are painted on the true curve PAINT_Y above it,
+ * so a chord sagging above the curve by more would bury them in the slab.
+ */
+const SPARSE_TOL_Y = 0.01;
 /** Longest run of skipped rings. */
 const SPARSE_MAX = 6;
 
@@ -139,8 +144,9 @@ function straightBetween(rings: readonly DeckRing[], k: number, m: number): bool
     if (i === m) break;
     const ap: V3 = [r.p[0] - a[0], r.p[1] - a[1], r.p[2] - a[2]];
     const u = clamp((ap[0] * ab[0] + ap[1] * ab[1] + ap[2] * ab[2]) / l2, 0, 1);
-    const d = Math.hypot(ap[0] - ab[0] * u, ap[1] - ab[1] * u, ap[2] - ab[2] * u);
-    if (d > SPARSE_TOL) return false;
+    const dy = ap[1] - ab[1] * u;
+    if (Math.abs(dy) > SPARSE_TOL_Y) return false;
+    if (Math.hypot(ap[0] - ab[0] * u, dy, ap[2] - ab[2] * u) > SPARSE_TOL) return false;
   }
   return true;
 }
@@ -325,6 +331,45 @@ function buildHighway(
   if (isRaised(hw)) buildPortals(hw, rings, parts, c);
 }
 
+/** Traffic runs this far into a tunnel portal block (which hides it) before its curve ends (m). */
+const PORTAL_TRAFFIC = 6;
+
+/** A raised deck leaving the map over the north edge ends in a tunnel portal. */
+const portalEnd = (hw: Highway, outside: V3): boolean =>
+  isRaised(hw) && outside[2] < -CITY.halfZ - EDGE_PAD;
+
+/**
+ * Control points of the drawn part of a highway, for InfraApi.curves (neon traffic): the longest
+ * run of path samples inside the map edge pad, extended PORTAL_TRAFFIC m into a tunnel portal.
+ */
+export function visiblePoints(path: HwPath): V3[] {
+  const { hw, pts } = path;
+  if (hw.closed) return pts.slice();
+  let best: [number, number] = [0, -1];
+  let start = -1;
+  pts.forEach((p, i) => {
+    if (!inMap(p)) {
+      start = -1;
+      return;
+    }
+    if (start < 0) start = i;
+    if (i - start > best[1] - best[0]) best = [start, i];
+  });
+  const [i0, i1] = best;
+  if (i1 < i0) return [];
+  const out = pts.slice(i0, i1 + 1);
+  const extend = (inside: V3, outside: V3): V3 | null => {
+    if (!portalEnd(hw, outside)) return null;
+    const d = norm([outside[0] - inside[0], 0, outside[2] - inside[2]]);
+    return [inside[0] + d[0] * PORTAL_TRAFFIC, inside[1], inside[2] + d[2] * PORTAL_TRAFFIC];
+  };
+  const before = pts[i0 - 1];
+  const after = pts[i1 + 1];
+  const head = before ? extend(pts[i0] as V3, before) : null;
+  const tail = after ? extend(pts[i1] as V3, after) : null;
+  return [...(head ? [head] : []), ...out, ...(tail ? [tail] : [])];
+}
+
 /** Tunnel portal block depth along the road and height above the deck (m). */
 const PORTAL = { depth: 18, above: 9, opening: 7 } as const;
 
@@ -343,7 +388,7 @@ function buildPortals(
     const b = rings[i + 1] as DeckRing;
     if (inMap(a.p) === inMap(b.p)) continue;
     const [inside, outside] = inMap(a.p) ? [a, b] : [b, a];
-    if (outside.p[2] > -CITY.halfZ) continue;
+    if (!portalEnd(hw, outside.p)) continue;
     const dir = norm([outside.p[0] - inside.p[0], 0, outside.p[2] - inside.p[2]]);
     const lat: V3 = [-dir[2], 0, dir[0]];
     const p = inside.p;

@@ -373,6 +373,42 @@ describe('infra fallback: piers and highways', () => {
   });
 });
 
+describe('infra: spans follow the piers actually placed', () => {
+  it('a pier dropped for a road below merges its two spans; no arch springs there', () => {
+    const s: Spec = {
+      kind: 'tiedArch',
+      half: 180,
+      landA: 260,
+      landB: 380,
+      deckY: 12,
+      width: 24,
+      lanes: 4,
+      spans: 4,
+    };
+    const b = { ...makeBridge(-200, s), structureH: 14 };
+    const f = bridgeFrame(b);
+    const blocked = pierStations(b, f)[1]!;
+    const road = straightHighway(
+      [riverPoint(-200, blocked, -60), riverPoint(-200, blocked, 60)],
+      0.3,
+      12,
+    );
+    const parts = createParts();
+    buildBridge(b, parts, C, [], [road]);
+    expect(parts.columns.filter((c) => c.y0 === -8)).toHaveLength(2);
+    // Over the dropped pier the rib is near its crown, not at a springing on the deck.
+    let low = 0;
+    for (let i = 0; i < parts.steel.positions.length; i += 3) {
+      const x = parts.steel.positions[i]! - f.mid[0];
+      const z = parts.steel.positions[i + 2]! - f.mid[2];
+      const along = x * f.u[0] + z * f.u[2];
+      const y = parts.steel.positions[i + 1]!;
+      if (Math.abs(along - blocked) < 2 && y > b.deckY + 1 && y < b.deckY + 6) low++;
+    }
+    expect(low).toBe(0);
+  });
+});
+
 describe('infra fallback: whole layout', () => {
   it('builds a layout whose bridges and highways use unknown kinds', () => {
     const L = {

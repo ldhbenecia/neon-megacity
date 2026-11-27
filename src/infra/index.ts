@@ -6,13 +6,14 @@
 // glow and paint (BatchedMesh, one instance per bridge, hidden by distance LOD; not built for
 // quality 'ci'). No real lights.
 import * as THREE from 'three';
-import { deckHeightAt, highwayCurve, type Vec2, type Vec3 } from '../city/layout';
+import { deckHeightAt, type Vec2, type Vec3 } from '../city/layout';
 import { MATERIAL, NIGHT_FILL_AMBIENT } from '../core/palette';
 import { EMISSIVE_FOG_DENSITY_SCALE, applyEmissiveFog } from '../core/shaders/emissiveFog';
 import type { CityModuleInstance, Ctx, InfraApi } from '../core/types';
 import { fountainNozzles, railTracks } from './bridges';
 import { buildInfra } from './build';
 import { infraColors } from './colors';
+import { hwPath, visiblePoints } from './highways';
 import { bridgeDetailOn } from './lod';
 import type { MeshData, V3 } from './mesh';
 import type { BridgeDetail, DetailParts } from './parts';
@@ -258,7 +259,15 @@ export function init(ctx: Ctx): CityModuleInstance {
   ctx.scene.add(group);
 
   const curves = new Map<string, THREE.CatmullRomCurve3>();
-  for (const hw of L.highways) curves.set(hw.id, highwayCurve(hw));
+  for (const hw of L.highways) {
+    const pts = visiblePoints(hwPath(hw));
+    // Same curve type as the layout's highwayCurve, through the drawn part only (visiblePoints
+    // trims only open roads, so a loop stays closed and a trimmed road is always open).
+    if (pts.length >= 2) {
+      const v = pts.map((p) => new THREE.Vector3(p[0], p[1], p[2]));
+      curves.set(hw.id, new THREE.CatmullRomCurve3(v, hw.closed, 'centripetal'));
+    }
+  }
   const v3 = (p: V3): Vec3 => ({ x: p[0], y: p[1], z: p[2] });
   const tracks = new Map<string, { points: Vec3[] }[]>();
   const nozzles = new Map<string, { a: Vec3; b: Vec3; outward: Vec2 }[]>();

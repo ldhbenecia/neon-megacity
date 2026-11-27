@@ -254,7 +254,6 @@ function buildLowerDeck(
     }
   }
   if (b.motif === 'fountain') {
-    // Amber lane lamps down the lower deck center.
     for (let s = -h; s <= h; s += 8) {
       parts.points.push({
         p: bridgePoint(f, s, 0, y(s) + 0.12),
