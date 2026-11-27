@@ -265,11 +265,18 @@ inside their modules (neon's 25.7 KB includes its GLSL and catalogue).
 | + neon and atmosphere as lazy chunks loaded at their boot stage | ~255 KB      | same total download; the first chunk parses ~15 % sooner |
 | + buildings, infra lazy too                                     | ~225 KB      | diminishing returns: every stage waits for its own fetch |
 
-**Proposal.** Keep the 400 KB ceiling on _total_ JS (all chunks, what a first visit downloads)
-and set the 260 KB target on the _initial_ chunk, reached by (1) lil-gui behind `?debug` and (2)
-neon and atmosphere as dynamic imports started when the loader shows. Layout v3 adds src/city
-data and new modules, so the total must be re-measured after #32; `npm run size` already reports
-initial and lazy chunks separately (#45).
+**Decision (manager, #88).** The 400 KB ceiling covers _all_ JS (every chunk, worker chunks
+included); the 260 KB target covers the _first_ chunk. three core (173.6 KB) is the floor, so the
+target is met by splitting, not trimming:
+
+1. lil-gui only with `?debug` (dynamic import, stub panel otherwise): now, small PR.
+2. neon and atmosphere as lazy chunks, designed together with the boot Worker as one "async boot"
+   change after layout v3 (#32), with these conditions: no waterfall (all lazy chunks start
+   downloading as soon as the first chunk runs: `import()` on the first line of boot or
+   modulepreload); first paint and `__city.ready` measured before / after, and dropped if ready
+   gets slower; the init order and the meaning of `__city.ready` stay; a failed chunk download
+   shows an error and retry in the loader (never half a city); an e2e run under `BASE_PATH`
+   checks chunk URLs. `npm run size` already reports first and lazy chunks separately (#45).
 
 ## Findings and candidates
 
