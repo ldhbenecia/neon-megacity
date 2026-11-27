@@ -182,6 +182,10 @@ Budget (ceiling 50 stays the CI gate; team total 45 leaves a reserve):
 
 ## Findings and candidates
 
+- **Signs in layout v3 always hit the cap.** The sign total stays at its 16,000 cap, so thinning
+  always runs (building signs ~10,300, street panels ~4,070, street lights 1,456 / 1,500, ground
+  traffic 1,199 / 1,200; caps scaled to the map in #67).
+
 - **Day/night scrub stall (fixed).** Toggling the key light's `castShadow` changed the program
   variant of every lit material. With buildings (#11), preset 2, M4: a timeline jump between night
   and day added 8 programs (35 → 43) and stalled one frame for 0.57–1.26 s, both directions.
