@@ -320,6 +320,6 @@ target is met by splitting, not trimming:
 - **Cold shader cache.** An early run (whose GPU probe did not boot the app) showed first-frame
   0.5–0.9 s, later runs 31–79 ms; the OS shader cache likely explains it. Re-check once buildings
   and neon add programs.
-- **JS bundle.** 266.5 KB gzip on main after buildings, over the 260 KB target (`npm run size`
-  warns in CI). Candidate: load lil-gui (only shown with `?debug`) lazily; every module calls
-  `ctx.gui.addFolder` at init, so it needs a typed stand-in when the panel is off.
+- **JS bundle.** lil-gui now loads only with `?debug` (#89): first chunk 298.7 → 291.9 KB gzip,
+  lil-gui a 7.7 KB lazy chunk; without `?debug` modules get a chainable no-op stand-in. The rest
+  of the 260 KB target comes from lazy neon / atmosphere chunks (see "JS bundle" above).
