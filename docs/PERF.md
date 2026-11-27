@@ -12,7 +12,7 @@ npm run perf -- <label> --quality=ci     # the CI tier
 npm run perf -- <label> --swiftshader    # software GL, slow
 ```
 
-`scripts/perf.ts` serves `dist/` on :4175 and opens headless Chromium at 1600×900, device scale 2
+`scripts/perf.ts` serves `dist/` on its per-worktree port (`localPort`, `PERF_PORT` overrides) and opens headless Chromium at 1600×900, device scale 2
 (the app caps DPR at 1.5, so 2400×1350 pixels). For each preset 1, 2, 3, 5, 8 × time 0.0, 0.78,
 0.5 it boots a fresh page with `?stats`, waits for `__city.powered` and 60 warm-up frames, then:
 
@@ -180,6 +180,25 @@ Budget (ceiling 50 stays the CI gate; team total 45 leaves a reserve):
 | reserve               |                          | 2                   |
 | **total**             | **29**                   | **45**              |
 
+## Baseline: layout v3 (main 0d4c9de, Seoul map)
+
+Apple M4, full quality, `npm run perf -- v3-base` (15 scenarios; machine under load, so frame times
+are indicative). Every scenario passes the screen check.
+
+| item                      | v3 range            | budget (target / ceiling) |
+| ------------------------- | ------------------- | ------------------------- |
+| draw calls                | 79–119              | 220 / 300                 |
+| triangles                 | 0.92–0.98 M         | 1.2 M / 2.0 M             |
+| shader programs           | 37                  | 35 / 50                   |
+| textures                  | 28–29               | 24 / 40                   |
+| geometry / texture memory | 60.7–66.4 / 61.4 MB |                           |
+| boot → interactive        | 2.7–4.5 s           | M1 3 s / 10 s             |
+
+Main thread during boot (`PerformanceObserver('longtask')`, preset 2 night, 3 runs): blocked
+2.8–3.0 s in total, `__city.ready` at 3.1–3.4 s. Longest tasks: JS evaluation + layout generation
+764–811 ms, buildings 585–637 ms, terrain 501–516 ms, neon 351–392 ms, compile 233–289 ms, infra
+207–252 ms. Structured clone of the v3 layout: 31 ms (3.8 MB, 5,662 buildings, plain objects only).
+
 ## Proposal: move boot work off the main thread (Web Worker)
 
 Status: measured and decided (Worker), not implemented. Engine stays three.js; this is about where
@@ -218,10 +237,25 @@ with JS evaluation and shader compiles the way a worker can) and could drift fro
 6. Order: (1) buildings geometry worker, built as the single worker of point 1; (2) layout. Both
    after quality tiers (a). Re-measure on layout v3 (#32) first: more buildings, longer freezes.
 
-**Expected payoff.** Buildings in the worker remove the 0.44–0.64 s freeze and overlap boot with
-lighting / infra / neon init (est. 0.2–0.4 s shorter); the time-sliced LOD0 jobs (#53) move too,
-removing the 12 ms `build()` spike per chunk. Layout in the worker removes the 0.39–0.60 s import
-task (v3: Node ~1.0 s, likely 1–2 s in a laptop browser).
+**Async boot plan on v3 (goal: no main-thread task over 200 ms, `__city.ready` no later than
+3.1–3.4 s).** Layout and buildings alone leave terrain (0.5 s), neon (0.35–0.4 s), compile and
+infra above 200 ms, so the plan has phases, each measured with the long-task probe:
+
+1. **Bootstrap + layout worker (perf).** A small first chunk shows the loader, starts the city
+   worker and preloads the app chunk (no waterfall). The worker runs `generateLayout` and posts
+   the layout (structured clone, ~31 ms on main); `setLayout()` publishes it before the app chunk
+   runs (`ux/cameraRig` reads `LAYOUT` at import time, so it must come after). Without workers the
+   current synchronous path runs. Removes the 0.76–0.81 s task.
+2. **Buildings geometry in the same worker (perf).** LOD1/LOD2 per chunk come back as
+   transferable typed arrays; the time-sliced LOD0 jobs move too. Removes the 0.59–0.64 s task.
+3. **Terrain and neon pure data in the worker (with hangang-env and hangang-neon).** Ground /
+   channel / ridge arrays and neon placement (`placeSigns`, `planStreet`) are pure; their modules
+   then only wrap arrays. Removes 0.5 s and 0.35–0.4 s.
+4. **Compile.** atmosphere's warm-up hook calls the synchronous `renderer.compile`, so main's
+   `compileAsync` (`KHR_parallel_shader_compile`) is bypassed; switching the hook to
+   `compileAsync` on the HDR target should split the 0.23–0.29 s task. Infra (0.21–0.25 s) is
+   time-sliced if still above 200 ms.
+5. **Lazy neon / atmosphere chunks** (bundle decision #88) ride on the same bootstrap.
 
 **Costs.** A worker chunk duplicates part of three (BufferGeometry and math; est. 40–60 KB gzip,
 lazy, not counted in the initial-load budget). Determinism is unchanged (same code, same seeds;

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { cloudsSeenFromAbove } from '../src/atmosphere/clouds';
 import { LAYOUT, allTiers, buildingContaining, buildingTop } from '../src/city/layout';
 import {
   CLOUD_LAYERS,
@@ -13,7 +14,10 @@ import {
   FOG_UNIFORMS,
   HEIGHT_FOG,
   fogFactor,
+  heightFogEnabled,
   heightFogScale,
+  heightFogThinIntegral,
+  waterFogBoost,
 } from '../src/core/shaders/emissiveFog';
 
 describe('searchlight mounts', () => {
@@ -68,9 +72,20 @@ describe('map-scaled fog', () => {
   });
 });
 
+describe('cloud layer order', () => {
+  it('blends the low deck first only when the camera is above the high deck', () => {
+    expect(cloudsSeenFromAbove(CLOUD_LAYERS.highY + 500)).toBe(true);
+    expect(cloudsSeenFromAbove(CLOUD_LAYERS.lowY + 10)).toBe(false);
+    expect(cloudsSeenFromAbove(50)).toBe(false);
+  });
+});
+
 describe('shader time and altitude', () => {
   it('wraps shader time into a bounded range', () => {
-    expect(wrapTime(1234.5, TIME_WRAP.rain)).toBeCloseTo(234.5, 9);
+    expect(wrapTime(TIME_WRAP.rain + 234.5, TIME_WRAP.rain)).toBeCloseTo(234.5, 6);
+    // Rare enough (2.8 h), and float32 still resolves a millisecond at the top of the range.
+    expect(TIME_WRAP.rain).toBeGreaterThanOrEqual(10000);
+    expect(Math.fround(TIME_WRAP.rain - 0.001)).not.toBe(Math.fround(TIME_WRAP.rain));
     expect(wrapTime(3 * TIME_WRAP.clouds + 7, TIME_WRAP.clouds)).toBeCloseTo(7, 6);
     expect(wrapTime(5, 1000)).toBe(5);
   });
@@ -81,13 +96,61 @@ describe('shader time and altitude', () => {
   });
 });
 
+describe('height fog seen from above', () => {
+  it('thins the ray mean to clear air above clearTop, continuously', () => {
+    const { heightTop: H, clearTop: C } = HEIGHT_FOG;
+    for (const y of [H, C]) {
+      expect(heightFogThinIntegral(y + 1e-6)).toBeCloseTo(heightFogThinIntegral(y - 1e-6), 4);
+    }
+    // Slope of the integral is the thinning: (1 - top) just above heightTop, 1 at clearTop.
+    const d = (y: number) => (heightFogThinIntegral(y + 0.5) - heightFogThinIntegral(y - 0.5)) / 1;
+    expect(d(H + 1)).toBeCloseTo(1 - HEIGHT_FOG.top, 2);
+    expect(d(C + 10)).toBeCloseTo(1, 6);
+  });
+
+  it('keeps topdown (y 1900 looking at the ground) readable', () => {
+    expect(heightFogScale(0, 1900)).toBeLessThan(0.2);
+  });
+
+  it('keeps the top floor on near-horizontal rays: tower tops far away keep their haze', () => {
+    expect(heightFogScale(600, 50, true, 2000)).toBeCloseTo(HEIGHT_FOG.top, 9);
+    expect(heightFogScale(650, 600, true, 2000)).toBeCloseTo(HEIGHT_FOG.top, 9);
+  });
+
+  it('has no seam where a surface crosses the camera height', () => {
+    const cam = 1900;
+    const near = [cam - 3, cam - 0.5, cam + 0.5, cam + 3].map((y) =>
+      heightFogScale(y, cam, true, 300),
+    );
+    for (const k of near) expect(k).toBeCloseTo(HEIGHT_FOG.top, 3);
+  });
+
+  it('ramps the water boost down the bank instead of a step', () => {
+    expect(heightFogScale(-0.01, 1900)).toBe(heightFogScale(0, 1900));
+    const bank = [-0.5, -1, -1.5, -2].map((y) => waterFogBoost(y));
+    for (let i = 1; i < bank.length; i++) expect(bank[i]!).toBeGreaterThanOrEqual(bank[i - 1]!);
+    expect(waterFogBoost(-1) - waterFogBoost(-0.5)).toBeLessThan(0.15);
+    expect(waterFogBoost(-4)).toBeCloseTo(HEIGHT_FOG.water, 9);
+  });
+});
+
 describe('height fog toggle', () => {
-  it('CPU fog mirrors follow cityFogHeight.w like the shader', () => {
+  it('CPU fog mirrors take the toggle as an argument', () => {
+    expect(heightFogScale(400, 400, false)).toBe(1);
+    expect(fogFactor(0.001, 1000, 400, 400, false)).toBeCloseTo(1 - Math.exp(-1), 9);
+    expect(heightFogScale(400, 400, true)).toBeCloseTo(HEIGHT_FOG.top, 9);
+  });
+
+  it('heightFogEnabled reads cityFogHeight.w like the shader', () => {
     const h = FOG_UNIFORMS.cityFogHeight.value;
-    h[3] = 0;
-    expect(heightFogScale(400)).toBe(1);
-    expect(fogFactor(0.001, 1000, 400)).toBeCloseTo(1 - Math.exp(-1), 9);
-    h[3] = 1;
-    expect(heightFogScale(400)).toBeCloseTo(HEIGHT_FOG.top, 9);
+    const before = h[3] ?? 1;
+    try {
+      h[3] = 0;
+      expect(heightFogEnabled()).toBe(false);
+      h[3] = 1;
+      expect(heightFogEnabled()).toBe(true);
+    } finally {
+      h[3] = before;
+    }
   });
 });

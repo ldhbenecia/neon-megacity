@@ -8,7 +8,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { chromium, type Browser, type Page } from '@playwright/test';
 import { preview } from 'vite';
-import { SWIFTSHADER_ARGS, collectErrors, waitFrames } from '../tests/e2e/helpers';
+import { SWIFTSHADER_ARGS, collectErrors, waitFrames, localPort } from '../tests/e2e/helpers';
 
 // Night shots allow 40 % near-black (measured max ~35 % with the night floors of #74/#77); the
 // NaN rectangles this exists to catch cover 92-97 %.
@@ -39,7 +39,7 @@ const only = args.find((a) => a.startsWith('--only='))?.slice('--only='.length);
 const label =
   args.find((a) => !a.startsWith('--')) ?? new Date().toISOString().replace(/[:.]/g, '-');
 const outDir = resolve('screenshots', label);
-const PORT = 4174;
+const PORT = localPort('shots');
 const BASE = `http://localhost:${PORT}/`;
 const ANIMATION_MS = 3000;
 const VIEWPORT = { width: 1600, height: 900 };
