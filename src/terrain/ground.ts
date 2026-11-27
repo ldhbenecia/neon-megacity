@@ -102,7 +102,7 @@ const BUILDING_CLEAR = 8;
  * footprint (plus BUILDING_CLEAR), so a lift reaching half a cell past the forest edge never
  * buries a hillside house. Nodes below forestAt's start are skipped: no canopy there anyway.
  */
-function forestMask(): (x: number, z: number) => number {
+export function forestMask(): (x: number, z: number) => number {
   const BUCKET = 32;
   const near = new Map<string, { x: number; z: number; r: number }[]>();
   for (const bld of LAYOUT.buildings) {
@@ -214,6 +214,8 @@ export function buildGround(): THREE.BufferGeometry {
   const pos: number[] = [];
   const col: number[] = [];
   const dist: number[] = [];
+  /** Height before the canopy lift: the valley shading follows the terrain, not the crowns. */
+  const bare: number[] = [];
   const rim: number[] = [];
   const tmp = new THREE.Color();
   const mask = forestMask();
@@ -227,6 +229,7 @@ export function buildGround(): THREE.BufferGeometry {
     pos.push(v.x, v.y + canopyLift(v.x, v.y, v.z, stands, mask, mast), v.z);
     col.push(tmp.r, tmp.g, tmp.b);
     dist.push(groundWaterDistance(v.x, v.z));
+    bare.push(v.y);
     rim.push(Math.hypot(x, z) > groundRadius() ? 1 : 0);
     return dist.length - 1;
   };
@@ -271,6 +274,8 @@ export function buildGround(): THREE.BufferGeometry {
       pos.push(p0 + ((pos[k1 * 3 + c] ?? 0) - p0) * t);
       col.push(c0 + ((col[k1 * 3 + c] ?? 0) - c0) * t);
     }
+    const b0 = bare[k0] ?? 0;
+    bare.push(b0 + ((bare[k1] ?? 0) - b0) * t);
     const d0 = dist[k0] ?? 0;
     dist.push(d0 + ((dist[k1] ?? 0) - d0) * t);
     rim.push(Math.max(rim[k0] ?? 0, rim[k1] ?? 0));
@@ -344,7 +349,7 @@ export function buildGround(): THREE.BufferGeometry {
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   g.setIndex(idx);
   g.computeVertexNormals();
-  shadeValleys(g);
+  shadeValleys(g, bare);
   tintRock(g, pal);
   g.computeBoundingSphere();
   return g;
@@ -359,45 +364,51 @@ const VALLEY_GAIN = 0.12;
 // average of its neighbourhood (smoothed over VALLEY_ROUNDS mesh rings) is in a valley and is
 // darkened, one above it on a spur is lightened. One pass over the index per round, no extra
 // height queries; only raised ground (forest) is touched.
-function shadeValleys(g: THREE.BufferGeometry): void {
-  const pos = g.getAttribute('position');
+export function shadeValleys(g: THREE.BufferGeometry, bare: ArrayLike<number>): void {
   const col = g.getAttribute('color');
   const index = g.getIndex();
   if (!index) return;
-  const n = pos.count;
-  let h = new Float32Array(n);
-  for (let i = 0; i < n; i++) h[i] = pos.getY(i);
-  const own = h.slice();
+  const ix = index.array;
+  const n = col.count;
+  let h = Float32Array.from({ length: n }, (_, i) => bare[i] ?? 0);
+  let next = new Float32Array(n);
   const sum = new Float32Array(n);
   const cnt = new Uint16Array(n);
   for (let round = 0; round < VALLEY_ROUNDS; round++) {
     sum.fill(0);
     cnt.fill(0);
-    for (let t = 0; t < index.count; t += 3) {
-      const a = index.getX(t);
-      const b = index.getX(t + 1);
-      const c = index.getX(t + 2);
-      sum[a] = (sum[a] ?? 0) + (h[b] ?? 0) + (h[c] ?? 0);
-      sum[b] = (sum[b] ?? 0) + (h[a] ?? 0) + (h[c] ?? 0);
-      sum[c] = (sum[c] ?? 0) + (h[a] ?? 0) + (h[b] ?? 0);
+    for (let t = 0; t < ix.length; t += 3) {
+      const a = ix[t] ?? 0;
+      const b = ix[t + 1] ?? 0;
+      const c = ix[t + 2] ?? 0;
+      const ha = h[a] ?? 0;
+      const hb = h[b] ?? 0;
+      const hc = h[c] ?? 0;
+      sum[a] = (sum[a] ?? 0) + hb + hc;
+      sum[b] = (sum[b] ?? 0) + ha + hc;
+      sum[c] = (sum[c] ?? 0) + ha + hb;
       cnt[a] = (cnt[a] ?? 0) + 2;
       cnt[b] = (cnt[b] ?? 0) + 2;
       cnt[c] = (cnt[c] ?? 0) + 2;
     }
-    const next = new Float32Array(n);
     for (let i = 0; i < n; i++) {
       const k = cnt[i] ?? 0;
       next[i] = k > 0 ? ((h[i] ?? 0) + (sum[i] ?? 0) / k) * 0.5 : (h[i] ?? 0);
     }
-    h = next;
+    [h, next] = [next, h];
   }
   for (let i = 0; i < n; i++) {
-    const f = forestAt(own[i] ?? 0);
+    const own = bare[i] ?? 0;
+    const f = forestAt(own);
     if (f <= 0) continue;
-    const below = (h[i] ?? 0) - (own[i] ?? 0);
-    const k = 1 - Math.min(0.35, Math.max(-0.25, below * VALLEY_GAIN)) * f;
+    const k = valleyShade((h[i] ?? 0) - own, f);
     col.setXYZ(i, col.getX(i) * k, col.getY(i) * k, col.getZ(i) * k);
   }
+}
+
+/** Color factor for a vertex `below` m under its smoothed neighbourhood, forest weight f. */
+export function valleyShade(below: number, f: number): number {
+  return 1 - Math.min(0.35, Math.max(-0.25, below * VALLEY_GAIN)) * f;
 }
 
 // Steep forest ground (cliffs, crests, gully walls) shows bare rock, a touch lighter so ridge lines

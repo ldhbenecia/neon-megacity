@@ -4,6 +4,7 @@ import {
   CITY,
   EMBANK_SLOPE as LAYOUT_EMBANK_SLOPE,
   LAYOUT,
+  MOUNTAIN_RANGES,
   RIVER,
   riverFrame,
   riverSignedDistance,
@@ -34,7 +35,13 @@ import {
   isoRow,
   type StripSlice,
 } from '../src/terrain/shape';
-import { buildChannel, buildGround } from '../src/terrain/ground';
+import {
+  buildChannel,
+  buildGround,
+  forestMask,
+  shadeValleys,
+  valleyShade,
+} from '../src/terrain/ground';
 import { createWater } from '../src/terrain/water';
 
 function profileY(d: number, park: number): number {
@@ -516,5 +523,68 @@ describe('noise2', () => {
       expect(v).toBeLessThan(1);
       expect(noise2(i * 0.37, i * -0.71)).toBe(v);
     }
+  });
+});
+
+describe('valley shading and the range forest mask', () => {
+  it('valleyShade stays finite and in [0.65, 1.25], and leaves non-forest alone', () => {
+    for (const below of [-100, -5, -1, 0, 1, 5, 100]) {
+      for (const f of [0, 0.5, 1]) {
+        const k = valleyShade(below, f);
+        expect(Number.isFinite(k)).toBe(true);
+        expect(k).toBeGreaterThanOrEqual(0.65);
+        expect(k).toBeLessThanOrEqual(1.25);
+        if (f === 0) expect(k).toBe(1);
+      }
+    }
+  });
+
+  it('shadeValleys darkens a sunken forest vertex, lightens a raised one, skips the plain', () => {
+    // 5 × 5 grid at 8 m; forest ground at 40 m with one pit and one bump, plus a plain corner.
+    const n = 5;
+    const bare: number[] = [];
+    const pos: number[] = [];
+    for (let j = 0; j < n; j++) {
+      for (let i = 0; i < n; i++) {
+        let y = 40;
+        if (i === 1 && j === 1) y = 30;
+        if (i === 3 && j === 3) y = 50;
+        if (i === 0 && j === 4) y = 0;
+        bare.push(y);
+        pos.push(i * 8, y, j * 8);
+      }
+    }
+    const idx: number[] = [];
+    for (let j = 0; j < n - 1; j++) {
+      for (let i = 0; i < n - 1; i++) {
+        const a = j * n + i;
+        idx.push(a, a + n, a + 1, a + 1, a + n, a + n + 1);
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(new Array(n * n * 3).fill(0.5), 3));
+    g.setIndex(idx);
+    shadeValleys(g, bare);
+    const col = g.getAttribute('color');
+    expect(col.getX(1 * n + 1)).toBeLessThan(0.5);
+    expect(col.getX(3 * n + 3)).toBeGreaterThan(0.5);
+    expect(col.getX(4 * n + 0)).toBe(0.5);
+    for (let i = 0; i < col.count; i++) expect(Number.isFinite(col.getX(i))).toBe(true);
+  });
+
+  it('forestMask is 0 outside every mountain range box and on building footprints', () => {
+    const mask = forestMask();
+    const outside = { x: CITY.halfX - 5, z: CITY.halfZ - 5 };
+    expect(
+      MOUNTAIN_RANGES.some(
+        (r) => outside.x >= r.x0 && outside.x <= r.x1 && outside.z >= r.z0 && outside.z <= r.z1,
+      ),
+    ).toBe(false);
+    expect(mask(outside.x, outside.z)).toBe(0);
+    const inRange = LAYOUT.buildings.filter((b) =>
+      MOUNTAIN_RANGES.some((r) => b.x >= r.x0 && b.x <= r.x1 && b.z >= r.z0 && b.z <= r.z1),
+    );
+    for (const b of inRange.slice(0, 50)) expect(mask(b.x, b.z)).toBeLessThan(0.5);
   });
 });

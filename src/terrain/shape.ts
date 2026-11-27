@@ -18,7 +18,8 @@ import { createRng } from '../core/random';
 
 export { EMBANK_SLOPE };
 
-// Read on first use, not at import: the layout may still be generating (async boot, Worker).
+// Read on first use, not at import (boot sets the layout before importing modules, and a later
+// setLayout must be picked up).
 // Keyed on the layout object, so a later setLayout (another seed) is picked up.
 let nearRidgeCache: { layout: typeof LAYOUT; ridge: Ridge } | null = null;
 function nearRidge(): Ridge {
