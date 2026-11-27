@@ -23,7 +23,7 @@ import {
   railPaths,
 } from './lanes';
 import { createLightPool, type LightCandidate } from './lights';
-import { placeSigns, roadGapIndex, type Placement } from './placement';
+import { placeSigns, roadGapIndex, type FlatSign, type Placement } from './placement';
 import { buildHolograms, buildRings, buildScreens } from './screens';
 import { buildFountains, fountainJets, fountainJetsFromNozzles } from './fountain';
 import { createSelection } from './selection';
@@ -75,6 +75,18 @@ function haloList(P: Placement): HaloInstance[] {
     });
   }
   for (const f of P.flats) {
+    if (f.wash) {
+      // Warm wall wash: a wide soft tungsten glow around painted lettering.
+      out.push({
+        x: f.x,
+        y: f.y + f.h * 0.4,
+        z: f.z,
+        size: Math.sqrt(f.w * f.h) * 1.1,
+        color: signColor('neonAmber', 0.55),
+        zone: f.zone,
+      });
+      continue;
+    }
     if (f.kind !== 'vtext') continue;
     out.push({
       x: f.x,
@@ -302,7 +314,25 @@ export function init(ctx: Ctx): CityModuleInstance {
   crossPoles.count = P.crosses.length;
   crossPoles.computeBoundingSphere();
   crossPoles.name = 'neon-cross-poles';
+  // Banners hang from cables tied to the facades a little higher on each side (a slight sag).
+  const wires = bannerWires(P.flats);
+  const wireGeo = new THREE.CylinderGeometry(0.03, 0.03, 1, 4).translate(0, 0.5, 0);
+  const bannerCables = new THREE.InstancedMesh(wireGeo, poleMat, Math.max(1, wires.length));
+  const up = new THREE.Vector3(0, 1, 0);
+  const dir = new THREE.Vector3();
+  const q = new THREE.Quaternion();
+  wires.forEach((w, i) => {
+    dir.set(w.b.x - w.a.x, w.b.y - w.a.y, w.b.z - w.a.z);
+    const len = dir.length();
+    q.setFromUnitVectors(up, dir.normalize());
+    m4.compose(new THREE.Vector3(w.a.x, w.a.y, w.a.z), q, new THREE.Vector3(1, len, 1));
+    bannerCables.setMatrixAt(i, m4);
+  });
+  bannerCables.count = wires.length;
+  bannerCables.computeBoundingSphere();
+  bannerCables.name = 'neon-banner-cables';
   disposables.push(
+    wireGeo,
     poleMat,
     poleGeo,
     solidMat,
@@ -334,6 +364,7 @@ export function init(ctx: Ctx): CityModuleInstance {
     tubeMesh,
     crossMesh,
     crossPoles,
+    bannerCables,
     screens,
     rings,
     holos,
@@ -382,7 +413,8 @@ export function init(ctx: Ctx): CityModuleInstance {
   const folder = ctx.gui.addFolder('Neon');
   const view = { signs: true, traffic: true, halos: true, reflections: true, holograms: true };
   folder.add(view, 'signs').onChange((v: boolean) => {
-    for (const m of [flats, tubeMesh, crossMesh, crossPoles, screens, rings]) m.visible = v;
+    for (const m of [flats, tubeMesh, crossMesh, crossPoles, bannerCables, screens, rings])
+      m.visible = v;
   });
   folder.add(view, 'traffic').onChange((v: boolean) => (traffic.group.visible = v));
   folder.add(view, 'halos').onChange((v: boolean) => (halos.visible = v));
@@ -429,9 +461,31 @@ export function init(ctx: Ctx): CityModuleInstance {
       scene.remove(group);
       folder.destroy();
       crossPoles.dispose();
+      bannerCables.dispose();
       for (const d of disposables) d.dispose();
     },
   };
+}
+
+const CABLE_REACH = 2.5;
+const CABLE_RISE = 1;
+
+function bannerWires(flats: readonly FlatSign[]): { a: Vec3; b: Vec3 }[] {
+  const out: { a: Vec3; b: Vec3 }[] = [];
+  for (const s of flats) {
+    if (s.building >= 0) continue;
+    const tx = -s.nz;
+    const tz = s.nx;
+    for (const side of [-1, 1]) {
+      const e = (side * s.w) / 2;
+      const r = side * (s.w / 2 + CABLE_REACH);
+      out.push({
+        a: { x: s.x + tx * e, y: s.y1, z: s.z + tz * e },
+        b: { x: s.x + tx * r, y: s.y1 + CABLE_RISE, z: s.z + tz * r },
+      });
+    }
+  }
+  return out;
 }
 
 function countDrawables(root: THREE.Object3D): number {

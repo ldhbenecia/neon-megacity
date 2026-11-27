@@ -25,6 +25,8 @@ export interface CellSpec {
   ph: number;
   chars: number;
   key: string;
+  /** Band look: 0 neon text, 1 lit lightbox with dark text, 2 neon text in a tube frame. */
+  style?: 0 | 1 | 2;
 }
 
 export interface Cell extends CellSpec {
@@ -122,6 +124,8 @@ export function buildCatalog(L: Pick<Layout, 'buildings'>): Catalog {
     ...new Set(L.buildings.map((b) => b.tags.complex).filter((c): c is string => !!c)),
   ];
   const list = specs(complexes);
+  let band = 0;
+  for (const c of list) if (c.kind === 'band') c.style = (band++ % 3) as 0 | 1 | 2;
   const order = list.map((_, i) => i).sort((a, b) => (list[b]?.ph ?? 0) - (list[a]?.ph ?? 0));
   const pos: { x: number; y: number }[] = list.map(() => ({ x: 0, y: 0 }));
   let x = 0;

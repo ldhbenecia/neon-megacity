@@ -72,6 +72,9 @@ const VERTEX = /* glsl */ `
       vUv = position.xy;
       vParam = iParam;
       vFade = 1.0 - smoothstep(1800.0, 2400.0, length(cameraPosition.xz - xz));
+      // The curtain on the far edge would show through gaps in the bridge: keep it faint.
+      vec2 toCam = cameraPosition.xz - iPos.xz;
+      vFade *= mix(0.2, 1.0, step(0.0, dot(outw, toCam)));
     } else if (uMode > 2.5) {
       vec3 P; vec3 F; vec3 R; float fade;
       vehicleFrame(P, F, R, fade);
@@ -196,9 +199,14 @@ const FRAGMENT = /* glsl */ `
     } else {
       if (vFade <= 0.0) discard;
       if (vPool > 0.5) {
+        // Most light near the lamp, fading softly to nothing; on wet asphalt it breaks into
+        // patches with the road roughness instead of an even disc.
         float d = dot(vUv, vUv);
-        float a = exp(-d * 3.0) * (1.0 - smoothstep(0.75, 1.0, d));
-        gl_FragColor = vec4(vCol * a * vFade * uNight * (1.0 + uWet * 0.6) * uPower, 1.0);
+        float a = exp(-d * 6.0) * (1.0 - smoothstep(0.6, 1.0, d));
+        float patchy = 0.45 + 0.55 * vnoise(vWorld * 0.45);
+        float wetMix = mix(1.0, patchy, clamp(uWet, 0.0, 1.0));
+        vec3 c = mix(vCol, vec3(dot(vCol, vec3(0.2126, 0.7152, 0.0722))), 0.35);
+        gl_FragColor = vec4(c * 0.7 * a * wetMix * vFade * uNight * uPower, 1.0);
       } else {
         float across = exp(-vUv.x * vUv.x * 9.0);
         float along = pow(max(1.0 - vUv.y, 0.0), 1.4) * smoothstep(0.0, 0.08, vUv.y);

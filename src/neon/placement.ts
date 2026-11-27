@@ -45,6 +45,8 @@ export interface FlatSign {
   y0: number;
   y1: number;
   vol: Solid | null;
+  /** Lit by a warm wall wash (gooseneck lamps) instead of glowing on its own. */
+  wash?: boolean;
 }
 
 export interface Tube {
@@ -156,6 +158,8 @@ interface DistrictSigns {
   media?: boolean;
   /** Banners strung across alleys. */
   banners?: boolean;
+  /** Big warm lettering on warehouse walls, lit by gooseneck lamps (Seongsu). */
+  paint?: boolean;
 }
 
 const MIDTOWN: DistrictSigns = {
@@ -239,7 +243,7 @@ const KIND_OVERRIDES: ReadonlyMap<string, Partial<DistrictSigns>> = new Map([
       banners: true,
     },
   ],
-  ['brick', { shopScale: 0.45, bladeScale: 0.15 }],
+  ['brick', { shopScale: 0.68, bladeScale: 0.15, paint: true }],
   ['corridor', { media: true }],
 ]);
 
@@ -922,6 +926,8 @@ function placeMediaScreen(
 // Hongdae: banners strung across alleys and narrow streets, 5.5–7.5 m above the road.
 function placeBanners(c: Ctx, rng: Rng): void {
   let placed = 0;
+  // Glowing text in a neon frame; flat lightboxes read as plain boards across a dark alley.
+  const neonBands = c.cat.byKind.band.filter((i) => c.cat.cells[i]?.style === 2);
   for (const r of c.L.roads) {
     if (placed >= BANNER_MAX) return;
     if (!districtSigns(r.district).banners) continue;
@@ -954,7 +960,7 @@ function placeBanners(c: Ctx, rng: Rng): void {
         stack: 0,
       };
       if (firstHit(c.L, vol)) continue;
-      const cell = pickCell(c, 'band', rng);
+      const cell = neonBands.length ? rng.pick(neonBands) : pickCell(c, 'band', rng);
       c.out.flats.push({
         kind: 'band',
         building: -1,
@@ -981,6 +987,39 @@ function placeBanners(c: Ctx, rng: Rng): void {
       placed++;
     }
   }
+}
+
+const PAINT_CHANCE = 0.85;
+const WARM: ReadonlySet<NeonName> = new Set(['neonAmber', 'neonOrange']);
+
+// Seongsu: one big painted Korean name on the street wall of a warehouse, washed by warm lamps.
+function placePaint(c: Ctx, b: BuildingSpec, rng: Rng, zone: number): void {
+  if (!rng.chance(PAINT_CHANCE)) return;
+  const fi = shopFaces(c, b)[0];
+  const f = fi === undefined ? undefined : c.faces[b.id]?.[fi];
+  if (!f || fi === undefined) return;
+  const usable = f.width - 2 * EDGE_IN;
+  const w = Math.min(14, usable * 0.75);
+  if (w < 5) return;
+  const h = Math.min(2.4, Math.max(1.4, w / 6));
+  const y0 = b.baseY + b.groundFloorH + rng.range(0.6, 2.4);
+  const uc = rng.range(-(usable - w) / 2, (usable - w) / 2);
+  const warm = c.cat.byKind.band.filter((i) => {
+    const k = c.cat.cells[i];
+    return k !== undefined && k.style === 0 && WARM.has(k.color);
+  });
+  const cell = warm.length ? rng.pick(warm) : pickCell(c, 'band', rng);
+  const s = tryWallSign(
+    c,
+    b,
+    fi,
+    'band',
+    { u0: uc - w / 2, u1: uc + w / 2, y0, y1: y0 + h },
+    WALL_GAP.band,
+    0.15,
+    { cell, color: 'neonAmber', anim: Anim.none, zone, seed: rng.int(0, 1e6) },
+  );
+  if (s) s.wash = true;
 }
 
 /** Hard ceiling on all sign instances (ART_DIRECTION 5.1); smaller maps get a share by area. */
@@ -1113,6 +1152,9 @@ export function placeSigns(
     }
     if (d.tubes && (tower || a === 'officeSlab')) {
       placeTubes(c, b, rng, zone);
+    }
+    if (d.paint && (a === 'sangga' || b.archetype === 'brickWarehouse')) {
+      placePaint(c, b, rng, zone);
     }
     if (b.h >= (d.vtextFromH ?? 20) && b.h <= 80 && d.vtext && rng.chance(0.6)) {
       for (let k = 0; k < (d.vtextCount ?? 1); k++) placeVText(c, b, rng, zone, d.vtextMinH);

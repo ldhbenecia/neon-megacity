@@ -95,7 +95,8 @@ function board(g: G, w: number, h: number, color: number, lightbox: boolean): vo
 
 function drawBand(g: G, c: Cell, rng: Rng): void {
   const col = NEON[c.color].hex;
-  const style = rng.int(0, 2);
+  const drawn = rng.int(0, 2);
+  const style = c.style ?? drawn;
   board(g, c.pw, c.ph, col, style === 1);
   if (style === 2) {
     roundRect(g, 5, 5, c.pw - 10, c.ph - 10, 8);
