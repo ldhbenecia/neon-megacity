@@ -18,15 +18,28 @@ import { createRng } from '../core/random';
 
 export { EMBANK_SLOPE };
 
-const NEAR_RIDGE: Ridge = (() => {
-  const r = LAYOUT.ridges.find((q) => q.id === 'ridge-near') ?? LAYOUT.ridges[0];
-  if (!r) throw new Error('terrain: layout has no ridges');
-  return r;
-})();
+// Read on first use, not at import (boot sets the layout before importing modules, and a later
+// setLayout must be picked up).
+// Keyed on the layout object, so a later setLayout (another seed) is picked up.
+let nearRidgeCache: { layout: typeof LAYOUT; ridge: Ridge } | null = null;
+function nearRidge(): Ridge {
+  if (nearRidgeCache?.layout !== LAYOUT) {
+    const r = LAYOUT.ridges.find((q) => q.id === 'ridge-near') ?? LAYOUT.ridges[0];
+    if (!r) throw new Error('terrain: layout has no ridges');
+    nearRidgeCache = { layout: LAYOUT, ridge: r };
+  }
+  return nearRidgeCache.ridge;
+}
 
-// The ground must stay inside the near ridge wall or the plateau shows behind it.
-export const GROUND_RADIUS = NEAR_RIDGE.radius - 10;
-export const OUTER_EXTENT = GROUND_RADIUS;
+/** The ground must stay inside the near ridge wall or the plateau shows behind it. */
+export function groundRadius(): number {
+  return nearRidge().radius - 10;
+}
+
+/** Extent of the ground grid and the river strips (the ground radius). */
+export function outerExtent(): number {
+  return groundRadius();
+}
 
 export const MAP_HALF_X = CITY.halfX;
 export const MAP_HALF_Z = CITY.halfZ;
@@ -631,9 +644,9 @@ export function gridAxis(
 export function groundAxes(): { xs: number[]; zs: number[] } {
   const hx = MAP_HALF_X + 40;
   const hz = MAP_HALF_Z + 40;
-  const xs = gridAxis(-hx, hx, 12, OUTER_EXTENT);
-  const north = gridAxis(-hz, HILL_GRID_Z, 12, OUTER_EXTENT).filter((z) => z <= HILL_GRID_Z);
-  const south = gridAxis(HILL_GRID_Z, hz, 24, OUTER_EXTENT).filter((z) => z > HILL_GRID_Z);
+  const xs = gridAxis(-hx, hx, 12, outerExtent());
+  const north = gridAxis(-hz, HILL_GRID_Z, 12, outerExtent()).filter((z) => z <= HILL_GRID_Z);
+  const south = gridAxis(HILL_GRID_Z, hz, 24, outerExtent()).filter((z) => z > HILL_GRID_Z);
   return { xs, zs: [...north, ...south] };
 }
 
@@ -700,30 +713,30 @@ export function ridgeProfile(ridge: Ridge, angle: number): number {
 // Capped below the near ridge so the north plateau never shows above a low stretch of it.
 export function groundVertex(x: number, z: number): { x: number; y: number; z: number } {
   const r = Math.hypot(x, z);
-  const k = r > GROUND_RADIUS ? GROUND_RADIUS / r : 1;
+  const k = r > groundRadius() ? groundRadius() / r : 1;
   const px = x * k;
   const pz = z * k;
   const y = terrainHeight(px, pz);
   const rr = r * k;
-  const t = Math.min(1, Math.max(0, (rr - (GROUND_RADIUS - 1300)) / 1250));
+  const t = Math.min(1, Math.max(0, (rr - (groundRadius() - 1300)) / 1250));
   // The cap only bites far out; ridgeHeight is too costly for every vertex.
   if (t <= 0) return { x: px, y, z: pz };
   const fade = t * t * (3 - 2 * t);
-  const cap = ridgeHeight(NEAR_RIDGE, Math.atan2(pz, px)) * 0.6 - 15;
+  const cap = ridgeHeight(nearRidge(), Math.atan2(pz, px)) * 0.6 - 15;
   return { x: px, y: y + (Math.min(y, cap) - y) * fade, z: pz };
 }
 
-// Must end exactly on ±OUTER_EXTENT or a gap opens at the strip ends.
+// Must end exactly on ±outerExtent() or a gap opens at the strip ends.
 export function riverSliceXs(fine: number, coarse: number): number[] {
   const xs: number[] = [];
   for (
-    let x = -OUTER_EXTENT;
-    x < OUTER_EXTENT;
+    let x = -outerExtent();
+    x < outerExtent();
     x += Math.abs(x) < MAP_HALF_X + 40 ? fine : coarse
   ) {
     xs.push(x);
   }
-  if (OUTER_EXTENT - (xs[xs.length - 1] ?? -Infinity) < 1) xs.pop();
-  xs.push(OUTER_EXTENT);
+  if (outerExtent() - (xs[xs.length - 1] ?? -Infinity) < 1) xs.pop();
+  xs.push(outerExtent());
   return xs;
 }

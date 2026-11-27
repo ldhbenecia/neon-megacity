@@ -7,7 +7,7 @@ every PR that changes performance, with before / after numbers in the PR body.
 
 ```sh
 npm run perf -- <label>                  # real GPU (Metal ANGLE), builds first
-npm run perf -- <label> --no-build --only=탑다운
+npm run perf -- <label> --no-build --only=topdown
 npm run perf -- <label> --quality=ci     # the CI tier
 npm run perf -- <label> --swiftshader    # software GL, slow
 ```
@@ -67,6 +67,50 @@ walls (legitimately black at night) and once clipped into a building (99 % black
 Because SwiftShader does not reproduce GPU-specific NaN or precision bugs, **a full-quality
 `npm run perf` on a real GPU is required before merging** any change to shaders, post-processing,
 lighting or materials; paste its screen column in the PR body. CI keeps its SwiftShader checks.
+
+## Snapshot: main c546911 (Seoul presets #105, phase-2 modules)
+
+Apple M4 (Metal ANGLE), 1600×900 at DPR 1.5 (tier high), full quality, `rain=0.35`, `npm run perf`
+(240 frames per scenario). No screen-check failures and no console errors. The views are the number-key presets 1, 2, 6, 7 (`?preset=`) and
+`?cam=overview` / `?cam=topdown`. Topdown is the worst view (most draw calls, longest frames), so the
+full-quality e2e budget scenario (`tests/e2e/perf.spec.ts`) boots there at noon, when the shadow
+pass runs (night has 2 more calls, no shadow pass).
+
+| scenario                   | frame ms (mean / p95) | calls | tris   | programs | textures | geo MB | tex MB | black % (rest / move) |
+| -------------------------- | --------------------- | ----- | ------ | -------- | -------- | ------ | ------ | --------------------- |
+| 1 반포대교 남단 · night    | 4.9 / 6.3             | 82    | 0.93 M | 37       | 29       | 60.0   | 61.4   | 17 / 30               |
+| 1 반포대교 남단 · sunset   | 5.1 / 6.6             | 82    | 0.93 M | 37       | 29       | 60.0   | 61.4   | 42 / 42               |
+| 1 반포대교 남단 · noon     | 5.2 / 6.4             | 80    | 0.93 M | 37       | 29       | 60.0   | 61.4   | 2 / 3                 |
+| 2 여의도 상공 · night      | 5.5 / 6.8             | 70    | 0.91 M | 37       | 28       | 59.4   | 61.4   | 0 / 18                |
+| 2 여의도 상공 · sunset     | 5.9 / 7.5             | 70    | 0.91 M | 37       | 28       | 59.4   | 61.4   | 2 / 58                |
+| 2 여의도 상공 · noon       | 6.3 / 8.5             | 68    | 0.91 M | 37       | 28       | 59.4   | 61.4   | 0 / 3                 |
+| 6 잠실 스카이라인 · night  | 5.8 / 10.0            | 68    | 0.90 M | 37       | 28       | 61.3   | 61.4   | 4 / 9                 |
+| 6 잠실 스카이라인 · sunset | 6.4 / 8.0             | 68    | 0.90 M | 37       | 28       | 61.3   | 61.4   | 11 / 49               |
+| 6 잠실 스카이라인 · noon   | 6.9 / 8.3             | 66    | 0.90 M | 37       | 28       | 61.3   | 61.4   | 0 / 1                 |
+| 7 홍대 골목 · night        | 7.4 / 8.8             | 89    | 0.94 M | 37       | 28       | 61.1   | 61.4   | 1 / 2                 |
+| 7 홍대 골목 · sunset       | 8.1 / 9.7             | 89    | 0.94 M | 37       | 28       | 61.1   | 61.4   | 28 / 28               |
+| 7 홍대 골목 · noon         | 8.1 / 9.5             | 87    | 0.94 M | 37       | 28       | 61.1   | 61.4   | 2 / 3                 |
+| overview · night           | 9.8 / 11.3            | 118   | 0.91 M | 37       | 29       | 59.4   | 61.4   | 0 / 0                 |
+| overview · sunset          | 10.1 / 11.6           | 118   | 0.91 M | 37       | 29       | 59.4   | 61.4   | 0 / 1                 |
+| overview · noon            | 10.0 / 11.5           | 116   | 0.91 M | 37       | 29       | 59.4   | 61.4   | 0 / 0                 |
+| topdown · night            | 12.7 / 14.4           | 120   | 0.91 M | 37       | 29       | 59.4   | 61.4   | 0 / 1                 |
+| topdown · sunset           | 13.3 / 14.9           | 120   | 0.91 M | 37       | 29       | 59.4   | 61.4   | 0 / 0                 |
+| topdown · noon             | 12.8 / 14.5           | 118   | 0.91 M | 37       | 29       | 59.4   | 61.4   | 0 / 0                 |
+
+Budget (ART_DIRECTION 11: 300 calls, 2 M triangles, 50 programs): worst 120 calls, 0.94 M
+triangles, 37 programs, 28–29 textures. Boot stages in ms. The load average rose during the run,
+so compare the first three boots with older baselines and treat the rest as an upper bound:
+
+| stage       | first three boots (load 5.6) | all 18 boots (load rising to 18) |
+| ----------- | ---------------------------- | -------------------------------- |
+| lighting    | 41–48 ms                     | 41–78 ms                         |
+| terrain     | 190–249 ms                   | 190–390 ms                       |
+| buildings   | 295–351 ms                   | 295–611 ms                       |
+| infra       | 77–96 ms                     | 77–155 ms                        |
+| neon        | 140–172 ms                   | 140–278 ms                       |
+| atmosphere  | 40–50 ms                     | 40–78 ms                         |
+| compile     | 145–168 ms                   | 134–219 ms                       |
+| interactive | 1409–1698 ms                 | 1409–2704 ms                     |
 
 ## Snapshot: main e2b7fef (lighting, infra, atmosphere, ux; terrain, buildings, neon are stubs)
 
@@ -203,7 +247,7 @@ Main thread during boot (`PerformanceObserver('longtask')`, preset 2 night, 3 ru
 
 A PR may not make a module's boot `init` (and layout generation) more than **1.3×** its v3
 baseline, measured back to back with main on the same machine (`npm run perf -- <label>
---no-build --no-screen --frames=30 --only="코어 상공"`, three boots; the absolute numbers move with
+--no-build --no-screen --frames=30 --only="여의도 상공"`, three boots; the absolute numbers move with
 machine load, the ratio does not). Baseline (main 0d4c9de, M4, under load): layout 0.8 s,
 buildings 0.6 s, terrain 0.5 s, neon 0.37 s, compile 0.26 s, infra 0.23 s. Over 1.3× the reviewer
 comments on the PR and the manager decides; work moving to the boot worker does not count.

@@ -249,6 +249,8 @@ export function palaceWall(
   b: P2,
   ground: (x: number, z: number) => number,
   gate: (a: P2, b: P2) => boolean,
+  height = 4,
+  width = 1.1,
 ): void {
   const len = Math.hypot(b.x - a.x, b.z - a.z);
   if (len < 0.5) return;
@@ -265,7 +267,7 @@ export function palaceWall(
     if (gate(at(i), at(i + 1))) continue;
     const seg = len / n;
     const y0 = ground(p.x, p.z) - 0.6;
-    g.box(p.x, y0, p.z, seg + 0.6, 4.6, 1.1, rot, wall);
-    g.box(p.x, y0 + 4.6, p.z, seg + 0.6, 0.5, 1.9, rot, tile);
+    g.box(p.x, y0, p.z, seg + 0.6, height + 0.6, width, rot, wall);
+    g.box(p.x, y0 + height + 0.6, p.z, seg + 0.6, 0.5, width + 0.8, rot, tile);
   }
 }

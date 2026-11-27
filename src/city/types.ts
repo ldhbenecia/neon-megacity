@@ -140,6 +140,17 @@ export interface NamedRoad {
   width: number;
 }
 
+export interface PalaceWall {
+  /** Centerline end points; a terrace runs a (south) to b (north) along the axis. */
+  a: Vec2;
+  b: Vec2;
+  kind: 'wall' | 'corridor' | 'terrace';
+  /** Height (m) above the level palace ground. */
+  height: number;
+  /** Thickness (m) across the centerline. */
+  width: number;
+}
+
 export interface SkyLane {
   id: string;
   /** xz control points; neon samples a centripetal Catmull-Rom through them. */
@@ -387,6 +398,8 @@ export interface BuildingSpec {
     /** Wall side covered by a full-height media screen (v3 'corridor'). */
     mediaFace?: Side;
     landmark?: LandmarkId;
+    /** Palace grounds role of a palaceHall (the axis gate, axis halls, side halls, the pond pavilion). */
+    palacePart?: 'gate' | 'hall' | 'annex' | 'pavilion';
   };
 }
 
@@ -447,4 +460,8 @@ export interface Layout {
   landmarks: Landmark[];
   /** Flying-traffic routes (neon reads only these). */
   skyLanes: SkyLane[];
+  /** Palace walls, covered corridors and the throne-hall terrace (gate openings are gaps). */
+  palaceWalls: PalaceWall[];
+  /** Palace pond outlines (water drawn by buildings for now; the pavilion is a building). */
+  palacePonds: Vec2[][];
 }
