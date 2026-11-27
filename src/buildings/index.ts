@@ -388,7 +388,6 @@ export function init(ctx: Ctx): CityModuleInstance {
       uniforms.uLitRatio.value = env.windowLitRatio * params.litScale;
       uniforms.uNight.value = env.nightFactor;
       // Lighting owns the fill curve; before it sets one, fall back to the night teal floor.
-      uniforms.uFill.value = env.fillFactor ?? env.nightFactor;
       if (env.fillColor) uniforms.uFillColor.value.copy(env.fillColor);
       else uniforms.uFillColor.value.fromArray(NIGHT_FILL_AMBIENT).multiplyScalar(env.nightFactor);
       uniforms.uPower.value = env.powerOn;
