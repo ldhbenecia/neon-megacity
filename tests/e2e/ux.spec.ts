@@ -275,6 +275,7 @@ test('quality row: a fixed tier is applied and saved, auto goes back to the devi
   await page.click('#quality-group button[data-quality="auto"]');
   await expect(now).toHaveText(/^· 자동 · (상|중|하)$/);
   expect(await page.evaluate(() => localStorage.getItem('hangang.quality'))).toBe('auto');
+});
 
 test('automated runs never contact Google Analytics', async ({ page }) => {
   const calls: string[] = [];

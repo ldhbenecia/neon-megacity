@@ -2,6 +2,7 @@
 // writes `timeOfDay` only while `timeLocked` is true (the documented exception: lighting does
 // not advance it while locked). Weather buttons set `rainTarget`; atmosphere eases `rain` to it.
 import { clockMinutes } from '../core/clock';
+import { parseQuery } from '../core/query';
 import type { Ctx } from '../core/types';
 import type { CameraRig } from './cameraRig';
 import {
@@ -234,7 +235,7 @@ export function createControls(ctx: Ctx, rig: CameraRig, hud: Hud, perf: Perf): 
   // Quality row: auto, or a fixed tier that turns the frame-time controller off (saved).
   const qualityGroup = document.getElementById('quality-group');
   const qualityNow = document.getElementById('quality-now');
-  const urlQuality = new URLSearchParams(location.search).has('quality');
+  const urlQuality = parseQuery(location.search).quality !== undefined;
   const qualityButtons = [
     ...(qualityGroup?.querySelectorAll<HTMLButtonElement>('button[data-quality]') ?? []),
   ];
