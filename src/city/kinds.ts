@@ -39,11 +39,12 @@ const TABLE: Record<DistrictKind, BaseKind> = {
 
 const BASE = new Map<string, BaseKind>(Object.entries(TABLE));
 
-/** Closest v2 kind for a district kind (manager decision, SEOUL.md 7.2). */
+/**
+ * Closest v2 kind for a district kind (manager decision, SEOUL.md 7.2). A kind the table does not
+ * know falls back to 'midtown' (plain lit office blocks) so renderers never fail on new data.
+ */
 export function baseKind(kind: DistrictKind): BaseKind {
-  const b = BASE.get(kind);
-  if (b === undefined) throw new Error(`unknown district kind ${kind}`);
-  return b;
+  return BASE.get(kind) ?? 'midtown';
 }
 
 /** Like baseKind for untyped input (e.g. strings from data): undefined when the kind is unknown. */
