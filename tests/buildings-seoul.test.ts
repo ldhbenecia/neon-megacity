@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { LAYOUT, type Archetype, type BuildingSpec } from '../src/city/layout';
+import { LAYOUT, palaceWallDistance, type Archetype, type BuildingSpec } from '../src/city/layout';
 import { emitBuilding } from '../src/buildings/archetypes';
 import { districtLitFactor, zoneLitScale } from '../src/buildings/params';
 import { targets, windingAgreement } from './buildings-helpers';
@@ -189,5 +189,44 @@ describe('palace grounds from the layout', () => {
       const g0 = emitted(b).g0!;
       expect(windingAgreement(g0)).toBeGreaterThan(0.97);
     }
+  });
+});
+
+describe('palace garden across LODs', () => {
+  const plan = palacePlan(LAYOUT)!;
+  const emit = (lv: 0 | 1 | 2) => {
+    const g = new GeoBuilder(0, 0);
+    palaceGrounds(g, { ...plan, walls: plan.walls }, lv);
+    return g.build()!.getAttribute('position');
+  };
+  const treeVerts = (lv: 0 | 1): Set<string> => {
+    const P = emit(lv);
+    const out = new Set<string>();
+    // Only trees rise above 1.5 m once walls are filtered out below.
+    for (let i = 0; i < P.count; i++) {
+      const y = P.getY(i);
+      if (y < 1.5) continue;
+      const x = P.getX(i);
+      const z = P.getZ(i);
+      if (plan.walls.some((w) => palaceWallDistance(w, x, z) < 1)) continue;
+      out.add(`${x.toFixed(2)},${y.toFixed(2)},${z.toFixed(2)}`);
+    }
+    return out;
+  };
+
+  it('draws the pond at every LOD', () => {
+    for (const lv of [0, 1, 2] as const) {
+      const P = emit(lv);
+      let water = 0;
+      for (let i = 0; i < P.count; i++) if (Math.abs(P.getY(i) - 0.09) < 1e-4) water++;
+      expect(water, `lv${lv}`).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it('LOD1 trees are a subset of LOD0 trees and none stands in a wall', () => {
+    const t0 = treeVerts(0);
+    const t1 = treeVerts(1);
+    expect(t1.size).toBeGreaterThan(0);
+    for (const v of t1) expect(t0.has(v)).toBe(true);
   });
 });

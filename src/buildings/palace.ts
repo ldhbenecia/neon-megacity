@@ -2,6 +2,8 @@
 // gates, a covered corridor around the main court, side halls and a rear garden. It follows the
 // composition of a Joseon palace (layers of courts on one south-north axis), not any real plan.
 import { createRng, type Rng } from '../core/random';
+import { palaceWallDistance } from '../city/layout';
+import { toLocal } from '../city/math';
 import type { BuildingSpec, Layout, PalaceWall, Vec2 } from '../city/types';
 import { UNIT_ICO, type GeoBuilder, type V3 } from './builder';
 import { palaceWall } from './landmarks';
@@ -17,6 +19,8 @@ export interface PalacePlan {
   axisX: number;
   /** Gate and halls on the axis, south to north. */
   halls: BuildingSpec[];
+  /** Every palace building (axis, annexes, pavilion). */
+  parts: BuildingSpec[];
   walls: readonly PalaceWall[];
   ponds: readonly (readonly Vec2[])[];
   seed: number;
@@ -41,6 +45,7 @@ export function palacePlan(
     z1: Math.max(...zs),
     axisX,
     halls,
+    parts: layout.buildings.filter((b) => b.tags.palacePart !== undefined),
     walls: layout.palaceWalls,
     ponds: layout.palacePonds,
     seed: layout.seed ^ 0x9a1ace,
@@ -102,6 +107,20 @@ function palaceStructure(g: GeoBuilder, w: PalaceWall, lv: 0 | 1 | 2): void {
 /** Pond water and tree clumps around it (the pavilion is a layout building). */
 function garden(g: GeoBuilder, plan: PalacePlan, rng: Rng, lv: 0 | 1 | 2): void {
   const leaf = plain(SEOUL_COLORS.foliage, 0.95);
+  // Trees stay north of the innermost east-west wall, off every wall and every palace building.
+  const inner = plan.walls.filter(
+    (w) =>
+      w.kind === 'wall' &&
+      Math.abs(w.a.z - w.b.z) < 0.5 &&
+      w.a.z > plan.z0 + 2 &&
+      w.a.z < plan.z1 - 2,
+  );
+  const northWall = inner.length > 0 ? Math.min(...inner.map((w) => w.a.z)) : plan.z1;
+  const onPart = (x: number, z: number, m: number): boolean =>
+    plan.parts.some((b) => {
+      const l = toLocal(x - b.x, z - b.z, b.rotY);
+      return Math.abs(l.x) < b.w / 2 + m && Math.abs(l.z) < b.d / 2 + m;
+    });
   for (const pond of plan.ponds) {
     if (pond.length < 3) continue;
     const cx = pond.reduce((s, p) => s + p.x, 0) / pond.length;
@@ -113,16 +132,20 @@ function garden(g: GeoBuilder, plan: PalacePlan, rng: Rng, lv: 0 | 1 | 2): void 
       plain(SEOUL_COLORS.water, 0.08),
       [cx, -1, cz],
     );
+    if (lv === 2) continue;
+    // LOD1 plants the first candidates of LOD0, so trees never move between levels.
     const n = lv === 0 ? 24 : 10;
     for (let i = 0; i < n; i++) {
       const a = rng.next() * Math.PI * 2;
       const d = r + 5 + rng.next() * 16;
+      const sz = 3 + rng.next() * 3;
+      const rot = rng.next() * 3;
       const x = cx + Math.cos(a) * d;
       const z = cz + Math.sin(a) * d;
-      const sz = 3 + rng.next() * 3;
-      if (x < plan.x0 + 4 || x > plan.x1 - 4 || z < plan.z0 + 4 || z > plan.z1 - 4) continue;
-      if (Math.abs(x - plan.axisX) < 30) continue;
-      g.place(UNIT_ICO, x, sz * 0.9, z, sz, sz * 0.9, sz, rng.next() * 3, leaf);
+      if (x < plan.x0 + 4 || x > plan.x1 - 4 || z < plan.z0 + 4 || z > northWall - sz) continue;
+      if (Math.abs(x - plan.axisX) < 30 || onPart(x, z, sz)) continue;
+      if (plan.walls.some((w) => palaceWallDistance(w, x, z) < sz + 1)) continue;
+      g.place(UNIT_ICO, x, sz * 0.9, z, sz, sz * 0.9, sz, rot, leaf);
     }
   }
 }
@@ -142,7 +165,7 @@ export function palaceGrounds(g: GeoBuilder, plan: PalacePlan, lv: 0 | 1 | 2): v
   if (walkLen > 2) {
     g.box(plan.axisX, 0, plan.z1 - walkLen / 2, 6, 0.35, walkLen, 0, plain(0x8a847a, 0.85));
   }
-  if (lv < 2) garden(g, plan, createRng(plan.seed + 3), lv);
+  garden(g, plan, createRng(plan.seed + 3), lv);
   // Faint warm light along the inside of the outer wall base.
   if (lv === 0) {
     const s = glow(SEOUL_COLORS.uplight, 0.25);
