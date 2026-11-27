@@ -1,10 +1,10 @@
 import * as THREE from 'three';
 import { ADDITIVE_TAIL, COMMON_PARS, PATH_PARS, neonMaterial, type NeonUniforms } from './glsl';
 
-// Halos, holograms, ground reflections and vehicle lights share one shader program (perf budget: every
+// Halos, holograms, ground reflections, vehicle lights and fountains share one shader program (perf budget: every
 // distinct source or define is another program). `uMode` picks the branch at run time, so
 // only uniforms may differ between these materials, never defines or `side`.
-export const GlowMode = { halo: 0, holo: 1, decal: 2, vehicle: 3 } as const;
+export const GlowMode = { halo: 0, holo: 1, decal: 2, vehicle: 3, fountain: 4 } as const;
 export type GlowMode = (typeof GlowMode)[keyof typeof GlowMode];
 
 const VERTEX = /* glsl */ `
@@ -56,6 +56,18 @@ const VERTEX = /* glsl */ `
       vec3 n = vec3(c * n0.x + s * n0.z, 0.0, -s * n0.x + c * n0.z);
       float facing = dot(safeNormalize(cameraPosition - world, vec3(0.0, 1.0, 0.0)), n);
       vFace = smoothstep(0.35, 0.85, abs(facing)) * sign(facing);
+    } else if (uMode > 3.5) {
+      // Water curtain: a jet sheet from the deck edge (iPos, iPos.w long, along iParam.xy, out to
+      // side iParam.z) rising 3 m then falling iSize.y to the water, iSize.x out from the deck.
+      vec2 along = iParam.xy;
+      vec2 outw = vec2(-along.y, along.x) * iParam.z;
+      float sArc = position.y;
+      float yArc = iPos.y + 3.0 * sArc - (iSize.y + 3.0) * sArc * sArc;
+      vec2 xz = iPos.xz + along * (position.x * iPos.w) + outw * (iSize.x * sArc);
+      mvPosition = viewMatrix * vec4(xz.x, yArc, xz.y, 1.0);
+      vUv = position.xy;
+      vParam = iParam;
+      vFade = 1.0 - smoothstep(1800.0, 2400.0, length(cameraPosition.xz - xz));
     } else if (uMode > 2.5) {
       vec3 P; vec3 F; vec3 R; float fade;
       vehicleFrame(P, F, R, fade);
@@ -69,10 +81,13 @@ const VERTEX = /* glsl */ `
         col = uTail * (0.3 + 0.7 * smoothstep(-0.2, 0.6, -facing));
       } else if (aKind < 2.5) {
         col = uHead * 0.035 * uNight;
-      } else {
+      } else if (aKind < 3.5) {
         col = mix(uGlowA, uGlowB, step(0.5, fract(iExtra.y * 0.618)));
+      } else {
+        // Train windows: warm white, some trains with cyan interiors.
+        col = mix(uHead * 0.22, uGlowA * 0.45, step(0.7, fract(iExtra.y * 0.317)));
       }
-      if (aKind < 1.5 || aKind > 2.5) {
+      if (aKind < 1.5 || (aKind > 2.5 && aKind < 3.5)) {
         float size = aKind > 2.5 ? 1.1 : (aKind < 0.5 ? 0.32 : 0.28);
         float k = clamp(-mvPosition.z / 90.0, 1.0, 7.0);
         mvPosition.xy += aCorner * size * k;
@@ -110,6 +125,7 @@ const VERTEX = /* glsl */ `
 const FRAGMENT = /* glsl */ `
   ${COMMON_PARS}
   uniform float uMode; uniform sampler2D uAtlas; uniform vec3 uTint;
+  uniform vec3 uHead; uniform vec3 uTail; uniform vec3 uGlowA; uniform vec3 uGlowB;
   varying vec2 vUv; varying vec3 vCol; varying float vAlpha; varying vec4 vRect; varying vec4 vParam;
   varying float vWorldY; varying float vPower; varying float vFace; varying float vFade;
   varying vec2 vWorld; varying float vPool; varying float vKind;
@@ -135,9 +151,28 @@ const FRAGMENT = /* glsl */ `
       vec3 col = mix(tex, uTint * lum, 0.35) * 3.0;
       float a = vParam.y * scan * smoothstep(0.03, 0.25, lum) * vPower * uGain * abs(vFace);
       gl_FragColor = vec4(col * a, 1.0);
+    } else if (uMode > 3.5) {
+      if (vFade <= 0.0) discard;
+      float cu = vUv.x * 24.0 + vParam.w * 13.0;
+      float id = floor(cu);
+      float streak = 1.0 - smoothstep(0.0, 0.5, abs(fract(cu) - 0.5));
+      float drop = fract(vUv.y * 6.0 - uTime * (0.8 + nHash(id) * 0.6) + nHash(id + 7.0));
+      float sheet = 0.35 + 0.65 * smoothstep(0.0, 0.25, drop) * (1.0 - smoothstep(0.6, 1.0, drop));
+      float edge = smoothstep(0.0, 0.05, vUv.y) * (1.0 - smoothstep(0.85, 1.0, vUv.y));
+      // Cyan, white, magenta drifting along the bridge in soft waves (SEOUL.md 3.3: no rainbow).
+      float k = fract(vParam.w + uTime * 0.03) * 3.0;
+      float f = smoothstep(0.0, 0.35, fract(k));
+      vec3 c0 = k < 1.0 ? uGlowA : (k < 2.0 ? uHead : uGlowB);
+      vec3 c1 = k < 1.0 ? uHead : (k < 2.0 ? uGlowB : uGlowA);
+      vec3 col = mix(uTail, mix(c0, c1, f), uNight);
+      float a = 0.55 * streak * sheet * edge * vFade * uPower * (0.7 + 0.3 * uNight);
+      gl_FragColor = vec4(col * a, 1.0);
     } else if (uMode > 2.5) {
       float a;
-      if (vKind > 1.5 && vKind < 2.5) {
+      if (vKind > 3.5) {
+        float pane = 1.0 - step(0.78, fract(vUv.x * 0.625));
+        a = pane * smoothstep(0.0, 0.15, vUv.y) * (1.0 - smoothstep(0.85, 1.0, vUv.y));
+      } else if (vKind > 1.5 && vKind < 2.5) {
         a = (1.0 - vUv.x) * (1.0 - vUv.y * vUv.y);
       } else {
         float d = dot(vUv, vUv);

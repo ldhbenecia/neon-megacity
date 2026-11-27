@@ -5,6 +5,7 @@ import {
   highwayCurve,
   surfaceHeight,
   type BuildingFace,
+  type Vec2,
   type Vec3,
 } from '../city/layout';
 import { MATERIAL, NEON, SCREEN_MIN_GAIN, type NeonName } from '../core/palette';
@@ -13,10 +14,18 @@ import { buildAtlas } from './atlas';
 import { buildCatalog } from './catalog';
 import { createNeonUniforms } from './glsl';
 import { hdrColor } from './geom';
-import { bridgePaths, groundPaths, highwayPath, vehicleStreams, type Path } from './lanes';
+import {
+  bridgePaths,
+  groundPaths,
+  highwayPath,
+  vehicleStreams,
+  type Path,
+  railPaths,
+} from './lanes';
 import { createLightPool, type LightCandidate } from './lights';
 import { placeSigns, roadGapIndex, type Placement } from './placement';
 import { buildHolograms, buildRings, buildScreens } from './screens';
+import { buildFountains, fountainJets, fountainJetsFromNozzles } from './fountain';
 import { createSelection } from './selection';
 import {
   buildEmissiveSolids,
@@ -202,6 +211,17 @@ function lightCandidates(P: Placement, street: StreetPlan): LightCandidate[] {
   return out;
 }
 
+// Bridge geometry infra publishes with its v3 PR (shape agreed with hangang-infra); optional until
+// then, when fountains fall back to the layout's deck edges and no trains run.
+interface InfraSeoulExtras {
+  railTracks?: ReadonlyMap<string, readonly { points: readonly Vec3[] }[]>;
+  fountainNozzles?: ReadonlyMap<string, readonly { a: Vec3; b: Vec3; outward: Vec2 }[]>;
+}
+
+function infraExtras(ctx: Ctx): InfraSeoulExtras {
+  return (ctx.infra ?? {}) as InfraSeoulExtras;
+}
+
 export function init(ctx: Ctx): CityModuleInstance {
   const { LAYOUT: L, env, scene } = ctx;
   const group = new THREE.Group();
@@ -303,7 +323,24 @@ export function init(ctx: Ctx): CityModuleInstance {
   for (const m of [screens, rings, holos, halos, decals]) {
     disposables.push(m.geometry, m.material as THREE.Material);
   }
-  group.add(flats, tubeMesh, crossMesh, crossPoles, screens, rings, holos, halos, decals);
+  const nozzles = infraExtras(ctx).fountainNozzles;
+  const jets = nozzles
+    ? fountainJetsFromNozzles(nozzles, L.river.waterY)
+    : fountainJets(L.bridges, L.river.waterY);
+  const fountains = buildFountains(shared, jets);
+  disposables.push(fountains.geometry, fountains.material as THREE.Material);
+  group.add(
+    flats,
+    tubeMesh,
+    crossMesh,
+    crossPoles,
+    screens,
+    rings,
+    holos,
+    halos,
+    decals,
+    fountains,
+  );
 
   const streetMeshes = buildStreet(street, solidMat);
   group.add(streetMeshes.group);
@@ -325,6 +362,8 @@ export function init(ctx: Ctx): CityModuleInstance {
   }
   if (riverS)
     paths.push({ ...highwayPath('fly-river', riverS, false, 'flying'), altitude: [140, 200] });
+  const tracks = infraExtras(ctx).railTracks;
+  if (tracks) paths.push(...railPaths(tracks));
   const vehicles = vehicleStreams(paths, L.highways);
   const traffic = buildTraffic(shared, paths, vehicles);
   group.add(traffic.group);
@@ -368,6 +407,8 @@ export function init(ctx: Ctx): CityModuleInstance {
       lamps: street.lamps.length,
       vehicles: traffic.vehicles,
       flying: traffic.flying,
+      trains: traffic.trains,
+      fountainJets: jets.length,
       pointLights: lights.count,
       drawCalls: countDrawables(group),
     };

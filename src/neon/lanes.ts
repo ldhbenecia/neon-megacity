@@ -7,7 +7,9 @@ export interface Path {
   points: Vec3[];
   length: number;
   closed: boolean;
-  kind: 'ground' | 'bridge' | 'highway' | 'flying';
+  kind: 'ground' | 'bridge' | 'highway' | 'flying' | 'rail';
+  /** Rail tracks run one way; alternate tracks take turns. */
+  oneWay?: 1 | -1;
   fade: number;
   altitude?: readonly [number, number];
   /** Ground paths on arterials keep full traffic when the ground cap thins side streets. */
@@ -107,6 +109,29 @@ export function bridgePaths(
   });
 }
 
+/** Rail track polylines (rail top, approach slopes included) from infra, one path per track. */
+export function railPaths(
+  tracks: ReadonlyMap<string, readonly { points: readonly Vec3[] }[]>,
+): Path[] {
+  const out: Path[] = [];
+  for (const [id, list] of tracks) {
+    list.forEach((t, i) => {
+      if (t.points.length < 2) return;
+      const r = resample([...t.points], Math.max(2, t.points.length));
+      out.push({
+        id: `rail-${id}-${i}`,
+        points: r.points,
+        length: r.length,
+        closed: false,
+        kind: 'rail',
+        fade: 40,
+        oneWay: i % 2 === 0 ? 1 : -1,
+      });
+    });
+  }
+  return out;
+}
+
 export function highwayPath(
   id: string,
   samples: readonly Vec3[],
@@ -132,6 +157,7 @@ export function laneSlots(
   const both = (offs: number[]): { dir: 1 | -1; lane: number }[] =>
     ([1, -1] as const).flatMap((dir) => offs.map((lane) => ({ dir, lane })));
   if (p.kind === 'flying') return both([0]);
+  if (p.kind === 'rail') return [{ dir: p.oneWay ?? 1, lane: 0 }];
   if (p.kind === 'ground')
     return both(p.length > 300 ? [LANE_W * 0.5, LANE_W * 1.5] : [LANE_W * 0.5]);
   if (p.kind === 'bridge') return both([LANE_W * 0.5 + 0.6, LANE_W * 1.5 + 0.6]);
@@ -152,7 +178,7 @@ export function vehicleStreams(
 ): Vehicle[] {
   const rng = createRng(opts.seed ?? 6060);
   const hw = new Map(highways.map((h) => [h.id, h]));
-  const density = { ground: 2.2, bridge: 26, highway: 34, flying: 6, ...opts.density };
+  const density = { ground: 2.2, bridge: 26, highway: 34, flying: 6, rail: 1.2, ...opts.density };
   const perLane = (p: Path): number => Math.max(1, Math.round((density[p.kind] * p.length) / 1000));
   // Over the cap, side streets lose cars first (some none); arterials shrink only if they alone
   // exceed the cap. A no-op on maps under the cap, so their streams stay identical.
@@ -188,7 +214,9 @@ export function vehicleStreams(
           ? rng.range(30, 50)
           : p.kind === 'flying'
             ? rng.range(110, 160)
-            : rng.range(65, 100);
+            : p.kind === 'rail'
+              ? rng.range(55, 75)
+              : rng.range(65, 100);
       const speed = kmh / 3.6 / p.length;
       const base = rng.next();
       const [amin, amax] = p.altitude ?? [80, 260];

@@ -101,6 +101,74 @@ function lightGeometry(flying: boolean): THREE.BufferGeometry {
   return g;
 }
 
+const TRAIN_CARS = 6;
+const CAR_LEN = 20;
+
+// Window bands on both sides of every car (aKind 4, aCorner = metres along the car, 0..1 up),
+// plus head and tail lights at the ends.
+function trainLightGeometry(): THREE.BufferGeometry {
+  const pos: number[] = [];
+  const corner: number[] = [];
+  const kind: number[] = [];
+  const index: number[] = [];
+  const half = (TRAIN_CARS * CAR_LEN) / 2;
+  for (let car = 0; car < TRAIN_CARS; car++) {
+    const x0 = -half + car * CAR_LEN + 1;
+    const x1 = x0 + CAR_LEN - 2;
+    for (const z of [-1.62, 1.62]) {
+      const base = pos.length / 3;
+      for (const [x, y, cx, cy] of [
+        [x0, 1.5, 0, 0],
+        [x1, 1.5, x1 - x0, 0],
+        [x1, 2.6, x1 - x0, 1],
+        [x0, 2.6, 0, 1],
+      ] as const) {
+        pos.push(x, y, z);
+        corner.push(cx, cy);
+        kind.push(4);
+      }
+      index.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    }
+  }
+  for (const [x, k] of [
+    [half, 0],
+    [-half, 1],
+  ] as const) {
+    for (const z of [-0.9, 0.9]) {
+      const base = pos.length / 3;
+      for (const [cx, cy] of [
+        [-1, -1],
+        [1, -1],
+        [1, 1],
+        [-1, 1],
+      ] as const) {
+        pos.push(x, 1.0, z);
+        corner.push(cx, cy);
+        kind.push(k);
+      }
+      index.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('aCorner', new THREE.Float32BufferAttribute(corner, 2));
+  g.setAttribute('aKind', new THREE.Float32BufferAttribute(kind, 1));
+  g.setIndex(index);
+  return g;
+}
+
+function trainBodyGeometry(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  const half = (TRAIN_CARS * CAR_LEN) / 2;
+  for (let car = 0; car < TRAIN_CARS; car++) {
+    const x = -half + car * CAR_LEN + CAR_LEN / 2;
+    parts.push(new THREE.BoxGeometry(CAR_LEN - 0.8, 3.2, 3.1).translate(x, 1.8, 0));
+  }
+  const g = mergeGeometries(parts);
+  for (const p of parts) p.dispose();
+  return g;
+}
+
 function bodyGeometry(flying: boolean): THREE.BufferGeometry {
   const box = (
     w: number,
@@ -172,6 +240,7 @@ export interface Traffic {
   group: THREE.Group;
   vehicles: number;
   flying: number;
+  trains: number;
   dispose(): void;
 }
 
@@ -184,25 +253,31 @@ export function buildTraffic(
   group.name = 'neon-traffic';
   const tex = pathTexture(paths);
   const disposables: { dispose(): void }[] = [tex];
-  const isFlying = (v: Vehicle): boolean => paths[v.path]?.kind === 'flying';
-  const cars = vehicles.filter((v) => !isFlying(v));
-  const flyers = vehicles.filter(isFlying);
-  const sets: [boolean, Vehicle[]][] = [
-    [false, cars],
-    [true, flyers],
+  const kindOf = (v: Vehicle): 'car' | 'fly' | 'train' => {
+    const k = paths[v.path]?.kind;
+    return k === 'flying' ? 'fly' : k === 'rail' ? 'train' : 'car';
+  };
+  const cars = vehicles.filter((v) => kindOf(v) === 'car');
+  const flyers = vehicles.filter((v) => kindOf(v) === 'fly');
+  const trains = vehicles.filter((v) => kindOf(v) === 'train');
+  const sets: ['car' | 'fly' | 'train', Vehicle[]][] = [
+    ['car', cars],
+    ['fly', flyers],
+    ['train', trains],
   ];
-  for (const [flying, list] of sets) {
+  for (const [kind, list] of sets) {
     if (!list.length) continue;
-    const lg = toInstanced(lightGeometry(flying));
+    const flying = kind === 'fly';
+    const lg = toInstanced(kind === 'train' ? trainLightGeometry() : lightGeometry(flying));
     instanceAttributes(lg, paths, list);
-    const bg = toInstanced(bodyGeometry(flying));
+    const bg = toInstanced(kind === 'train' ? trainBodyGeometry() : bodyGeometry(flying));
     instanceAttributes(bg, paths, list);
     const lm = lightMaterial(shared, tex);
     const bm = bodyMaterial(shared, tex);
     const lights = new THREE.Mesh(lg, lm);
     const bodies = new THREE.Mesh(bg, bm);
-    lights.name = flying ? 'flying-lights' : 'car-lights';
-    bodies.name = flying ? 'flying-bodies' : 'car-bodies';
+    lights.name = `${kind}-lights`;
+    bodies.name = `${kind}-bodies`;
     for (const m of [lights, bodies]) {
       // Positions come from the shader; geometry bounds are meaningless.
       m.frustumCulled = false;
@@ -217,6 +292,7 @@ export function buildTraffic(
     group,
     vehicles: cars.length,
     flying: flyers.length,
+    trains: trains.length,
     dispose() {
       for (const d of disposables) d.dispose();
     },
