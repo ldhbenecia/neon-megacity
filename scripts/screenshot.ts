@@ -94,67 +94,72 @@ async function burst(
 ): Promise<string[]> {
   const limit = scene.limit ?? BLACK_LIMIT;
   const page = await browser.newPage({ viewport: VIEWPORT });
-  const errors = collectErrors(page);
-  await page.goto(`${BASE}?nogui&stats&${scene.query}`);
-  await waitPowered(page);
-  await page.evaluate(() => window.__hangang?.resetInside());
-  const log: string[] = [];
-  const bad: string[] = [];
-  const snap = async (tag: string, keep = false): Promise<void> => {
-    const png = await page.screenshot();
-    const l = await measure(page, png);
-    log.push(`${tag}:${l.black.toFixed(0)}`);
-    if (l.black > limit) bad.push(`${tag} ${fmt(l)}`);
-    if (keep || l.black > limit) {
-      writeFileSync(resolve(outDir, `${scene.name}-${tag}.png`), png);
+  try {
+    const errors = collectErrors(page);
+    await page.goto(`${BASE}?nogui&stats&${scene.query}`);
+    await waitPowered(page);
+    await page.evaluate(() => window.__hangang?.resetInside());
+    const log: string[] = [];
+    const bad: string[] = [];
+    const snap = async (tag: string, keep = false): Promise<void> => {
+      const png = await page.screenshot();
+      const l = await measure(page, png);
+      log.push(`${tag}:${l.black.toFixed(0)}`);
+      if (l.black > limit) bad.push(`${tag} ${fmt(l)}`);
+      if (keep || l.black > limit) {
+        writeFileSync(resolve(outDir, `${scene.name}-${tag}.png`), png);
+      }
+    };
+    for (let i = 0; i < 3; i++) {
+      await waitFrames(page, 2);
+      await snap(`idle${i}`, i === 0);
     }
-  };
-  for (let i = 0; i < 3; i++) {
-    await waitFrames(page, 2);
-    await snap(`idle${i}`, i === 0);
-  }
-  await page.mouse.move(VIEWPORT.width / 2, VIEWPORT.height / 2);
-  // One continuous scroll (a screenshot between notches would split it into separate gestures),
-  // then frames while the zoom eases in.
-  for (let i = 0; i < 8; i++) await page.mouse.wheel(0, -500);
-  for (let i = 0; i < 8; i++) {
-    await waitFrames(page, 2);
-    await snap(`zoom${i}`);
-  }
-  for (let i = 0; i < 3; i++) {
-    await page.mouse.wheel(0, 500);
-    await waitFrames(page, 2);
-    await snap(`out${i}`);
-  }
-  await page.keyboard.down('w');
-  for (let i = 0; i < 8; i++) {
-    await waitFrames(page, 2);
-    await snap(`fly${i}`);
-  }
-  await page.keyboard.up('w');
-  await page.mouse.down();
-  for (let i = 0; i < 8; i++) {
-    await page.mouse.move(VIEWPORT.width / 2 + i * 60, VIEWPORT.height / 2 + i * 8);
-    await waitFrames(page, 1);
-    await snap(`orbit${i}`);
-  }
-  await page.mouse.up();
-  // Rest: what the user sees after letting go (the rig opens a blocked view within ~1 s).
-  for (let i = 0; i < 3; i++) {
-    await waitFrames(page, 30);
-    await snap(`rest${i}`, i === 2);
-  }
-  const inside = await page.evaluate(() => window.__hangang?.inside() ?? { frames: 0, last: null });
-  await page.close();
-  console.log(`${scene.name} black% ${log.join(' ')} inside=${inside.frames}`);
-  const out = bad.map((b) => `${scene.name}: black frame ${b}`);
-  if (inside.frames > 0) {
-    out.push(
-      `${scene.name}: camera inside building ${String(inside.last)} for ${inside.frames} frames`,
+    await page.mouse.move(VIEWPORT.width / 2, VIEWPORT.height / 2);
+    // One continuous scroll (a screenshot between notches would split it into separate gestures),
+    // then frames while the zoom eases in.
+    for (let i = 0; i < 8; i++) await page.mouse.wheel(0, -500);
+    for (let i = 0; i < 8; i++) {
+      await waitFrames(page, 2);
+      await snap(`zoom${i}`);
+    }
+    for (let i = 0; i < 3; i++) {
+      await page.mouse.wheel(0, 500);
+      await waitFrames(page, 2);
+      await snap(`out${i}`);
+    }
+    await page.keyboard.down('w');
+    for (let i = 0; i < 8; i++) {
+      await waitFrames(page, 2);
+      await snap(`fly${i}`);
+    }
+    await page.keyboard.up('w');
+    await page.mouse.down();
+    for (let i = 0; i < 8; i++) {
+      await page.mouse.move(VIEWPORT.width / 2 + i * 60, VIEWPORT.height / 2 + i * 8);
+      await waitFrames(page, 1);
+      await snap(`orbit${i}`);
+    }
+    await page.mouse.up();
+    // Rest: what the user sees after letting go (the rig opens a blocked view within ~1 s).
+    for (let i = 0; i < 3; i++) {
+      await waitFrames(page, 30);
+      await snap(`rest${i}`, i === 2);
+    }
+    const inside = await page.evaluate(
+      () => window.__hangang?.inside() ?? { frames: 0, last: null },
     );
+    console.log(`${scene.name} black% ${log.join(' ')} inside=${inside.frames}`);
+    const out = bad.map((b) => `${scene.name}: black frame ${b}`);
+    if (inside.frames > 0) {
+      out.push(
+        `${scene.name}: camera inside building ${String(inside.last)} for ${inside.frames} frames`,
+      );
+    }
+    if (errors.length > 0) out.push(`${scene.name}: ${errors.join(' | ')}`);
+    return out;
+  } finally {
+    await page.close();
   }
-  if (errors.length > 0) out.push(`${scene.name}: ${errors.join(' | ')}`);
-  return out;
 }
 
 async function waitPowered(page: Page): Promise<void> {
