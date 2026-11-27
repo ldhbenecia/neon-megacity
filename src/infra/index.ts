@@ -9,12 +9,12 @@ import * as THREE from 'three';
 import { deckHeightAt, type Vec2, type Vec3 } from '../city/layout';
 import { MATERIAL, NIGHT_FILL_AMBIENT } from '../core/palette';
 import { EMISSIVE_FOG_DENSITY_SCALE, applyEmissiveFog } from '../core/shaders/emissiveFog';
-import type { CityModuleInstance, Ctx, InfraApi } from '../core/types';
+import type { CityModuleInstance, Ctx, InfraApi, Quality } from '../core/types';
 import { fountainNozzles, railTracks } from './bridges';
 import { buildInfra } from './build';
 import { infraColors } from './colors';
 import { hwPath, visiblePoints } from './highways';
-import { bridgeDetailOn } from './lod';
+import { bridgeDetailOn, bridgeLodRange, type BridgeLodRange } from './lod';
 import type { MeshData, V3 } from './mesh';
 import type { BridgeDetail, DetailParts } from './parts';
 import { DECK_THICKNESS } from './profile';
@@ -261,6 +261,15 @@ export function init(ctx: Ctx): CityModuleInstance {
 
   group.add(concrete, steel, paint, columns, beams, glow, wash, points);
   if (detail) group.add(...detail.meshes);
+
+  // Quality knob (PERF.md): detail distance by tier; 'low' hides the built detail, kept for later.
+  let lod: BridgeLodRange | null = null;
+  const applyQuality = (q: Quality): void => {
+    lod = bridgeLodRange(q);
+    for (const m of detail?.meshes ?? []) m.visible = lod !== null;
+  };
+  applyQuality(ctx.env.quality);
+  const offQuality = ctx.onQuality(applyQuality);
   ctx.scene.add(group);
 
   const curves = new Map<string, THREE.CatmullRomCurve3>();
@@ -317,13 +326,13 @@ export function init(ctx: Ctx): CityModuleInstance {
   ] as THREE.MeshStandardMaterial[];
   return {
     update() {
-      if (detail) {
+      if (detail && lod) {
         const cam = ctx.camera.position;
         for (const b of detail.bridges) {
           const dx = cam.x - b.center[0];
           const dy = cam.y - b.center[1];
           const dz = cam.z - b.center[2];
-          const on = bridgeDetailOn(b.on, dx * dx + dy * dy + dz * dz);
+          const on = bridgeDetailOn(b.on, dx * dx + dy * dy + dz * dz, lod);
           if (on === b.on) continue;
           b.on = on;
           detail.meshes.forEach((m, k) => {
@@ -352,6 +361,7 @@ export function init(ctx: Ctx): CityModuleInstance {
       for (const im of [columns, beams, points]) im.dispose();
       detail?.meshes.forEach((m) => m.dispose());
       folder.destroy();
+      offQuality();
       if (ctx.infra === api) delete ctx.infra;
     },
   };
