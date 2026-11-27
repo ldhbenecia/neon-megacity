@@ -77,6 +77,20 @@ const WATER_LIGHT = /* glsl */ `
   float peak = max(max(ds.r, ds.g), max(ds.b, 1e-4));
   reflectedLight.directSpecular = ds * mix(1.0, min(1.0, 0.03 / peak), uNight);
   reflectedLight.indirectSpecular *= mix(1.0, 2.0, uNight);
+  #ifdef ENVMAP_TYPE_PMREM
+  {
+    // Seen from high up (overview, topdown) the mirror ray points into the dark upper sky, so the
+    // river went black. At night the ray is flattened toward the horizon, where the city and
+    // bridge light panels sit, and added in by how steeply the camera looks down: the river
+    // keeps its streaks of bank light from any height.
+    vec3 rv = transformDirectionByInverseViewMatrix(reflect(-geometryViewDir, geometryNormal), viewMatrix);
+    vec3 look = transformDirectionByInverseViewMatrix(-geometryViewDir, viewMatrix);
+    float steep = smoothstep(0.3, 0.85, -look.y);
+    vec3 flatRay = normalize(vec3(rv.x, min(rv.y, 0.22), rv.z));
+    vec3 city = textureLod(envMap, envMapRotation * flatRay, roughnessToMip(0.08)).rgb * envMapIntensity;
+    reflectedLight.indirectSpecular += city * steep * uNight * 0.7;
+  }
+  #endif
 }
 `;
 
