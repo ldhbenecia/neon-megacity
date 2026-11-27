@@ -9,8 +9,11 @@ const smoothstep = (a: number, b: number, x: number): number => smooth(clamp01((
 export const CLOUD_LAYERS = { lowY: 650, highY: 1400 } as const;
 
 // Bounded shader time keeps float32 precise. Clouds wrap at 1e5 s because every
-// drift rate times 1e5 is a whole texture tile, so that wrap is seamless.
-export const TIME_WRAP = { rain: 1000, lens: 1000, stars: 1000, clouds: 100000 } as const;
+// drift rate times 1e5 is a whole texture tile, so that wrap is seamless. Rain, lens drops and
+// star twinkle have per-element rates with no common period, so their wrap is a one-frame jump;
+// at 1e4 s (2.8 h) it comes rarely while float32 still resolves 1 ms of time and 2 cm of rain
+// travel (24 m/s × 1e4 s).
+export const TIME_WRAP = { rain: 10000, lens: 10000, stars: 10000, clouds: 100000 } as const;
 
 export function wrapTime(t: number, period: number): number {
   return ((t % period) + period) % period;
