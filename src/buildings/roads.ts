@@ -172,7 +172,13 @@ export function buildRoads(L: Layout): THREE.BufferGeometry {
 export function buildSidewalks(L: Layout): THREE.BufferGeometry {
   const B = new FlatBuilder();
   for (const block of L.blocks) {
-    if (block.district === 'hillside' || block.district === 'riverside') continue;
+    // The palace court is paved by palace.ts; block slabs would cover it.
+    if (
+      block.district === 'hillside' ||
+      block.district === 'riverside' ||
+      block.district === 'palace'
+    )
+      continue;
     const walk = SIDEWALK[block.district];
     if (walk === undefined || block.buildingIds.length === 0) continue;
     const rect = paveRect(
