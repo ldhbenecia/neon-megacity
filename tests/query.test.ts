@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CITY, LAYOUT, SKYLINE_PEAK, buildingContaining, surfaceHeight } from '../src/city/layout';
+import { CITY, LAYOUT, buildingContaining, surfaceHeight } from '../src/city/layout';
 import { pointSegmentDistance } from '../src/city/math';
 import { PerspectiveCamera, Vector3 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -17,9 +17,8 @@ import {
 } from '../src/core/query';
 
 function usedAnchor(): StreetAnchor {
-  const name = streetPreset()?.name;
-  const anchor = streetAnchors(LAYOUT.districts).find((a) => a.name === name);
-  if (!anchor) throw new Error(`no street anchor produced a clear view (got ${String(name)})`);
+  const anchor = streetPreset()?.anchor;
+  if (!anchor) throw new Error('no street anchor produced a clear view');
   return anchor;
 }
 
@@ -77,11 +76,26 @@ describe('CAMERA_PRESETS', () => {
     }
   });
 
-  it('frames the skyline peak from the core and overview presets', () => {
-    for (const name of ['core', 'overview', 'skyline'] as const) {
+  it('aims the Seoul presets at their landmarks, road and bridge (SEOUL.md 6)', () => {
+    const lm = (id: string) => LAYOUT.landmarks.find((l) => l.id === id)!;
+    for (const [name, id] of [
+      ['yeouido', 'yeouido-gold'],
+      ['jamsil', 'jamsil-blade'],
+    ] as const) {
       const [tx, , tz] = CAMERA_PRESETS[name].target;
-      expect(Math.hypot(tx - SKYLINE_PEAK.x, tz - SKYLINE_PEAK.z), name).toBeLessThan(120);
+      expect(Math.hypot(tx - lm(id).x, tz - lm(id).z), name).toBeLessThan(1);
     }
+    const road = LAYOUT.namedRoads.find((r) => r.id === 'rd-teheran')!;
+    const [px, , pz] = CAMERA_PRESETS.teheran.position;
+    expect(pointSegmentDistance({ x: px, z: pz }, road.points[0]!, road.points[1]!)).toBeLessThan(
+      1,
+    );
+    const br = LAYOUT.bridges.find((b) => b.id === 'br-seongsu')!;
+    expect(CAMERA_PRESETS.seongsu.position[1]).toBeCloseTo(br.deckY + 20);
+    // Old names stay as aliases.
+    expect(CAMERA_PRESETS.skyline).toEqual(CAMERA_PRESETS.banpo);
+    expect(CAMERA_PRESETS.core).toEqual(CAMERA_PRESETS.yeouido);
+    expect(CAMERA_PRESETS.street).toEqual(CAMERA_PRESETS.hongdae);
   });
 
   it('exposes every preset through cameraPreset() and falls back without a street', () => {

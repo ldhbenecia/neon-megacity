@@ -1,14 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { LAYOUT, type Archetype, type BuildingSpec } from '../src/city/layout';
-import { GeoBuilder } from '../src/buildings/builder';
-import { emitBuilding, industrialStacks, type Targets } from '../src/buildings/archetypes';
+import { emitBuilding, industrialStacks } from '../src/buildings/archetypes';
 import { baseArchetype, districtLitFactor, withBaseArchetype } from '../src/buildings/params';
-
-const targets = (): Targets => ({
-  l0: new GeoBuilder(0, 0),
-  l1: new GeoBuilder(0, 0),
-  l2: new GeoBuilder(0, 0),
-});
+import { targets } from './buildings-helpers';
 
 // Archetypes a newer layout may emit before buildings has geometry for them.
 const unknown = (spec: BuildingSpec, archetype: string): BuildingSpec => ({
@@ -31,10 +25,9 @@ describe('unknown archetypes fall back to a base form', () => {
   const tall = LAYOUT.buildings.find((b) => b.archetype === 'setbackTower')!;
   const low = LAYOUT.buildings.find((b) => b.archetype === 'sangga')!;
 
-  it('maps v3 archetypes to the closest v2 form and keeps known ones', () => {
-    expect(baseArchetype(unknown(tall, 'taperTower'))).toBe('setbackTower');
-    expect(baseArchetype(unknown(tall, 'mediaSlab'))).toBe('officeSlab');
-    expect(baseArchetype(unknown(low, 'hanokRow'))).toBe('sangga');
+  it('keeps known archetypes and maps unknown ones by height', () => {
+    expect(baseArchetype(unknown(tall, 'taperTower'))).toBe('taperTower');
+    expect(baseArchetype(unknown(low, 'hanokRow'))).toBe('hanokRow');
     expect(baseArchetype(unknown(tall, 'somethingElse'))).toBe('officeSlab');
     expect(baseArchetype(unknown(low, 'somethingElse'))).toBe('sangga');
     for (const b of LAYOUT.buildings) {

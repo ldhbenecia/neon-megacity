@@ -55,6 +55,13 @@ describe('boot progress (9.2)', () => {
 });
 
 describe('parseUxQuery', () => {
+  it('accepts a zone id for ?district= and ignores junk', () => {
+    expect(parseUxQuery('?district=jongno').district).toBe('jongno');
+    expect(parseUxQuery('?district=Apt-Ichon').district).toBe('apt-ichon');
+    expect(parseUxQuery('?district=<x>').district).toBeUndefined();
+    expect(parseUxQuery('?district=').district).toBeUndefined();
+  });
+
   it('turns on the NaN view only together with ?debug', () => {
     expect(parseUxQuery('?debug&nan').nan).toBe(true);
     expect(parseUxQuery('?nan').nan).toBe(false);
