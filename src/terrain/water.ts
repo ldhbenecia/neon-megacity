@@ -50,7 +50,7 @@ const WATER_NORMAL = /* glsl */ `
 const WATER_LIGHT = /* glsl */ `
 #include <lights_fragment_end>
 reflectedLight.directSpecular = min(reflectedLight.directSpecular * 0.2, vec3(0.03));
-reflectedLight.indirectSpecular *= 2.4;
+reflectedLight.indirectSpecular *= 2.0;
 `;
 
 export interface Water {
