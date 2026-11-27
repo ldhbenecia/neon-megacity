@@ -33,16 +33,41 @@ const WATER_NORMAL = /* glsl */ `
   vec2 g = wGrad(p * 0.045 + vec2(t * 0.020, t * 0.006))
          + wGrad(p * 0.13 - vec2(t * 0.031, -t * 0.012)) * 0.55
          + wGrad(p * 0.41 + vec2(t * 0.050, t * 0.035)) * 0.3;
-  float dist = length(vWaterXZ - cameraPosition.xz);
+  // Back from the stretched noise space to world slopes.
+  g *= vec2(0.6, 1.0);
+  vec2 toCam = vWaterXZ - cameraPosition.xz;
+  float dist = length(toCam);
+  // Tilts toward the viewer stretch reflected lights into long vertical streaks. Under the camera
+  // the direction to it spins around the nadir point, so the stretch fades out there and when the
+  // camera looks almost straight down (no horizontal view direction to stretch along).
+  vec2 fwd = toCam / max(dist, 1e-3);
+  vec2 across = vec2(-fwd.y, fwd.x);
+  vec2 look = -vec2(viewMatrix[0][2], viewMatrix[2][2]);
+  float aniso = smoothstep(20.0, 120.0, dist) * smoothstep(0.15, 0.45, length(look));
+  g = mix(g, fwd * dot(g, fwd) * 1.6 + across * dot(g, across) * 0.3, aniso);
   float strength = 0.22 / (1.0 + dist / 450.0);
   vec3 nW = normalize(vec3(-g.x * strength, 1.0, -g.y * strength));
   normal = normalize((viewMatrix * vec4(nW, 0.0)).xyz);
 }
 `;
 
+// At night the moon's highlight broke into white glints on the ripples; the brightest thing on the
+// water must be the colored city light in the environment map. Both changes fade in with uNight,
+// and the cap scales the highlight by its brightest channel so its hue stays.
+const WATER_LIGHT = /* glsl */ `
+#include <lights_fragment_end>
+{
+  vec3 ds = reflectedLight.directSpecular * mix(1.0, 0.2, uNight);
+  float peak = max(max(ds.r, ds.g), max(ds.b, 1e-4));
+  reflectedLight.directSpecular = ds * mix(1.0, min(1.0, 0.03 / peak), uNight);
+  reflectedLight.indirectSpecular *= mix(1.0, 2.0, uNight);
+}
+`;
+
 export interface Water {
   mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>;
-  update(elapsed: number): void;
+  /** `night`: env.nightFactor. */
+  update(elapsed: number, night: number): void;
   dispose(): void;
 }
 
@@ -71,14 +96,24 @@ export function createWater(ripples = true): Water {
   geometry.computeBoundingSphere();
 
   const uTime: THREE.IUniform<number> = { value: 0 };
+  const uNight: THREE.IUniform<number> = { value: 1 };
   const material = new THREE.MeshStandardMaterial({
     name: 'RiverWater',
     color: new THREE.Color().setHex(TERRAIN_COLORS.water),
     roughness: 0.08,
     metalness: 0,
   });
-  if (ripples) {
-    material.onBeforeCompile = (shader) => {
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uNight = uNight;
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <common>',
+      '#include <common>\nuniform float uNight;',
+    );
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <lights_fragment_end>',
+      WATER_LIGHT,
+    );
+    if (ripples) {
       shader.uniforms.uTime = uTime;
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', '#include <common>\nvarying vec2 vWaterXZ;')
@@ -89,14 +124,15 @@ export function createWater(ripples = true): Water {
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', `#include <common>\n${WATER_PARS}`)
         .replace('#include <normal_fragment_maps>', WATER_NORMAL);
-    };
-  }
+    }
+  };
   const mesh = new THREE.Mesh(geometry, material);
   mesh.name = 'river-water';
   mesh.receiveShadow = true;
   return {
     mesh,
-    update(elapsed) {
+    update(elapsed, night) {
+      uNight.value = night;
       if (ripples) uTime.value = elapsed;
     },
     dispose() {
