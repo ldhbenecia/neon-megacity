@@ -4,7 +4,7 @@
 // Draw calls (11, budget 12): concrete, steel, lane paint, glow lines, uplight wash (merged
 // meshes) + pillar columns, pillar beams, light points (InstancedMesh) + bridge detail steel,
 // glow and paint (BatchedMesh, one instance per bridge, hidden by distance LOD; not built for
-// quality 'low'). No real lights.
+// quality 'ci'). No real lights.
 import * as THREE from 'three';
 import { deckHeightAt, highwayCurve } from '../city/layout';
 import { MATERIAL } from '../core/palette';
@@ -122,7 +122,7 @@ function buildDetail(
 
 export function init(ctx: Ctx): CityModuleInstance {
   const L = ctx.LAYOUT;
-  const parts = buildInfra(L, infraColors(), ctx.env.quality !== 'low');
+  const parts = buildInfra(L, infraColors(), ctx.env.quality !== 'ci');
 
   const group = new THREE.Group();
   group.name = 'infra';
@@ -238,7 +238,7 @@ export function init(ctx: Ctx): CityModuleInstance {
     im.receiveShadow = true;
   }
 
-  // Empty for quality 'low' (buildInfra skipped the detail), so no BatchedMesh is created.
+  // Empty for quality 'ci' (buildInfra skipped the detail), so no BatchedMesh is created.
   const detail = buildDetail(parts.bridgeDetail, {
     steel: steel.material as THREE.Material,
     glow: glowMat,

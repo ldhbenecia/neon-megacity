@@ -44,7 +44,7 @@ export function init(ctx: Ctx): CityModuleInstance {
   channel.matrixAutoUpdate = false;
   group.add(channel);
 
-  const water = createWater(env.quality !== 'low');
+  const water = createWater(env.quality !== 'ci');
   water.mesh.matrixAutoUpdate = false;
   group.add(water.mesh);
 
