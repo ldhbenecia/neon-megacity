@@ -192,8 +192,9 @@ const DEFS: ZoneDef[] = [
   {
     id: 'palace',
     kind: 'palace',
-    name: '궁궐',
-    nameEn: 'PALACE',
+    // The real place name; halls, gates and their names are invented (no real palace copied).
+    name: '경복궁',
+    nameEn: 'GYEONGBOKGUNG',
     side: 'north',
     // Walled court at the foot of 북악; its halls are placed on the north–south axis (no grid).
     polygon: rect(PALACE_RECT.x0, PALACE_RECT.x1, PALACE_RECT.z0, PALACE_RECT.z1),
@@ -382,8 +383,8 @@ const DEFS: ZoneDef[] = [
   {
     id: 'fill-north',
     kind: 'sangga',
-    name: '서울 북부',
-    nameEn: 'SEOUL NORTH',
+    name: '강북권',
+    nameEn: 'GANGBUK',
     side: 'north',
     polygon: rect(-HALF_X, HALF_X, -HALF_Z, HALF_Z),
     gridAngle: -6 * DEG,
@@ -553,8 +554,8 @@ const DEFS: ZoneDef[] = [
   {
     id: 'fill-south',
     kind: 'midtown',
-    name: '서울 남부',
-    nameEn: 'SEOUL SOUTH',
+    name: '강남권',
+    nameEn: 'GANGNAM-GWON',
     side: 'south',
     polygon: rect(-HALF_X, HALF_X, -HALF_Z, HALF_Z),
     gridAngle: 6 * DEG,
@@ -581,7 +582,7 @@ function bandPolygon(): Vec2[] {
 const riversideZone: DistrictZone = {
   id: 'riverside',
   kind: 'riverside',
-  name: '강변·둔치',
+  name: '한강공원',
   nameEn: 'HANGANG PARK',
   polygon: bandPolygon(),
   gridAngle: 0,
