@@ -3,6 +3,8 @@ import { LAYOUT, type Archetype, type BuildingSpec } from '../src/city/layout';
 import { emitBuilding } from '../src/buildings/archetypes';
 import { districtLitFactor, zoneLitScale } from '../src/buildings/params';
 import { targets, windingAgreement } from './buildings-helpers';
+import { GeoBuilder } from '../src/buildings/builder';
+import { palaceGrounds, palacePlan } from '../src/buildings/palace';
 
 const NEW: Archetype[] = [
   'taperTower',
@@ -119,5 +121,43 @@ describe('landmarks (SEOUL.md 4.5)', () => {
       }
       expect(T.l0.vertexCount, l.id).toBeGreaterThan(T.l2.vertexCount);
     }
+  });
+});
+
+describe('palace grounds', () => {
+  const plan = palacePlan(LAYOUT);
+
+  it('has a plan on one south-north axis', () => {
+    expect(plan).not.toBeNull();
+    expect(plan!.halls.length).toBeGreaterThanOrEqual(3);
+    for (const h of plan!.halls) expect(Math.abs(h.x - plan!.axisX)).toBeLessThan(2);
+  });
+
+  it('emits outward geometry inside the palace rectangle, deterministically, lighter far away', () => {
+    const tris = [0, 1, 2].map((lv) => {
+      const g = new GeoBuilder(0, 0);
+      palaceGrounds(g, plan!, lv as 0 | 1 | 2);
+      const geo = g.build()!;
+      expect(windingAgreement(geo)).toBeGreaterThan(0.97);
+      geo.computeBoundingBox();
+      const bb = geo.boundingBox!;
+      expect(bb.min.x).toBeGreaterThan(plan!.x0 - 4);
+      expect(bb.max.x).toBeLessThan(plan!.x1 + 4);
+      expect(bb.min.z).toBeGreaterThan(plan!.z0 - 4);
+      expect(bb.max.z).toBeLessThan(plan!.z1 + 4);
+      return geo.index!.count / 3;
+    });
+    expect(tris[0]).toBeGreaterThan(tris[1]!);
+    expect(tris[1]).toBeGreaterThan(tris[2]!);
+    expect(tris[0]).toBeLessThan(40000);
+    const again = new GeoBuilder(0, 0);
+    palaceGrounds(again, plan!, 0);
+    expect(again.vertexCount).toBe(
+      (() => {
+        const g = new GeoBuilder(0, 0);
+        palaceGrounds(g, plan!, 0);
+        return g.vertexCount;
+      })(),
+    );
   });
 });

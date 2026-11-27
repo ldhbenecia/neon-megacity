@@ -11,6 +11,11 @@ export const SEOUL_COLORS = {
   stone: [0x5e5a52, 0x6a655c, 0x524f4a],
   plaster: [0x6e665a, 0x5c564c],
   tile: 0x1a1d1f,
+  palaceTile: 0x2a3036,
+  dancheong: 0x1f5a55,
+  paving: [0x6e685e, 0x766f64, 0x645f57, 0x7c7468],
+  water: 0x0b1a1e,
+  foliage: 0x16261c,
   column: 0x5a1a14,
   wood: 0x2a1c16,
   plinth: 0x4a4844,
@@ -73,23 +78,26 @@ export function hipRoof(
   y: number,
   rise: number,
   s: Style,
+  lift = 0,
 ): void {
   const inside = P(0, y + rise * 0.3, 0);
   const top = y + rise;
+  // Eave corners lifted by `lift` give the upturned hanok silhouette.
+  const C = (sx: number, sz: number): V3 => P(sx * hw, y + lift, sz * hd);
   if (hw >= hd) {
     const r = hw - hd;
-    face(g, [P(-hw, y, hd), P(hw, y, hd), P(r, top, 0), P(-r, top, 0)], s, inside);
-    face(g, [P(hw, y, -hd), P(-hw, y, -hd), P(-r, top, 0), P(r, top, 0)], s, inside);
-    face(g, [P(hw, y, hd), P(hw, y, -hd), P(r, top, 0)], s, inside);
-    face(g, [P(-hw, y, -hd), P(-hw, y, hd), P(-r, top, 0)], s, inside);
+    face(g, [C(-1, 1), C(1, 1), P(r, top, 0), P(-r, top, 0)], s, inside);
+    face(g, [C(1, -1), C(-1, -1), P(-r, top, 0), P(r, top, 0)], s, inside);
+    face(g, [C(1, 1), C(1, -1), P(r, top, 0)], s, inside);
+    face(g, [C(-1, -1), C(-1, 1), P(-r, top, 0)], s, inside);
   } else {
     const r = hd - hw;
-    face(g, [P(hw, y, hd), P(hw, y, -hd), P(0, top, -r), P(0, top, r)], s, inside);
-    face(g, [P(-hw, y, -hd), P(-hw, y, hd), P(0, top, r), P(0, top, -r)], s, inside);
-    face(g, [P(-hw, y, hd), P(hw, y, hd), P(0, top, r)], s, inside);
-    face(g, [P(hw, y, -hd), P(-hw, y, -hd), P(0, top, -r)], s, inside);
+    face(g, [C(1, 1), C(1, -1), P(0, top, -r), P(0, top, r)], s, inside);
+    face(g, [C(-1, -1), C(-1, 1), P(0, top, r), P(0, top, -r)], s, inside);
+    face(g, [C(-1, 1), C(1, 1), P(0, top, r)], s, inside);
+    face(g, [C(1, -1), C(-1, -1), P(0, top, -r)], s, inside);
   }
-  face(g, [P(-hw, y, -hd), P(hw, y, -hd), P(hw, y, hd), P(-hw, y, hd)], s, P(0, y + 1, 0));
+  face(g, [C(-1, -1), C(1, -1), C(1, 1), C(-1, 1)], s, P(0, y + lift + 1, 0));
 }
 
 function topTier(spec: BuildingSpec): Tier | undefined {
@@ -181,17 +189,31 @@ export function palaceHall(g: GeoBuilder, spec: BuildingSpec, lv: 0 | 1 | 2): vo
   const P = frame(hall.x, hall.z, spec.rotY);
   const hw = hall.w / 2;
   const hd = hall.d / 2;
-  const tile = plain(SEOUL_COLORS.tile, 0.6);
+  const tile = plain(SEOUL_COLORS.palaceTile, 0.55);
   const hallH = hall.y1 - hall.y0;
   const eave = Math.min(3, (plinth.w - hall.w) / 2 + 1.5);
-  const rise1 = Math.min(hd, hw) * 0.35;
-  hipRoof(g, P, hw + eave, hd + eave, hall.y1, rise1 * 0.45, tile);
+  const rise = Math.min(hd, hw) * 0.55;
+  const lift = Math.min(1.2, eave * 0.4);
+  hipRoof(g, P, hw + eave, hd + eave, hall.y1, rise * 0.35, tile, lift);
   const upper = Math.max(1.5, hallH * 0.28);
   if (lv < 2) {
     walls(g, P, hw * 0.78, hd * 0.72, hall.y1, hall.y1 + upper, plain(SEOUL_COLORS.wood, 0.9));
   }
-  hipRoof(g, P, hw * 0.78 + eave * 0.8, hd * 0.72 + eave * 0.8, hall.y1 + upper, rise1, tile);
+  hipRoof(g, P, hw * 0.78 + eave * 0.8, hd * 0.72 + eave * 0.8, hall.y1 + upper, rise, tile, lift);
   if (lv === 2) return;
+  // Dancheong read: a teal band under the eaves; warm light below it at night.
+  walls(g, P, hw + 0.05, hd + 0.05, hall.y1 - 0.9, hall.y1, plain(SEOUL_COLORS.dancheong, 0.7));
+  if (lv === 0) {
+    walls(
+      g,
+      P,
+      hw + 0.08,
+      hd + 0.08,
+      hall.y1 - 1.25,
+      hall.y1 - 0.95,
+      glow(SEOUL_COLORS.uplight, 0.45),
+    );
+  }
   const col = plain(SEOUL_COLORS.column, 0.8);
   const off = 1.2;
   for (const [ax, len] of [

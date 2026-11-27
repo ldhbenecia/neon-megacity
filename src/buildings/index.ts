@@ -17,6 +17,7 @@ import {
 } from './lod';
 import { emitBuilding, faceBlank, industrialStacks } from './archetypes';
 import { namsanMast, palaceWall } from './landmarks';
+import { palaceGrounds, palacePlan } from './palace';
 import { createFacadeMaterial, createFacadeUniforms } from './facadeMaterial';
 import {
   LOD_DISTANCES,
@@ -136,6 +137,13 @@ function collectChunks(
       palaceWall(c.l1, a, b, terrainHeight, gate);
       c.lod0.push((g) => palaceWall(g, a, b, terrainHeight, gate));
     });
+  }
+  const plan = palacePlan(LAYOUT);
+  if (plan) {
+    const c = chunkAt((plan.x0 + plan.x1) / 2, (plan.z0 + plan.z1) / 2);
+    palaceGrounds(c.l1, plan, 1);
+    palaceGrounds(c.l2, plan, 2);
+    c.lod0.push((g) => palaceGrounds(g, plan, 0));
   }
   return [...chunks.values()];
 }
