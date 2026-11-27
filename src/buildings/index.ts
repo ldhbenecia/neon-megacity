@@ -140,7 +140,7 @@ export function init(ctx: Ctx): CityModuleInstance {
   const chunks = collectChunks(LAYOUT, chunkGrid(LAYOUT, CITY.chunkSize));
   // Low tier (CI SwiftShader): start at LOD1, so no LOD0 detail (trees, stairs, props) and no
   // interior-mapped windows; LOD2 takes over at the LOD1 distance.
-  const low = env.quality === 'low';
+  const low = env.quality === 'ci';
 
   const uniforms = createFacadeUniforms();
   const facade = createFacadeMaterial(uniforms, false);

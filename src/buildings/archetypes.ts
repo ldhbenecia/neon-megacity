@@ -159,7 +159,7 @@ function faceStyle(b: Bld, side: Side | null, len: number, tierIdx: number): Sty
   if (side !== null && side === spec.tags.mediaFace) return plain(SEOUL_COLORS.screenOff, 0.25);
   const ws = windowStyle(spec.archetype, role, spec.seed);
   if (ws.type === FACADE.plain || (side === null && len < 4)) {
-    return plain(b.wall, 0.85);
+    return { ...plain(b.wall, 0.85), windowY: b.windowY };
   }
   const fit = fitCells(len, ws.cellW);
   return style(ws.type, b.wall, {
