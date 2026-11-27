@@ -2,6 +2,7 @@ import { createRng, type Rng } from '../core/random';
 import type { NeonName } from '../core/palette';
 import {
   baseKind,
+  baseKindOf,
   isUnbuilt,
   type BaseKind,
   type BuildingFace,
@@ -9,6 +10,7 @@ import {
   type DistrictKind,
   type Layout,
   type Tier,
+  surfaceHeight,
 } from '../city/layout';
 import type { Catalog } from './catalog';
 import { CARGO_CROWN } from './content';
@@ -144,6 +146,16 @@ interface DistrictSigns {
   holos: boolean;
   /** Multiplier on shop band and blade chances (1 = the v2 density). */
   shopScale: number;
+  /** Extra multiplier on blades only (brick keeps signs flat and small). */
+  bladeScale?: number;
+  /** Vertical signs: minimum sign height, buildings from this height, signs per building. */
+  vtextMinH?: number;
+  vtextFromH?: number;
+  vtextCount?: number;
+  /** Street-facing media screens on mid-rise towers (Teheran-ro canyon). */
+  media?: boolean;
+  /** Banners strung across alleys. */
+  banners?: boolean;
 }
 
 const MIDTOWN: DistrictSigns = {
@@ -215,22 +227,25 @@ const DISTRICT_SIGNS: Readonly<Record<Exclude<BaseKind, 'palace' | 'park'>, Dist
 // Hongdae carries the densest street signage.
 const KIND_OVERRIDES: ReadonlyMap<string, Partial<DistrictSigns>> = new Map([
   ['oldtown', { shopScale: 0.3, vtext: false }],
-  ['nightlife', { shopScale: 1.3, tubes: true, holos: true }],
+  [
+    'nightlife',
+    {
+      shopScale: 1.3,
+      tubes: true,
+      holos: true,
+      vtextMinH: 8,
+      vtextFromH: 9,
+      vtextCount: 2,
+      banners: true,
+    },
+  ],
+  ['brick', { shopScale: 0.45, bladeScale: 0.15 }],
+  ['corridor', { media: true }],
 ]);
-
-function safeBaseKind(district: DistrictKind): string | undefined {
-  try {
-    return baseKind(district);
-  } catch (e) {
-    // Newer layouts may carry kinds the shared table does not know yet; anything else is a bug.
-    if (e instanceof Error && e.message.startsWith('unknown district kind')) return undefined;
-    throw e;
-  }
-}
 
 export function districtSigns(district: DistrictKind): DistrictSigns {
   if (isUnbuilt(district)) return DARK;
-  const base = safeBaseKind(district);
+  const base = baseKindOf(district);
   // Kinds newer than the shared table fall back to midtown so they never go dark.
   const rules =
     base !== undefined && Object.hasOwn(DISTRICT_SIGNS, base)
@@ -560,7 +575,7 @@ function placeTubes(c: Ctx, b: BuildingSpec, rng: Rng, zone: number): void {
   });
 }
 
-function placeVText(c: Ctx, b: BuildingSpec, rng: Rng, zone: number): void {
+function placeVText(c: Ctx, b: BuildingSpec, rng: Rng, zone: number, minH = 18): void {
   const faces = c.faces[b.id] ?? [];
   const front = faces.find((f) => f.street && f.tier === 0 && f.stack === 0);
   if (!front) return;
@@ -578,9 +593,9 @@ function placeVText(c: Ctx, b: BuildingSpec, rng: Rng, zone: number): void {
   const n = Math.max(3, c.cat.cells[cell]?.chars ?? 4);
   let w = rng.range(3, 6);
   let h = w * n * 1.08;
-  if (h < 18) {
-    w = 18 / (n * 1.08);
-    h = 18;
+  if (h < minH) {
+    w = minH / (n * 1.08);
+    h = minH;
   }
   if (w > 6 || h > 45) return;
   const top = f.y1 - TIER_MARGIN;
@@ -843,6 +858,119 @@ function placeHolo(
   return true;
 }
 
+const MEDIA_MAX = 24;
+const BANNER_MAX = 400;
+
+// Teheran-ro canyon: one street-facing screen per mid-rise tower; a tagged media face is covered
+// edge to edge (SEOUL.md 4.3 mediaSlab).
+function placeMediaScreen(c: Ctx, b: BuildingSpec, rng: Rng, zone: number): boolean {
+  const media = b.tags.mediaFace;
+  const cands = (c.faces[b.id] ?? [])
+    .map((f, fi) => ({ f, fi }))
+    .filter(
+      ({ f }) => f.shape !== 'cylinder' && f.stack === 0 && (media ? f.side === media : f.street),
+    )
+    .sort((a, z) => z.f.width * (z.f.y1 - z.f.y0) - a.f.width * (a.f.y1 - a.f.y0));
+  for (const { f, fi } of cands) {
+    const tierH = f.y1 - f.y0 - 2 * TIER_MARGIN;
+    const h = media ? Math.min(150, tierH) : Math.min(90, tierH * 0.6);
+    const w = media
+      ? Math.min(70, f.width - 2 * EDGE_IN)
+      : Math.min(28, f.width - 2 * EDGE_IN, h / 1.6);
+    // A tagged media face is covered whatever its width; free screens need a real wall.
+    if (h < 25 || w < (media ? 4 : 10)) continue;
+    const y0 = f.y0 + TIER_MARGIN + (media ? 0 : (tierH - h) * rng.range(0.3, 0.9));
+    const r: Rect = { u0: -w / 2, u1: w / 2, y0, y1: y0 + h };
+    if (!insideFace(f, r.u0, r.u1, r.y0, r.y1)) continue;
+    const vol = wallVolume(f, b, r.u0, r.u1, r.y0, r.y1, 0.02, WALL_GAP.screen + 0.3);
+    if (firstHit(c.L, vol) || !reserve(c, b.id, fi, r)) continue;
+    c.out.screens.push({
+      building: b.id,
+      face: fi,
+      x: f.center.x + f.normal.x * WALL_GAP.screen,
+      y: y0 + h / 2,
+      z: f.center.z + f.normal.z * WALL_GAP.screen,
+      nx: f.normal.x,
+      nz: f.normal.z,
+      w,
+      h,
+      hue: rng.int(0, 2),
+      seed: rng.int(0, 1e6),
+      cell: pickCell(c, 'line', rng),
+      logo: pickCell(c, 'logo', rng),
+      zone,
+      ...r,
+      vol,
+    });
+    return true;
+  }
+  return false;
+}
+
+// Hongdae: banners strung across alleys and narrow streets, 5.5–7.5 m above the road.
+function placeBanners(c: Ctx, rng: Rng): void {
+  let placed = 0;
+  for (const r of c.L.roads) {
+    if (placed >= BANNER_MAX) return;
+    if (!districtSigns(r.district).banners) continue;
+    if ((r.kind !== 'alley' && r.kind !== 'street') || r.width > 14) continue;
+    const len = Math.hypot(r.b.x - r.a.x, r.b.z - r.a.z);
+    if (len < 30) continue;
+    const dir = { x: (r.b.x - r.a.x) / len, z: (r.b.z - r.a.z) / len };
+    const across = { x: -dir.z, z: dir.x };
+    for (
+      let t = 10 + rng.range(0, 6);
+      t < len - 10 && placed < BANNER_MAX;
+      t += rng.range(12, 20)
+    ) {
+      const x = r.a.x + dir.x * t;
+      const z = r.a.z + dir.z * t;
+      const w = r.width * 0.9 + 1;
+      const h = rng.range(0.9, 1.3);
+      const y0 = surfaceHeight(x, z) + rng.range(5.5, 7.5);
+      const vol: Solid = {
+        kind: 'box',
+        x,
+        z,
+        hw: w / 2,
+        hd: 0.1,
+        rotY: Math.atan2(-across.z, across.x),
+        y0,
+        y1: y0 + h,
+        building: -1,
+        tier: -10,
+        stack: 0,
+      };
+      if (firstHit(c.L, vol)) continue;
+      const cell = pickCell(c, 'band', rng);
+      c.out.flats.push({
+        kind: 'band',
+        building: -1,
+        face: -1,
+        x,
+        y: y0 + h / 2,
+        z,
+        nx: dir.x,
+        nz: dir.z,
+        w,
+        h,
+        cell,
+        color: cellColor(c, cell, 'neonMagenta'),
+        anim: animFor(rng, 0.03),
+        zone: zoneDelay(r.district, rng),
+        seed: rng.int(0, 1e6),
+        doubleSided: true,
+        u0: -w / 2,
+        u1: w / 2,
+        y0,
+        y1: y0 + h,
+        vol,
+      });
+      placed++;
+    }
+  }
+}
+
 /** Hard ceiling on all sign instances (ART_DIRECTION 5.1); smaller maps get a share by area. */
 export const SIGN_CAP = 16000;
 const SIGNS_PER_KM2 = 1540;
@@ -877,7 +1005,7 @@ function thinToBudget(c: Ctx, budget: number): void {
   const tier = (s: FlatSign): number => {
     const shop = s.kind === 'band' || s.kind === 'blade';
     if (!shop) return s.kind === 'crown' ? 6 : 4;
-    return HOT_KINDS.has(c.L.buildings[s.building]?.district ?? '') ? 2 : 0;
+    return s.building < 0 || HOT_KINDS.has(c.L.buildings[s.building]?.district ?? '') ? 2 : 0;
   };
   const order = c.out.flats
     .map((s, i) => ({
@@ -920,6 +1048,7 @@ export function placeSigns(
   };
   const maxScreens = opts.maxScreens ?? 20;
   let ringBudget = opts.maxRings ?? 14;
+  let mediaCount = 0;
   const maxHolos = opts.maxHolos ?? 36;
 
   // Unbuilt districts (palace grounds, parks) stay dark: no sign of any kind.
@@ -940,6 +1069,11 @@ export function placeSigns(
     if (baseArchetype(b) === 'cylinderTower' && b.h >= 60) {
       ringBudget -= placeRings(c, b, rng, zone, ringBudget);
     }
+    if (mediaCount < MEDIA_MAX && b.h >= 50 && districtSigns(b.district).media) {
+      const a = baseArchetype(b);
+      if (TOWERS.has(a) || a === 'officeSlab')
+        mediaCount += placeMediaScreen(c, b, rng, zone) ? 1 : 0;
+    }
   }
 
   for (const b of lit) {
@@ -952,7 +1086,8 @@ export function placeSigns(
       const sc = d.shopScale;
       shopFaces(c, b).forEach((fi, k) => {
         placeBands(c, b, rng, zone, fi, (k === 0 ? 1.6 : 0.7) * sc);
-        placeBlades(c, b, rng, zone, (a === 'sangga' ? 0.5 : 0.3) * (k === 0 ? 1.3 : 0.6) * sc, fi);
+        const bp = (a === 'sangga' ? 0.5 : 0.3) * (k === 0 ? 1.3 : 0.6) * sc;
+        placeBlades(c, b, rng, zone, d.bladeScale === undefined ? bp : bp * d.bladeScale, fi);
       });
     } else if (d.street && a === 'officeSlab' && b.h < 40) {
       const fi = shopFaces(c, b)[0];
@@ -961,8 +1096,8 @@ export function placeSigns(
     if (d.tubes && (tower || a === 'officeSlab')) {
       placeTubes(c, b, rng, zone);
     }
-    if (b.h >= 20 && b.h <= 80 && d.vtext && rng.chance(0.6)) {
-      placeVText(c, b, rng, zone);
+    if (b.h >= (d.vtextFromH ?? 20) && b.h <= 80 && d.vtext && rng.chance(0.6)) {
+      for (let k = 0; k < (d.vtextCount ?? 1); k++) placeVText(c, b, rng, zone, d.vtextMinH);
     }
     if (b.tags.corp) {
       const cell = cat.cells.findIndex((k) => k.kind === 'crown' && k.key === b.tags.corp);
@@ -977,7 +1112,7 @@ export function placeSigns(
       placeCrown(c, b, rng, zone, cell, 1);
     }
     if (b.tags.cross)
-      placeCross(c, b, rng, safeBaseKind(b.district) === 'hillside' ? rng.range(0.62, 0.8) : zone);
+      placeCross(c, b, rng, baseKind(b.district) === 'hillside' ? rng.range(0.62, 0.8) : zone);
   }
 
   const hrng = createRng(seed + 77);
@@ -1000,6 +1135,7 @@ export function placeSigns(
       if (p) placeHolo(c, p.x, p.z, L.river.waterY + 14, hrng, 0.02, koi);
     }
   }
+  placeBanners(c, createRng(seed + 99));
   thinToBudget(c, signBudget(L) - (opts.reserved ?? 0));
   return c.out;
 }

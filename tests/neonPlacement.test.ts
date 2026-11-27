@@ -14,6 +14,7 @@ import {
   TIER_MARGIN,
   insideFace,
   placeSigns,
+  districtSigns,
   signBudget,
   signCount,
   type FlatSign,
@@ -180,10 +181,11 @@ describe('neon sign placement: zero penetration (5.1)', () => {
   });
 
   it('giant screens follow 5.1 (15–24, ≤ 2 per tower, 25–75% height, ≤ 85% tier, ratio ≥ 3)', () => {
-    expect(P.screens.length).toBeGreaterThanOrEqual(15);
-    expect(P.screens.length).toBeLessThanOrEqual(24);
+    const giant = P.screens.filter((s) => !districtSigns(spec(s.building).district).media);
+    expect(giant.length).toBeGreaterThanOrEqual(15);
+    expect(giant.length).toBeLessThanOrEqual(24);
     const per = new Map<number, number>();
-    for (const s of P.screens) {
+    for (const s of giant) {
       per.set(s.building, (per.get(s.building) ?? 0) + 1);
       const b = spec(s.building);
       const f = face(s.building, s.face);
@@ -198,6 +200,36 @@ describe('neon sign placement: zero penetration (5.1)', () => {
       expect(insideFace(f, s.u0, s.u1, s.y0, s.y1)).toBe(true);
     }
     for (const n of per.values()) expect(n).toBeLessThanOrEqual(2);
+  });
+
+  it('media screens line the Teheran-ro canyon (SEOUL.md 4.3)', () => {
+    const media = P.screens.filter((s) => districtSigns(spec(s.building).district).media);
+    const corridor = LAYOUT.buildings.filter((b) => districtSigns(b.district).media);
+    if (corridor.length === 0) return;
+    expect(media.length).toBeGreaterThan(0);
+    expect(media.length).toBeLessThanOrEqual(24);
+    for (const s of media) {
+      const f = face(s.building, s.face);
+      expect(insideFace(f, s.u0, s.u1, s.y0, s.y1)).toBe(true);
+      expect(s.h).toBeGreaterThanOrEqual(25 - EPS);
+      expect(s.w).toBeGreaterThanOrEqual(4 - EPS);
+    }
+    for (const b of corridor.filter((k) => k.tags.mediaFace)) {
+      const full = media.find((s) => s.building === b.id);
+      expect(full, `media face of ${b.id}`).toBeDefined();
+      expect(face(b.id, full!.face).side).toBe(b.tags.mediaFace);
+    }
+  });
+
+  it('banners hang across Hongdae alleys, clear of every building', () => {
+    const banners = P.flats.filter((s) => s.building < 0);
+    for (const s of banners) {
+      expect(s.kind).toBe('band');
+      expect(s.doubleSided).toBe(true);
+      expect(s.vol && firstHit(LAYOUT, s.vol)).toBeFalsy();
+    }
+    if (LAYOUT.roads.some((r) => r.district === 'nightlife'))
+      expect(banners.length).toBeGreaterThan(20);
   });
 
   it('ring billboards wrap cylinder towers without touching other solids', () => {
@@ -304,7 +336,7 @@ describe('neon sign placement: zero penetration (5.1)', () => {
     const RANGE: Record<string, [number, number]> = {
       sangga: [2, 6],
       nightlife: [3, 9],
-      brick: [1.5, 6],
+      brick: [0.5, 3],
       oldtown: [0.3, 2],
       megacore: [0.2, 1.5],
       midtown: [0.5, 2],
@@ -317,6 +349,7 @@ describe('neon sign placement: zero penetration (5.1)', () => {
     const signs = new Map<string, number>();
     for (const b of L.buildings) buildings.set(b.district, (buildings.get(b.district) ?? 0) + 1);
     for (const s of fp.flats) {
+      if (s.building < 0) continue;
       const d = L.buildings[s.building]!.district;
       signs.set(d, (signs.get(d) ?? 0) + 1);
     }
@@ -334,6 +367,7 @@ describe('neon sign placement: zero penetration (5.1)', () => {
     const mean = (d: string): number => (signs.get(d) ?? 0) / (buildings.get(d) ?? 1);
     expect(mean('nightlife')).toBeGreaterThan(mean('sangga'));
     expect(mean('oldtown')).toBeLessThan(mean('sangga') / 2);
+    expect(mean('brick')).toBeLessThan(mean('sangga'));
   });
 
   it('apartment crowns show their own complex name', () => {

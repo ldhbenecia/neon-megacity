@@ -5,17 +5,22 @@ import { districtSigns, placeSigns } from '../src/neon/placement';
 
 describe('neon district fallback', () => {
   it('maps v3 districts onto the shared base kinds', () => {
-    for (const d of ['megacore', 'corridor'] as const) {
-      expect(districtSigns(d)).toEqual(districtSigns('core'));
-    }
-    for (const d of ['brick', 'showroom'] as const) {
-      expect(districtSigns(d)).toEqual(districtSigns('sangga'));
-    }
+    expect(districtSigns('megacore')).toEqual(districtSigns('core'));
+    // Teheran-ro keeps the core rules and adds its media screens.
+    expect({ ...districtSigns('corridor'), media: undefined }).toEqual({
+      ...districtSigns('core'),
+      media: undefined,
+    });
+    expect(districtSigns('corridor').media).toBe(true);
+    expect(districtSigns('showroom')).toEqual(districtSigns('sangga'));
     // Same base rules, different mood: quiet old Jongno, dense Hongdae.
     const sangga = districtSigns('sangga');
     expect(districtSigns('oldtown').shopScale).toBeLessThan(sangga.shopScale);
     expect(districtSigns('nightlife').shopScale).toBeGreaterThan(sangga.shopScale);
     expect(districtSigns('oldtown').zone).toEqual(sangga.zone);
+    // Seongsu brick keeps signs small and flat.
+    expect(districtSigns('brick').shopScale).toBeLessThan(sangga.shopScale);
+    expect(districtSigns('brick').bladeScale).toBeLessThan(1);
   });
 
   it('keeps unbuilt districts dark', () => {
@@ -40,7 +45,8 @@ describe('neon district fallback', () => {
         L.buildings.map((b) => buildingFaces(b)),
         cat,
       );
-      expect(P.flats).toHaveLength(0);
+      // Banners hang over roads, not on buildings, so only building-mounted signs must vanish.
+      expect(P.flats.filter((f) => f.building >= 0)).toHaveLength(0);
       expect(P.tubes).toHaveLength(0);
       expect(P.crosses).toHaveLength(0);
       expect(P.screens).toHaveLength(0);
