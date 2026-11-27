@@ -4,7 +4,7 @@ import type { CatmullRomCurve3 } from 'three';
 import { CITY, highwayCurve, type Highway } from '../city/layout';
 import { clamp } from '../city/math';
 import type { InfraColors } from './colors';
-import { framesAlong, frameAt, type Frame, type V3 } from './mesh';
+import { framesAlong, frameAt, norm, type Frame, type V3 } from './mesh';
 import { rotYForLateral, type InfraParts } from './parts';
 import {
   BARRIER,
@@ -107,6 +107,75 @@ export function nearestOnPath(path: HwPath, x: number, z: number): { d: number; 
 
 const isRaised = (hw: Highway): boolean => hw.kind !== 'atGrade';
 
+/** Decks are drawn this far past the map edge (m); beyond it there is no ground to stand on. */
+const EDGE_PAD = 10;
+
+const inMap = (p: V3): boolean =>
+  Math.abs(p[0]) <= CITY.halfX + EDGE_PAD && Math.abs(p[2]) <= CITY.halfZ + EDGE_PAD;
+
+const sameFlags = (a: DeckRing, b: DeckRing): boolean =>
+  a.hidden === b.hidden &&
+  a.overlap === b.overlap &&
+  a.barrierL === b.barrierL &&
+  a.barrierR === b.barrierR;
+
+/** Skipped rings may sit this far off the chord between kept rings (m)... */
+const SPARSE_TOL = 0.12;
+/** ...and turn at most this much from the ring before them (cos of 1.5°). */
+const SPARSE_COS = Math.cos((1.5 * Math.PI) / 180);
+/**
+ * ...and stay this close to it vertically: dashes are painted on the true curve PAINT_Y above it,
+ * so a chord sagging above the curve by more would bury them in the slab.
+ */
+const SPARSE_TOL_Y = 0.01;
+/** Longest run of skipped rings. */
+const SPARSE_MAX = 6;
+
+function straightBetween(rings: readonly DeckRing[], k: number, m: number): boolean {
+  const a = (rings[k] as DeckRing).p;
+  const b = (rings[m] as DeckRing).p;
+  const ab: V3 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+  const l2 = ab[0] * ab[0] + ab[1] * ab[1] + ab[2] * ab[2] || 1;
+  const tk = (rings[k] as DeckRing).t;
+  for (let i = k + 1; i <= m; i++) {
+    const r = rings[i] as DeckRing;
+    const t = r.t;
+    if (t[0] * tk[0] + t[1] * tk[1] + t[2] * tk[2] < SPARSE_COS) return false;
+    if (i === m) break;
+    const ap: V3 = [r.p[0] - a[0], r.p[1] - a[1], r.p[2] - a[2]];
+    const u = clamp((ap[0] * ab[0] + ap[1] * ab[1] + ap[2] * ab[2]) / l2, 0, 1);
+    const dy = ap[1] - ab[1] * u;
+    if (Math.abs(dy) > SPARSE_TOL_Y) return false;
+    if (Math.hypot(ap[0] - ab[0] * u, dy, ap[2] - ab[2] * u) > SPARSE_TOL) return false;
+  }
+  return true;
+}
+
+/**
+ * Rings for the long sweeps (slab, barriers, walls, solid paint): straight stretches keep one
+ * ring every few, and every ring where a flag changes stays, so runs() splits the same way.
+ */
+export function sparseRings(rings: readonly DeckRing[]): DeckRing[] {
+  if (rings.length <= 2) return rings.slice();
+  const out = [rings[0] as DeckRing];
+  let k = 0;
+  for (let j = 1; j < rings.length - 1; j++) {
+    const r = rings[j] as DeckRing;
+    const next = rings[j + 1] as DeckRing;
+    const keep =
+      !sameFlags(r, rings[k] as DeckRing) ||
+      !sameFlags(r, next) ||
+      j + 1 - k > SPARSE_MAX ||
+      !straightBetween(rings, k, j + 1);
+    if (keep) {
+      out.push(r);
+      k = j;
+    }
+  }
+  out.push(rings[rings.length - 1] as DeckRing);
+  return out;
+}
+
 /**
  * Deck rings for one highway, with ramp junction handling against the other raised decks:
  * ramp rings fully inside a parent deck are hidden, overlapping rings sink just below the
@@ -197,10 +266,11 @@ export function ringsCovering(
   return rings.slice(i0, i1 + 1);
 }
 
-/** Which side gets a sound wall: the city side of hw-river-north, the park side of hw-south. */
-function soundWallSide(hw: Highway): -1 | 0 {
+/** Which side gets a sound wall: the city side of both riverside highways (SEOUL.md 5.3). */
+function soundWallSide(hw: Highway): -1 | 0 | 1 {
   // Both riverside highways run west → east, so their left (l < 0) is north.
-  return hw.id === 'hw-river-north' || hw.id === 'hw-south' ? -1 : 0;
+  if (hw.id === 'hw-river-north') return -1;
+  return hw.id === 'hw-south' ? 1 : 0;
 }
 
 function buildHighway(
@@ -210,14 +280,17 @@ function buildHighway(
   c: InfraColors,
 ): void {
   const { hw } = path;
-  const rings = deckRings(path, others);
+  const rings = deckRings(path, others).map((r) =>
+    inMap(r.p) ? r : { ...r, hidden: true, barrierL: false, barrierR: false },
+  );
+  const sparse = sparseRings(rings);
   const half = hw.width / 2;
   const thick = hw.kind === 'atGrade' ? AT_GRADE_THICKNESS : DECK_THICKNESS;
   const slab = slabEdges(hw.width, c, thick);
   const loop = slabLoop(hw.width, thick);
 
   // Slab (with end caps on open curves).
-  for (const run of runs(rings, (r) => !r.hidden)) {
+  for (const run of runs(sparse, (r) => !r.hidden)) {
     const frames = framesOf(run);
     parts.concrete.sweep(frames, slab);
     if (!hw.closed) {
@@ -229,10 +302,10 @@ function buildHighway(
   // Edge barriers.
   for (const sgn of [-1, 1] as const) {
     const edges = barrierEdges(sgn * half, sgn, c.concrete);
-    for (const run of runs(rings, barrierOk(sgn))) parts.concrete.sweep(framesOf(run), edges);
+    for (const run of runs(sparse, barrierOk(sgn))) parts.concrete.sweep(framesOf(run), edges);
   }
   if (isDivided(hw)) {
-    for (const run of runs(rings, (r) => !r.hidden)) {
+    for (const run of runs(sparse, (r) => !r.hidden)) {
       parts.concrete.sweep(framesOf(run), medianEdges(c.concrete));
     }
   }
@@ -243,7 +316,7 @@ function buildHighway(
     const lo = wall * half;
     const li = wall * (half - SOUND_WALL.t);
     const [l0, l1] = lo < li ? [lo, li] : [li, lo];
-    for (const run of runs(rings, barrierOk(wall))) {
+    for (const run of runs(sparse, barrierOk(wall))) {
       const frames = framesOf(run);
       parts.concrete.sweep(frames, boxEdges(l0, l1, BARRIER.h - 0.05, SOUND_WALL.h, c.concrete));
       parts.glow.sweep(
@@ -253,26 +326,121 @@ function buildHighway(
     }
   }
 
-  // Ring road: thin cyan line on both fascias.
-  if (hw.id === 'hw-ring') {
-    for (const sgn of [-1, 1] as const) {
-      const l0 = sgn === 1 ? half : -half - 0.06;
-      for (const run of runs(rings, barrierOk(sgn))) {
-        parts.glow.sweep(framesOf(run), boxEdges(l0, l0 + 0.06, -0.5, -0.36, c.ringLine));
-      }
+  buildMarkings(path, rings, sparse, parts, c);
+  if (isDivided(hw) && isRaised(hw)) buildLamps(path, rings, parts, c);
+  if (isRaised(hw)) buildPortals(hw, rings, parts, c);
+}
+
+/** Traffic runs this far into a tunnel portal block (which hides it) before its curve ends (m). */
+const PORTAL_TRAFFIC = 6;
+
+/** A raised deck leaving the map over the north edge ends in a tunnel portal. */
+const portalEnd = (hw: Highway, outside: V3): boolean =>
+  isRaised(hw) && outside[2] < -CITY.halfZ - EDGE_PAD;
+
+/**
+ * Control points of the drawn part of a highway, for InfraApi.curves (neon traffic): the longest
+ * run of path samples inside the map edge pad, extended PORTAL_TRAFFIC m into a tunnel portal.
+ */
+export function visiblePoints(path: HwPath): V3[] {
+  const { hw, pts } = path;
+  if (hw.closed) return pts.slice();
+  let best: [number, number] = [0, -1];
+  let start = -1;
+  pts.forEach((p, i) => {
+    if (!inMap(p)) {
+      start = -1;
+      return;
+    }
+    if (start < 0) start = i;
+    if (i - start > best[1] - best[0]) best = [start, i];
+  });
+  const [i0, i1] = best;
+  if (i1 < i0) return [];
+  const out = pts.slice(i0, i1 + 1);
+  const extend = (inside: V3, outside: V3): V3 | null => {
+    if (!portalEnd(hw, outside)) return null;
+    const d = norm([outside[0] - inside[0], 0, outside[2] - inside[2]]);
+    return [inside[0] + d[0] * PORTAL_TRAFFIC, inside[1], inside[2] + d[2] * PORTAL_TRAFFIC];
+  };
+  const before = pts[i0 - 1];
+  const after = pts[i1 + 1];
+  const head = before ? extend(pts[i0] as V3, before) : null;
+  const tail = after ? extend(pts[i1] as V3, after) : null;
+  return [...(head ? [head] : []), ...out, ...(tail ? [tail] : [])];
+}
+
+/** Tunnel portal block depth along the road and height above the deck (m). */
+const PORTAL = { depth: 18, above: 9, opening: 7 } as const;
+
+/**
+ * Where a raised deck leaves the map over its north edge (내부순환로 into the northern hills), it
+ * ends in a tunnel portal: a concrete block with a dark opening and a row of orange tunnel lamps.
+ */
+function buildPortals(
+  hw: Highway,
+  rings: readonly DeckRing[],
+  parts: InfraParts,
+  c: InfraColors,
+): void {
+  for (let i = 0; i < rings.length - 1; i++) {
+    const a = rings[i] as DeckRing;
+    const b = rings[i + 1] as DeckRing;
+    if (inMap(a.p) === inMap(b.p)) continue;
+    const [inside, outside] = inMap(a.p) ? [a, b] : [b, a];
+    if (!portalEnd(hw, outside.p)) continue;
+    const dir = norm([outside.p[0] - inside.p[0], 0, outside.p[2] - inside.p[2]]);
+    const lat: V3 = [-dir[2], 0, dir[0]];
+    const p = inside.p;
+    const y0 = -1;
+    const y1 = p[1] + PORTAL.above;
+    const at = (k: number, l: number, y: number): V3 => [
+      p[0] + dir[0] * k + lat[0] * l,
+      y,
+      p[2] + dir[2] * k + lat[2] * l,
+    ];
+    const ym = (y0 + y1) / 2;
+    parts.concrete.beam(
+      at(0, 0, ym),
+      at(PORTAL.depth, 0, ym),
+      hw.width + 8,
+      y1 - y0,
+      c.concrete,
+      lat,
+    );
+    // Dark opening on the face toward the map, just proud of the block.
+    const w = hw.width / 2 - 0.5;
+    const top = p[1] + PORTAL.opening;
+    parts.concrete.quad(
+      at(-0.05, w, p[1]),
+      at(-0.05, -w, p[1]),
+      at(-0.05, -w, top),
+      at(-0.05, w, top),
+      c.underside,
+    );
+    for (let l = -w + 1; l <= w - 1 + 1e-6; l += 2.5) {
+      parts.points.push({
+        p: at(-0.2, l, top - 0.45),
+        size: [0.7, 0.18, 0.25],
+        rotY: rotYForLateral(lat),
+        color: c.tunnelLamp,
+      });
     }
   }
-
-  buildMarkings(path, rings, parts, c);
-  if (isDivided(hw) && isRaised(hw)) buildLamps(path, rings, parts, c);
 }
 
 /** Lane paint: solid lines as strips over the kept rings, dashes every DASH + DASH_GAP m. */
-function buildMarkings(path: HwPath, rings: DeckRing[], parts: InfraParts, c: InfraColors): void {
+function buildMarkings(
+  path: HwPath,
+  rings: DeckRing[],
+  sparse: DeckRing[],
+  parts: InfraParts,
+  c: InfraColors,
+): void {
   const { hw, curve } = path;
   const length = curve.getLength();
   const paintable = (r: DeckRing): boolean => !r.hidden && !r.overlap;
-  const paintRuns = runs(rings, paintable).map(framesOf);
+  const paintRuns = runs(sparse, paintable).map(framesOf);
   for (const line of markingLines(hw)) {
     const color = line.yellow ? c.paintYellow : c.paintWhite;
     const edge = [

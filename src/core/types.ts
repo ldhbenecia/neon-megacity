@@ -4,7 +4,7 @@ import type * as THREE from 'three';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type GUI from 'lil-gui';
 import type { CITY } from '../city/layout';
-import type { BuildingFace, BuildingSpec, Layout } from '../city/types';
+import type { BuildingFace, BuildingSpec, Layout, Vec2, Vec3 } from '../city/types';
 
 export type * from '../city/types';
 
@@ -107,14 +107,26 @@ export interface InfraApi {
   /** Root of highways, ramps, pillars, sound walls and bridges. */
   group: THREE.Group;
   /**
-   * Highway centerline curves by highway id (`highwayCurve(hw)` from the layout), y = deck surface.
-   * Neon runs traffic along these with `curve.getPointAt(u)`.
+   * Highway centerline curves by highway id, y = deck surface: the layout's curve (centripetal
+   * Catmull-Rom) through the drawn part only. Decks stop at the map edge, and 내부순환로 ends a few
+   * meters inside its tunnel portal. Neon runs traffic along these with `curve.getPointAt(u)`.
    */
   curves: ReadonlyMap<string, THREE.CatmullRomCurve3>;
   /** Deck slab thickness (m); the underside is at deck y − thickness. */
   deckThickness: number;
   /** Highest deck surface at (x, z) or null; same as layout `deckHeightAt(ctx.LAYOUT, x, z)`. */
   deckHeightAt(x: number, z: number): number | null;
+  /**
+   * Rail tracks by bridge id (rail bridges only), one polyline per track along the rail tops,
+   * approach ramps included where the deck has them (한강철교 four tracks, 동호대교 two in the
+   * middle, 청담대교 two on the lower deck). Neon runs trains along these.
+   */
+  railTracks?: ReadonlyMap<string, readonly { points: readonly Vec3[] }[]>;
+  /**
+   * Fountain nozzle lines by bridge id ('fountain' motif): one per upper deck edge, abutment to
+   * abutment, on the outer fascia just under the deck surface; `outward` points away from the deck.
+   */
+  fountainNozzles?: ReadonlyMap<string, readonly { a: Vec3; b: Vec3; outward: Vec2 }[]>;
 }
 
 export interface Ctx {
