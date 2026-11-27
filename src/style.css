@@ -129,6 +129,9 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
+  /* Never reach the panel toggle (44 px at the right gutter, plus 12 px air). */
+  max-width: calc(100vw - var(--gutter) - var(--gutter-r) - 56px);
+  min-width: 0;
 }
 .brand-mark {
   width: 3px;
@@ -140,6 +143,7 @@ body {
     0 0 14px rgba(255, 42, 58, 0.5);
 }
 .brand-name {
+  flex: 0 0 auto;
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.18em;
@@ -151,7 +155,8 @@ body {
   letter-spacing: 0.05em;
 }
 .hud-district {
-  max-width: 34vw;
+  flex: 0 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--c-dim);
@@ -166,6 +171,11 @@ body {
   color: var(--c-faint);
 }
 .hud-mode {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   padding: 2px 9px;
   border-radius: 999px;
   font-size: 12px;
