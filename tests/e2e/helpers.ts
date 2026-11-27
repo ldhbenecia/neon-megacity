@@ -1,5 +1,22 @@
 import type { Page } from '@playwright/test';
 
+const TOOL_OFFSET = { e2e: 0, shots: 1, perf: 2 } as const;
+const TOOL_ENV = { e2e: 'E2E_PORT', shots: 'SHOTS_PORT', perf: 'PERF_PORT' } as const;
+
+/**
+ * Local preview port of a tool. Several worktrees run e2e, shots and perf at once, so a fixed port
+ * would let one worktree test another's build. The env variable wins; otherwise the port is
+ * derived from the working directory (stable per worktree, 4200–4979). Servers bind it with
+ * strictPort and are never reused, so a clash fails instead of serving the wrong build.
+ */
+export function localPort(tool: keyof typeof TOOL_OFFSET, cwd = process.cwd()): number {
+  const env = Number(process.env[TOOL_ENV[tool]]);
+  if (Number.isInteger(env) && env > 0) return env;
+  let h = 0x811c9dc5;
+  for (let i = 0; i < cwd.length; i++) h = Math.imul(h ^ cwd.charCodeAt(i), 0x01000193) >>> 0;
+  return 4200 + (h % 260) * 3 + TOOL_OFFSET[tool];
+}
+
 export const SWIFTSHADER_ARGS = ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'];
 
 /**

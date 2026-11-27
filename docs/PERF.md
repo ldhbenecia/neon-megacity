@@ -12,7 +12,7 @@ npm run perf -- <label> --quality=ci     # the CI tier
 npm run perf -- <label> --swiftshader    # software GL, slow
 ```
 
-`scripts/perf.ts` serves `dist/` on :4175 and opens headless Chromium at 1600×900, device scale 2
+`scripts/perf.ts` serves `dist/` on its per-worktree port (`localPort`, `PERF_PORT` overrides) and opens headless Chromium at 1600×900, device scale 2
 (the app caps DPR at 1.5, so 2400×1350 pixels). For each preset 1, 2, 3, 5, 8 × time 0.0, 0.78,
 0.5 it boots a fresh page with `?stats`, waits for `__city.powered` and 60 warm-up frames, then:
 
