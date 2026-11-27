@@ -72,7 +72,9 @@ async function boot(): Promise<void> {
   if (!container) throw new Error('#app container missing');
 
   const renderer = createRenderer();
-  if (!manualQuality) quality = tierFromRenderer(rendererName(renderer));
+  if (!manualQuality) {
+    quality = tierFromRenderer(rendererName(renderer), navigator.maxTouchPoints > 1);
+  }
   // Pixel ratio is owned by ux/perf (adaptive, capped at 1.5).
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;

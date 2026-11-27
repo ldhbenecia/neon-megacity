@@ -30,6 +30,9 @@ describe('tierFromRenderer', () => {
       'low',
     );
     expect(tierFromRenderer('Mali-G78')).toBe('low');
+    // Safari masks Apple GPUs: a Mac starts at medium, a touch device at low.
+    expect(tierFromRenderer('Apple GPU')).toBe('medium');
+    expect(tierFromRenderer('Apple GPU', true)).toBe('low');
     expect(tierFromRenderer('')).toBe('medium');
     expect(tierFromRenderer(null)).toBe('medium');
   });
@@ -46,18 +49,48 @@ describe('QualityController', () => {
     expect(c.state.dpr).toBe(0.75);
   });
 
-  it('steps down at once during the boot probe when clearly too heavy', () => {
-    const c = new QualityController('high', 2, false);
-    const changes = run(c, 40, TUNING.probeS);
-    expect(changes.length).toBeGreaterThan(0);
-  });
-
-  it('climbs back slowly, never above the boot tier', () => {
+  it('climbs back slowly and may pass a guessed boot tier, up to high', () => {
     const c = new QualityController('medium', 2, false);
     run(c, 30, 20);
     expect(c.state.tier).toBe('low');
+    run(c, 8, 240);
+    expect(c.state).toEqual({ tier: 'high', dpr: 1.5 });
+  });
+
+  it('ignores the warm-up frames, then probes', () => {
+    const c = new QualityController('high', 2, false);
+    expect(run(c, 40, (TUNING.skipFrames * 40) / 1000)).toEqual([]);
+    expect(run(c, 40, TUNING.probeS).length).toBeGreaterThan(0);
+  });
+
+  it('blames a step up only within the undo window; later slowdowns step down without locking', () => {
+    const c = new QualityController('high', 2, false);
+    run(c, 30, 12);
     run(c, 8, 120);
-    expect(c.state).toEqual({ tier: 'medium', dpr: 1 });
+    expect(c.state).toEqual({ tier: 'high', dpr: 1.5 });
+    // Long after the last step up: a heavy scene steps down normally...
+    run(c, 30, 8);
+    expect(c.state.dpr).toBeLessThan(1.5);
+    // ...and climbing is not locked, so a light scene brings it back.
+    run(c, 8, 120);
+    expect(c.state).toEqual({ tier: 'high', dpr: 1.5 });
+  });
+
+  it('does not step down for isolated spikes (median, not mean)', () => {
+    const c = new QualityController('high', 2, false);
+    const changes: unknown[] = [];
+    for (let i = 0; i < 60 * 30; i++) {
+      const ch = c.step(i % 10 === 9 ? 0.2 : 1 / 60);
+      if (ch) changes.push(ch);
+    }
+    expect(changes).toEqual([]);
+    expect(c.state).toEqual({ tier: 'high', dpr: 1.5 });
+  });
+
+  it('reset returns to the boot tier at full DPR', () => {
+    const c = new QualityController('high', 2, false);
+    run(c, 30, 15);
+    expect(c.reset()).toMatchObject({ tier: 'high', dpr: 1.5 });
   });
 
   it('climbs back on a 60 Hz display, where frames never go below 16.7 ms', () => {

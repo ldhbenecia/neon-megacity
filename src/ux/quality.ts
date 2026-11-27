@@ -11,23 +11,26 @@ const DPR_STEP = 0.25;
 
 /**
  * Starting tier from the WebGL renderer string (WEBGL_debug_renderer_info). Unreadable strings
- * (blocked or masked by the browser) start at medium; the boot probe corrects it.
+ * (blocked or masked by the browser) start at medium, and the controller may still climb to high.
+ * Safari masks every Apple GPU as "Apple GPU": on a touch device (iPhone, iPad) that is low,
+ * on a Mac (M1–M4) medium.
  */
-export function tierFromRenderer(renderer: string | null | undefined): UserTier {
+export function tierFromRenderer(renderer: string | null | undefined, touch = false): UserTier {
   const r = (renderer ?? '').toLowerCase();
   if (!r) return 'medium';
-  if (/swiftshader|llvmpipe|software|mali|adreno|powervr|apple gpu\b/.test(r)) return 'low';
+  if (/apple gpu\b/.test(r)) return touch ? 'low' : 'medium';
+  if (/swiftshader|llvmpipe|software|mali|adreno|powervr/.test(r)) return 'low';
   if (/apple m\d|nvidia|geforce|rtx|radeon rx|radeon pro/.test(r)) return 'high';
   if (/intel|iris|uhd|radeon/.test(r)) return 'medium';
   return 'medium';
 }
 
 export interface QualityTuning {
-  /** Moving-average window of the frame time (s). */
+  /** Window of the frame-time median (s). */
   windowS: number;
   slowMs: number;
   /**
-   * An average below this is fast enough to try a step up. rAF intervals never go below the
+   * A median below this is fast enough to try a step up. rAF intervals never go below the
    * display refresh (16.7 ms at 60 Hz), so this must sit above it; a step up that turns out too
    * heavy is undone and climbing stops.
    */
@@ -38,10 +41,17 @@ export interface QualityTuning {
   fastForS: number;
   /** At most one step per this many seconds. */
   minGapS: number;
-  /** Boot probe: the first seconds after power-on step down at once above probeMs. */
+  /** Boot probe: the first seconds after warm-up step down at once above probeMs. */
   probeS: number;
   probeMs: number;
+  /** First frames ignored entirely (shader warm-up, LOD0 builds, power-on). */
+  skipFrames: number;
+  /** A step up can only be blamed for a slowdown within this many seconds after it. */
+  undoWindowS: number;
 }
+
+/** Window cap (frames): 2 s at up to 240 Hz. */
+const MAX_SAMPLES = 512;
 
 export const TUNING: QualityTuning = {
   windowS: 2,
@@ -53,6 +63,8 @@ export const TUNING: QualityTuning = {
   minGapS: 3,
   probeS: 2,
   probeMs: 25,
+  skipFrames: 60,
+  undoWindowS: 6,
 };
 
 export interface QualityState {
@@ -65,15 +77,18 @@ export type QualityChange = { tier: UserTier; dpr: number; tierChanged: boolean 
 
 /**
  * One controller for DPR and tier. Down: DPR first (0.25 steps to the tier's floor), then the next
- * tier. Up: the reverse, never above `ceiling` (the boot tier, or a manual pick). A step that did not
- * bring the average under slowMs within minGapS is undone once and climbing stops for the session.
- * `manual` (a stored or ?quality= pick) disables it entirely.
+ * tier. Up: the reverse, up to high (a guessed boot tier may be too low). A step up that makes the
+ * median slow within undoWindowS is undone once and climbing stops for the session; later
+ * slowdowns take the normal step-down path. `manual` (a stored or ?quality= pick) disables it.
  */
 export class QualityController {
   state: QualityState;
-  private readonly ceiling: UserTier;
+  private readonly boot: UserTier;
   private readonly maxDpr: number;
+  private frames = 0;
   private samples: number[] = [];
+  /** Scratch for the median: sorted in place every frame, never reallocated. */
+  private readonly sorted = new Float64Array(MAX_SAMPLES);
   private sum = 0;
   private slowFor = 0;
   private fastFor = 0;
@@ -88,7 +103,7 @@ export class QualityController {
     readonly manual: boolean,
     private readonly t: QualityTuning = TUNING,
   ) {
-    this.ceiling = tier;
+    this.boot = tier;
     this.maxDpr = Math.max(0.5, deviceDpr);
     this.state = { tier, dpr: this.capFor(tier) };
   }
@@ -98,29 +113,43 @@ export class QualityController {
     return Math.min(TIER_DPR[tier], this.maxDpr);
   }
 
-  get averageMs(): number {
-    return this.samples.length ? (this.sum / this.samples.length) * 1000 : 0;
+  /**
+   * Median frame time of the window (ms). A median, not a mean: a few long frames (tab switch,
+   * shader compile, a LOD0 build) must not move the tier.
+   */
+  get medianMs(): number {
+    const n = this.samples.length;
+    if (n === 0) return 0;
+    this.sorted.fill(Infinity);
+    for (let i = 0; i < n; i++) this.sorted[i] = this.samples[i] ?? Infinity;
+    this.sorted.sort();
+    return (this.sorted[n >> 1] ?? 0) * 1000;
   }
 
   /** Feed one frame (seconds). Hitches over 0.25 s (tab switch, GC, compile) are ignored. */
   step(dt: number): QualityChange {
     if (this.manual || !(dt > 0) || dt > 0.25) return null;
+    if (++this.frames <= this.t.skipFrames) return null;
     this.age += dt;
     this.sinceStep += dt;
     this.samples.push(dt);
     this.sum += dt;
-    while (this.samples.length > 1 && this.sum - (this.samples[0] ?? 0) >= this.t.windowS) {
+    while (
+      this.samples.length > 1 &&
+      (this.sum - (this.samples[0] ?? 0) >= this.t.windowS || this.samples.length > MAX_SAMPLES)
+    ) {
       this.sum -= this.samples.shift() ?? 0;
     }
-    const avg = this.averageMs;
+    const med = this.medianMs;
     const probing = this.age <= this.t.probeS;
-    if (probing && this.sum >= this.t.probeS * 0.5 && avg > this.t.probeMs) {
+    if (probing && this.sum >= this.t.probeS * 0.5 && med > this.t.probeMs) {
       return this.down();
     }
     if (this.sum < this.t.windowS * 0.95) return null;
-    this.slowFor = avg > this.t.slowMs ? this.slowFor + dt : 0;
-    this.fastFor = avg < this.t.fastMs ? this.fastFor + dt : 0;
-    if (this.lastUp && this.sinceStep >= this.t.minGapS && avg > this.t.slowMs) {
+    this.slowFor = med > this.t.slowMs ? this.slowFor + dt : 0;
+    this.fastFor = med < this.t.fastMs ? this.fastFor + dt : 0;
+    if (this.lastUp && this.sinceStep > this.t.undoWindowS) this.lastUp = null;
+    if (this.lastUp && med > this.t.slowMs) {
       // The last step up made things worse: undo it and stop climbing.
       const back = this.lastUp;
       this.lastUp = null;
@@ -131,6 +160,24 @@ export class QualityController {
     if (this.slowFor >= this.t.slowForS) return this.down();
     if (this.fastFor >= this.t.fastForS && !this.climbLocked) return this.up();
     return null;
+  }
+
+  /** Back to the boot tier at its DPR cap with a fresh window (debug panel "Auto quality"). */
+  reset(): QualityChange {
+    this.climbLocked = false;
+    this.lastUp = null;
+    const change = this.apply({ tier: this.boot, dpr: this.capFor(this.boot) });
+    this.clearWindow();
+    return change;
+  }
+
+  /** Drop the frame history, e.g. when automatic mode is switched back on. */
+  clearWindow(): void {
+    this.samples = [];
+    this.sum = 0;
+    this.slowFor = 0;
+    this.fastFor = 0;
+    this.sinceStep = 0;
   }
 
   private down(): QualityChange {
@@ -148,7 +195,7 @@ export class QualityController {
     const prev = { ...this.state };
     let next: QualityState | null = null;
     if (dpr + DPR_STEP <= this.capFor(tier) + 1e-6) next = { tier, dpr: dpr + DPR_STEP };
-    else if (TIERS.indexOf(tier) < TIERS.indexOf(this.ceiling)) {
+    else if (TIERS.indexOf(tier) < TIERS.indexOf('high')) {
       const higher = TIERS[TIERS.indexOf(tier) + 1];
       if (higher) next = { tier: higher, dpr: this.capFor(tier) };
     }

@@ -61,7 +61,7 @@ export function createPerf(ctx: Ctx, opts: PerfOptions): Perf {
     tier: env.quality as string,
     dpr: startDpr,
     auto: !!controller && !opts.manual,
-    avgMs: 0,
+    medianMs: 0,
   };
   const folder = gui.addFolder('Performance');
   const applyDpr = (v: number): void => {
@@ -70,10 +70,28 @@ export function createPerf(ctx: Ctx, opts: PerfOptions): Perf {
     quality.dpr = v;
     opts.resize();
   };
-  folder.add(quality, 'auto').name('Auto quality');
+  const applyChange = (change: ReturnType<QualityController['step']>): void => {
+    if (!change) return;
+    if (change.dpr !== last.dpr) applyDpr(change.dpr);
+    if (change.tierChanged) {
+      env.quality = change.tier;
+      quality.tier = change.tier;
+      last.tier = change.tier;
+      opts.emitQuality(change.tier);
+    }
+  };
+  folder
+    .add(quality, 'auto')
+    .name('Auto quality')
+    // Off returns to the boot tier at full DPR (not the last lowered step); on starts a clean window.
+    .onChange((on: boolean) => {
+      if (!controller) return;
+      if (on) controller.clearWindow();
+      else applyChange(controller.reset());
+    });
   folder.add(quality, 'tier').name('Tier').listen().disable();
   folder.add(quality, 'dpr').name('DPR').listen().disable();
-  folder.add(quality, 'avgMs').name('avg frame (ms)').listen().disable();
+  folder.add(quality, 'medianMs').name('median frame (ms)').listen().disable();
   folder.close();
 
   const overlay = opts.overlay ? document.getElementById('hud-stats') : null;
@@ -97,7 +115,7 @@ export function createPerf(ctx: Ctx, opts: PerfOptions): Perf {
         last.fps = count / acc;
         acc = 0;
         count = 0;
-        quality.avgMs = Math.round((controller?.averageMs ?? 0) * 10) / 10;
+        quality.medianMs = Math.round((controller?.medianMs ?? 0) * 10) / 10;
         if (overlay) {
           overlay.textContent =
             `fps   ${last.fps.toFixed(0).padStart(6)}\n` +
@@ -111,15 +129,9 @@ export function createPerf(ctx: Ctx, opts: PerfOptions): Perf {
         }
       }
       if (!controller || !quality.auto) return;
-      const change = controller.step(dt);
-      if (!change) return;
-      if (change.dpr !== last.dpr) applyDpr(change.dpr);
-      if (change.tierChanged) {
-        env.quality = change.tier;
-        quality.tier = change.tier;
-        last.tier = change.tier;
-        opts.emitQuality(change.tier);
-      }
+      // Frames of a hidden tab say nothing about the GPU.
+      if (document.hidden) return;
+      applyChange(controller.step(dt));
     },
     stats() {
       return { ...last };
