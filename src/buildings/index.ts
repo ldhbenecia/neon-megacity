@@ -101,8 +101,10 @@ function collectChunks(
     if (l.id !== 'namsan-mast') continue;
     const c = chunkAt(l.x, l.z);
     const y0 = terrainHeight(l.x, l.z);
+    // LOD0 replaces LOD1 near the camera, so the near job must draw it too.
     namsanMast(c.l1, l.x, y0, l.z, l.h, 1);
     namsanMast(c.l2, l.x, y0, l.z, l.h, 2);
+    c.lod0.push((g) => namsanMast(g, l.x, y0, l.z, l.h, 1));
   }
   // The wall opens for roads and for the gate hall standing on its line.
   const halls = LAYOUT.buildings.filter((b) => b.archetype === 'palaceHall');
@@ -117,7 +119,9 @@ function collectChunks(
     zone.polygon.forEach((a, i) => {
       const b = zone.polygon[(i + 1) % zone.polygon.length];
       if (!b) return;
-      palaceWall(chunkAt((a.x + b.x) / 2, (a.z + b.z) / 2).l1, a, b, terrainHeight, gate);
+      const c = chunkAt((a.x + b.x) / 2, (a.z + b.z) / 2);
+      palaceWall(c.l1, a, b, terrainHeight, gate);
+      c.lod0.push((g) => palaceWall(g, a, b, terrainHeight, gate));
     });
   }
   return [...chunks.values()];
