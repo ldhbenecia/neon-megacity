@@ -240,9 +240,14 @@ export function init(ctx: Ctx): CityModuleInstance {
   const infra = ctx.infra;
   const deckY = (x: number, z: number): number =>
     (infra ? infra.deckHeightAt(x, z) : deckHeightAt(L, x, z)) ?? 0;
-  const curveSamples = (id: string): Vec3[] | null => {
+  // infra's curve wins: it is trimmed to the visible deck, so its `closed` (not the layout's)
+  // says whether traffic loops or fades out at the ends.
+  const curveFor = (id: string): THREE.CatmullRomCurve3 | undefined => {
     const hw = L.highways.find((h) => h.id === id);
-    const curve = infra?.curves.get(id) ?? (hw ? highwayCurve(hw) : undefined);
+    return infra?.curves.get(id) ?? (hw ? highwayCurve(hw) : undefined);
+  };
+  const curveSamples = (id: string): Vec3[] | null => {
+    const curve = curveFor(id);
     if (!curve) return null;
     return curve.getSpacedPoints(CURVE_SAMPLES).map((v) => ({ x: v.x, y: v.y, z: v.z }));
   };
@@ -383,7 +388,7 @@ export function init(ctx: Ctx): CityModuleInstance {
   ];
   for (const hw of L.highways) {
     const s = curveSamples(hw.id);
-    if (s) paths.push(highwayPath(hw.id, s, hw.closed));
+    if (s) paths.push(highwayPath(hw.id, s, curveFor(hw.id)?.closed ?? hw.closed));
   }
   const ringS = curveSamples('hw-ring');
   const riverS = curveSamples('hw-river-north');
