@@ -23,7 +23,14 @@ const PANEL_MIX: readonly (readonly [NeonName, number])[] = [
   ['neonMagenta', 0.05],
 ];
 
-const PANEL_COUNT = 40;
+const TOWER_PANELS = 34;
+const BRIDGE_PANELS = 10;
+
+const BRIDGE_MIX: readonly (readonly [NeonName, number])[] = [
+  ['neonOrange', 0.4],
+  ['windowWarm', 0.35],
+  ['neonAmber', 0.25],
+];
 const ENV_KEY_LIST: readonly EnvKey[] = ['night', 'dawn', 'day', 'sunset'];
 const DOME_RADIUS = 100;
 const PANEL_RADIUS = 60;
@@ -55,28 +62,58 @@ function srgb(hex: number, scale = 1): THREE.Color {
   return new THREE.Color().setHex(hex).multiplyScalar(scale);
 }
 
-function buildPanels(key: PaletteKey): THREE.BufferGeometry {
+interface PanelSpec {
+  az: number;
+  el: number;
+  w: number;
+  h: number;
+  name: NeonName;
+}
+
+// Towers stand on both banks (north -Z, south +Z) and rise high enough to show in the steep
+// reflections seen from the overview cameras; bridges cross low on the river axis (east, west).
+function panelSpecs(): PanelSpec[] {
   const rng = createRng(6061);
+  const specs: PanelSpec[] = [];
+  for (let i = 0; i < TOWER_PANELS; i++) {
+    const bank = rng.chance(0.5) ? -Math.PI / 2 : Math.PI / 2;
+    specs.push({
+      az: bank + rng.range(-1.15, 1.15),
+      el: rng.range(0.02, 0.5),
+      w: rng.range(1.2, 3.5),
+      h: rng.range(5, 16),
+      name: weighted(rng, PANEL_MIX),
+    });
+  }
+  for (let i = 0; i < BRIDGE_PANELS; i++) {
+    const axis = rng.chance(0.5) ? 0 : Math.PI;
+    specs.push({
+      az: axis + rng.range(-0.6, 0.6),
+      el: rng.range(-0.01, 0.05),
+      w: rng.range(12, 26),
+      h: rng.range(0.4, 0.9),
+      name: weighted(rng, BRIDGE_MIX),
+    });
+  }
+  return specs;
+}
+
+function buildPanels(key: PaletteKey): THREE.BufferGeometry {
+  const rng = createRng(6062);
   const parts: THREE.BufferGeometry[] = [];
   const pos = new THREE.Vector3();
   const origin = new THREE.Vector3();
   const look = new THREE.Object3D();
-  for (let i = 0; i < PANEL_COUNT; i++) {
-    const az = rng.range(0, Math.PI * 2);
-    const el = rng.range(-0.02, 0.24);
-    const tall = rng.chance(0.35);
-    const w = tall ? rng.range(1, 2.6) : rng.range(3, 8);
-    const h = tall ? rng.range(4, 11) : rng.range(0.8, 2.6);
-    const name = weighted(rng, PANEL_MIX);
-    const neon = NEON[name];
+  for (const p of panelSpecs()) {
+    const neon = NEON[p.name];
     const hdr = rng.range(neon.hdr[0], neon.hdr[1]);
     const c = srgb(neon.hex, hdr * key.neonGain * 0.35);
-    const g = new THREE.PlaneGeometry(w, h);
+    const g = new THREE.PlaneGeometry(p.w, p.h);
     const n = g.attributes.position?.count ?? 0;
     const colors = new Float32Array(n * 3);
     for (let v = 0; v < n; v++) colors.set([c.r, c.g, c.b], v * 3);
     g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    pos.set(Math.cos(az) * Math.cos(el), Math.sin(el), Math.sin(az) * Math.cos(el));
+    pos.set(Math.cos(p.az) * Math.cos(p.el), Math.sin(p.el), Math.sin(p.az) * Math.cos(p.el));
     pos.multiplyScalar(PANEL_RADIUS);
     look.position.copy(pos);
     look.lookAt(origin);
