@@ -27,7 +27,8 @@ const MODULES: readonly (readonly [name: string, weight: number, module: CityMod
 ];
 
 const query = parseQuery(window.location.search);
-const debug = parseUxQuery(window.location.search).debug;
+const uxQuery = parseUxQuery(window.location.search);
+const debug = uxQuery.debug;
 // Manual picks win: ?quality= (incl. ci), then the stored control-panel choice. Otherwise the tier
 // is guessed from the GPU once the renderer exists (see boot()).
 const manualQuality: Quality | null = query.quality ?? readStoredTier();
@@ -125,6 +126,7 @@ async function boot(): Promise<void> {
     gui,
     CITY,
     LAYOUT,
+    debug: { nan: uxQuery.nan },
     env: {
       timeOfDay: query.time ?? 0.9,
       timeLocked: query.time !== undefined,
