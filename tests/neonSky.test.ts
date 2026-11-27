@@ -43,4 +43,21 @@ describe('neon drones fly the layout sky lanes', () => {
       skyPaths([{ id: 'sky-bad', points: [{ x: 0, z: 0 }], closed: true, altitude: [100, 160] }]),
     ).toThrow(/sky-bad/);
   });
+
+  it('follows the layout samples when a lane carries them', () => {
+    const samples = [
+      { x: 0, z: 0 },
+      { x: 300, z: 0 },
+      { x: 300, z: 300 },
+      { x: 0, z: 0 },
+    ];
+    const [p] = skyPaths([
+      { id: 'sky-s', points: samples.slice(0, 3), samples, closed: true, altitude: [100, 160] },
+    ]);
+    // Resampled evenly along the samples' polyline: same length and ends, not the control points.
+    expect(p!.length).toBeCloseTo(300 + 300 + Math.hypot(300, 300), 3);
+    expect([p!.points[0]!.x, p!.points[0]!.z]).toEqual([0, 0]);
+    const last = p!.points[p!.points.length - 1]!;
+    expect(Math.hypot(last.x, last.z)).toBeLessThan(1e-6);
+  });
 });

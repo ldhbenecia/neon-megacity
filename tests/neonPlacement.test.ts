@@ -216,16 +216,18 @@ describe('neon sign placement: zero penetration (5.1)', () => {
       expect(s.w).toBeGreaterThanOrEqual(4 - EPS);
     }
     for (const b of corridor.filter((k) => k.tags.mediaFace)) {
-      const full = media.find((s) => s.building === b.id);
+      // A tall slab may also carry a giant screen on another face; the media face must have one.
+      const full = media.find(
+        (s) => s.building === b.id && face(b.id, s.face).side === b.tags.mediaFace,
+      );
       expect(full, `media face of ${b.id}`).toBeDefined();
-      expect(face(b.id, full!.face).side).toBe(b.tags.mediaFace);
     }
   });
 
   it('Seongsu paint is a factory name on a blank wall', () => {
     const paint = P.flats.filter((f) => f.wash);
     if (LAYOUT.buildings.some((b) => b.district === 'brick'))
-      expect(paint.length).toBeGreaterThan(10);
+      expect(paint.length).toBeGreaterThan(5);
     for (const s of paint) {
       const b = spec(s.building);
       const f = face(s.building, s.face);

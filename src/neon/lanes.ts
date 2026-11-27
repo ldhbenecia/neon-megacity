@@ -142,14 +142,20 @@ export function skyPaths(lanes: readonly SkyLane[]): Path[] {
   for (const lane of lanes) {
     // A broken lane must fail loudly, not vanish like hw-ring did.
     if (lane.points.length < 2) throw new Error(`sky lane ${lane.id} has fewer than 2 points`);
-    const curve = new THREE.CatmullRomCurve3(
-      lane.points.map((p) => new THREE.Vector3(p.x, 0, p.z)),
-      lane.closed,
-      'centripetal',
-    );
-    const n = Math.max(8, Math.round((curve.getLength() / 100) * SKY_SAMPLES_PER_100M));
+    // Prefer the layout's own samples: its clearance is measured on exactly that path.
+    let pts: Vec3[];
+    if (lane.samples && lane.samples.length >= 2) {
+      pts = lane.samples.map((p) => ({ x: p.x, y: 0, z: p.z }));
+    } else {
+      const curve = new THREE.CatmullRomCurve3(
+        lane.points.map((p) => new THREE.Vector3(p.x, 0, p.z)),
+        lane.closed,
+        'centripetal',
+      );
+      const n = Math.max(8, Math.round((curve.getLength() / 100) * SKY_SAMPLES_PER_100M));
+      pts = curve.getSpacedPoints(n).map((v) => ({ x: v.x, y: 0, z: v.z }));
+    }
     // Closed lanes keep the repeated end point: the shader wraps u with fract().
-    const pts = curve.getSpacedPoints(n).map((v) => ({ x: v.x, y: 0, z: v.z }));
     const r = resample(pts, pts.length);
     out.push({
       id: lane.id,

@@ -270,6 +270,23 @@ export function zoneDelay(district: DistrictKind, rng: Rng): number {
   return rng.range(a, b);
 }
 
+// Sign rules only know the v2 forms; newer buildings archetypes sign like their closest one.
+// (Window and blank-wall checks keep buildings' own baseArchetype.)
+const SIGN_FORM: ReadonlyMap<string, BaseArchetype> = new Map<string, BaseArchetype>([
+  ['taperTower', 'setbackTower'],
+  ['mediaSlab', 'officeSlab'],
+  ['lowOffice', 'officeSlab'],
+  ['hanokRow', 'sangga'],
+  ['palaceHall', 'pavilion'],
+  ['brickWarehouse', 'sangga'],
+  ['showroomBox', 'sangga'],
+]);
+
+function signForm(b: BuildingSpec): BaseArchetype {
+  const base = baseArchetype(b);
+  return SIGN_FORM.get(base) ?? base;
+}
+
 const TOWERS: ReadonlySet<BaseArchetype> = new Set([
   'setbackTower',
   'bracedTower',
@@ -470,7 +487,7 @@ function placeBands(
   const faces = c.faces[b.id] ?? [];
   const f = faces[fi];
   if (!f) return;
-  const isSangga = baseArchetype(b) === 'sangga';
+  const isSangga = signForm(b) === 'sangga';
   const top = Math.min(6, b.floors);
   const p = (isSangga ? 0.3 : 0.15) * pScale;
   for (let floor = 2; floor <= top; floor++) {
@@ -1164,20 +1181,24 @@ export function placeSigns(
         Math.min(b.h >= 250 ? 2 : 1, maxScreens - c.out.screens.length),
       );
     }
-    if (baseArchetype(b) === 'cylinderTower' && b.h >= 60) {
+    if (signForm(b) === 'cylinderTower' && b.h >= 60) {
       ringBudget -= placeRings(c, b, rng, zone, ringBudget);
     }
-    if (mediaCount < MEDIA_MAX && b.h >= 50 && districtSigns(b.district).media) {
-      const a = baseArchetype(b);
-      if (TOWERS.has(a) || a === 'officeSlab')
-        mediaCount += placeMediaScreen(c, b, rng, zone, mediaGap()) ? 1 : 0;
+    // A tagged media face always gets its screen; free screens on other towers share the cap.
+    const tagged = !!b.tags.mediaFace;
+    if ((tagged || mediaCount < MEDIA_MAX) && b.h >= 50 && districtSigns(b.district).media) {
+      const a = signForm(b);
+      if (TOWERS.has(a) || a === 'officeSlab') {
+        const ok = placeMediaScreen(c, b, rng, zone, mediaGap());
+        if (ok && !tagged) mediaCount++;
+      }
     }
   }
 
   for (const b of lit) {
     const rng = createRng((seed ^ Math.imul((b.seed | 0) + 17, 0x85ebca6b)) >>> 0);
     const zone = zoneDelay(b.district, rng);
-    const a = baseArchetype(b);
+    const a = signForm(b);
     const d = districtSigns(b.district);
     const tower = TOWERS.has(a);
     if (d.street && (a === 'sangga' || (a === 'officeSlab' && d.shops))) {
