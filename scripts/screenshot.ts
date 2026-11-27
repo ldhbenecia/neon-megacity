@@ -10,11 +10,15 @@ import { chromium, type Browser, type Page } from '@playwright/test';
 import { preview } from 'vite';
 import { SWIFTSHADER_ARGS, collectErrors, waitFrames } from '../tests/e2e/helpers';
 
-/** `limit` overrides --black-limit for shots that are legitimately mostly dark. */
+// Night limit 80 % is temporary (target 40 %) until the night floors of buildings, highway
+// undersides and ground land; the NaN rectangles this exists to catch cover 92-97 %.
+const NIGHT_LIMIT = 80;
+
+/** Per-shot `limit` for legitimately dark shots; an explicit --black-limit overrides it. */
 const SHOTS: { name: string; query: string; limit?: number }[] = [
-  { name: 'night-overview', query: 'time=0.0&cam=overview&rain=0.4' },
-  { name: 'night-street', query: 'time=0.0&cam=street&rain=0.5' },
-  { name: 'night-core-closeup', query: 'time=0.95&cam=core&rain=0.3' },
+  { name: 'night-overview', query: 'time=0.0&cam=overview&rain=0.4', limit: NIGHT_LIMIT },
+  { name: 'night-street', query: 'time=0.0&cam=street&rain=0.5', limit: NIGHT_LIMIT },
+  { name: 'night-core-closeup', query: 'time=0.95&cam=core&rain=0.3', limit: NIGHT_LIMIT },
   { name: 'night-topdown', query: 'time=0.02&cam=topdown&rain=0.2', limit: 90 },
   { name: 'sunset-skyline', query: 'time=0.74&cam=skyline&rain=0' },
   { name: 'noon-overview', query: 'time=0.5&cam=overview&rain=0' },
@@ -23,12 +27,10 @@ const SHOTS: { name: string; query: string; limit?: number }[] = [
   { name: 'heavy-rain-street', query: 'time=0.92&cam=street&rain=1', limit: 85 },
 ];
 
-// Night limit 80 % is temporary (target 40 %) until the night floors of buildings, highway
-// undersides and ground land; the NaN rectangles this exists to catch cover 92-97 %.
 const BURST_SCENES: { name: string; query: string; limit?: number }[] = [
   { name: 'burst-noon-overview', query: 'time=0.5&cam=overview&rain=0' },
-  { name: 'burst-night-overview', query: 'time=0.0&cam=overview&rain=0.4', limit: 80 },
-  { name: 'burst-night-street', query: 'time=0.0&cam=street&rain=0', limit: 80 },
+  { name: 'burst-night-overview', query: 'time=0.0&cam=overview&rain=0.4', limit: NIGHT_LIMIT },
+  { name: 'burst-night-street', query: 'time=0.0&cam=street&rain=0', limit: NIGHT_LIMIT },
 ];
 
 const args = process.argv.slice(2);
@@ -43,6 +45,8 @@ const ANIMATION_MS = 3000;
 const VIEWPORT = { width: 1600, height: 900 };
 const limitArg = args.find((a) => a.startsWith('--black-limit='))?.slice('--black-limit='.length);
 const BLACK_LIMIT = limitArg === undefined ? 60 : Number(limitArg);
+const limitFor = (own?: number): number =>
+  limitArg === undefined ? (own ?? BLACK_LIMIT) : BLACK_LIMIT;
 if (limitArg?.trim() === '' || !Number.isFinite(BLACK_LIMIT) || BLACK_LIMIT < 0) {
   throw new Error('--black-limit=<percent> needs a non-negative number');
 }
@@ -50,7 +54,7 @@ if (flags.has('--gpu') && flags.has('--swiftshader')) {
   throw new Error('--gpu and --swiftshader exclude each other');
 }
 // Real GPU where one is known to exist (macOS, or --gpu): SwiftShader hides driver-specific
-// shader faults such as NaN from pow(). Headless Linux and containers keep software GL.
+// shader faults such as NaN from pow(). Elsewhere Chromium keeps its own default.
 const GPU = flags.has('--gpu') || (process.platform === 'darwin' && !flags.has('--swiftshader'));
 const GPU_ARGS =
   process.platform === 'darwin'
@@ -96,11 +100,11 @@ async function burst(
   browser: Browser,
   scene: { name: string; query: string; limit?: number },
 ): Promise<string[]> {
-  const limit = scene.limit ?? BLACK_LIMIT;
+  const limit = limitFor(scene.limit);
   const page = await browser.newPage({ viewport: VIEWPORT });
   try {
     const errors = collectErrors(page);
-    await page.goto(`${BASE}?nogui&stats&${scene.query}`);
+    await page.goto(`${BASE}?nogui&${scene.query}`);
     await waitPowered(page);
     const log: string[] = [];
     const bad: string[] = [];
@@ -257,7 +261,7 @@ async function main(): Promise<void> {
 
   const server = await preview({ preview: { port: PORT, strictPort: true }, logLevel: 'warn' });
   const browser = await chromium.launch({
-    args: GPU ? GPU_ARGS : SWIFTSHADER_ARGS,
+    args: GPU ? GPU_ARGS : flags.has('--swiftshader') ? SWIFTSHADER_ARGS : [],
   });
   const failures: string[] = [];
   const want = (name: string): boolean => !only || name.includes(only);
@@ -272,7 +276,7 @@ async function main(): Promise<void> {
       const file = resolve(outDir, `${shot.name}.png`);
       const l = await measure(page, await page.screenshot({ path: file }));
       console.log(`${file}  ${fmt(l)}`);
-      const limit = shot.limit ?? BLACK_LIMIT;
+      const limit = limitFor(shot.limit);
       if (l.black > limit) failures.push(`${shot.name}: black ${fmt(l)} > ${limit}%`);
       if (errors.length > 0) failures.push(`${shot.name}: ${errors.join(' | ')}`);
       await page.close();
