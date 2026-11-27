@@ -1,14 +1,17 @@
 /** Upper bound for HDR values entering bloom and the final pass. */
 export const HDR_CAP = 64;
 
-// One NaN or Inf pixel spreads through the bloom mips into large black blocks. NaN fails every
-// comparison, and v != v folds away under fast math (ANGLE on Metal), hence the "below the
-// half-float max" test. A channel that fails it becomes 0; the rest are clamped to [0, HDR_CAP].
+// One NaN pixel spreads through the bloom mips into large black blocks. NaN fails every
+// comparison, and v != v folds away under fast math (ANGLE on Metal), so a channel is kept when
+// it is below the half-float max, capped when it is a large positive value or +Inf, and zeroed
+// otherwise (NaN, -Inf). The result is clamped to [0, HDR_CAP].
 export const HDR_SAFE_GLSL = /* glsl */ `
+float finiteHdr1( float v ) {
+  if ( abs( v ) < 65000.0 ) return clamp( v, 0.0, ${HDR_CAP.toFixed(1)} );
+  return v > 0.0 ? ${HDR_CAP.toFixed(1)} : 0.0;
+}
 vec3 finiteHdr( vec3 v ) {
-  bvec3 ok = lessThan( abs( v ), vec3( 65000.0 ) );
-  vec3 f = vec3( ok.x ? v.x : 0.0, ok.y ? v.y : 0.0, ok.z ? v.z : 0.0 );
-  return clamp( f, 0.0, ${HDR_CAP.toFixed(1)} );
+  return vec3( finiteHdr1( v.x ), finiteHdr1( v.y ), finiteHdr1( v.z ) );
 }
 bool nonFinite( vec3 v ) {
   return !all( lessThan( abs( v ), vec3( 65000.0 ) ) );

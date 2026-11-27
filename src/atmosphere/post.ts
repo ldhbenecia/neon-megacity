@@ -88,7 +88,7 @@ void main() {
   vec2 uv = vUv;
   if ( uNanView > 0.5 ) {
     bool badScene = nonFinite( texture2D( tScene, vUv ).rgb );
-    bool badBloom = nonFinite( texture2D( tBloom, vUv ).rgb );
+    bool badBloom = uBloomOn > 0.5 && nonFinite( texture2D( tBloom, vUv ).rgb );
     if ( badScene || badBloom ) {
       gl_FragColor = badScene ? vec4( 1.0, 0.0, 1.0, 1.0 ) : vec4( 0.0, 1.0, 1.0, 1.0 );
       return;
