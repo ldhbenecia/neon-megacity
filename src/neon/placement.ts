@@ -1,9 +1,19 @@
 import { createRng, type Rng } from '../core/random';
 import type { NeonName } from '../core/palette';
-import { type BuildingFace, type BuildingSpec, type Layout, type Tier } from '../city/layout';
+import {
+  baseKind,
+  isUnbuilt,
+  type BaseKind,
+  type BuildingFace,
+  type BuildingSpec,
+  type DistrictKind,
+  type Layout,
+  type Tier,
+} from '../city/layout';
 import type { Catalog } from './catalog';
 import { CARGO_CROWN } from './content';
 import { firstHit, type Solid } from './solids';
+import { baseArchetype, type BaseArchetype } from '../buildings/params';
 import { pointSegmentDistance } from '../city/math';
 
 export const Anim = { none: 0, flicker: 1, scroll: 2, broken: 3, fill: 4 } as const;
@@ -121,20 +131,97 @@ export const WALL_GAP = { band: 0.12, vtext: 0.35, blade: 0.15, screen: 0.4 } as
 export const EDGE_IN = 1;
 export const TIER_MARGIN = 2;
 
-const DISTRICT_ZONE: Record<string, [number, number]> = {
-  riverside: [0, 0.12],
-  core: [0.12, 0.35],
-  midtown: [0.3, 0.45],
-  sangga: [0.4, 0.62],
-  industrial: [0.5, 0.65],
-  hillside: [0.62, 0.8],
-  apartment: [0.8, 0.95],
+interface DistrictSigns {
+  /** Power-on delay range (boot fade-in sweeps the city by district). */
+  zone: [number, number];
+  /** Street-level shop signs (bands, blades) on shop buildings at all. */
+  street: boolean;
+  /** Office slabs get street-level shop signs like sangga blocks. */
+  shops: boolean;
+  tubes: boolean;
+  vtext: boolean;
+  holos: boolean;
+}
+
+const MIDTOWN: DistrictSigns = {
+  zone: [0.3, 0.45],
+  street: true,
+  shops: false,
+  tubes: true,
+  vtext: true,
+  holos: true,
 };
 
-export function zoneDelay(district: string, rng: Rng): number {
-  const [a, b] = DISTRICT_ZONE[district] ?? [0.3, 0.6];
+const SANGGA: DistrictSigns = {
+  zone: [0.4, 0.62],
+  street: true,
+  shops: true,
+  tubes: false,
+  vtext: true,
+  holos: false,
+};
+
+const DARK: DistrictSigns = {
+  zone: [0.62, 0.8],
+  street: false,
+  shops: false,
+  tubes: false,
+  vtext: false,
+  holos: false,
+};
+
+// Keyed by the v2 base kind (src/city/kinds.ts); unbuilt kinds (palace, park) get DARK.
+const DISTRICT_SIGNS: Readonly<Record<Exclude<BaseKind, 'palace' | 'park'>, DistrictSigns>> = {
+  riverside: {
+    zone: [0, 0.12],
+    street: true,
+    shops: false,
+    tubes: false,
+    vtext: true,
+    holos: false,
+  },
+  core: { ...MIDTOWN, zone: [0.12, 0.35] },
+  midtown: MIDTOWN,
+  sangga: SANGGA,
+  industrial: {
+    zone: [0.5, 0.65],
+    street: true,
+    shops: false,
+    tubes: false,
+    vtext: true,
+    holos: false,
+  },
+  hillside: DARK,
+  apartment: {
+    zone: [0.8, 0.95],
+    street: true,
+    shops: false,
+    tubes: false,
+    vtext: false,
+    holos: false,
+  },
+};
+
+export function districtSigns(district: DistrictKind): DistrictSigns {
+  if (isUnbuilt(district)) return DARK;
+  const base: unknown = baseKind(district);
+  // Kinds newer than the shared table fall back to midtown so they never go dark.
+  return typeof base === 'string' && Object.hasOwn(DISTRICT_SIGNS, base)
+    ? DISTRICT_SIGNS[base as keyof typeof DISTRICT_SIGNS]
+    : MIDTOWN;
+}
+
+export function zoneDelay(district: DistrictKind, rng: Rng): number {
+  const [a, b] = districtSigns(district).zone;
   return rng.range(a, b);
 }
+
+const TOWERS: ReadonlySet<BaseArchetype> = new Set([
+  'setbackTower',
+  'bracedTower',
+  'cantileverTower',
+  'twinTower',
+]);
 
 export function insideFace(
   f: BuildingFace,
@@ -322,7 +409,7 @@ function placeBands(
   const faces = c.faces[b.id] ?? [];
   const f = faces[fi];
   if (!f) return;
-  const isSangga = b.archetype === 'sangga';
+  const isSangga = baseArchetype(b) === 'sangga';
   const top = Math.min(6, b.floors);
   const p = (isSangga ? 0.3 : 0.15) * pScale;
   for (let floor = 2; floor <= top; floor++) {
@@ -751,7 +838,9 @@ export function placeSigns(
   let ringBudget = opts.maxRings ?? 14;
   const maxHolos = opts.maxHolos ?? 36;
 
-  const byHeight = [...L.buildings].sort((a, z) => z.h - a.h);
+  // Unbuilt districts (palace grounds, parks) stay dark: no sign of any kind.
+  const lit = L.buildings.filter((b) => !isUnbuilt(b.district));
+  const byHeight = [...lit].sort((a, z) => z.h - a.h);
   for (const b of byHeight) {
     const rng = createRng((seed ^ Math.imul(b.seed | 0, 0x9e3779b1)) >>> 0);
     const zone = zoneDelay(b.district, rng);
@@ -764,36 +853,30 @@ export function placeSigns(
         Math.min(b.h >= 250 ? 2 : 1, maxScreens - c.out.screens.length),
       );
     }
-    if (b.archetype === 'cylinderTower' && b.h >= 60) {
+    if (baseArchetype(b) === 'cylinderTower' && b.h >= 60) {
       ringBudget -= placeRings(c, b, rng, zone, ringBudget);
     }
   }
 
-  for (const b of L.buildings) {
+  for (const b of lit) {
     const rng = createRng((seed ^ Math.imul((b.seed | 0) + 17, 0x85ebca6b)) >>> 0);
     const zone = zoneDelay(b.district, rng);
-    const a = b.archetype;
-    const tower =
-      a === 'setbackTower' || a === 'bracedTower' || a === 'cantileverTower' || a === 'twinTower';
-    if (a === 'sangga' || (a === 'officeSlab' && b.district === 'sangga')) {
+    const a = baseArchetype(b);
+    const d = districtSigns(b.district);
+    const tower = TOWERS.has(a);
+    if (d.street && (a === 'sangga' || (a === 'officeSlab' && d.shops))) {
       shopFaces(c, b).forEach((fi, k) => {
         placeBands(c, b, rng, zone, fi, k === 0 ? 1.6 : 0.7);
         placeBlades(c, b, rng, zone, (a === 'sangga' ? 0.5 : 0.3) * (k === 0 ? 1.3 : 0.6), fi);
       });
-    } else if (a === 'officeSlab' && b.h < 40) {
+    } else if (d.street && a === 'officeSlab' && b.h < 40) {
       const fi = shopFaces(c, b)[0];
       if (fi !== undefined) placeBlades(c, b, rng, zone, 0.15, fi);
     }
-    if ((b.district === 'core' || b.district === 'midtown') && (tower || a === 'officeSlab')) {
+    if (d.tubes && (tower || a === 'officeSlab')) {
       placeTubes(c, b, rng, zone);
     }
-    if (
-      b.h >= 20 &&
-      b.h <= 80 &&
-      b.district !== 'apartment' &&
-      b.district !== 'hillside' &&
-      rng.chance(0.6)
-    ) {
+    if (b.h >= 20 && b.h <= 80 && d.vtext && rng.chance(0.6)) {
       placeVText(c, b, rng, zone);
     }
     if (b.tags.corp) {
@@ -809,14 +892,14 @@ export function placeSigns(
       placeCrown(c, b, rng, zone, cell, 1);
     }
     if (b.tags.cross)
-      placeCross(c, b, rng, b.district === 'hillside' ? rng.range(0.62, 0.8) : zone);
+      placeCross(c, b, rng, baseKind(b.district) === 'hillside' ? rng.range(0.62, 0.8) : zone);
   }
 
   const hrng = createRng(seed + 77);
   const koi = cat.byKind.koi[0] ?? -1;
   const logos = cat.byKind.logo;
-  const roofs = L.buildings
-    .filter((b) => (b.district === 'core' || b.district === 'midtown') && b.h >= 60 && b.h <= 220)
+  const roofs = lit
+    .filter((b) => districtSigns(b.district).holos && b.h >= 60 && b.h <= 220)
     .sort((a, z) => a.seed - z.seed);
   for (const b of roofs) {
     if (c.out.holos.length >= maxHolos - 3) break;
