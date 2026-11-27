@@ -13,6 +13,8 @@ import { clamp, fitPolar, type Pose } from './motion';
 export interface RigPreset extends Pose {
   key: number;
   name: string;
+  /** Stable `?cam=` key; statistics use it so renaming a preset does not split its counts. */
+  cam: CameraPreset;
 }
 
 type Tuple = readonly [number, number, number];
@@ -57,6 +59,7 @@ function build(L: Layout): RigPreset[] {
   return SEOUL_PRESETS.map(([name, cam], i) => ({
     key: i + 1,
     name,
+    cam,
     ...safePose(L, camPose(cam)),
   }));
 }

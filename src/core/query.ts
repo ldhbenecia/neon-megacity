@@ -119,6 +119,7 @@ export function streetFrontage({ position: p, target: t }: Pose): number {
   const dx = t[0] - p[0];
   const dz = t[2] - p[2];
   const len = Math.hypot(dx, dz);
+  if (len < 1) return 0;
   const ux = dx / len;
   const uz = dz / len;
   let left = 0;
@@ -144,8 +145,8 @@ function streetViewClear({ position: p, target: t }: Pose, strict = true): boole
   if (!strict) return terrainClear(p, t);
   // A street dropping away down a slope fills the lower frame with dark roofs.
   if (Math.abs(p[1] - STREET_EYE - (t[1] - 2)) > 4) return false;
-  // Nothing built over the first 80 m of the street below eye height (a roof or a deck right in
-  // front of the lens fills the lower half of the frame).
+  // No building over the first 80 m of the street below eye height (a low roof right in front of
+  // the lens fills the lower half of the frame).
   const dx = t[0] - p[0];
   const dz = t[2] - p[2];
   const len = Math.hypot(dx, dz);
@@ -275,6 +276,8 @@ export function nearBlockers({ position: p, target: t }: Pose): number {
   const dx = t[0] - p[0];
   const dz = t[2] - p[2];
   const len = Math.hypot(dx, dz);
+  // No line of sight to judge: count it as blocked.
+  if (len < 1) return Infinity;
   const ux = dx / len;
   const uz = dz / len;
   const cos = Math.cos((40 * Math.PI) / 180);
@@ -287,7 +290,7 @@ export function nearBlockers({ position: p, target: t }: Pose): number {
     if (d < 60 && d > 0 && (rx * ux + rz * uz) / d > cos) n++;
   }
   for (let i = 1; i <= 12; i++) {
-    const f = (i * 5) / len;
+    const f = Math.min(1, (i * 5) / len);
     const y = p[1] + (t[1] - p[1]) * f;
     if (buildingContaining(LAYOUT, p[0] + dx * f, y, p[2] + dz * f) !== null) n++;
   }
@@ -371,6 +374,9 @@ function overWaterView(id: LandmarkId, near: Vec2, eye: number, fallback: Pose):
       const e: Tuple = [x, Math.max(eye, surfaceHeight(x, z) + 5), z];
       const score = Math.hypot(x - near.x, z - near.z);
       if (best && score >= best.d) continue;
+      // ?cam= poses skip the rig's safePose: the spot itself must already be a legal camera.
+      if (Math.hypot(x, z) > cameraRing() || buildingContaining(LAYOUT, x, e[1], z) !== null)
+        continue;
       if (!heroInSight(e, { x: l.x, z: l.z, h: l.h, id: l.buildingId })) continue;
       best = { e, d: score };
     }
