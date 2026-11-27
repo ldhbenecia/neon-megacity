@@ -24,7 +24,6 @@ export const CLOUDS = {
   lowY: CLOUD_LAYERS.lowY,
   highY: CLOUD_LAYERS.highY,
   size: 16000,
-  glowRadius: 1200,
   noiseSize: 256,
 } as const;
 
@@ -44,6 +43,7 @@ const FRAGMENT = /* glsl */ `
 uniform sampler2D tNoise;
 uniform float uTime;
 uniform vec2 uCityCenter;
+uniform float uGlowRadius;
 uniform float uRain;
 uniform float uNight;
 uniform vec3 uLow;
@@ -81,7 +81,7 @@ void main() {
     density = smoothstep( cov, cov + 0.22, n );
   }
 
-  float glow = exp( - length( p - uCityCenter ) / ${CLOUDS.glowRadius.toFixed(1)} );
+  float glow = exp( - length( p - uCityCenter ) / uGlowRadius );
   vec3 night = high
     ? uLow * 0.35
     : mix( uLow, uLowLit, glow ) * ( 0.55 + 0.75 * glow ) * ( 0.75 + 0.35 * density );
@@ -174,6 +174,8 @@ export function createClouds(
     tNoise: { value: noise },
     uTime: { value: 0 },
     uCityCenter: { value: new Vector2(SKYLINE_PEAK.x, SKYLINE_PEAK.z) },
+    // City light under the low deck: half the map's longer side (v2: 1200 m).
+    uGlowRadius: { value: Math.max(ctx.LAYOUT.extentX, ctx.LAYOUT.extentZ) / 2 },
     uRain: { value: 0 },
     uNight: { value: 1 },
     uLow: { value: new Color(MATERIAL.cloudLow) },

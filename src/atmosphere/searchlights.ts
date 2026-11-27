@@ -28,6 +28,9 @@ interface BeamDef extends BeamParams {
   color: number;
 }
 
+/** The skyline peaks the beams stand on (SEOUL.md 7.3); layouts without them use the tallest. */
+export const SEARCHLIGHT_ZONES = ['yongsan', 'yeouido', 'jamsil'] as const;
+
 const DEFS: readonly BeamDef[] = [
   {
     tower: 0,
@@ -39,7 +42,7 @@ const DEFS: readonly BeamDef[] = [
     lean: 0.12,
   },
   {
-    tower: 0,
+    tower: 2,
     color: MATERIAL.searchlightCyan,
     azimuth: 2.3,
     period: 27,
@@ -111,7 +114,7 @@ export interface Searchlights {
 
 export function createSearchlights(ctx: Ctx): Searchlights {
   const { scene, LAYOUT } = ctx;
-  const mounts = searchlightMounts(LAYOUT.buildings, 2);
+  const mounts = searchlightMounts(LAYOUT.buildings, SEARCHLIGHT_ZONES.length, SEARCHLIGHT_ZONES);
 
   const cones: BufferGeometry[] = DEFS.map((_, i) => {
     const g = new CylinderGeometry(BEAMS.halfAngle, 0.002, 1, 18, 1, true);
