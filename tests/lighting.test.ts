@@ -208,11 +208,9 @@ describe('shadow fill (env.fillFactor / fillColor)', () => {
 });
 
 describe('shadow redraw requests (ctx.requestShadowUpdate)', () => {
-  it('redraw only while sun shadows show, after the minimum interval; otherwise wait', () => {
-    expect(shadowRequestDue(true, true, 1.5, 1)).toBe(true);
-    expect(shadowRequestDue(true, true, 0.5, 1)).toBe(false);
-    // Night or the low tier: a LOD swap never costs a shadow pass.
-    expect(shadowRequestDue(true, false, 10, 1)).toBe(false);
-    expect(shadowRequestDue(false, true, 10, 1)).toBe(false);
+  it('redraw on the next frame while sun shadows show, and never at night or on low', () => {
+    expect(shadowRequestDue(true, true)).toBe(true);
+    expect(shadowRequestDue(true, false)).toBe(false);
+    expect(shadowRequestDue(false, true)).toBe(false);
   });
 });

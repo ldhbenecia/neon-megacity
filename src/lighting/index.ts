@@ -12,7 +12,6 @@ import {
   keyLightAt,
   moonDirectionAt,
   shadowFrameFor,
-  SHADOW_REFRESH,
   shadowRequestDue,
   shouldRefreshShadow,
   sunDirectionAt,
@@ -84,8 +83,6 @@ export function init(ctx: Ctx): CityModuleInstance {
   const lastShadowSun = new THREE.Vector3(0, -1, 0);
   let lastShadowFrame: ShadowFrame | null = null;
   let secondsSinceShadow = 0;
-  // Redraw requests from other modules (ctx.requestShadowUpdate): honoured only while the sun
-  // casts shadows, so at night (or with shadows off) a LOD swap costs no shadow pass.
   let requested = false;
   const defaultRequest = ctx.requestShadowUpdate;
   ctx.requestShadowUpdate = () => {
@@ -95,7 +92,7 @@ export function init(ctx: Ctx): CityModuleInstance {
   let pal: PaletteSample = paletteAt(env.timeOfDay);
   let palTime = env.timeOfDay;
 
-  function updateShadowCamera(dt: number): void {
+  function updateShadowCamera(dt: number, asked: boolean): void {
     const dist = camera.position.distanceTo(controls.target);
     const f = shadowFrameFor(controls.target.x, controls.target.z, dist);
     const changed =
@@ -116,9 +113,7 @@ export function init(ctx: Ctx): CityModuleInstance {
     }
     secondsSinceShadow += dt;
     const sunAngle = lastShadowSun.angleTo(env.sunDirection);
-    const asked = shadowRequestDue(requested, true, secondsSinceShadow, SHADOW_REFRESH.minInterval);
     if (asked || shouldRefreshShadow(changed, sunAngle, secondsSinceShadow, frame < 3)) {
-      requested = false;
       renderer.shadowMap.needsUpdate = true;
       lastShadowSun.copy(env.sunDirection);
       secondsSinceShadow = 0;
@@ -158,9 +153,10 @@ export function init(ctx: Ctx): CityModuleInstance {
       if (sunShadow) renderer.shadowMap.needsUpdate = true;
     }
     // Shadow frustum first, so the light target below already sits on this frame's frustum.
-    if (sunShadow) updateShadowCamera(dt);
-    // Without sun shadows there is nothing to redraw; the map is redrawn when they come back on.
-    else requested = false;
+    // Requests are dropped without sun shadows; the map is redrawn when they come back on.
+    const asked = shadowRequestDue(requested, sunShadow);
+    requested = false;
+    if (sunShadow) updateShadowCamera(dt, asked);
     const dir = kl.body === 'sun' ? env.sunDirection : moonDir;
     const center = lastShadowFrame ?? ORIGIN_FRAME;
     key.target.position.set(center.cx, 0, center.cz);

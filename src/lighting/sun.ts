@@ -173,17 +173,9 @@ export function shadowFrameFor(
   };
 }
 
-/**
- * Whether a pending ctx.requestShadowUpdate() redraws the map now: only while sun shadows show,
- * and not sooner than the tier's minimum interval after the last redraw (requests wait, not drop).
- */
-export function shadowRequestDue(
-  requested: boolean,
-  sunShadows: boolean,
-  secondsSinceLast: number,
-  minInterval: number,
-): boolean {
-  return requested && sunShadows && secondsSinceLast >= minInterval;
+/** A pending ctx.requestShadowUpdate() redraws on the next frame, but only while sun shadows show. */
+export function shadowRequestDue(requested: boolean, sunShadows: boolean): boolean {
+  return requested && sunShadows;
 }
 
 export const SHADOW_REFRESH = {

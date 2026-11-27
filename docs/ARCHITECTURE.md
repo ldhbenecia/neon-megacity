@@ -63,12 +63,12 @@ do not hard-code hex values in modules. Emissive materials use `applyEmissiveFog
 
 Besides its `env` fields, lighting owns a few pieces of shared renderer / scene state. Others read them, never write them.
 
-| state                                                      | meaning                                                                                                                                                                    |
-| ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `scene.environment`                                        | PMREM environment map (teal dome + neon panel band), baked once per palette key at init (4 bakes). `MeshStandardMaterial`s get it free                                     |
-| `scene.environmentIntensity`                               | palette `envMapIntensity` (night 0.6 → day 1.0)                                                                                                                            |
-| `renderer.toneMappingExposure`                             | palette `toneMappingExposure × env.powerOn`                                                                                                                                |
-| `renderer.shadowMap` (`type`, `autoUpdate`, `needsUpdate`) | `autoUpdate = false`; lighting sets `needsUpdate` when the shadow frustum moves or the sun moves ≥ 0.5° (≤ 1 Hz). Others set `castShadow` / `receiveShadow` on meshes only |
+| state                                                      | meaning                                                                                                                                                                                                                                                                     |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scene.environment`                                        | PMREM environment map (teal dome + neon panel band), baked once per palette key at init (4 bakes). `MeshStandardMaterial`s get it free                                                                                                                                      |
+| `scene.environmentIntensity`                               | palette `envMapIntensity` (night 0.6 → day 1.0)                                                                                                                                                                                                                             |
+| `renderer.toneMappingExposure`                             | palette `toneMappingExposure × env.powerOn`                                                                                                                                                                                                                                 |
+| `renderer.shadowMap` (`type`, `autoUpdate`, `needsUpdate`) | `autoUpdate = false`; lighting sets `needsUpdate` when the shadow frustum moves or the sun moves ≥ 0.5° (≤ 1 Hz). Others set `castShadow` / `receiveShadow` on meshes and ask for a redraw only through `ctx.requestShadowUpdate()` (lighting skips it without sun shadows) |
 
 The only moon disc is drawn by lighting's sky dome; atmosphere draws stars (and clouds) over it.
 
