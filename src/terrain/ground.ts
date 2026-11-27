@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { LAYOUT, RIVER, type Vec2 } from '../city/layout';
+import { FOREST_LINE, LAYOUT, RIVER, isForest, type Vec2 } from '../city/layout';
 import { TERRAIN_COLORS as TC } from '../core/palette';
 import {
   GROUND_RADIUS,
@@ -88,7 +88,9 @@ const SUMMIT_FLAT = 50;
 // tree placed on surfaceHeight sinks a little rather than floats.
 function canopyLift(x: number, y: number, z: number): number {
   const f = forestAt(y);
-  if (f <= 0) return 0;
+  // Only where the layout keeps forest: hillside houses below the forest line stand on bare ground.
+  // Above FOREST_LINE it is forest by definition, which spares most of the costly isForest calls.
+  if (f <= 0 || !(aboveForestLine(x, y, z) || isForest(x, z))) return 0;
   let keep = 1;
   for (const m of LAYOUT.mountains) {
     if (m.id !== 'namsan') continue;
@@ -97,6 +99,14 @@ function canopyLift(x: number, y: number, z: number): number {
   }
   const n = noise2(x / 14 + 31, z / 14 + 7) * 0.7 + noise2(x / 5 + 3, z / 5 + 11) * 0.3;
   return CANOPY * f * keep * n;
+}
+
+function aboveForestLine(x: number, y: number, z: number): boolean {
+  for (const m of LAYOUT.mountains) {
+    if (Math.hypot(x - m.peak.x, z - m.peak.z) < m.radius && y > FOREST_LINE * m.height)
+      return true;
+  }
+  return false;
 }
 
 function nearMountain(x: number, z: number): boolean {
