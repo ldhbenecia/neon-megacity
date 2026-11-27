@@ -33,11 +33,24 @@ const WATER_NORMAL = /* glsl */ `
   vec2 g = wGrad(p * 0.045 + vec2(t * 0.020, t * 0.006))
          + wGrad(p * 0.13 - vec2(t * 0.031, -t * 0.012)) * 0.55
          + wGrad(p * 0.41 + vec2(t * 0.050, t * 0.035)) * 0.3;
-  float dist = length(vWaterXZ - cameraPosition.xz);
+  vec2 toCam = vWaterXZ - cameraPosition.xz;
+  float dist = length(toCam);
+  // Tilts toward the viewer stretch reflected lights into long vertical streaks.
+  vec2 fwd = toCam / max(dist, 1e-3);
+  vec2 across = vec2(-fwd.y, fwd.x);
+  g = fwd * dot(g, fwd) * 1.6 + across * dot(g, across) * 0.3;
   float strength = 0.22 / (1.0 + dist / 450.0);
   vec3 nW = normalize(vec3(-g.x * strength, 1.0, -g.y * strength));
   normal = normalize((viewMatrix * vec4(nW, 0.0)).xyz);
 }
+`;
+
+// Direct light (moon, sun) would break into white glints on the ripples; the brightest thing on the
+// water must be the colored city light in the environment map.
+const WATER_LIGHT = /* glsl */ `
+#include <lights_fragment_end>
+reflectedLight.directSpecular = min(reflectedLight.directSpecular * 0.2, vec3(0.03));
+reflectedLight.indirectSpecular *= 2.4;
 `;
 
 export interface Water {
@@ -77,8 +90,12 @@ export function createWater(ripples = true): Water {
     roughness: 0.08,
     metalness: 0,
   });
-  if (ripples) {
-    material.onBeforeCompile = (shader) => {
+  material.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <lights_fragment_end>',
+      WATER_LIGHT,
+    );
+    if (ripples) {
       shader.uniforms.uTime = uTime;
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', '#include <common>\nvarying vec2 vWaterXZ;')
@@ -89,8 +106,8 @@ export function createWater(ripples = true): Water {
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', `#include <common>\n${WATER_PARS}`)
         .replace('#include <normal_fragment_maps>', WATER_NORMAL);
-    };
-  }
+    }
+  };
   const mesh = new THREE.Mesh(geometry, material);
   mesh.name = 'river-water';
   mesh.receiveShadow = true;
