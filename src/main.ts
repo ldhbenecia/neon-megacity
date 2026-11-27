@@ -188,13 +188,14 @@ async function boot(): Promise<void> {
   // The post chain (atmosphere) renders into an HDR target, a different program variant than the
   // canvas: when it publishes `scene.userData.compile`, that warms up exactly what will be drawn.
   // Awaited so parallel shader linking (KHR_parallel_shader_compile, SwiftShader) finishes here and
-  // not inside the first frame. A failed warm-up is not fatal: programs then link on first use.
+  // not inside the first frame. A failed warm-up is not fatal (programs then link on first use)
+  // but logs an error so e2e collectErrors fails on it.
   try {
     const compileScene = (scene.userData as { compile?: CompileHook }).compile;
     if (compileScene) await compileScene();
     else await renderer.compileAsync(scene, camera);
   } catch (err) {
-    console.warn('shader warm-up failed; programs will link on first draw', err);
+    console.error('shader warm-up failed; programs will link on first draw', err);
   }
 
   loader.stage('first-frame', BOOT_WEIGHTS.firstFrame);
