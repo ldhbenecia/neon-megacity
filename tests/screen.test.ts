@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { BLACK_MAX, LUM_MIN, judgeScreen, lightAt } from '../scripts/screen';
 
-const ok = { frames: 60, maxBlack: 10, minLum: 20 };
+const ok = { frames: 60, maxBlack: 10, minLum: 20, maxLum: 40 };
 
 describe('judgeScreen', () => {
   it('passes normal scenes, including dark night views', () => {
@@ -19,7 +19,12 @@ describe('judgeScreen', () => {
 
   it('fails a frame that is dark overall and a phase with no frames', () => {
     expect(judgeScreen(ok, { ...ok, minLum: LUM_MIN - 0.1 }, 'night')).toHaveLength(1);
-    expect(judgeScreen({ frames: 0, maxBlack: 0, minLum: 255 }, ok, 'day')[0]).toMatch(/no frames/);
+    expect(judgeScreen({ ...ok, frames: 0 }, ok, 'day')[0]).toMatch(/no frames/);
+  });
+
+  it('reports a sampler that only read empty buffers as a read failure', () => {
+    const empty = { frames: 60, maxBlack: 100, minLum: 0, maxLum: 0 };
+    expect(judgeScreen(empty, empty, 'day')).toEqual([expect.stringMatching(/read failed/)]);
   });
 });
 

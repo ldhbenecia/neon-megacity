@@ -118,7 +118,7 @@ async function measure(
     try {
       screenCheck = await checkScreen(page, lightAt(time));
     } catch (err) {
-      const none = { frames: 0, maxBlack: 0, minLum: 0 };
+      const none = { frames: 0, maxBlack: 0, minLum: 0, maxLum: 0 };
       screenCheck = { rest: none, move: none, failures: [`screen check error: ${String(err)}`] };
     }
   }

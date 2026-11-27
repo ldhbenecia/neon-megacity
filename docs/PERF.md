@@ -57,6 +57,10 @@ Any frame darker than mean 2 fails too. The run then exits with code 1. The tabl
 `max black % at rest / moving, min brightness`; `--no-screen` skips it. Fixed build (#63 + #64):
 all 15 scenarios pass; main c0fc4be: noon overview 100 % black at rest and moving.
 
+Limit: at night only whole black frames fail, so a partial black block (say 15 % of the screen) at
+night would pass; a follow-up could track the largest connected black region or a sudden jump in
+the black share between frames.
+
 The motion stays small on purpose: wide orbits at street level swing the camera against unlit
 walls (legitimately black at night) and once clipped into a building (99 % black, mean 0.1).
 

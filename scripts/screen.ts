@@ -14,6 +14,8 @@ export interface PhaseStats {
   maxBlack: number;
   /** Lowest mean of R, G, B in any frame, 0..255. */
   minLum: number;
+  /** Highest mean brightness in any frame: 0 means every read came back empty (see START). */
+  maxLum: number;
 }
 
 export interface ScreenCheck {
@@ -51,6 +53,9 @@ export function lightAt(time: number): Light {
 export function judgeScreen(rest: PhaseStats, move: PhaseStats, light: Light): string[] {
   const out: string[] = [];
   const limits = BLACK_MAX[light];
+  if (rest.frames + move.frames > 0 && Math.max(rest.maxLum, move.maxLum) === 0) {
+    return ['canvas read failed: every frame was exactly 0 (sampler ran outside the render task?)'];
+  }
   const check = (name: Phase, s: PhaseStats, max: number): void => {
     if (s.frames === 0) out.push(`${name}: no frames sampled`);
     if (s.maxBlack > max) out.push(`${name}: a frame was ${s.maxBlack}% black (max ${max}%)`);
@@ -65,14 +70,16 @@ export function judgeScreen(rest: PhaseStats, move: PhaseStats, light: Light): s
 
 // Strings, not functions: tsx (esbuild keepNames) would inject an undefined __name helper.
 // The sampler is a rAF callback queued after the app's own loop, so it reads the drawing buffer
-// of the frame just rendered (still valid in the same task without preserveDrawingBuffer).
+// of the frame just rendered. Precondition: with preserveDrawingBuffer false that buffer is only
+// valid in the same task as the render; read after compositing it is empty and every frame
+// reads as 0, which judgeScreen reports as a read failure rather than a black screen.
 const START = `(() => {
   const gl = document.querySelector('canvas');
   const c = document.createElement('canvas');
   c.width = 64;
   c.height = 36;
   const g = c.getContext('2d', { willReadFrequently: true });
-  const acc = { rest: { frames: 0, maxBlack: 0, minLum: 255 }, move: { frames: 0, maxBlack: 0, minLum: 255 } };
+  const acc = { rest: { frames: 0, maxBlack: 0, minLum: 255, maxLum: 0 }, move: { frames: 0, maxBlack: 0, minLum: 255, maxLum: 0 } };
   window.__screen = { phase: 'rest', acc, on: true };
   const tick = () => {
     const s = window.__screen;
@@ -88,7 +95,9 @@ const START = `(() => {
     const a = s.acc[s.phase];
     a.frames++;
     a.maxBlack = Math.max(a.maxBlack, Math.round((100 * black) / 2304));
-    a.minLum = Math.min(a.minLum, Math.round((sum / 2304 / 3) * 10) / 10);
+    const lum = Math.round((sum / 2304 / 3) * 10) / 10;
+    a.minLum = Math.min(a.minLum, lum);
+    a.maxLum = Math.max(a.maxLum, lum);
     requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
