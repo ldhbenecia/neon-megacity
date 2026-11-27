@@ -27,7 +27,10 @@ void main() {
   vec3 world = cameraPosition + position * ${STARS.radius.toFixed(1)};
   gl_Position = projectionMatrix * viewMatrix * vec4( world, 1.0 );
   gl_PointSize = aStar.x * uPixelRatio;
-  vTwinkle = 0.75 + 0.25 * sin( uTime * ( 0.7 + fract( aStar.y ) * 1.6 ) + aStar.y );
+  // Rates snapped to whole cycles per wrap period (< 0.0004 rad/s off), so the wrap is seamless.
+  float rate = 0.7 + fract( aStar.y ) * 1.6;
+  rate = floor( rate * ${TIME_WRAP.stars.toFixed(1)} / 6.2831853 + 0.5 ) * 6.2831853 / ${TIME_WRAP.stars.toFixed(1)};
+  vTwinkle = 0.75 + 0.25 * sin( uTime * rate + aStar.y );
   vTwinkle *= smoothstep( 0.42, 0.75, position.y ) * 0.6 + 0.4;
 }
 `;
