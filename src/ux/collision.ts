@@ -18,6 +18,17 @@ import {
 export const GROUND_CLEARANCE = 2;
 export const WATER_CLEARANCE = 3;
 export const WALL_MARGIN = 1.5;
+/** Largest `standoff()`; also the radius of the neighbour query. */
+export const MAX_STANDOFF = 25;
+
+/**
+ * Camera clearance from a building's walls and roof: 10 % of its height, 3..25 m. Closer than
+ * that a tower face fills the whole view and reads as a black screen; low street buildings keep
+ * a small one so eye-level views between them stay possible.
+ */
+export function standoff(b: BuildingSpec): number {
+  return Math.min(MAX_STANDOFF, Math.max(3, buildingTop(b) * 0.1));
+}
 // A point pushed onto the margin boundary must count as outside despite rotation round-off.
 const EDGE_EPS = 1e-6;
 
@@ -65,7 +76,7 @@ function hullOf(b: BuildingSpec): Box {
 }
 
 function exitFrom(b: BuildingSpec, box: Box, p: Vec3, m: number): Vec3 | null {
-  if (p.y < box.y0 - m || p.y > box.y1 + m) return null;
+  if (p.y <= box.y0 - m + EDGE_EPS || p.y >= box.y1 + m - EDGE_EPS) return null;
   const up = box.y1 + m - p.y;
   // Walls only push sideways while the point is below the roof line; above it, only "up".
   if (box.cylinder) {
@@ -97,21 +108,27 @@ function exitFrom(b: BuildingSpec, box: Box, p: Vec3, m: number): Vec3 | null {
   return { x: box.x + w.x, y: p.y, z: box.z + w.z };
 }
 
-export function resolveCollision(L: Layout, p: Vec3, margin = WALL_MARGIN): Vec3 | null {
+function settle(
+  L: Layout,
+  p: Vec3,
+  marginOf: (b: BuildingSpec) => number,
+  reach: number,
+): { at: Vec3; moved: boolean; settled: boolean } {
   let cur: Vec3 = { x: p.x, y: p.y, z: p.z };
   let moved = false;
-  for (let iter = 0; iter < 4; iter++) {
+  for (let iter = 0; iter < 6; iter++) {
     let fix: Vec3 | null = null;
     for (const id of buildingsInAabb(
       L,
-      cur.x - margin,
-      cur.z - margin,
-      cur.x + margin,
-      cur.z + margin,
+      cur.x - reach,
+      cur.z - reach,
+      cur.x + reach,
+      cur.z + reach,
     )) {
       const b = L.buildings[id] as BuildingSpec;
+      const m = marginOf(b);
       for (const box of boxesOf(b)) {
-        const e = exitFrom(b, box, cur, margin);
+        const e = exitFrom(b, box, cur, m);
         if (e && (!fix || dist2(cur, e) < dist2(cur, fix))) fix = e;
       }
     }
@@ -119,14 +136,45 @@ export function resolveCollision(L: Layout, p: Vec3, margin = WALL_MARGIN): Vec3
       const id = buildingContaining(L, cur.x, cur.y, cur.z);
       if (id !== null) {
         const b = L.buildings[id] as BuildingSpec;
-        fix = exitFrom(b, hullOf(b), cur, margin);
+        fix = exitFrom(b, hullOf(b), cur, marginOf(b));
       }
     }
-    if (!fix) break;
+    if (!fix) return { at: cur, moved, settled: true };
     cur = fix;
     moved = true;
   }
-  return moved ? cur : null;
+  return { at: cur, moved, settled: false };
+}
+
+/**
+ * Pushes `p` out of every building's clearance (`standoff` unless `margin` is given). Where the
+ * clearances of close neighbours overlap (e.g. between twin towers) no such point exists nearby,
+ * so it falls back to the hard WALL_MARGIN, then to rising above the nearby roofs; the result is
+ * idempotent either way.
+ */
+export function resolveCollision(L: Layout, p: Vec3, margin?: number): Vec3 | null {
+  if (margin !== undefined) {
+    const r = settle(L, p, () => margin, margin);
+    return r.moved ? r.at : null;
+  }
+  const soft = settle(L, p, standoff, MAX_STANDOFF);
+  if (soft.settled) return soft.moved ? soft.at : null;
+  const hard = settle(L, p, () => WALL_MARGIN, WALL_MARGIN);
+  if (hard.settled) return hard.moved ? hard.at : null;
+  // Even the hard margin ping-pongs (narrow alley between rotated blocks): rise above every roof
+  // whose clearance could reach this point.
+  let y = p.y;
+  for (const id of buildingsInAabb(
+    L,
+    p.x - MAX_STANDOFF,
+    p.z - MAX_STANDOFF,
+    p.x + MAX_STANDOFF,
+    p.z + MAX_STANDOFF,
+  )) {
+    const b = L.buildings[id] as BuildingSpec;
+    y = Math.max(y, buildingTop(b) + standoff(b));
+  }
+  return { x: p.x, y, z: p.z };
 }
 
 const dist2 = (a: Vec3, b: Vec3): number => (a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2;

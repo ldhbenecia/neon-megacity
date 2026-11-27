@@ -3,13 +3,15 @@ import { PerspectiveCamera, Vector3 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { LAYOUT, SKYLINE_PEAK, buildingContaining } from '../src/city/layout';
 import { CAMERA_LIMITS } from '../src/core/query';
+import { createRng } from '../src/core/random';
+import { buildingVolumes, toWorld } from '../src/city/layout';
 import {
   cameraFloor,
   frameBuildingClear,
   pick,
   raycastSurface,
   resolveCollision,
-  WALL_MARGIN,
+  standoff,
 } from '../src/ux/collision';
 import {
   dampFactor,
@@ -122,11 +124,53 @@ describe('collision', () => {
     expect(resolveCollision(LAYOUT, out!)).toBeNull();
   });
 
+  it('keeps a height-scaled standoff of 3..25 m', () => {
+    for (const b of LAYOUT.buildings) {
+      expect(standoff(b)).toBeGreaterThanOrEqual(3);
+      expect(standoff(b)).toBeLessThanOrEqual(25);
+    }
+    expect(standoff(tall)).toBe(25);
+  });
+
+  it('never leaves the camera inside a building and settles in one call', () => {
+    const rng = createRng(7);
+    let checked = 0;
+    for (const b of LAYOUT.buildings) {
+      if (rng.next() > 0.08) continue;
+      for (const v of buildingVolumes(b)) {
+        const w = toWorld((rng.next() - 0.5) * v.w, (rng.next() - 0.5) * v.d, b.rotY);
+        const p = { x: v.x + w.x, y: v.y0 + (v.y1 - v.y0) * rng.next(), z: v.z + w.z };
+        const out = resolveCollision(LAYOUT, p) ?? p;
+        expect(buildingContaining(LAYOUT, out.x, out.y, out.z), JSON.stringify(p)).toBeNull();
+        expect(resolveCollision(LAYOUT, out), JSON.stringify(p)).toBeNull();
+        checked++;
+      }
+    }
+    expect(checked).toBeGreaterThan(100);
+  });
+
+  it('pushes a camera resting on a setback roof out of the tier above it', () => {
+    const b = LAYOUT.buildings.find((x) => {
+      const v = buildingVolumes(x);
+      return v.length > 2 && v[1]!.shape !== 'cylinder' && v[1]!.w < v[0]!.w - 4;
+    })!;
+    const [low, up] = buildingVolumes(b) as [
+      ReturnType<typeof buildingVolumes>[number],
+      ReturnType<typeof buildingVolumes>[number],
+    ];
+    const w = toWorld(up.w / 2 - 0.5, 0, b.rotY);
+    const p = { x: up.x + w.x, y: low.y1 + standoff(b), z: up.z + w.z };
+    expect(buildingContaining(LAYOUT, p.x, p.y, p.z)).toBe(b.id);
+    const out = resolveCollision(LAYOUT, p);
+    expect(out).not.toBeNull();
+    expect(buildingContaining(LAYOUT, out!.x, out!.y, out!.z)).toBeNull();
+  });
+
   it('keeps the wall margin and pushes a roof-skimming camera up', () => {
     const top = tall.tiers[tall.tiers.length - 1]!;
     const skim = { x: top.x, y: top.y1 + 0.5, z: top.z };
     const out = resolveCollision(LAYOUT, skim);
-    expect(out?.y).toBeCloseTo(top.y1 + WALL_MARGIN);
+    expect(out?.y).toBeCloseTo(top.y1 + standoff(tall));
   });
 
   it('leaves free space alone', () => {

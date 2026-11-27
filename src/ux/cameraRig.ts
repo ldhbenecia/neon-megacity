@@ -2,11 +2,12 @@ import * as THREE from 'three';
 import { LAYOUT, buildingTop, surfaceHeight, type Vec3 } from '../city/layout';
 import type { Ctx } from '../core/types';
 import {
-  WALL_MARGIN,
+  MAX_STANDOFF,
   cameraFloor,
   frameBuildingClear,
   pick,
   resolveCollision,
+  standoff,
   targetFloor,
 } from './collision';
 import type { Hud, RigMode } from './hud';
@@ -80,7 +81,7 @@ const MOVE_KEYS = new Set([
 ]);
 
 /** Above this height no building volume (spires included) can be within the wall margin. */
-const SKY_CLEAR = LAYOUT.buildings.reduce((m, b) => Math.max(m, buildingTop(b)), 0) + WALL_MARGIN;
+const SKY_CLEAR = LAYOUT.buildings.reduce((m, b) => Math.max(m, buildingTop(b)), 0) + MAX_STANDOFF;
 
 const _v = new THREE.Vector3();
 const _w = new THREE.Vector3();
@@ -132,6 +133,8 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
   const vel = new THREE.Vector3();
   let zoomPending = 0;
   const zoomAnchor = new THREE.Vector3();
+  // Closest the cursor zoom gets to its anchor; a building face nearer than this fills the view.
+  let zoomStop = 6;
   let lastAnchorAt = -1;
   const lastAnchorPx = { x: -1e9, y: -1e9 };
   let fovTarget = BASE_FOV;
@@ -460,6 +463,8 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
     const offRay = toAnchor.normalize().dot(raycaster.ray.direction) < Math.cos(0.04);
     if (moved > 8 || elapsed - lastAnchorAt > 0.25 || near || offRay) {
       const hit = pickRay();
+      const b = hit?.kind === 'building' ? LAYOUT.buildings[hit.id] : undefined;
+      zoomStop = b ? Math.max(6, standoff(b) * 4) : 6;
       if (hit) zoomAnchor.set(hit.point.x, hit.point.y, hit.point.z);
       else
         zoomAnchor
@@ -640,7 +645,7 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
     if (s > 1 && orbit * s > CAMERA_LIMITS.maxDistance) {
       s = Math.max(1, CAMERA_LIMITS.maxDistance / orbit);
     }
-    if (s < 1 && toAnchor * s < 6) s = Math.min(1, 6 / Math.max(toAnchor, 1e-6));
+    if (s < 1 && toAnchor * s < zoomStop) s = Math.min(1, zoomStop / Math.max(toAnchor, 1e-6));
     camera.position.sub(zoomAnchor).multiplyScalar(s).add(zoomAnchor);
     controls.target.sub(zoomAnchor).multiplyScalar(s).add(zoomAnchor);
     const d = camera.position.distanceTo(controls.target);
