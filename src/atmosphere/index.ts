@@ -14,6 +14,7 @@ import {
   createQualityState,
   rainAltitudeFade,
   searchlightLevelAt,
+  rainPoolFor,
   skyExtrasFor,
   stepQuality,
   userTier,
@@ -47,7 +48,9 @@ export function init(ctx: Ctx): CityModuleInstance {
     clouds: !low,
     searchlights: !low,
     stars: true,
-    autoQuality: true,
+    // ux owns the tier decision (env.quality, ctx.onQuality); this frame-time controller is a
+    // debug-panel tool only, or a slow stretch would step down twice and override a chosen tier.
+    autoQuality: false,
   };
 
   const uninstallFog = installFogChunks();
@@ -203,7 +206,8 @@ export function init(ctx: Ctx): CityModuleInstance {
       postSettings.radius = palette.bloomRadius;
       postSettings.threshold = palette.bloomThreshold;
       postSettings.lens = settings.lens;
-      postSettings.drops = settings.lensDrops ? Math.min(1, r * 1.2) * below : 0;
+      postSettings.drops =
+        settings.lensDrops && rainPoolFor(tier) > 0 ? Math.min(1, r * 1.2) * below : 0;
       post?.update(elapsed, postSettings);
 
       if (settings.autoQuality && stepQuality(quality, dt)) applyTier();

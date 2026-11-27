@@ -72,7 +72,7 @@ export function init(ctx: Ctx): CityModuleInstance {
       key.shadow.map?.dispose();
       key.shadow.map = null;
       key.shadow.mapSize.set(next.mapSize, next.mapSize);
-      lastShadowFrame = null;
+      resized = true;
     }
     shadow = next;
     renderer.shadowMap.needsUpdate = true;
@@ -96,6 +96,9 @@ export function init(ctx: Ctx): CityModuleInstance {
   env.fillFactor = 0;
   const lastShadowSun = new THREE.Vector3(0, -1, 0);
   let lastShadowFrame: ShadowFrame | null = null;
+  // Set when the map size changes: the next shadow update refits the bias and redraws the map
+  // while the frustum (and the light target) stays where it is.
+  let resized = false;
   let secondsSinceShadow = 0;
   let frame = 0;
   let pal: PaletteSample = paletteAt(env.timeOfDay);
@@ -105,6 +108,7 @@ export function init(ctx: Ctx): CityModuleInstance {
     const dist = camera.position.distanceTo(controls.target);
     const f = shadowFrameFor(controls.target.x, controls.target.z, dist);
     const changed =
+      resized ||
       !lastShadowFrame ||
       f.cx !== lastShadowFrame.cx ||
       f.cz !== lastShadowFrame.cz ||
@@ -119,6 +123,7 @@ export function init(ctx: Ctx): CityModuleInstance {
       // ~0.7 texel of normal offset kills acne on large flat roofs without peter-panning.
       key.shadow.normalBias = ((2 * f.half) / shadow.mapSize) * 0.7;
       lastShadowFrame = f;
+      resized = false;
     }
     secondsSinceShadow += dt;
     const sunAngle = lastShadowSun.angleTo(env.sunDirection);

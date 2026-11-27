@@ -336,7 +336,8 @@ export function createPost(ctx: Ctx): Post | null {
       input = vTarget;
     }
 
-    // Skipped mips carry zero weight in the composite; cleared once so no stale frame lingers.
+    // Skipped mips are cleared to black once and stay black, so they add nothing: the composite
+    // still weights them (lerpBloomFactor gives a factor of 0 up to 1.2 × radius).
     if (staleMips) {
       for (let i = mips; i < bloom.nMips; i++) {
         const v = bloom.renderTargetsVertical[i];
