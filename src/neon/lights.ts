@@ -12,12 +12,19 @@ export interface LightCandidate {
   distance: number;
 }
 
-export const LIGHT_BUDGET: Readonly<Record<LightGroup, number>> = {
-  street: 3,
-  screen: 1,
-  stall: 1,
-  river: 1,
+export type LightBudget = Readonly<Record<LightGroup, number>>;
+
+/**
+ * Per user tier (docs/PERF.md); high is the original set. The pool always holds the high count so
+ * no program recompiles; lower tiers only fade slots to intensity 0. The lit shaders still loop
+ * over every light, so this saves almost no GPU time: it is a look knob, not a speed knob.
+ */
+export const LIGHT_BUDGETS: Readonly<Record<'high' | 'medium' | 'low', LightBudget>> = {
+  high: { street: 3, screen: 1, stall: 1, river: 1 },
+  medium: { street: 2, screen: 1, stall: 1, river: 0 },
+  low: { street: 0, screen: 0, stall: 0, river: 0 },
 };
+export const LIGHT_BUDGET: LightBudget = LIGHT_BUDGETS.high;
 export const MAX_POINT_LIGHTS = 8;
 
 export function pickLights(
@@ -58,6 +65,8 @@ interface Slot {
 export interface LightPool {
   group: THREE.Group;
   update(dt: number, cam: THREE.Vector3, gain: number): void;
+  /** Change the per-group budget; the light count stays fixed (no shader recompile). */
+  setBudget(budget: LightBudget): void;
   readonly count: number;
   dispose(): void;
 }
@@ -78,10 +87,15 @@ export function createLightPool(cands: readonly LightCandidate[]): LightPool {
     slots.push({ light, target: -1, current: -1, level: 0 });
   }
   let timer = 0;
+  let budget: LightBudget = LIGHT_BUDGET;
   const camPos = { x: 0, y: 0, z: 0 };
   return {
     group,
     count: total,
+    setBudget(b) {
+      budget = b;
+      timer = 0;
+    },
     update(dt, cam, gain) {
       timer -= dt;
       if (timer <= 0) {
@@ -89,7 +103,7 @@ export function createLightPool(cands: readonly LightCandidate[]): LightPool {
         camPos.x = cam.x;
         camPos.y = cam.y;
         camPos.z = cam.z;
-        const picked = pickLights(cands, camPos);
+        const picked = pickLights(cands, camPos, budget);
         const wanted = new Set(picked);
         for (const s of slots)
           if (s.current >= 0 && wanted.has(s.current)) wanted.delete(s.current);
