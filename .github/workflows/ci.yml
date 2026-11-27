@@ -19,54 +19,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Decides which e2e runs. Main pushes and main dispatches always run the full suite (Pages
-  # deploys only after a fully green main run). PRs and branch dispatches run it only when they
-  # touch the app shell, ux, core, build config or the test setup; PRs that touch only feature
-  # modules run just the full-quality budget scenario (draw calls, programs, console errors).
-  changes:
-    name: changes
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    outputs:
-      e2e: ${{ steps.files.outputs.e2e }}
-      budget: ${{ steps.files.outputs.budget }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-          # Full history: the diff below needs the merge base.
-          fetch-depth: 0
-      - id: files
-        env:
-          EVENT: ${{ github.event_name }}
-          REF: ${{ github.ref }}
-        run: |
-          base=""
-          if [ "$EVENT" = pull_request ]; then
-            # HEAD is the PR merge commit: its first parent is the base branch tip.
-            base="HEAD^1"
-          elif [ "$EVENT" = workflow_dispatch ] && [ "$REF" != refs/heads/main ]; then
-            # No common ancestor: base stays empty and e2e runs (the safe side).
-            base="$(git merge-base origin/main HEAD || true)"
-          fi
-          e2e=true
-          budget=false
-          if [ -n "$base" ]; then
-            # --no-renames: a move must list the old path too; quotePath=false keeps Hangul names.
-            files="$(git -c core.quotePath=false diff --name-only --no-renames "$base" HEAD)"
-            echo "$files"
-            pattern='^(src/ux/|src/main\.ts$|src/boot\.ts$|src/core/|vite\.config\.ts$|tsconfig[^/]*\.json$|tests/e2e/|playwright\.config\.ts$|scripts/|\.github/|index\.html$|src/style\.css$|package(-lock)?\.json$)'
-            modules='^src/(lighting|terrain|buildings|infra|neon|atmosphere|city)/'
-            if [ -n "$files" ] && ! grep -qE "$pattern" <<<"$files"; then
-              e2e=false
-              if grep -qE "$modules" <<<"$files"; then
-                budget=true
-              fi
-            fi
-          fi
-          echo "e2e=$e2e" | tee -a "$GITHUB_OUTPUT"
-          echo "budget=$budget" | tee -a "$GITHUB_OUTPUT"
-
   check:
     name: check
     runs-on: ubuntu-24.04
@@ -101,17 +53,14 @@ jobs:
       - name: Bundle size
         run: npm run size
 
-  e2e:
-    name: e2e (${{ matrix.shard }})
-    needs: changes
-    if: needs.changes.outputs.e2e == 'true'
+  # Main only (push or dispatch): boot, zero console errors, a non-blank canvas. Pages deploys
+  # after check and smoke pass. The full e2e suite is manual: e2e-full.yml.
+  smoke:
+    name: smoke
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     # Playwright 1.55 cannot install browser deps on ubuntu-latest (26.04) yet.
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1/2, 2/2]
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
         with:
@@ -130,75 +79,16 @@ jobs:
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
 
-      - name: E2E tests
-        env:
-          SHARD: ${{ matrix.shard }}
-        run: npm run test:e2e -- --shard="$SHARD"
+      - name: Smoke tests
+        run: npm run test:e2e -- tests/e2e/smoke.spec.ts
 
       - name: Upload Playwright report
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-report-${{ strategy.job-index }}
+          name: playwright-report-smoke
           path: |
             playwright-report/
             test-results/
           retention-days: 7
           if-no-files-found: ignore
-
-  budget:
-    name: e2e budget
-    needs: changes
-    if: needs.changes.outputs.budget == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: npm
-
-      - run: npm ci
-
-      - name: Build
-        run: npm run build
-
-      - name: Install Playwright Chromium
-        run: npx playwright install --with-deps chromium
-
-      - name: Budget scenario
-        run: npm run test:e2e -- tests/e2e/perf.spec.ts --grep "full quality"
-
-      - name: Upload Playwright report
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: playwright-report-budget
-          path: |
-            playwright-report/
-            test-results/
-          retention-days: 7
-          if-no-files-found: ignore
-
-  # Always reported under one name, so a required check never goes missing when e2e is skipped.
-  e2e-result:
-    name: e2e-result
-    needs: [changes, e2e, budget]
-    if: always()
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - env:
-          CHANGES: ${{ needs.changes.result }}
-          E2E: ${{ needs.e2e.result }}
-          BUDGET: ${{ needs.budget.result }}
-        run: |
-          echo "changes=$CHANGES e2e=$E2E budget=$BUDGET"
-          [ "$CHANGES" = success ] || exit 1
-          for r in "$E2E" "$BUDGET"; do
-            [ "$r" = success ] || [ "$r" = skipped ] || exit 1
-          done
