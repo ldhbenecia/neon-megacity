@@ -88,6 +88,8 @@ export interface Hud {
   setMode(mode: RigMode): void;
   /** Called with true when a building card opens, false when it closes. */
   onCard(fn: (open: boolean) => void): () => void;
+  /** Called with true when the help sheet opens, false when it closes. */
+  onHelp(fn: (open: boolean) => void): () => void;
   showCard(b: BuildingSpec | null): void;
   toast(text: string): void;
   toggle(force?: boolean): boolean;
@@ -118,6 +120,7 @@ export function createHud(opts: { visible: boolean; onDeselect?: () => void }): 
   let visible = true;
   let helpReturn: HTMLElement | null = null;
   const cardListeners = new Set<(open: boolean) => void>();
+  const helpListeners = new Set<(open: boolean) => void>();
   // Overlay layout rules live in style.css, keyed by these attributes on #hud.
   const mark = (name: 'card' | 'help', open: boolean): void => {
     if (root) root.dataset[name] = open ? 'open' : 'closed';
@@ -165,6 +168,10 @@ export function createHud(opts: { visible: boolean; onDeselect?: () => void }): 
       cardListeners.add(fn);
       return () => cardListeners.delete(fn);
     },
+    onHelp(fn) {
+      helpListeners.add(fn);
+      return () => helpListeners.delete(fn);
+    },
     showCard(b) {
       if (!card) return;
       if (b) {
@@ -194,6 +201,7 @@ export function createHud(opts: { visible: boolean; onDeselect?: () => void }): 
       if (open === isOpen) return open;
       help.hidden = !open;
       mark('help', open);
+      for (const fn of helpListeners) fn(open);
       if (open) {
         hideHint();
         helpReturn = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -217,6 +225,11 @@ export function createHud(opts: { visible: boolean; onDeselect?: () => void }): 
       cardClose?.removeEventListener('click', onCardClose);
       helpClose?.removeEventListener('click', onHelpClose);
       cardListeners.clear();
+      helpListeners.clear();
+      if (root) {
+        delete root.dataset.card;
+        delete root.dataset.help;
+      }
     },
   };
   hud.toggle(opts.visible);

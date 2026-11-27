@@ -12,6 +12,7 @@ const SURFACES = [
   '#help',
   '#hud-hint',
   '.touch-pad',
+  '#hud-stats',
 ] as const;
 
 interface Box {
@@ -80,6 +81,25 @@ async function expectNoOverlap(page: Page, step: string): Promise<void> {
   }
 }
 
+async function selectBuilding(page: Page): Promise<void> {
+  const at = await page.evaluate(() => window.__hangang?.buildingPoint() ?? null);
+  expect(at, 'no building under an uncovered canvas point').not.toBeNull();
+  await page.mouse.click(at!.x, at!.y);
+  await page.waitForFunction(
+    () =>
+      window.__hangang?.camera().mode === 'orbit' &&
+      document.getElementById('hud-card')?.hidden === false,
+    undefined,
+    { timeout: 90_000 },
+  );
+}
+
+async function waitMode(page: Page, mode: string): Promise<void> {
+  await page.waitForFunction((m) => window.__hangang?.camera().mode === m, mode, {
+    timeout: 90_000,
+  });
+}
+
 const VIEWPORTS = [
   { name: 'phone', width: 390, height: 844, touch: true },
   { name: 'phone landscape', width: 844, height: 390, touch: true },
@@ -106,16 +126,7 @@ for (const vp of VIEWPORTS) {
       await expect(page.locator('#panel')).toBeVisible();
       await expectNoOverlap(page, 'panel open');
 
-      const at = await page.evaluate(() => window.__hangang?.buildingPoint() ?? null);
-      expect(at, 'no building under an uncovered canvas point').not.toBeNull();
-      await page.mouse.click(at!.x, at!.y);
-      await page.waitForFunction(
-        () =>
-          window.__hangang?.camera().mode === 'orbit' &&
-          document.getElementById('hud-card')?.hidden === false,
-        undefined,
-        { timeout: 90_000 },
-      );
+      await selectBuilding(page);
       await expectNoOverlap(page, 'building selected');
 
       await page.click('#panel-toggle');
@@ -129,6 +140,58 @@ for (const vp of VIEWPORTS) {
       await page.keyboard.press('Escape');
       await expect(page.locator('#help')).toBeHidden();
       await expectNoOverlap(page, 'help closed');
+    });
+
+    test('keyboard paths keep the same rules and Esc closes the topmost surface', async ({
+      page,
+    }) => {
+      test.setTimeout(300_000);
+      await page.goto(app('nogui&stats&cam=overview&time=0'));
+      await waitForCity(page);
+      const panel = page.locator('#panel');
+      const help = page.locator('#help');
+      const card = page.locator('#hud-card');
+
+      await page.click('#panel-toggle');
+      await page.keyboard.press('?');
+      await expect(help).toBeVisible();
+      await expect(panel).toBeHidden();
+      await expectNoOverlap(page, '? over the panel');
+      await page.click('#panel-toggle');
+      await expect(panel).toBeVisible();
+      await expect(help).toBeHidden();
+      await expectNoOverlap(page, 'panel toggle over help');
+      await page.keyboard.press('Escape');
+      await expect(panel).toBeHidden();
+
+      await selectBuilding(page);
+      await page.keyboard.press('?');
+      await expect(help).toBeVisible();
+      await expectNoOverlap(page, '? with a card');
+      await page.keyboard.press('Escape');
+      await expect(help).toBeHidden();
+      await expect(card).toBeVisible();
+      await page.click('#panel-toggle');
+      await expectNoOverlap(page, 'panel with a card');
+      await page.keyboard.press('Escape');
+      await expect(panel).toBeHidden();
+      await expect(card).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(card).toBeHidden();
+
+      await page.keyboard.press('3');
+      await waitMode(page, 'flight');
+      await waitMode(page, 'orbit');
+      await expectNoOverlap(page, 'preset key');
+      await page.keyboard.press('c');
+      await waitMode(page, 'cinematic');
+      await expectNoOverlap(page, 'cinematic');
+      await page.keyboard.press('c');
+      await page.keyboard.press('f');
+      await waitMode(page, 'fly');
+      await expectNoOverlap(page, 'fly mode');
+      await page.keyboard.press('Escape');
+      await waitMode(page, 'orbit');
     });
   });
 }

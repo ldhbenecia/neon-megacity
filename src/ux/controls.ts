@@ -51,6 +51,8 @@ export function createControls(ctx: Ctx, rig: CameraRig, hud: Hud): Controls {
   const compact = window.matchMedia('(max-width: 640px), (max-height: 520px)');
   const setPanel = (open: boolean, focus = false): void => {
     if (!panel || !toggle) return;
+    // The help sheet and the panel never share the screen.
+    if (open) hud.toggleHelp(false);
     panel.hidden = !open;
     if (hudRoot) hudRoot.dataset.panel = open ? 'open' : 'closed';
     toggle.setAttribute('aria-expanded', String(open));
@@ -73,8 +75,15 @@ export function createControls(ctx: Ctx, rig: CameraRig, hud: Hud): Controls {
   on(ctx.renderer.domElement, 'pointerdown', () => setPanel(false));
   cleanup.push(
     hud.onCard((open) => {
-      if (open && compact.matches) setPanel(false);
+      // Not while the user works in the panel: the card waits behind it (style.css) instead.
+      if (open && compact.matches && !panel?.contains(document.activeElement)) setPanel(false);
     }),
+    hud.onHelp((open) => {
+      if (open) setPanel(false);
+    }),
+    () => {
+      if (hudRoot) delete hudRoot.dataset.panel;
+    },
   );
   on(openHelp, 'click', () => {
     setPanel(false);

@@ -1,7 +1,9 @@
 :root {
   --c-bg: #020a0b;
   --c-glass: rgba(3, 20, 22, 0.66);
-  --c-glass-strong: rgba(3, 20, 22, 0.84);
+  /* Panel, card, timeline: >= 4.5:1 for body text over the brightest blurred scene. */
+  --c-glass-strong: rgba(3, 20, 22, 0.92);
+  --c-glass-solid: rgba(3, 20, 22, 0.97);
   --c-edge: rgba(25, 242, 230, 0.16);
   --c-edge-hi: rgba(25, 242, 230, 0.42);
   --c-cyan: #19f2e6;
@@ -105,6 +107,21 @@ body {
   -webkit-backdrop-filter: blur(10px) saturate(1.2);
 }
 
+.panel,
+.card,
+.timeline {
+  backdrop-filter: blur(16px) saturate(1.1);
+  -webkit-backdrop-filter: blur(16px) saturate(1.1);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .panel,
+  .card,
+  .timeline,
+  .help {
+    background: var(--c-glass-solid);
+  }
+}
+
 .hud-brand {
   position: absolute;
   left: var(--gutter);
@@ -186,6 +203,7 @@ body {
   z-index: var(--z-panel);
   box-sizing: border-box;
   width: 316px;
+  max-height: calc(100vh - var(--top) - 48px - var(--bottom) - 76px);
   max-height: calc(100dvh - var(--top) - 48px - var(--bottom) - 76px);
   overflow: auto;
   overscroll-behavior: contain;
@@ -364,6 +382,7 @@ body {
 .timeline {
   position: absolute;
   z-index: var(--z-base);
+  background: var(--c-glass-strong);
   left: 50%;
   bottom: var(--bottom);
   translate: -50% 0;
@@ -562,6 +581,7 @@ body {
   top: 50%;
   translate: -50% -50%;
   width: min(600px, calc(100vw - 32px));
+  max-height: calc(100vh - var(--top) - var(--bottom) - 120px);
   max-height: calc(100dvh - var(--top) - var(--bottom) - 120px);
   overflow: auto;
   overscroll-behavior: contain;
@@ -773,7 +793,7 @@ body {
 .hud-stats {
   position: fixed;
   left: var(--gutter);
-  top: 48px;
+  top: calc(var(--top) + 36px);
   margin: 0;
   padding: 6px 9px;
   border-radius: 8px;
@@ -857,7 +877,16 @@ body {
   opacity: 0;
   pointer-events: none;
 }
+/* Debug ?stats readout (a sibling after #hud) steps aside for the help sheet, and on compact
+   screens for the panel and the card too. */
+#hud[data-help='open'] ~ .hud-stats {
+  visibility: hidden;
+}
 @media (max-width: 640px), (max-height: 520px) {
+  #hud[data-panel='open'] ~ .hud-stats,
+  #hud[data-card='open'] ~ .hud-stats {
+    visibility: hidden;
+  }
   #hud[data-panel='open'] .card,
   #hud[data-card='open'] .touch-pad {
     visibility: hidden;
