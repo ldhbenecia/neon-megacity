@@ -23,13 +23,15 @@ export interface ScreenCheck {
 }
 
 /**
- * Black-pixel limits (% of a frame) by time of day. Day and sunset views are bright when healthy
- * (Metal: 1–3 % black), so a black rectangle stands out. Night views are legitimately dark
- * (Metal, fixed build: up to 76 % at rest on the hillside preset, 68 % while moving), so at night
- * only an almost entirely black frame fails: the reported night symptom is whole black frames.
+ * Black-pixel limits (% of a frame) by time of day, from Metal runs of the fixed build (#63, #64).
+ * Day views are bright when healthy (≤ 13 % black), so a black rectangle stands out. Dusk street
+ * views reach 27 % at rest and 48 % moving; night street and hillside views up to 76 %. At night
+ * only an almost entirely black frame fails (the reported night symptom); the bug itself gave
+ * 94–100 % by day and at sunset.
  */
 export const BLACK_MAX = {
   day: { rest: 30, move: 50 },
+  dusk: { rest: 50, move: 70 },
   night: { rest: 90, move: 90 },
 } as const;
 /** Any frame darker than this on average fails. */
@@ -37,9 +39,12 @@ export const LUM_MIN = 2;
 
 export type Light = keyof typeof BLACK_MAX;
 
-/** Night limits for time of day (0..1) before 05:00 or after 20:00, day limits otherwise. */
+/** Night before 05:00 and after 20:00, dusk 05:00–07:00 and 17:00–20:00, day otherwise. */
 export function lightAt(time: number): Light {
-  return time < 5 / 24 || time > 20 / 24 ? 'night' : 'day';
+  const h = time * 24;
+  if (h < 5 || h > 20) return 'night';
+  if (h < 7 || h > 17) return 'dusk';
+  return 'day';
 }
 
 /** Pure verdict, shared by the perf table and its unit test. */

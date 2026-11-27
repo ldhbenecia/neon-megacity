@@ -13,6 +13,8 @@ describe('judgeScreen', () => {
     expect(judgeScreen({ ...ok, maxBlack: BLACK_MAX.day.rest + 1 }, ok, 'day')).toHaveLength(1);
     expect(judgeScreen(ok, { ...ok, maxBlack: BLACK_MAX.day.move + 1 }, 'day')).toHaveLength(1);
     expect(judgeScreen(ok, { ...ok, maxBlack: BLACK_MAX.night.move + 1 }, 'night')).toHaveLength(1);
+    expect(judgeScreen({ ...ok, maxBlack: 27 }, { ...ok, maxBlack: 48 }, 'dusk')).toEqual([]);
+    expect(judgeScreen({ ...ok, maxBlack: 100 }, ok, 'dusk')).toHaveLength(1);
   });
 
   it('fails a frame that is dark overall and a phase with no frames', () => {
@@ -22,10 +24,11 @@ describe('judgeScreen', () => {
 });
 
 describe('lightAt', () => {
-  it('uses night limits before 05:00 and after 20:00', () => {
+  it('splits the day into night, dusk and day limits', () => {
     expect(lightAt(0)).toBe('night');
     expect(lightAt(0.5)).toBe('day');
-    expect(lightAt(0.78)).toBe('day');
+    expect(lightAt(0.78)).toBe('dusk');
+    expect(lightAt(0.25)).toBe('dusk');
     expect(lightAt(0.9)).toBe('night');
   });
 });
