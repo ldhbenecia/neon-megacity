@@ -4,13 +4,9 @@
 import type GUI from 'lil-gui';
 
 /** Lists a module might iterate: empty instead of the stub, so loops do nothing. */
-const LISTS = new Set<PropertyKey>([
-  'children',
-  'controllers',
-  'folders',
-  'controllersRecursive',
-  'foldersRecursive',
-]);
+const LISTS = new Set<PropertyKey>(['children', 'controllers', 'folders']);
+/** lil-gui methods that return lists. */
+const LIST_METHODS = new Set<PropertyKey>(['controllersRecursive', 'foldersRecursive']);
 
 /**
  * Every property read and every call returns the stub itself. Exceptions: `then` (so it is not a
@@ -23,6 +19,7 @@ export function stubGui(): GUI {
       if (key === 'toString' || key === Symbol.toPrimitive) return () => '[gui stub]';
       if (typeof key === 'symbol') return undefined;
       if (LISTS.has(key)) return [];
+      if (LIST_METHODS.has(key)) return () => [];
       return stub;
     },
     apply: () => stub,

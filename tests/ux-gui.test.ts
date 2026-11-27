@@ -23,6 +23,8 @@ describe('stubGui', () => {
     expect((gui as unknown as { toString(): string }).toString()).toBe('[gui stub]');
     expect(gui.controllers).toEqual([]);
     expect(gui.folders).toEqual([]);
+    expect(gui.controllersRecursive()).toEqual([]);
+    expect(gui.foldersRecursive()).toEqual([]);
   });
 
   it('is not a thenable, so awaiting it resolves to the stub', async () => {
