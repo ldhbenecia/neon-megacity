@@ -220,10 +220,22 @@ export function namsanMast(
   g.place(segs, x, podY, z, 10, h * 0.025, 10, 0, concrete);
   g.place(segs, x, podY + h * 0.025, z, 9.4, h * 0.045, 9.4, 0, dark);
   g.place(segs, x, podY + h * 0.07, z, 10.5, h * 0.03, 10.5, 0, concrete);
-  if (lv === 1) {
-    g.place(segs, x, podY + h * 0.06, z, 10.6, 0.8, 10.6, 0, glow(NEON.neonCyan.hex, 1.2));
-  }
+  // Night markers are drawn at every LOD so the hilltop still reads from the overview.
+  g.place(segs, x, podY + h * 0.06, z, 10.6, 0.8, 10.6, 0, glow(NEON.neonCyan.hex, 1.2));
   g.place(segs, x, shaftTop, z, 6, 1.5, 6, 0, concrete);
+  {
+    // Night wash up the shaft: thin lit sleeves, strongest at the foot and fading toward the pod,
+    // all below the bloom threshold; a faint warm glow under the pod.
+    const wash = 0x5fb8b0;
+    const steps = lv === 2 ? 3 : 6;
+    for (let i = 0; i < steps; i++) {
+      const ya = y0 + h * 0.04 + ((podY - y0 - h * 0.04) * i) / steps;
+      const yb = y0 + h * 0.04 + ((podY - y0 - h * 0.04) * (i + 1)) / steps;
+      const r = (ya + yb) / 2 < y0 + h * 0.35 ? 4.25 : 3.45;
+      g.place(segs, x, ya, z, r, yb - ya, r, 0, glow(wash, 0.5 * (1 - i / steps) + 0.06));
+    }
+    g.place(segs, x, podY - 0.3, z, 9.8, 0.3, 9.8, 0, glow(0xfff0d8, 0.35));
+  }
   // Antenna: two stepped thin masts and the red obstacle light.
   g.place(segs, x, shaftTop + 1.5, z, 1.6, h * 0.16, 1.6, 0, plain(0xb8bab6, 0.6));
   g.place(
@@ -237,9 +249,7 @@ export function namsanMast(
     0,
     plain(0xb8bab6, 0.6),
   );
-  if (lv === 1) {
-    g.place(segs, x, y0 + h * 0.86, z, 1.9, 0.6, 1.9, 0, glow(NEON.neonRed.hex, 1.0));
-  }
+  g.place(segs, x, y0 + h * 0.86, z, 1.9, 0.6, 1.9, 0, glow(NEON.neonRed.hex, 1.0));
   g.box(x, y0 + h, z, 1.4, 1.4, 1.4, 0, glow(NEON.neonRed.hex, 1.4));
 }
 
