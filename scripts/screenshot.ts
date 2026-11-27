@@ -1,6 +1,10 @@
-// Usage: npm run shots -- [label] [--swiftshader] [--no-build] [--only=<substring>]
+// Usage: npm run shots -- [label] [--swiftshader] [--no-build] [--only=<substring>] [--burst]
+//   [--black-limit=<percent>]
+// Every city shot prints its mean luminance and near-black pixel ratio; a ratio above the limit
+// (default 60 %) fails the run. --burst also shoots frame by frame while zooming, flying and
+// orbiting, which is where transient black rectangles and collision misses show up.
 import { execSync } from 'node:child_process';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { chromium, type Browser, type Page } from '@playwright/test';
 import { preview } from 'vite';
@@ -13,7 +17,14 @@ const SHOTS = [
   { name: 'night-topdown', query: 'time=0.02&cam=topdown&rain=0.2' },
   { name: 'sunset-skyline', query: 'time=0.74&cam=skyline&rain=0' },
   { name: 'noon-overview', query: 'time=0.5&cam=overview&rain=0' },
+  { name: 'noon-street', query: 'time=0.5&cam=street&rain=0' },
+  { name: 'sunset-overview', query: 'time=0.74&cam=overview&rain=0' },
   { name: 'heavy-rain-street', query: 'time=0.92&cam=street&rain=1' },
+];
+
+const BURST_SCENES = [
+  { name: 'burst-noon-overview', query: 'time=0.5&cam=overview&rain=0' },
+  { name: 'burst-night-overview', query: 'time=0.0&cam=overview&rain=0.4' },
 ];
 
 const args = process.argv.slice(2);
@@ -26,6 +37,106 @@ const PORT = 4174;
 const BASE = `http://localhost:${PORT}/`;
 const ANIMATION_MS = 3000;
 const VIEWPORT = { width: 1600, height: 900 };
+const BLACK_LIMIT = Number(
+  args.find((a) => a.startsWith('--black-limit='))?.slice('--black-limit='.length) ?? 60,
+);
+// Real GPU by default: SwiftShader hides driver-specific shader faults such as NaN from pow().
+const GPU_ARGS =
+  process.platform === 'darwin'
+    ? ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist']
+    : ['--enable-gpu', '--ignore-gpu-blocklist'];
+
+interface Luma {
+  /** Mean of (r + g + b) / 3, 0..255. */
+  mean: number;
+  /** Percent of pixels with r + g + b < 6 on a 160 x 90 downsample. */
+  black: number;
+}
+
+async function measure(page: Page, png: Buffer): Promise<Luma> {
+  return page.evaluate(async (b64) => {
+    const img = new Image();
+    img.src = `data:image/png;base64,${b64}`;
+    await img.decode();
+    const W = 160;
+    const H = 90;
+    const c = document.createElement('canvas');
+    c.width = W;
+    c.height = H;
+    const g = c.getContext('2d');
+    if (!g) throw new Error('2d context unavailable');
+    g.drawImage(img, 0, 0, W, H);
+    const d = g.getImageData(0, 0, W, H).data;
+    let sum = 0;
+    let black = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      const v = (d[i] ?? 0) + (d[i + 1] ?? 0) + (d[i + 2] ?? 0);
+      sum += v;
+      if (v < 6) black++;
+    }
+    return { mean: sum / (W * H) / 3, black: (black / (W * H)) * 100 };
+  }, png.toString('base64'));
+}
+
+const fmt = (l: Luma): string => `L=${l.mean.toFixed(1)} black=${l.black.toFixed(0)}%`;
+
+/** Shoots while the camera moves; returns failure lines (black frames, camera inside buildings). */
+async function burst(browser: Browser, scene: { name: string; query: string }): Promise<string[]> {
+  const page = await browser.newPage({ viewport: VIEWPORT });
+  const errors = collectErrors(page);
+  await page.goto(`${BASE}?nogui&stats&${scene.query}`);
+  await waitPowered(page);
+  await page.evaluate(() => window.__hangang?.resetInside());
+  const log: string[] = [];
+  const bad: string[] = [];
+  const snap = async (tag: string, keep = false): Promise<void> => {
+    const png = await page.screenshot();
+    const l = await measure(page, png);
+    log.push(`${tag}:${l.black.toFixed(0)}`);
+    if (l.black > BLACK_LIMIT) bad.push(`${tag} ${fmt(l)}`);
+    if (keep || l.black > BLACK_LIMIT) {
+      writeFileSync(resolve(outDir, `${scene.name}-${tag}.png`), png);
+    }
+  };
+  for (let i = 0; i < 3; i++) {
+    await waitFrames(page, 2);
+    await snap(`idle${i}`, i === 0);
+  }
+  await page.mouse.move(VIEWPORT.width / 2, VIEWPORT.height / 2);
+  for (let i = 0; i < 8; i++) {
+    await page.mouse.wheel(0, -500);
+    await waitFrames(page, 1);
+    await snap(`zoom${i}`);
+  }
+  await page.keyboard.down('w');
+  for (let i = 0; i < 8; i++) {
+    await waitFrames(page, 2);
+    await snap(`fly${i}`);
+  }
+  await page.keyboard.up('w');
+  await page.mouse.down();
+  for (let i = 0; i < 8; i++) {
+    await page.mouse.move(VIEWPORT.width / 2 + i * 60, VIEWPORT.height / 2 + i * 8);
+    await waitFrames(page, 1);
+    await snap(`orbit${i}`);
+  }
+  await page.mouse.up();
+  for (let i = 0; i < 3; i++) {
+    await waitFrames(page, 4);
+    await snap(`rest${i}`, i === 2);
+  }
+  const inside = await page.evaluate(() => window.__hangang?.inside() ?? { frames: 0, last: null });
+  await page.close();
+  console.log(`${scene.name} black% ${log.join(' ')} inside=${inside.frames}`);
+  const out = bad.map((b) => `${scene.name}: black frame ${b}`);
+  if (inside.frames > 0) {
+    out.push(
+      `${scene.name}: camera inside building ${String(inside.last)} for ${inside.frames} frames`,
+    );
+  }
+  if (errors.length > 0) out.push(`${scene.name}: ${errors.join(' | ')}`);
+  return out;
+}
 
 async function waitPowered(page: Page): Promise<void> {
   await page.waitForFunction(
@@ -127,7 +238,7 @@ async function main(): Promise<void> {
 
   const server = await preview({ preview: { port: PORT, strictPort: true }, logLevel: 'warn' });
   const browser = await chromium.launch({
-    args: flags.has('--swiftshader') ? SWIFTSHADER_ARGS : [],
+    args: flags.has('--swiftshader') ? SWIFTSHADER_ARGS : GPU_ARGS,
   });
   const failures: string[] = [];
   const want = (name: string): boolean => !only || name.includes(only);
@@ -140,10 +251,21 @@ async function main(): Promise<void> {
       await waitPowered(page);
       await page.waitForTimeout(ANIMATION_MS);
       const file = resolve(outDir, `${shot.name}.png`);
-      await page.screenshot({ path: file });
-      console.log(file);
+      const l = await measure(page, await page.screenshot({ path: file }));
+      console.log(`${file}  ${fmt(l)}`);
+      if (l.black > BLACK_LIMIT) failures.push(`${shot.name}: black ${fmt(l)} > ${BLACK_LIMIT}%`);
       if (errors.length > 0) failures.push(`${shot.name}: ${errors.join(' | ')}`);
       await page.close();
+    }
+    if (flags.has('--burst')) {
+      for (const scene of BURST_SCENES) {
+        if (!want(scene.name)) continue;
+        try {
+          failures.push(...(await burst(browser, scene)));
+        } catch (err) {
+          failures.push(`${scene.name}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
     }
     const ux: [string, (b: Browser, f: string) => Promise<void>][] = [
       ['ux-boot-skeleton', bootSkeleton],
