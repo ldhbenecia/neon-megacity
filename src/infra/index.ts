@@ -57,7 +57,8 @@ function columnGeometry(): THREE.BufferGeometry {
 const WASH_FOG_FRAGMENT = /* glsl */ `
 #ifdef USE_FOG
   #ifdef FOG_EXP2
-    float washFog = 1.0 - exp( - pow( fogDensity * ${EMISSIVE_FOG_DENSITY_SCALE.toFixed(4)} * vFogDepth, 2.0 ) );
+    float washFogD = fogDensity * ${EMISSIVE_FOG_DENSITY_SCALE.toFixed(4)} * vFogDepth;
+    float washFog = 1.0 - exp( - washFogD * washFogD );
   #else
     float washFog = smoothstep( fogNear, fogFar, vFogDepth );
   #endif
