@@ -204,9 +204,11 @@ const DISTRICT_SIGNS: Readonly<Record<Exclude<BaseKind, 'palace' | 'park'>, Dist
 
 export function districtSigns(district: DistrictKind): DistrictSigns {
   if (isUnbuilt(district)) return DARK;
-  const base = baseKind(district) as Exclude<BaseKind, 'palace' | 'park'> | undefined;
+  const base: unknown = baseKind(district);
   // Kinds newer than the shared table fall back to midtown so they never go dark.
-  return (base && DISTRICT_SIGNS[base]) ?? MIDTOWN;
+  return typeof base === 'string' && Object.hasOwn(DISTRICT_SIGNS, base)
+    ? DISTRICT_SIGNS[base as keyof typeof DISTRICT_SIGNS]
+    : MIDTOWN;
 }
 
 export function zoneDelay(district: DistrictKind, rng: Rng): number {
@@ -836,7 +838,9 @@ export function placeSigns(
   let ringBudget = opts.maxRings ?? 14;
   const maxHolos = opts.maxHolos ?? 36;
 
-  const byHeight = [...L.buildings].sort((a, z) => z.h - a.h);
+  // Unbuilt districts (palace grounds, parks) stay dark: no sign of any kind.
+  const lit = L.buildings.filter((b) => !isUnbuilt(b.district));
+  const byHeight = [...lit].sort((a, z) => z.h - a.h);
   for (const b of byHeight) {
     const rng = createRng((seed ^ Math.imul(b.seed | 0, 0x9e3779b1)) >>> 0);
     const zone = zoneDelay(b.district, rng);
@@ -854,7 +858,7 @@ export function placeSigns(
     }
   }
 
-  for (const b of L.buildings) {
+  for (const b of lit) {
     const rng = createRng((seed ^ Math.imul((b.seed | 0) + 17, 0x85ebca6b)) >>> 0);
     const zone = zoneDelay(b.district, rng);
     const a = baseArchetype(b);
@@ -888,13 +892,13 @@ export function placeSigns(
       placeCrown(c, b, rng, zone, cell, 1);
     }
     if (b.tags.cross)
-      placeCross(c, b, rng, b.district === 'hillside' ? rng.range(0.62, 0.8) : zone);
+      placeCross(c, b, rng, baseKind(b.district) === 'hillside' ? rng.range(0.62, 0.8) : zone);
   }
 
   const hrng = createRng(seed + 77);
   const koi = cat.byKind.koi[0] ?? -1;
   const logos = cat.byKind.logo;
-  const roofs = L.buildings
+  const roofs = lit
     .filter((b) => districtSigns(b.district).holos && b.h >= 60 && b.h <= 220)
     .sort((a, z) => a.seed - z.seed);
   for (const b of roofs) {
