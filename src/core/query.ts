@@ -349,7 +349,7 @@ function heroInSight(
  * A point over the Han from which the whole landmark tower fits the frame (top included) with
  * nothing standing in front of it: the open water the tower rises behind, nearest to `near`.
  */
-function overWaterView(id: LandmarkId, near: Vec2, eye: number): Pose {
+function overWaterView(id: LandmarkId, near: Vec2, eye: number, fallback: Pose): Pose {
   const l = LAYOUT.landmarks.find((m) => m.id === id);
   if (!l) throw new Error(`layout has no landmark ${id}`);
   const need = (l.h - eye) / TOP_SLOPE;
@@ -375,7 +375,8 @@ function overWaterView(id: LandmarkId, near: Vec2, eye: number): Pose {
       best = { e, d: score };
     }
   }
-  if (!best) throw new Error(`no open water view of ${id}`);
+  // A layout without such a spot keeps the old fixed framing rather than failing every preset.
+  if (!best) return fallback;
   return pose(best.e, [l.x, best.e[1], l.z]);
 }
 
@@ -413,7 +414,12 @@ function seoulPoses(): Record<SeoulKey, Pose> {
   const sz = (seongsu.a.z + seongsu.b.z) / 2;
   return {
     // Off the south end of the bridge over the water, far enough back for the Yongsan tower's top.
-    banpo: overWaterView('yongsan-apex', { x: bx, z: bz }, 70),
+    banpo: overWaterView(
+      'yongsan-apex',
+      { x: bx, z: bz },
+      70,
+      pose([bx, banpo.deckY + 22, bz], [banpo.landA.x, 10, banpo.landA.z]),
+    ),
     // Over the river east of the island, looking down at the cluster around the gold tower.
     yeouido: pose([gold.x + 510, 260, gold.z - 120], [gold.x, 140, gold.z]),
     // Just off the summit, over Yongsan's towers toward Yeouido and the river bend.
@@ -424,7 +430,12 @@ function seoulPoses(): Record<SeoulKey, Pose> {
     teheran: roadPose('rd-teheran'),
     // Above the truss at mid-span, looking upstream to the Jamsil landmark.
     seongsu: levelFit({ position: [sx, seongsu.deckY + 20, sz], target: [blade.x, 10, blade.z] }),
-    jamsil: overWaterView('jamsil-blade', { x: blade.x - 450, z: blade.z - 720 }, 70),
+    jamsil: overWaterView(
+      'jamsil-blade',
+      { x: blade.x - 450, z: blade.z - 720 },
+      70,
+      pose([blade.x - 450, 70, blade.z - 720], [blade.x, 50, blade.z]),
+    ),
     // From Bugak's ridge over the palace and old town to the Namsan mast.
     bugak: pose(
       [bugak.x, surfaceHeight(bugak.x, bugak.z + 10) + 40, bugak.z + 10],
