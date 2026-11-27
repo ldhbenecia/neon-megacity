@@ -4,7 +4,7 @@ import GUI from 'lil-gui';
 import { CITY, LAYOUT } from './city/layout';
 import { postEnabled } from './core/gl';
 import { NIGHT } from './core/palette';
-import { CAMERA_LIMITS, parseQuery } from './core/query';
+import { CAMERA_FAR, CAMERA_FOV, CAMERA_LIMITS, parseQuery } from './core/query';
 import type { CityModule, CityModuleInstance, Ctx, Quality } from './core/types';
 import * as lighting from './lighting/index';
 import * as terrain from './terrain/index';
@@ -67,7 +67,12 @@ async function boot(): Promise<void> {
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.5, 8000);
+  const camera = new THREE.PerspectiveCamera(
+    CAMERA_FOV,
+    window.innerWidth / window.innerHeight,
+    0.5,
+    Math.max(8000, CAMERA_FAR),
+  );
 
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;

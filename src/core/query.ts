@@ -33,11 +33,20 @@ const TOPDOWN_Y = Math.max(CITY.extentX, CITY.extentZ) / 2 + 700;
  * otherwise controls.update() silently moves the camera on the first frame.
  * The camera always looks down at (or level with) its target: polar angle is
  * measured from +Y, so maxPolarAngle just under PI/2 keeps it above the horizon.
- * maxDistance leaves 700 m of zoom-out beyond the topdown preset (v2: 2600).
+ * maxDistance lets the whole map fit the 55 deg view: the sphere around the map's half-diagonal
+ * spans the vertical field of view, with 25 % to spare for an orbit target off the map centre
+ * (v2 ~4600 m, v3 ~6500 m).
  */
+export const CAMERA_FOV = 55;
+const FIT_DISTANCE = Math.ceil(
+  (Math.hypot(CITY.extentX, CITY.extentZ) / 2 / Math.sin(((CAMERA_FOV / 2) * Math.PI) / 180)) *
+    1.25,
+);
+/** Camera far plane: the farthest map corner seen from the zoom-out limit. */
+export const CAMERA_FAR = FIT_DISTANCE + Math.hypot(CITY.extentX, CITY.extentZ);
 export const CAMERA_LIMITS = {
   minDistance: 20,
-  maxDistance: TOPDOWN_Y + 700,
+  maxDistance: Math.max(FIT_DISTANCE, TOPDOWN_Y + 700),
   maxPolarAngle: Math.PI * 0.495,
 } as const;
 
