@@ -139,8 +139,9 @@ export function streetFrontage({ position: p, target: t }: Pose): number {
 const MIN_DROP = Math.tan(Math.PI / 2 - CAMERA_LIMITS.maxPolarAngle + POLAR_MARGIN);
 
 /** Inside maxPolarAngle (with margin), level enough to read as a street, no crest hides it. */
-function streetViewClear({ position: p, target: t }: Pose): boolean {
+function streetViewClear({ position: p, target: t }: Pose, strict = true): boolean {
   if (p[1] - t[1] < Math.hypot(t[0] - p[0], t[2] - p[2]) * MIN_DROP) return false;
+  if (!strict) return terrainClear(p, t);
   // A street dropping away down a slope fills the lower frame with dark roofs.
   if (Math.abs(p[1] - STREET_EYE - (t[1] - 2)) > 4) return false;
   // Nothing built over the first 80 m of the street below eye height (a roof or a deck right in
@@ -159,6 +160,11 @@ function streetViewClear({ position: p, target: t }: Pose): boolean {
       if (buildingContaining(LAYOUT, x, y, z) !== null) return false;
     }
   }
+  return terrainClear(p, t);
+}
+
+/** No terrain crest between the eye and the target. */
+function terrainClear(p: Tuple, t: Tuple): boolean {
   for (let i = 1; i < 20; i++) {
     const f = i / 20;
     const y = p[1] + (t[1] - p[1]) * f;
@@ -181,18 +187,29 @@ export function streetPose(roads: readonly Road[], anchor: StreetAnchor): Pose |
     candidates.push({ road, t, d: pointSegmentDistance(want, road.a, road.b) });
   }
   candidates.sort((x, y) => x.d - y.d);
+  // The anchor's quarter only: the best-lined level street there, else the nearest clear one.
+  const near = (q: Pose): boolean =>
+    Math.hypot(q.position[0] - want.x, q.position[2] - want.z) < STREET_REACH;
   let best: { pose: Pose; score: number } | null = null;
-  // The nearest few streets only, so the preset stays in the anchor's quarter.
   for (const { road, t } of candidates.slice(0, 8)) {
     for (const reverse of [false, true]) {
       const pose = streetLook(road, t, reverse);
-      if (!streetViewClear(pose)) continue;
+      if (!near(pose) || !streetViewClear(pose)) continue;
       const score = streetFrontage(pose);
       if (!best || score > best.score) best = { pose, score };
     }
   }
-  return best?.pose ?? null;
+  if (best) return best.pose;
+  for (const { road, t } of candidates) {
+    for (const reverse of [false, true]) {
+      const pose = streetLook(road, t, reverse);
+      if (streetViewClear(pose, false)) return pose;
+    }
+  }
+  return null;
 }
+
+const STREET_REACH = 380;
 
 function findStreet(): { pose: Pose; anchor: StreetAnchor } | null {
   for (const anchor of streetAnchors(LAYOUT.districts)) {
