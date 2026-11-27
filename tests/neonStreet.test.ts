@@ -15,6 +15,7 @@ import {
 } from '../src/neon/lanes';
 import {
   LIGHT_BUDGET,
+  LIGHT_BUDGETS,
   MAX_POINT_LIGHTS,
   pickLights,
   type LightCandidate,
@@ -165,5 +166,31 @@ describe('neon point lights', () => {
     const picked = pickLights(cands, { x: 0, y: 0, z: 0 });
     expect(picked.length).toBe(total);
     expect(picked.slice(0, LIGHT_BUDGET.street)).toEqual([0, 4, 8]);
+  });
+});
+
+describe('neon quality tiers', () => {
+  const sum = (b: Record<string, number>): number => Object.values(b).reduce((a, n) => a + n, 0);
+
+  it('point lights: high keeps the original 6, medium 4, low 0, within the 8-light cap', () => {
+    expect(sum(LIGHT_BUDGETS.high)).toBe(6);
+    expect(sum(LIGHT_BUDGETS.high)).toBeLessThanOrEqual(MAX_POINT_LIGHTS);
+    expect(sum(LIGHT_BUDGETS.medium)).toBe(4);
+    expect(sum(LIGHT_BUDGETS.low)).toBe(0);
+    expect(LIGHT_BUDGET).toBe(LIGHT_BUDGETS.high);
+  });
+
+  it('a zero budget picks no light at all', () => {
+    const cands: LightCandidate[] = Array.from({ length: 20 }, (_, i) => ({
+      group: (['street', 'screen', 'stall', 'river'] as const)[i % 4]!,
+      x: i,
+      y: 5,
+      z: 0,
+      color: [1, 1, 1],
+      intensity: 10,
+      distance: 30,
+    }));
+    expect(pickLights(cands, { x: 0, y: 0, z: 0 }, LIGHT_BUDGETS.low)).toHaveLength(0);
+    expect(pickLights(cands, { x: 0, y: 0, z: 0 }, LIGHT_BUDGETS.medium)).toHaveLength(4);
   });
 });

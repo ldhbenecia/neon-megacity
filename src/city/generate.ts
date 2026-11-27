@@ -47,6 +47,7 @@ import {
   bankPoint,
   isForest,
   MOUNTAINS,
+  MOUNTAIN_RANGES,
   RIVER,
   SAETGANG,
   parkWidthAt,
@@ -58,16 +59,9 @@ import {
   terrainHeight,
   waterClear,
 } from './river';
-import {
-  PALACE_AXIS_X,
-  PALACE_PLAN,
-  palaceCourts,
-  palaceHallBox,
-  palacePond,
-  palaceWallDistance,
-  palaceWalls,
-} from './palace';
+import { PALACE_BUILDINGS, palaceCenter, palacePonds, palaceWalls } from './palace';
 import { GridHash, segmentBounds } from './spatial';
+import type { PalaceBuilding } from './palace';
 import type {
   Archetype,
   Block,
@@ -112,8 +106,6 @@ interface MegaPlan {
 
 /** Tallest allowed height / footprint width (√(w·d)) for any building. */
 export const MAX_SLENDER = 10;
-
-export { PALACE_PLAN };
 
 /** Tower clusters per megacore zone: one apex, then stepped tiers (SEOUL.md 4.5, 7.5). */
 const MEGA: Record<string, MegaPlan> = {
@@ -199,6 +191,31 @@ function gridRange(zone: DistrictZone): { u0: number; u1: number; v0: number; v1
 
 const ROAD_STEP = 4;
 
+/** Highest ground (m) a zone other than the hillside village builds or lays streets on. */
+export const FLAT_GROUND = 6;
+
+/**
+ * Ground a zone may build on or run a street across: never forest, and above FLAT_GROUND only in
+ * the hillside village (이태원·해방촌). The mountain feet stay green and empty (the terrain paints
+ * forest from about this height), and no streetlight or car ends up on a slope.
+ */
+function buildableGround(zone: DistrictZone, x: number, z: number): boolean {
+  // Off every mountain range the ground is the plain: no terrain samples needed.
+  if (!MOUNTAIN_RANGES.some((r) => x >= r.x0 && x <= r.x1 && z >= r.z0 && z <= r.z1)) return true;
+  if (zone.kind !== 'hillside' && terrainHeight(x, z) > FLAT_GROUND) return false;
+  return !isForest(x, z);
+}
+
+/** Depth (m) of the open band south of the palace wall: 광화문's forecourt along 세종대로. */
+export const PALACE_FRONT_DEPTH = 40;
+const PALACE_FRONT: Obb = {
+  x: (PALACE_RECT.x0 + PALACE_RECT.x1) / 2,
+  z: PALACE_RECT.z1 + PALACE_FRONT_DEPTH / 2,
+  hw: (PALACE_RECT.x1 - PALACE_RECT.x0) / 2,
+  hd: PALACE_FRONT_DEPTH / 2,
+  rotY: 0,
+};
+
 /** Clip a grid line (local u or v = `fixed`, t0..t1 along the other axis) to the zone. */
 function clipLine(
   zone: DistrictZone,
@@ -220,6 +237,7 @@ function clipLine(
     const inside =
       i <= n &&
       zoneAt(p.x, p.z).id === zone.id &&
+      buildableGround(zone, p.x, p.z) &&
       waterClear(p.x, p.z, half) &&
       !underLowDeck(bridges, p.x, p.z, half);
     if (inside && start === null) start = t;
@@ -390,10 +408,8 @@ interface Lot {
   aptRun?: number;
   /** Set on bank-row apartment lots: order within the run (a skipped number is a gap). */
   aptSeq?: number;
-  /** Set on palace hall lots: slot in the south-to-north hall plan (names follow the slot). */
-  hall?: number;
-  /** Set on palace lots: role on the grounds. */
-  palacePart?: 'gate' | 'hall' | 'annex' | 'pavilion';
+  /** Set on palace lots: which 경복궁 building (its name and form follow). */
+  palace?: PalaceBuilding;
 }
 
 export const SIDEWALK: Record<string, number> = {
@@ -559,8 +575,9 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
     for (const p of [...obbCorners(o), { x: o.x, z: o.z }]) {
       if (zoneAt(p.x, p.z).id !== zone.id) return false;
       if (!waterClear(p.x, p.z, RIVER_CLEARANCE)) return false;
-      if (isForest(p.x, p.z)) return false;
+      if (!buildableGround(zone, p.x, p.z)) return false;
     }
+    if (obbOverlap(o, PALACE_FRONT, -1e-6)) return false;
     if (obstacles.blocked(o)) return false;
     for (const id of lotHash.query(obbBounds(o))) {
       if (obbOverlap((lots[id] as Lot).obb, o, -1e-6)) return false; // touching lots are fine
@@ -591,7 +608,6 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
     }
     if (zone.kind === 'palace') {
       palaceHalls(zone);
-      palaceAnnexes(zone, rng);
       continue;
     }
     if (zone.kind === 'corridor') mediaRow(zone, rng);
@@ -838,14 +854,11 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
     }
   }
 
-  /**
-   * Palace halls on the court's north–south axis, gate to throne hall to inner halls (SEOUL.md
-   * 4.3): a generic order of sizes, not any real palace's plan. Each hall is a one-lot block.
-   */
+  /** 경복궁's buildings at their places in the plan (palace.ts); each is a one-lot block. */
   function palaceHalls(zone: DistrictZone): void {
-    for (const hall of PALACE_PLAN.keys()) {
-      const { z, w, d, h } = palaceHallBox(hall);
-      const obb: Obb = { x: PALACE_AXIS_X, z, hw: w / 2, hd: d / 2, rotY: 0 };
+    for (const b of PALACE_BUILDINGS) {
+      const c = palaceCenter(b);
+      const obb: Obb = { x: c.x, z: c.z, hw: b.w / 2, hd: b.d / 2, rotY: 0 };
       if (!accept(obb, zone)) continue;
       const blockId = blocks.length;
       blocks.push({
@@ -854,100 +867,14 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
         district: zone.kind,
         x: obb.x,
         z: obb.z,
-        w,
-        d,
+        w: b.w,
+        d: b.d,
         rotY: 0,
         buildingIds: [],
       });
       lotHash.insert(lots.length, obbBounds(obb));
-      lots.push({
-        obb,
-        zone,
-        blockId,
-        tower: { h, tier: 0 },
-        hall,
-        palacePart: hall === 0 ? 'gate' : 'hall',
-      });
+      lots.push({ obb, zone, blockId, tower: { h: b.h, tier: 0 }, palace: b });
     }
-  }
-
-  function palaceLot(
-    zone: DistrictZone,
-    obb: Obb,
-    h: number,
-    part: 'gate' | 'annex' | 'pavilion',
-  ): void {
-    const blockId = blocks.length;
-    blocks.push({
-      id: blockId,
-      zoneId: zone.id,
-      district: zone.kind,
-      x: obb.x,
-      z: obb.z,
-      w: obb.hw * 2,
-      d: obb.hd * 2,
-      rotY: 0,
-      buildingIds: [],
-    });
-    lotHash.insert(lots.length, obbBounds(obb));
-    lots.push({
-      obb,
-      zone,
-      blockId,
-      tower: { h, tier: 0 },
-      hall: PALACE_PLAN.length,
-      palacePart: part,
-    });
-  }
-
-  /**
-   * Side halls east and west of the main court (4–8, uneven) and the pavilion in the rear-garden
-   * pond. Side halls keep clear of the walls, corridors, the pond and each other (base included).
-   */
-  function palaceAnnexes(zone: DistrictZone, rng: Rng): void {
-    const { x0, x1, z0, z1 } = PALACE_RECT;
-    const { xl, xr } = palaceCourts();
-    const walls = palaceWalls();
-    const pond = palacePond();
-    const px0 = Math.min(...pond.map((p) => p.x));
-    const px1 = Math.max(...pond.map((p) => p.x));
-    const pz0 = Math.min(...pond.map((p) => p.z));
-    const pz1 = Math.max(...pond.map((p) => p.z));
-    const count = rng.int(4, 8);
-    let placed = 0;
-    for (let tries = 0; tries < 80 && placed < count; tries++) {
-      const left = rng.chance(0.5);
-      const x = left
-        ? x0 + 12 + rng.next() * (xl - x0 - 22)
-        : xr + 10 + rng.next() * (x1 - xr - 22);
-      const z = z0 + 14 + rng.next() * (z1 - z0 - 28);
-      const w = 10 + rng.next() * 6;
-      const d = 7 + rng.next() * 3;
-      const h = 4 + rng.next() * 1.5;
-      // Each base reaches 1.5 m past its hall, so two side halls keep 3 m between their lots.
-      const obb: Obb = { x, z, hw: w / 2 + 3, hd: d / 2 + 3, rotY: 0 };
-      const reach = Math.hypot(obb.hw, obb.hd) + 2;
-      if (walls.some((wl) => palaceWallDistance(wl, x, z) < reach)) continue;
-      if (
-        x + obb.hw > px0 - 4 &&
-        x - obb.hw < px1 + 4 &&
-        z + obb.hd > pz0 - 4 &&
-        z - obb.hd < pz1 + 4
-      ) {
-        continue;
-      }
-      if (!accept(obb, zone)) continue;
-      palaceLot(zone, { ...obb, hw: w / 2, hd: d / 2 }, h, 'annex');
-      placed++;
-    }
-    // Gatehouses in the inner-wall openings on the axis (narrower than the opening).
-    for (const z of palaceCourts().inner) {
-      const gate: Obb = { x: PALACE_AXIS_X, z, hw: 6, hd: 2.5, rotY: 0 };
-      if (accept(gate, zone)) palaceLot(zone, gate, 6, 'gate');
-    }
-    const pc = { x: (px0 + px1) / 2, z: (pz0 + pz1) / 2 };
-    const pav: Obb = { x: pc.x, z: pc.z, hw: 3.5, hd: 3.5, rotY: 0 };
-    if (accept(pav, zone)) palaceLot(zone, pav, 5, 'pavilion');
   }
 
   /**
@@ -1688,13 +1615,9 @@ function buildSpecs(
         d.archetype === 'showroomBox' ||
         (STOREFRONT_KINDS.has(lot.zone.kind) && rng.chance(0.4)) ||
         (d.archetype === 'hillHouse' && rng.chance(0.1)),
-      name: fictionalName(rng, d.archetype, lot.zone, lot.hall ?? 0),
-      ...(lot.palacePart ? { palacePart: lot.palacePart } : {}),
+      name: lot.palace?.name ?? fictionalName(rng, d.archetype, lot.zone),
+      ...(lot.palace ? { palacePart: lot.palace.part, palaceId: lot.palace.id } : {}),
     };
-    // The pond pavilion is a 정, not a 전.
-    if (lot.palacePart === 'pavilion') tags.name = tags.name.replace(/전$/u, '정');
-    // Inner gates (the main gate keeps its slot name).
-    if (lot.palacePart === 'gate' && lot.hall !== 0) tags.name = tags.name.replace(/전$/u, '문');
     if (d.archetype === 'hillHouse' || d.archetype === 'sangga') {
       if (rng.chance(0.07)) tags.cross = true;
     }
@@ -1777,11 +1700,12 @@ function buildSlots(
     for (const id of hash.query(obbBounds(probe))) {
       if (obbOverlap(footprints[id] as Obb, probe)) return false;
     }
-    // Park strips (둔치) are fine; open water, 샛강 included, is not.
+    // Park strips (둔치) are fine; open water, 샛강 included, and forest are not.
     return (
       Math.abs(p.x) < HALF_X &&
       Math.abs(p.z) < HALF_Z &&
-      surfaceHeight(p.x, p.z) > RIVER.waterY + 0.5
+      surfaceHeight(p.x, p.z) > RIVER.waterY + 0.5 &&
+      !isForest(p.x, p.z)
     );
   };
   const add = (kind: SlotKind, p: Vec2, rotY: number): void => {
@@ -2071,6 +1995,6 @@ export function generateLayout(seed = 2077): Layout {
     skyLanes: makeSkyLanes(buildings, buildingHash(buildings)),
     // Stairs end at the wall foot; the wall opens for streets only.
     palaceWalls: palaceWalls(roads.filter((r) => r.kind !== 'stair')),
-    palacePonds: [palacePond()],
+    palacePonds: palacePonds(),
   };
 }

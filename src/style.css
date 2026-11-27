@@ -288,6 +288,13 @@ body {
   border-radius: 12px;
   background: rgba(0, 0, 0, 0.28);
 }
+.segmented-4 {
+  grid-template-columns: repeat(4, 1fr);
+}
+.quality-now {
+  color: var(--c-faint);
+  font-weight: 400;
+}
 .segmented button {
   display: flex;
   flex-direction: column;
@@ -336,6 +343,14 @@ body {
     box-shadow 150ms var(--ease),
     color 150ms var(--ease),
     scale 150ms var(--ease);
+}
+.minimap {
+  display: block;
+  width: 100%;
+  margin-bottom: 10px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.28);
+  touch-action: manipulation;
 }
 .district-row {
   display: flex;

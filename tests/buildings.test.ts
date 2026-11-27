@@ -10,6 +10,7 @@ import {
 import { targets, windingAgreement } from './buildings-helpers';
 import {
   LOD_DISTANCES,
+  lodDistancesFor,
   bandLevels,
   braceLevels,
   chunkCenter,
@@ -382,5 +383,15 @@ describe('road crossings', () => {
       (15 + 5 * Math.sqrt(1 - sin * sin)) / sin + 1,
       6,
     );
+  });
+});
+
+describe('quality tiers (perf design #66)', () => {
+  it('sets the LOD0 radius per tier and builds no LOD0 on low and ci', () => {
+    expect(lodDistancesFor('high')).toEqual([0, 380, 1100]);
+    expect(lodDistancesFor('medium')).toEqual([0, 250, 1100]);
+    expect(lodDistancesFor('low')[1]).toBe(0);
+    expect(lodDistancesFor('low')[2]).toBe(1100);
+    expect(lodDistancesFor('ci')).toEqual([0, 0, 380]);
   });
 });

@@ -1,7 +1,7 @@
 import { errors, expect, test, type Page } from '@playwright/test';
 import { cameraFloor, targetFloor } from '../../src/ux/collision';
 import '../setup-layout';
-import { LAYOUT, buildingContaining } from '../../src/city/layout';
+import { CITY, LAYOUT, buildingContaining, zoneAt } from '../../src/city/layout';
 import { app, collectErrors, waitForCity, waitFrames } from './helpers';
 
 type Cam = NonNullable<Window['__hangang']>;
@@ -250,6 +250,92 @@ test('?district= starts at a zone and the title names the zone in view', async (
   await expect(page.locator('#district-chips button[aria-current="true"]')).toHaveText(
     '종로·광화문',
   );
+});
+
+test('minimap: drawn in the panel, and clicking a zone flies there', async ({ page }) => {
+  const zone = LAYOUT.districts.find((d) => d.id === 'yeouido');
+  if (!zone) throw new Error('no yeouido zone');
+  const n = zone.polygon.length;
+  const c = zone.polygon.reduce((a, q) => ({ x: a.x + q.x / n, z: a.z + q.z / n }), { x: 0, z: 0 });
+  expect(zoneAt(c.x, c.z).id).toBe('yeouido');
+  const errors = collectErrors(page);
+  // The ResizeObserver loop warning arrives as a window error event, not a page error.
+  await page.addInitScript(() => {
+    const seen: string[] = [];
+    (window as unknown as { __winErrors: string[] }).__winErrors = seen;
+    window.addEventListener('error', (e) => seen.push(e.message));
+  });
+  await page.goto(app('nogui&district=jongno&time=0'));
+  await waitForCity(page);
+  await page.click('#panel-toggle');
+  const map = page.locator('#minimap');
+  await expect(map).toBeVisible();
+  await expect
+    .poll(() =>
+      map.evaluate((el) => {
+        const cv = el as HTMLCanvasElement;
+        const d = cv.getContext('2d')?.getImageData(0, 0, cv.width, cv.height).data;
+        let lit = 0;
+        for (let i = 3; d && i < d.length; i += 4) if ((d[i] ?? 0) > 0) lit++;
+        return lit;
+      }),
+    )
+    .toBeGreaterThan(1000);
+  const box = await map.boundingBox();
+  if (!box) throw new Error('minimap has no box');
+  await map.screenshot({ path: test.info().outputPath('minimap.png') });
+  await map.click({
+    position: {
+      x: ((c.x + CITY.halfX) / (2 * CITY.halfX)) * box.width,
+      y: ((c.z + CITY.halfZ) / (2 * CITY.halfZ)) * box.height,
+    },
+  });
+  await expect(page.locator('#hud-district')).toHaveText('여의도', { timeout: 30_000 });
+  await page.setViewportSize({ width: 1100, height: 720 });
+  await waitFrames(page, 10);
+  expect(
+    await page.evaluate(() => (window as unknown as { __winErrors: string[] }).__winErrors),
+  ).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test('quality row: a fixed tier is applied and saved, auto goes back to the device tier', async ({
+  page,
+}) => {
+  // Plain URL (no ?quality=): the stored pick drives the tier. Start from a stored 'low' so the
+  // boot never depends on the device estimate.
+  await page.addInitScript(() => localStorage.setItem('hangang.quality', 'low'));
+  await page.goto('./?nogui&time=0');
+  await waitForCity(page);
+  await page.click('#panel-toggle');
+  const now = page.locator('#quality-now');
+  await expect(now).toHaveText('· 하');
+  await page.click('#quality-group button[data-quality="medium"]');
+  await expect(now).toHaveText('· 중');
+  await page.keyboard.press('ArrowRight');
+  await expect(now).toHaveText('· 하');
+  await expect(page.locator('#quality-group button[data-quality="low"]')).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
+  expect(await page.evaluate(() => localStorage.getItem('hangang.quality'))).toBe('low');
+  await page.click('#quality-group button[data-quality="auto"]');
+  await expect(now).toHaveText(/^· 자동 · (상|중|하)$/);
+  expect(await page.evaluate(() => localStorage.getItem('hangang.quality'))).toBe('auto');
+});
+
+test('automated runs never contact Google Analytics', async ({ page }) => {
+  const calls: string[] = [];
+  page.on('request', (r) => {
+    if (/googletagmanager\.com|google-analytics\.com/.test(r.url())) calls.push(r.url());
+  });
+  await page.goto(app('nogui&time=0'));
+  await waitForCity(page);
+  // Analytics records its decision once the city is ready; automation must get 'off'.
+  await expect(page.locator('html')).toHaveAttribute('data-analytics', 'off');
+  await waitFrames(page, 10);
+  expect(calls).toEqual([]);
+  expect(await page.evaluate(() => 'gtag' in window)).toBe(false);
 });
 
 test.describe('camera rig', () => {

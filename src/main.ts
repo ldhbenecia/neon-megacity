@@ -12,6 +12,7 @@ import * as buildings from './buildings/index';
 import * as infra from './infra/index';
 import * as neon from './neon/index';
 import * as atmosphere from './atmosphere/index';
+import { startAnalytics, track } from './ux/analytics';
 import { createGui } from './ux/gui';
 import { createLoader, initUx, nextFrame, parseUxQuery } from './ux/index';
 import { QUALITY_STORAGE_KEY, storedTier, tierFromRenderer } from './ux/quality';
@@ -74,9 +75,9 @@ async function boot(): Promise<void> {
   if (!container) throw new Error('#app container missing');
 
   const renderer = createRenderer();
-  if (!manualQuality) {
-    quality = tierFromRenderer(rendererName(renderer), navigator.maxTouchPoints > 1);
-  }
+  // The device guess; also where "auto" in the quality picker returns to after a manual pick.
+  const autoTier = tierFromRenderer(rendererName(renderer), navigator.maxTouchPoints > 1);
+  if (!manualQuality) quality = autoTier;
   // Pixel ratio is owned by ux/perf (adaptive, capped at 1.5).
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -86,6 +87,8 @@ async function boot(): Promise<void> {
   // on the driver: a ~500 ms stall the first time the timeline leaves noon (M4, Metal). Kept in
   // dev, under automation (e2e, screenshots) and with ?debug, so shader errors stay diagnosable.
   renderer.debug.checkShaderErrors = import.meta.env.DEV || navigator.webdriver || debug;
+  // Tests and scripts find the city by this id (the control panel has its own minimap canvas).
+  renderer.domElement.id = 'city-canvas';
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
@@ -170,6 +173,7 @@ async function boot(): Promise<void> {
     ...(query.cam ? { cam: query.cam } : {}),
     resize,
     manualQuality: manualQuality !== null,
+    autoTier,
     emitQuality: (q) => {
       for (const fn of [...qualityHandlers]) fn(q);
     },
@@ -246,6 +250,18 @@ async function boot(): Promise<void> {
   ux.powerOn();
   renderer.setAnimationLoop(frame);
   await loader.done();
+  // performance.now() is time since navigation: what a visitor waited for the city.
+  report({ result: 'ready', readyMs: performance.now() }, ctx.env.quality);
+}
+
+/** Statistics never decide whether the city boots: any failure in them is swallowed. */
+function report(boot: { result: 'ready' | 'error'; readyMs: number }, quality?: Quality): void {
+  try {
+    startAnalytics(boot);
+    if (quality && quality !== 'ci') track('quality_tier', { tier: quality });
+  } catch {
+    // Analytics is optional.
+  }
 }
 
 /**
@@ -256,5 +272,6 @@ async function boot(): Promise<void> {
 export function start(): void {
   boot().catch((err: unknown) => {
     loader.fail('boot', err);
+    report({ result: 'error', readyMs: performance.now() });
   });
 }

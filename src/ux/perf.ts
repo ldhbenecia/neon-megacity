@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { Ctx, Quality } from '../core/types';
-import { QualityController } from './quality';
+import { QualityController, type UserTier } from './quality';
 
 export interface FrameStats {
   calls: number;
@@ -14,7 +14,20 @@ export interface FrameStats {
   tier: string;
 }
 
+/** The quality picker's view: the current tier and whether the controller may change it. */
+export interface QualityChoice {
+  tier: Quality;
+  auto: boolean;
+}
+
 export interface Perf {
+  /**
+   * Quality picker: a tier applies it at once (at its DPR cap) and stops automatic changes;
+   * 'auto' returns to the device's tier and lets the controller adjust again. No-op in the ci tier.
+   * Storing the choice is the caller's job (QUALITY_STORAGE_KEY).
+   */
+  choose(choice: 'auto' | UserTier): void;
+  quality(): QualityChoice;
   frameStart(): void;
   frameEnd(dt: number): void;
   stats(): FrameStats;
@@ -27,8 +40,10 @@ export const LOW_DPR = 0.5;
 export interface PerfOptions {
   overlay: boolean;
   resize: () => void;
-  /** The tier was picked by the user (?quality=, stored choice): no automatic changes. */
+  /** The boot tier was picked by the user (?quality=, stored choice): automatic changes start off. */
   manual: boolean;
+  /** Tier that 'auto' returns to (the renderer-based guess). */
+  autoTier: UserTier;
   /** Called after a runtime tier change, once env.quality holds the new tier. */
   emitQuality: (q: Quality) => void;
 }
@@ -40,7 +55,8 @@ export function createPerf(ctx: Ctx, opts: PerfOptions): Perf {
   const controller =
     env.quality === 'ci'
       ? null
-      : new QualityController(env.quality, window.devicePixelRatio || 1, opts.manual);
+      : // Never constructed as manual: `quality.auto` gates it, so the picker can turn it back on.
+        new QualityController(env.quality, window.devicePixelRatio || 1, false);
   const startDpr = controller ? controller.state.dpr : LOW_DPR;
   renderer.setPixelRatio(startDpr);
 
@@ -83,11 +99,17 @@ export function createPerf(ctx: Ctx, opts: PerfOptions): Perf {
   folder
     .add(quality, 'auto')
     .name('Auto quality')
-    // Off returns to the boot tier at full DPR (not the last lowered step); on starts a clean window.
+    .listen()
+    // On behaves like the picker's 'auto'; off returns to the boot tier (?quality=, the stored
+    // pick or the device guess) at full DPR, not the last lowered step.
     .onChange((on: boolean) => {
       if (!controller) return;
-      if (on) controller.clearWindow();
-      else applyChange(controller.reset());
+      if (on) {
+        perf.choose('auto');
+        return;
+      }
+      quality.auto = false;
+      applyChange(controller.reset());
     });
   folder.add(quality, 'tier').name('Tier').listen().disable();
   folder.add(quality, 'dpr').name('DPR').listen().disable();
@@ -98,6 +120,14 @@ export function createPerf(ctx: Ctx, opts: PerfOptions): Perf {
   if (overlay) overlay.hidden = false;
 
   const perf: Perf = {
+    choose(choice) {
+      if (!controller) return;
+      quality.auto = choice === 'auto';
+      applyChange(controller.reset(choice === 'auto' ? opts.autoTier : choice));
+    },
+    quality() {
+      return { tier: env.quality, auto: quality.auto };
+    },
     // renderer.info.autoReset is off: info then counts the whole frame, post passes included.
     frameStart() {
       renderer.info.reset();

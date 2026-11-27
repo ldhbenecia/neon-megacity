@@ -12,7 +12,8 @@ import {
   MOUNTAINS,
   PALACE_AXIS_X,
   PALACE_GATE_HALF,
-  PALACE_PLAN,
+  PALACE_AXIS,
+  PALACE_BUILDINGS,
   palaceWallAt,
   palaceWallDistance,
   MOUNTAIN_RANGES,
@@ -47,8 +48,14 @@ import {
   type Tier,
   type Vec2,
 } from '../src/city/layout';
-import { MAX_SLENDER, SKY_LANE_CLEAR, SKY_LANE_MARGIN, fitScale } from '../src/city/generate';
-import { PALACE_HALLS } from '../src/city/archetypes';
+import {
+  FLAT_GROUND,
+  MAX_SLENDER,
+  PALACE_FRONT_DEPTH,
+  SKY_LANE_CLEAR,
+  SKY_LANE_MARGIN,
+  fitScale,
+} from '../src/city/generate';
 import {
   PALACE_RECT,
   TALL_GROUND,
@@ -97,11 +104,11 @@ describe('layout v3: determinism', () => {
       digest: digest(LAYOUT),
     }).toMatchInlineSnapshot(`
       {
-        "blocks": 1424,
-        "buildings": 5649,
-        "digest": "cb409590",
-        "roads": 1181,
-        "slots": 3474,
+        "blocks": 1413,
+        "buildings": 5585,
+        "digest": "96cf8860",
+        "roads": 1161,
+        "slots": 3240,
       }
     `);
   });
@@ -816,14 +823,13 @@ describe('layout v3: water and islands', () => {
 describe('layout v3: building names', () => {
   it('names buildings after their quarter', () => {
     const named = (zone: string) => B.filter((b) => b.zoneId === zone).map((b) => b.tags.name);
-    expect(
-      B.map((b) => b.tags.name).filter((n) => (PALACE_HALLS as readonly string[]).includes(n)),
-    ).toEqual(['한빛문', '정운전', '사현전', '평안전']);
+    // 경복궁's axis, south to north, by the real names.
+    const axis = PALACE_AXIS.map((id) => B.find((b) => b.tags.palaceId === id)?.tags.name);
+    expect(axis).toEqual(['광화문', '흥례문', '근정문', '근정전', '사정전', '강녕전', '교태전']);
     for (const b of B) expect(b.tags.name, b.archetype).not.toMatch(/[\u4e00-\u9fff]/u);
     expect(named('hongdae').some((n) => /전자상가|시장/u.test(n))).toBe(false);
     expect(named('seongsu').some((n) => n.includes('벽돌창고'))).toBe(false);
     expect(named('jongno').some((n) => n.includes('트레이드센터'))).toBe(false);
-    expect(PALACE_PLAN.length).toBe(PALACE_HALLS.length);
     // Complexes group up to 4 neighbouring slabs of one row, numbered per strip.
     const banpo = B.filter((b) => b.zoneId === 'apt-banpo' && b.archetype === 'apartmentSlab');
     expect(banpo[0]?.tags.name).toBe('반포 1단지 101동');
@@ -848,23 +854,30 @@ describe('layout v3: palace grounds', () => {
   const palace = B.filter((b) => b.archetype === 'palaceHall');
   const walls = LAYOUT.palaceWalls;
 
-  it('tags the gate, axis halls, 4–8 side halls and one pond pavilion', () => {
-    const part = (p: string) => palace.filter((b) => b.tags.palacePart === p);
-    // The main gate (slot 0) and the gatehouses in the two inner-wall openings.
-    const gates = part('gate');
-    expect(gates[0]!.tags.name).toBe(PALACE_HALLS[0]);
-    expect(gates).toHaveLength(3);
-    for (const g of gates.slice(1)) {
-      expect(g.tags.name).toMatch(/문$/u);
-      expect(Math.abs(g.x - PALACE_AXIS_X)).toBeLessThan(1e-6);
+  it('places every 경복궁 building by name, with its role, inside the walls', () => {
+    const id = (x: string) => palace.find((b) => b.tags.palaceId === x);
+    for (const b of PALACE_BUILDINGS) {
+      const spec = id(b.id);
+      expect(spec?.tags.name, b.id).toBe(b.name);
+      expect(spec?.tags.palacePart, b.id).toBe(b.part);
     }
-    expect(part('hall')).toHaveLength(PALACE_PLAN.length - 1);
-    expect(part('annex').length).toBeGreaterThanOrEqual(4);
-    expect(part('annex').length).toBeLessThanOrEqual(8);
-    const pav = part('pavilion');
-    expect(pav).toHaveLength(1);
-    expect(pointInPolygon(pav[0]!, LAYOUT.palacePonds[0]!)).toBe(true);
-    expect(pav[0]!.tags.name).toMatch(/정$/u);
+    expect(palace).toHaveLength(PALACE_BUILDINGS.length);
+    // Relative layout of the real palace: the axis runs south to north, 경회루 west of the inner
+    // court on its pond, 향원정 on the rear-garden pond, 자경전 east, the wall gates on their sides.
+    const z = (x: string) => id(x)!.z;
+    for (let i = 1; i < PALACE_AXIS.length; i++) {
+      expect(z(PALACE_AXIS[i]!)).toBeLessThan(z(PALACE_AXIS[i - 1]!));
+      expect(Math.abs(id(PALACE_AXIS[i]!)!.x - PALACE_AXIS_X)).toBeLessThan(1e-6);
+    }
+    expect(id('gyeonghoeru')!.x).toBeLessThan(PALACE_AXIS_X - 40);
+    expect(pointInPolygon(id('gyeonghoeru')!, LAYOUT.palacePonds[0]!)).toBe(true);
+    expect(pointInPolygon(id('hyangwonjeong')!, LAYOUT.palacePonds[1]!)).toBe(true);
+    expect(z('hyangwonjeong')).toBeLessThan(z('gyotaejeon'));
+    expect(id('jagyeongjeon')!.x).toBeGreaterThan(PALACE_AXIS_X + 40);
+    expect(z('sujeongjeon')).toBeGreaterThan(z('gyeonghoeru'));
+    expect(id('geonchunmun')!.x).toBeGreaterThan(PALACE_AXIS_X);
+    expect(id('yeongchumun')!.x).toBeLessThan(PALACE_AXIS_X);
+    expect(z('sinmumun')).toBeLessThan(z('gyotaejeon'));
     // Two tiers each (platform, body), as every palaceHall.
     for (const b of palace) expect(b.tiers).toHaveLength(2);
   });
@@ -882,17 +895,24 @@ describe('layout v3: palace grounds', () => {
         (w) => w.a.z === south && Math.max(w.a.x, w.b.x) <= PALACE_AXIS_X - PALACE_GATE_HALF + 1e-6,
       ),
     ).toBe(true);
+    // Inner walls (the 흥례문 cross wall, the wall behind 사정전) open on the axis.
     const inner = walls.filter((w) => w.kind === 'wall' && w.height < 4);
     expect(inner).toHaveLength(4);
     for (const w of inner) expect(palaceWallAt(LAYOUT, PALACE_AXIS_X, w.a.z)).toBeNull();
+    // 근정전's two-tier terrace: the lower one wider, the upper one higher, both ending at its face.
     const terrace = walls.filter((w) => w.kind === 'terrace');
-    expect(terrace).toHaveLength(1);
-    expect(terrace[0]!.height).toBeCloseTo(1.2, 9);
-    // The terrace is a rectangle on the axis: nothing between the south gate and its south end.
+    expect(terrace.map((t) => t.height)).toEqual([0.8, 1.4]);
+    expect(terrace[0]!.width).toBeGreaterThan(terrace[1]!.width);
+    // Gates stand in openings: no wall or corridor crosses the axis between 광화문 and the
+    // terrace (the 흥례문 cross wall and the south corridor are open there).
     const t = terrace[0]!;
     for (let z = south - 1; z > Math.max(t.a.z, t.b.z) + 0.5; z -= 1) {
       expect(palaceWallAt(LAYOUT, PALACE_AXIS_X, z), `axis z ${z}`).toBeNull();
     }
+    // Both terrace tiers stay below 근정전's stone base, and their north ends differ.
+    const hall = palace.find((b) => b.tags.palaceId === 'geunjeongjeon')!;
+    for (const tt of terrace) expect(tt.height).toBeLessThan(hall.tiers[0]!.y1 - hall.baseY);
+    expect(terrace[0]!.b.z).not.toBeCloseTo(terrace[1]!.b.z, 3);
   });
 
   it('opens the outer wall wherever a road reaches it', () => {
@@ -950,11 +970,10 @@ describe('layout v3: palace grounds', () => {
         }
       }
     }
-    // Side halls stand on bases 1.5 m wider than the hall: bases never touch.
-    const annex = palace.filter((b) => b.tags.palacePart === 'annex');
-    for (let i = 0; i < annex.length; i++) {
-      for (let j = i + 1; j < annex.length; j++) {
-        expect(obbOverlap(obb(annex[i]!), obb(annex[j]!), 3)).toBe(false);
+    // Halls stand on bases 1.5 m wider than the hall: bases never touch.
+    for (let i = 0; i < palace.length; i++) {
+      for (let j = i + 1; j < palace.length; j++) {
+        expect(obbOverlap(obb(palace[i]!), obb(palace[j]!), 3), palace[i]!.tags.name).toBe(false);
       }
     }
   });
@@ -1021,6 +1040,38 @@ describe('layout v3: mountain feet and the river', () => {
 });
 
 describe('layout v3: mountains stay wooded', () => {
+  it('keeps streets, street furniture and buildings off the forest and the mountain feet', () => {
+    for (const r of LAYOUT.roads) {
+      for (const t of [0, 0.25, 0.5, 0.75, 1]) {
+        const x = r.a.x + (r.b.x - r.a.x) * t;
+        const z = r.a.z + (r.b.z - r.a.z) * t;
+        if (r.kind === 'arterial' || zoneAt(x, z).kind === 'hillside') continue;
+        expect(isForest(x, z), `road ${r.id}`).toBe(false);
+      }
+    }
+    for (const s of LAYOUT.slots) expect(isForest(s.x, s.z), `slot ${s.kind}`).toBe(false);
+    // Only the hillside village stands on raised ground; elsewhere the mountain feet stay empty.
+    for (const b of B) {
+      if (b.district === 'hillside') continue;
+      for (const p of obbCorners(obb(b))) {
+        expect(terrainHeight(p.x, p.z), `building ${b.id} ${b.zoneId}`).toBeLessThanOrEqual(
+          FLAT_GROUND + 1e-6,
+        );
+      }
+    }
+  });
+
+  it("leaves 광화문's forecourt open: no building in the band south of the palace wall", () => {
+    const band = {
+      x: (PALACE_RECT.x0 + PALACE_RECT.x1) / 2,
+      z: PALACE_RECT.z1 + PALACE_FRONT_DEPTH / 2,
+      hw: (PALACE_RECT.x1 - PALACE_RECT.x0) / 2,
+      hd: PALACE_FRONT_DEPTH / 2,
+      rotY: 0,
+    };
+    for (const b of B) expect(obbOverlap(obb(b), band, -1e-6), `building ${b.id}`).toBe(false);
+  });
+
   it('seats every building at its lowest footprint corner (slopes get a retaining base)', () => {
     for (const b of B) {
       const corners = obbCorners(obb(b)).map((p) => terrainHeight(p.x, p.z));
@@ -1063,7 +1114,9 @@ describe('layout v3: mountains stay wooded', () => {
   });
 
   it('lines the palace halls up on one axis inside a level court', () => {
-    const halls = B.filter((b) => b.tags.palacePart === 'gate' || b.tags.palacePart === 'hall');
+    const halls = B.filter((b) =>
+      (PALACE_AXIS as readonly string[]).includes(b.tags.palaceId ?? ''),
+    );
     expect(halls.length).toBeGreaterThanOrEqual(3);
     const cx = (PALACE_RECT.x0 + PALACE_RECT.x1) / 2;
     for (const b of halls) {
