@@ -2,6 +2,8 @@
 import { ShaderChunk, ShaderLib, type IUniform } from 'three';
 import { FOG_UNIFORMS, HEIGHT_FOG, SUN_SCATTER_POWER } from '../core/shaders/emissiveFog';
 
+const f = (n: number): string => n.toFixed(4);
+
 const FOG_PARS_VERTEX = /* glsl */ `
 #ifdef USE_FOG
   varying float vFogDepth;
@@ -33,11 +35,15 @@ const FOG_PARS_FRAGMENT = /* glsl */ `
   uniform vec4 cityFogSun;
   uniform vec3 cityFogSunColor;
 
-  // heightFogThinIntegral (emissiveFog.ts): thinning integrated up a vertical ray.
+  // heightFogFloorIntegral / heightFogThinIntegral (emissiveFog.ts), h = heightTop.
+  float cityFogFloor( float y, float h ) {
+    float top = cityFogHeight.y;
+    return ( 1.0 - top ) * ( y < h ? y * y / ( 2.0 * h ) : y - 0.5 * h );
+  }
   float cityFogThin( float y, float h ) {
     float top = cityFogHeight.y;
-    float c = ${HEIGHT_FOG.clearTop.toFixed(1)};
-    if ( y < h ) return ( 1.0 - top ) * y * y / ( 2.0 * h );
+    float c = max( ${f(HEIGHT_FOG.clearTop)}, h + 1.0 );
+    if ( y < h ) return cityFogFloor( y, h );
     float atH = ( 1.0 - top ) * h * 0.5;
     if ( y < c ) {
       float t = y - h;
@@ -61,11 +67,17 @@ const FOG_PARS_FRAGMENT = /* glsl */ `
       float fLo = max( min( fy, cameraPosition.y ), 0.0 );
       float fHi = max( max( fy, cameraPosition.y ), 0.0 );
       if ( fHi - fLo > 1.0 ) {
-        fh = min( fh, 1.0 - ( cityFogThin( fHi, fH ) - cityFogThin( fLo, fH ) ) / ( fHi - fLo ) );
+        float fD = fHi - fLo;
+        float fFloor = 1.0 - ( cityFogFloor( fHi, fH ) - cityFogFloor( fLo, fH ) ) / fD;
+        float fClear = 1.0 - ( cityFogThin( fHi, fH ) - cityFogThin( fLo, fH ) ) / fD;
+        // Only steep rays get the clear upper air; near-horizontal ones keep the top floor.
+        float fSteep = abs( vFogWorld.y ) / max( length( vFogWorld ), 1e-3 );
+        float fW = smoothstep( ${f(HEIGHT_FOG.clearSteep[0])}, ${f(HEIGHT_FOG.clearSteep[1])}, fSteep );
+        fh = min( fh, mix( fFloor, fClear, fW ) );
       }
-      // fy is rebuilt from the camera height; from far above it rounds around 0 on y = 0
-      // ground, so the water boost starts a little below it (water and park sit at y <= -2).
-      fh *= fy < ${HEIGHT_FOG.waterBelow.toFixed(1)} ? cityFogHeight.z : 1.0;
+      // fy is rebuilt from the camera height and rounds around 0 on y = 0 ground seen from far
+      // above, so the water boost ramps in below it (the park sits at y -2, the water at -4).
+      fh *= mix( 1.0, cityFogHeight.z, 1.0 - smoothstep( ${f(HEIGHT_FOG.waterRamp[1])}, ${f(HEIGHT_FOG.waterRamp[0])}, fy ) );
       fogF = min( fogF * fh, 1.0 );
     }
     return fogF;
