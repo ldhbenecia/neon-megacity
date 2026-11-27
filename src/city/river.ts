@@ -3,7 +3,7 @@
 // and stays strictly increasing in x, so `riverZ(x)` is a function of x.
 import { CatmullRomCurve3, Vector3 } from 'three';
 import { CALLS } from './calls';
-import { fbm1 } from './noise';
+import { noise2, ridged2 } from './noise';
 import { clamp, closestSegmentT, pointInPolygon, pointSegmentDistance, smoothstep } from './math';
 import type { Island, Mountain, River, SideChannel, Vec2 } from './types';
 
@@ -500,31 +500,148 @@ export function islandAt(x: number, z: number): Island | null {
 
 // --- terrain (SEOUL.md 5.1) ---
 
-export const MOUNTAINS: readonly Mountain[] = [
-  // Radius kept tight so the 용산 tower field at its western foot stays on low ground.
-  { id: 'namsan', name: '남산', peak: { x: -176, z: -389 }, height: 160, radius: 250 },
-  { id: 'bugak', name: '북악산', peak: { x: -200, z: -1180 }, height: 205, radius: 320 },
-  { id: 'inwang', name: '인왕산', peak: { x: -470, z: -1015 }, height: 200, radius: 240 },
-  { id: 'achasan', name: '아차산', peak: { x: 1615, z: -740 }, height: 170, radius: 260 },
-  // North of 강변북로 (which runs ~ z -490 here), under the 홍대 alleys.
-  { id: 'wausan', name: '와우산', peak: { x: -1010, z: -700 }, height: 40, radius: 150 },
+/**
+ * Mountain ranges as ridge skeletons: spine nodes (summits, sub-peaks, saddles) with heights,
+ * and the half width of the base. 북악 and 인왕 share one range joined by a saddle. Heights are
+ * real elevation × 0.6 (SEOUL.md 5.1).
+ */
+interface RangeNode {
+  x: number;
+  z: number;
+  h: number;
+  w?: number;
+}
+
+interface Range {
+  ids: readonly string[];
+  /** Spine nodes; `w` overrides the range's base half width at that node. */
+  nodes: readonly RangeNode[];
+  /** Base half width (m) where the spine is at its highest. */
+  width: number;
+}
+
+const RANGES: readonly Range[] = [
+  {
+    // East-west ridge; the west end stays short so the 용산 tower field keeps low ground.
+    ids: ['namsan'],
+    nodes: [
+      { x: -265, z: -400, h: 105 },
+      { x: -176, z: -389, h: 160 },
+      { x: -85, z: -380, h: 128 },
+      { x: 0, z: -372, h: 92 },
+    ],
+    width: 300,
+  },
+  {
+    ids: ['inwang', 'bugak'],
+    nodes: [
+      // 인왕 keeps a narrower base so its foot is low at the palace wall.
+      { x: -505, z: -965, h: 140, w: 330 },
+      { x: -470, z: -1015, h: 200, w: 330 },
+      { x: -405, z: -1100, h: 150, w: 360 },
+      { x: -330, z: -1130, h: 112 },
+      { x: -200, z: -1180, h: 205 },
+      { x: -90, z: -1215, h: 160 },
+      { x: 20, z: -1260, h: 118 },
+    ],
+    width: 420,
+  },
+  {
+    // A long, low north-south ridge.
+    ids: ['achasan'],
+    nodes: [
+      { x: 1660, z: -980, h: 120 },
+      { x: 1625, z: -860, h: 150 },
+      { x: 1615, z: -740, h: 170 },
+      { x: 1595, z: -630, h: 118 },
+    ],
+    width: 330,
+  },
+  {
+    ids: ['wausan'],
+    nodes: [
+      { x: -1060, z: -730, h: 30 },
+      { x: -1010, z: -700, h: 40 },
+      { x: -950, z: -690, h: 28 },
+    ],
+    width: 150,
+  },
 ];
+
+const PEAKS: readonly { id: string; name: string; peak: Vec2; height: number }[] = [
+  { id: 'namsan', name: '남산', peak: { x: -176, z: -389 }, height: 160 },
+  { id: 'bugak', name: '북악산', peak: { x: -200, z: -1180 }, height: 205 },
+  { id: 'inwang', name: '인왕산', peak: { x: -470, z: -1015 }, height: 200 },
+  { id: 'achasan', name: '아차산', peak: { x: 1615, z: -740 }, height: 170 },
+  // North of 강변북로 (which runs ~ z -490 here), under the 홍대 alleys.
+  { id: 'wausan', name: '와우산', peak: { x: -1010, z: -700 }, height: 40 },
+];
+
+/** Peaks; `radius` is the farthest reach of the mountain's range base from its peak. */
+export const MOUNTAINS: readonly Mountain[] = PEAKS.map((m) => {
+  const r = RANGES.find((g) => g.ids.includes(m.id)) as Range;
+  const reach = Math.max(...r.nodes.map((n) => Math.hypot(n.x - m.peak.x, n.z - m.peak.z)));
+  return { ...m, radius: Math.ceil(reach + r.width) };
+});
 
 export const TERRAIN = {
   /** v2 hill edge, kept for terrain's mesh refinement band until it follows MOUNTAINS. */
   hillStartZ: -650,
-  /** Relative amplitude of the fbm detail on mountain slopes. */
-  detail: 0.28,
-  scale: 90,
+  /** Relative amplitude of the ridged noise on mountain slopes. */
+  detail: 0.14,
+  /** Base wavelength (m) of the ridged noise. */
+  scale: 180,
+  /** Domain-warp strength, in noise wavelengths (~70 m at scale 180). */
+  warp: 0.4,
   seed: 3301,
 } as const;
 
-/** Smooth compact bump: 1 at t = 0, 0 for t >= 1, zero slope at both ends. */
-function bump(t: number): number {
-  if (t >= 1) return 0;
-  const s = 1 - t * t;
-  return s * s;
+/** Raised cosine: 1 at u = 0, 0 for u >= 1, zero slope at both ends. */
+function rcos(u: number): number {
+  return u >= 1 ? 0 : 0.5 * (1 + Math.cos(Math.PI * u));
 }
+
+/**
+ * Cross profile at s = distance / base half width: a rounded crest, a steep mid slope ending at
+ * 62 % of the width, then a low foot (18 % of the height) that eases into the plain. At the
+ * range widths the foot (outer 40 %) stays under ~15 % slope, where hillside houses stand.
+ */
+function profile(s: number): number {
+  return 0.82 * rcos(s / 0.62) + 0.18 * rcos(s);
+}
+
+const RANGE_BOX = RANGES.map((r) => {
+  const xs = r.nodes.map((n) => n.x);
+  const zs = r.nodes.map((n) => n.z);
+  return {
+    x0: Math.min(...xs) - r.width,
+    x1: Math.max(...xs) + r.width,
+    z0: Math.min(...zs) - r.width,
+    z1: Math.max(...zs) + r.width,
+    top: Math.max(...r.nodes.map((n) => n.h)),
+  };
+});
+
+/** Height of one range without noise: the max over spine segments of h(t) · profile. */
+function rangeHeight(r: Range, top: number, x: number, z: number): number {
+  let h = 0;
+  for (let i = 0; i < r.nodes.length - 1; i++) {
+    const a = r.nodes[i] as RangeNode;
+    const b = r.nodes[i + 1] as RangeNode;
+    const t = closestSegmentT({ x, z }, a, b);
+    const d = Math.hypot(x - (a.x + (b.x - a.x) * t), z - (a.z + (b.z - a.z) * t));
+    const hs = a.h + (b.h - a.h) * t * t * (3 - 2 * t);
+    // Lower spine stretches (saddles) are narrower, so cols read as notches.
+    const wa = a.w ?? r.width;
+    const w = (wa + ((b.w ?? r.width) - wa) * t) * (0.6 + (0.4 * hs) / top);
+    if (d >= w) continue;
+    h = Math.max(h, hs * profile(d / w));
+  }
+  return h;
+}
+
+/** Namsan's summit stays a level pad for the mast (SEOUL.md 4.5). */
+const NAMSAN_PAD = { x: -176, z: -389, r: 35, blend: 30, h: 160 };
 
 /** Width of the embankment and park-edge slopes (m). */
 export const EMBANK_SLOPE = 4;
@@ -536,27 +653,48 @@ export const EMBANK_SLOPE = 4;
 export function terrainHeight(x: number, z: number): number {
   CALLS.terrainHeight++;
   let h = 0;
-  for (const m of MOUNTAINS) {
-    const d = Math.hypot(x - m.peak.x, z - m.peak.z);
-    if (d >= m.radius) continue;
-    // Steeper near the top than a plain bump; two crossing fbm strips carve spurs and gullies.
-    const b = Math.pow(bump(d / m.radius), 1.25);
-    const u = (x * 0.8 + z * 0.6) / TERRAIN.scale + m.peak.x * 0.01;
-    const v = (z * 0.8 - x * 0.6) / (TERRAIN.scale * 0.7) + m.peak.z * 0.01;
-    const n = 0.5 * fbm1(u, TERRAIN.seed) + 0.5 * fbm1(v, TERRAIN.seed + 17);
-    h = Math.max(h, m.height * b * (1 + TERRAIN.detail * (2 * n - 1)));
+  let top = 1;
+  for (let k = 0; k < RANGES.length; k++) {
+    const bx = RANGE_BOX[k] as (typeof RANGE_BOX)[number];
+    if (x < bx.x0 || x > bx.x1 || z < bx.z0 || z > bx.z1) continue;
+    const rh = rangeHeight(RANGES[k] as Range, bx.top, x, z);
+    if (rh > h) {
+      h = rh;
+      top = bx.top;
+    }
   }
   if (h === 0) return 0;
-  // The palace grounds are a level court at the foot of 북악 (fades out over PALACE_FADE m).
+  // Spurs and gullies: domain-warped ridged noise, growing from the mid slope up.
+  const b = h / top;
+  const wgt = smoothstep(0.08, 0.45, b);
+  if (wgt > 0) {
+    const u = x / TERRAIN.scale;
+    const v = z / TERRAIN.scale;
+    const wu = u + TERRAIN.warp * (noise2(u * 0.5, v * 0.5, TERRAIN.seed + 7) - 0.5);
+    const wv = v + TERRAIN.warp * (noise2(u * 0.5 + 31, v * 0.5 + 17, TERRAIN.seed + 9) - 0.5);
+    const n = ridged2(wu, wv, TERRAIN.seed, 3);
+    h *= 1 + TERRAIN.detail * wgt * (2 * n - 1);
+  }
+  const pd = Math.hypot(x - NAMSAN_PAD.x, z - NAMSAN_PAD.z);
+  if (pd < NAMSAN_PAD.r + NAMSAN_PAD.blend) {
+    const f = 1 - smoothstep(NAMSAN_PAD.r, NAMSAN_PAD.r + NAMSAN_PAD.blend, pd);
+    h += (NAMSAN_PAD.h - h) * f;
+  }
+  if (h === 0) return 0;
+  // The palace grounds are a level court at the foot of 북악. The fade back to the slope is at
+  // least PALACE_FADE m and grows with the ground it meets (1.5 m per m of height, up to
+  // PALACE_FADE_MAX), so the cut stays near 100 % slope instead of a cliff.
   const dx = Math.max(PALACE_RECT.x0 - x, 0, x - PALACE_RECT.x1);
   const dz = Math.max(PALACE_RECT.z0 - z, 0, z - PALACE_RECT.z1);
   const out = Math.hypot(dx, dz);
-  return out >= PALACE_FADE ? h : h * smoothstep(0, PALACE_FADE, out);
+  const fade = clamp(1.5 * h, PALACE_FADE, PALACE_FADE_MAX);
+  return out >= fade ? h : h * smoothstep(0, fade, out);
 }
 
 /** Walled palace grounds (SEOUL.md 4.5): level ground south of 북악. Shared with the zone. */
 export const PALACE_RECT = { x0: -320, x1: -60, z0: -880, z1: -720 } as const;
 const PALACE_FADE = 25;
+const PALACE_FADE_MAX = 70;
 
 /** Steepest ground slope (rise / run) at (x, z), from central differences 2 m apart. */
 export function terrainSlope(x: number, z: number): number {
