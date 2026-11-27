@@ -3,7 +3,7 @@ import { ADDITIVE_TAIL, COMMON_PARS, PATH_PARS, neonMaterial, type NeonUniforms 
 import { NEON } from '../core/palette';
 import { PAINT_BELOW, PAINT_PAD_X, PAINT_RISE } from './placement';
 
-/** Halo diameter cap as a share of screen height: near (≤ HALO_NEAR_M) and far (≥ HALO_FAR_M). */
+/** Halo diameter cap as a share of the shorter screen side: near (≤ HALO_NEAR_M), far (≥ HALO_FAR_M). */
 export const HALO_SCREEN_NEAR = 0.1;
 export const HALO_SCREEN_FAR = 0.006;
 export const HALO_NEAR_M = 250;
@@ -60,11 +60,13 @@ const VERTEX = /* glsl */ `
       // Radius capped at max(1.5x, 28 m): far views otherwise bloom big halos into blobs over the
       // towers, while small halos keep growing enough to read from afar.
       float r = min(iPos.w * (1.0 + dist / 400.0), max(iPos.w * 1.5, HALO_GROW_MAX_M));
-      // Screen-size cap shrinking with distance (projectionMatrix[1][1] = 1 / tan(fov / 2)), so far
-      // districts read as small points next to their windows instead of blobs bigger than towers.
+      // Screen-size cap on the shorter screen side (projectionMatrix[0][0] and [1][1] are
+      // 1 / tan(half fov) across and up), shrinking with distance, so far districts read as small
+      // points next to their windows instead of blobs bigger than towers, on phones too.
       float far = smoothstep(HALO_NEAR_M, HALO_FAR_M, dist);
       float capFrac = mix(HALO_SCREEN_NEAR, HALO_SCREEN_FAR, far);
-      r = min(r, capFrac * max(dist, 1.0) / projectionMatrix[1][1]);
+      float pMax = max(projectionMatrix[0][0], projectionMatrix[1][1]);
+      r = min(r, capFrac * max(dist, 1.0) / pMax);
       // Pulled toward the camera so the disc does not clip into the wall behind the sign.
       mvPosition.xyz *= max(0.2, 1.0 - min(r * 0.6, dist * 0.3) / max(dist, 1.0));
       mvPosition.xy += position.xy * r;
@@ -147,8 +149,13 @@ const VERTEX = /* glsl */ `
       }
       if (aKind < 1.5 || (aKind > 2.5 && aKind < 3.5)) {
         float size = aKind > 2.5 ? 1.1 : (aKind < 0.5 ? 0.32 : 0.28);
-        float k = clamp(-mvPosition.z / 90.0, 1.0, 7.0);
-        mvPosition.xy += aCorner * size * k;
+        float vd = -mvPosition.z;
+        float k = clamp(vd / 90.0, 1.0, 7.0);
+        // Same far screen-size cap as halos: distant traffic stays a point, not a blob.
+        float vFar = smoothstep(HALO_NEAR_M, HALO_FAR_M, vd);
+        float vCap = mix(HALO_SCREEN_NEAR, HALO_SCREEN_FAR, vFar) * max(vd, 1.0)
+          / max(projectionMatrix[0][0], projectionMatrix[1][1]);
+        mvPosition.xy += aCorner * min(size * k, vCap);
         col /= k;
       }
       vCol = col * fade * mix(0.35, 1.0, uNight);
