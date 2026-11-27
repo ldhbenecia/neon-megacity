@@ -33,7 +33,8 @@ const VERTEX = /* glsl */ `
       float fogE = 0.0;
       #ifdef USE_FOG
         #ifdef FOG_EXP2
-          fogE = 1.0 - exp(-pow(fogDensity * 0.55 * dist, 2.0));
+          float fd = fogDensity * 0.55 * dist;
+          fogE = 1.0 - exp(-fd * fd);
         #endif
       #endif
       vAlpha = (0.02 + fogE * 0.35) * powerOn(iColor.w, 3.0) * uGain;
@@ -53,14 +54,14 @@ const VERTEX = /* glsl */ `
       // Fade the edge-on plane of the cross so its mirrored copy never overlaps the readable one.
       vec3 n0 = abs(position.x) < 1e-3 ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 0.0, 1.0);
       vec3 n = vec3(c * n0.x + s * n0.z, 0.0, -s * n0.x + c * n0.z);
-      float facing = dot(normalize(cameraPosition - world), n);
+      float facing = dot(safeNormalize(cameraPosition - world, vec3(0.0, 1.0, 0.0)), n);
       vFace = smoothstep(0.35, 0.85, abs(facing)) * sign(facing);
     } else if (uMode > 2.5) {
       vec3 P; vec3 F; vec3 R; float fade;
       vehicleFrame(P, F, R, fade);
       vec3 world = P + F * position.x + vec3(0.0, position.y, 0.0) + R * position.z;
       mvPosition = viewMatrix * vec4(world, 1.0);
-      float facing = dot(normalize(cameraPosition - world), F);
+      float facing = dot(safeNormalize(cameraPosition - world, vec3(0.0, 1.0, 0.0)), F);
       vec3 col;
       if (aKind < 0.5) {
         col = uHead * (0.25 + 0.75 * smoothstep(-0.2, 0.6, facing));
@@ -151,7 +152,7 @@ const FRAGMENT = /* glsl */ `
         gl_FragColor = vec4(vCol * a * vFade * uNight * (1.0 + uWet * 0.6) * uPower, 1.0);
       } else {
         float across = exp(-vUv.x * vUv.x * 9.0);
-        float along = pow(1.0 - vUv.y, 1.4) * smoothstep(0.0, 0.08, vUv.y);
+        float along = pow(max(1.0 - vUv.y, 0.0), 1.4) * smoothstep(0.0, 0.08, vUv.y);
         vec2 p = vWorld * 0.35 + vec2(0.0, uTime * 0.3 * 0.35);
         float puddle = smoothstep(0.35, 0.75, vnoise(vWorld * 0.06));
         float ripple = 0.6 + 0.4 * vnoise(p + vnoise(p * 2.3) * 0.8);

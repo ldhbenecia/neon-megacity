@@ -6,14 +6,25 @@ import {
   toLocal,
   type BuildingFace,
   type BuildingSpec,
+  type DistrictKind,
 } from '../src/city/layout';
 import { buildCatalog } from '../src/neon/catalog';
-import { EDGE_IN, TIER_MARGIN, insideFace, placeSigns, type FlatSign } from '../src/neon/placement';
+import {
+  EDGE_IN,
+  TIER_MARGIN,
+  insideFace,
+  placeSigns,
+  signBudget,
+  signCount,
+  type FlatSign,
+} from '../src/neon/placement';
 import { buildingSolids, firstHit, solidsOverlap, type Solid } from '../src/neon/solids';
+import { planStreet } from '../src/neon/streetPlan';
 
 const faces = LAYOUT.buildings.map((b) => buildingFaces(b));
 const cat = buildCatalog(LAYOUT);
-const P = placeSigns(LAYOUT, faces, cat);
+const street = planStreet(LAYOUT, cat, 0.15);
+const P = placeSigns(LAYOUT, faces, cat, { reserved: street.flats.length });
 const EPS = 1e-6;
 
 const face = (b: number, fi: number): BuildingFace => faces[b]![fi]!;
@@ -249,21 +260,80 @@ describe('neon sign placement: zero penetration (5.1)', () => {
   });
 
   it('is deterministic and inside the 5.1 budget', () => {
-    const again = placeSigns(LAYOUT, faces, cat);
+    const again = placeSigns(LAYOUT, faces, cat, { reserved: street.flats.length });
     expect(again.flats.length).toBe(P.flats.length);
     expect(again.flats[123]).toEqual(P.flats[123]);
-    const total =
-      P.flats.length +
-      P.tubes.length +
-      P.crosses.length +
-      P.screens.length +
-      P.rings.length +
-      P.holos.length;
+    const total = signCount(P) + street.flats.length;
     expect(total).toBeGreaterThanOrEqual(2500);
-    expect(total).toBeLessThanOrEqual(8000);
+    expect(total).toBeLessThanOrEqual(signBudget(LAYOUT));
+    expect(signBudget(LAYOUT)).toBeLessThanOrEqual(16000);
     const moving =
       P.flats.filter((s) => s.anim !== 0).length + P.tubes.filter((t) => t.anim !== 0).length;
     expect(moving / (P.flats.length + P.tubes.length)).toBeLessThanOrEqual(0.1);
+  });
+
+  it('thins over budget in tiers and keeps crowns', () => {
+    const full = signCount(P) + street.flats.length;
+    const reserved = street.flats.length + Math.round(full * 0.4);
+    const thin = placeSigns(LAYOUT, faces, cat, { reserved });
+    expect(signCount(thin)).toBeLessThanOrEqual(signBudget(LAYOUT) - reserved);
+    const crowns = (q: typeof P): number => q.flats.filter((f) => f.kind === 'crown').length;
+    expect(crowns(thin)).toBe(crowns(P));
+  });
+
+  it('sign density per building follows each district mood (SEOUL.md 4.4)', () => {
+    // v2 has none of the v3 moods, so a fixture relabels v2 districts with v3 kinds.
+    const relabel: Record<string, readonly DistrictKind[]> = {
+      sangga: ['sangga', 'nightlife', 'oldtown', 'brick'],
+      core: ['megacore'],
+    };
+    const L = {
+      ...LAYOUT,
+      buildings: LAYOUT.buildings.map((b) => {
+        const kinds = relabel[b.district];
+        return kinds ? { ...b, district: kinds[b.id % kinds.length]! } : b;
+      }),
+    };
+    const fc = buildCatalog(L);
+    const fp = placeSigns(
+      L,
+      L.buildings.map((b) => buildingFaces(b)),
+      fc,
+    );
+    // [min, max] mean flat signs per building.
+    const RANGE: Record<string, [number, number]> = {
+      sangga: [2, 6],
+      nightlife: [3, 9],
+      brick: [1.5, 6],
+      oldtown: [0.3, 2],
+      megacore: [0.2, 1.5],
+      midtown: [0.5, 2],
+      apartment: [0.5, 1.5],
+      industrial: [0, 1],
+      hillside: [0, 0.05],
+      riverside: [0, 0.5],
+    };
+    const buildings = new Map<string, number>();
+    const signs = new Map<string, number>();
+    for (const b of L.buildings) buildings.set(b.district, (buildings.get(b.district) ?? 0) + 1);
+    for (const s of fp.flats) {
+      const d = L.buildings[s.building]!.district;
+      signs.set(d, (signs.get(d) ?? 0) + 1);
+    }
+    // The relabelled moods must exist; base kinds count only where the map has them.
+    for (const d of ['sangga', 'nightlife', 'oldtown', 'brick']) {
+      expect(buildings.get(d) ?? 0, d).toBeGreaterThanOrEqual(20);
+    }
+    for (const [d, r] of Object.entries(RANGE)) {
+      const n = buildings.get(d) ?? 0;
+      if (n < 20) continue;
+      const mean = (signs.get(d) ?? 0) / n;
+      expect(mean, d).toBeGreaterThanOrEqual(r[0]);
+      expect(mean, d).toBeLessThanOrEqual(r[1]);
+    }
+    const mean = (d: string): number => (signs.get(d) ?? 0) / (buildings.get(d) ?? 1);
+    expect(mean('nightlife')).toBeGreaterThan(mean('sangga'));
+    expect(mean('oldtown')).toBeLessThan(mean('sangga') / 2);
   });
 
   it('apartment crowns show their own complex name', () => {

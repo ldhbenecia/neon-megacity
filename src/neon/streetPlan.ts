@@ -1,4 +1,12 @@
-import { districtAt, type Layout, type Road, type StreetSlot, type Vec2 } from '../city/layout';
+import {
+  districtAt,
+  isUnbuilt,
+  surfaceHeight,
+  type Layout,
+  type Road,
+  type StreetSlot,
+  type Vec2,
+} from '../city/layout';
 import { closestSegmentT } from '../city/math';
 import type { NeonName } from '../core/palette';
 import { createRng } from '../core/random';
@@ -125,7 +133,27 @@ export function towardRoad(
   return { x: -Math.sin(s.rotY), z: -Math.cos(s.rotY) };
 }
 
-export function planStreet(L: Layout, cat: Catalog, sidewalkH: number, seed = 4242): StreetPlan {
+/** Street lights: one per 40 m of arterial and 60 m of street (alleys use stair lamps only). */
+export const LAMP_CAP = 1500;
+
+export function lampBudget(L: Pick<Layout, 'roads'>): number {
+  let n = 0;
+  for (const r of L.roads) {
+    const len = Math.hypot(r.b.x - r.a.x, r.b.z - r.a.z);
+    if (r.kind === 'arterial') n += len / 40;
+    else if (r.kind === 'street') n += len / 60;
+  }
+  return Math.min(LAMP_CAP, Math.round(n));
+}
+
+// `groundAt` must match `L` (bare ground or road surface); the default is the built-in map's.
+export function planStreet(
+  L: Layout,
+  cat: Catalog,
+  sidewalkH: number,
+  seed = 4242,
+  groundAt: (x: number, z: number) => number = surfaceHeight,
+): StreetPlan {
   const rng = createRng(seed);
   const nearest = makeRoadIndex(L.roads);
   const out: StreetPlan = { lamps: [], pools: [], stalls: [], busStops: [], poles: [], flats: [] };
@@ -134,7 +162,19 @@ export function planStreet(L: Layout, cat: Catalog, sidewalkH: number, seed = 42
   const tents = cat.byKind.tent;
   const lift = (_s: StreetSlot): number => sidewalkH;
 
+  // Over budget, keep an even subset of street lights; a no-op when the layout fits.
+  const lights = L.slots.filter((s) => s.kind === 'streetLight').length;
+  const lampKeep = Math.min(1, lampBudget(L) / Math.max(1, lights));
+  let lampAcc = 0;
   for (const s of L.slots) {
+    if (s.kind === 'streetLight' && lampKeep < 1) {
+      lampAcc += lampKeep;
+      if (lampAcc < 1) continue;
+      lampAcc -= 1;
+    }
+    // Palace grounds and parks keep street lights but carry no signs or stalls.
+    const quiet = s.kind !== 'streetLight' && s.kind !== 'stairLamp';
+    if (quiet && isUnbuilt(districtAt(s.x, s.z))) continue;
     if (s.kind === 'streetLight' || s.kind === 'stairLamp') {
       const stair = s.kind === 'stairLamp';
       const scale = stair ? 0.35 : 1;
@@ -273,5 +313,8 @@ export function planStreet(L: Layout, cat: Catalog, sidewalkH: number, seed = 42
       });
     }
   }
+  // On slopes the pool centre (under the lamp head or sign) can sit higher than the slot it
+  // came from; never let a pool sink into the ground.
+  for (const p of out.pools) p.y = Math.max(p.y, groundAt(p.x, p.z) + POOL_LIFT);
   return out;
 }
