@@ -1,5 +1,7 @@
 import { errors, expect, test, type Page } from '@playwright/test';
 import { cameraFloor, targetFloor } from '../../src/ux/collision';
+import '../setup-layout';
+import { LAYOUT, buildingContaining } from '../../src/city/layout';
 import { app, collectErrors, waitForCity, waitFrames } from './helpers';
 
 type Cam = NonNullable<Window['__hangang']>;
@@ -395,16 +397,21 @@ test.describe('camera rig', () => {
     // Until the descent stops (short frame steps, so a slow machine only takes longer), not a
     // fixed frame count that can outlast the wait under parallel software rendering.
     let prev = Infinity;
-    for (let i = 0; i < 120; i++) {
+    let settled = false;
+    for (let i = 0; i < 120 && !settled; i++) {
       await waitFrames(page, 10);
       const y = (await cam(page)).position.y;
-      if (prev - y < 0.05) break;
+      settled = prev - y < 0.05;
       prev = y;
     }
+    expect(settled, 'the descent never stopped').toBe(true);
     await page.keyboard.up('Shift');
     await page.keyboard.up('q');
     const c = await cam(page);
-    expect(c.position.y).toBeGreaterThanOrEqual(cameraFloor(c.position.x, c.position.z) - 0.01);
+    const floor = cameraFloor(c.position.x, c.position.z);
+    expect(c.position.y).toBeGreaterThanOrEqual(floor - 0.01);
+    // It may come to rest on a roof instead of the ground; either way never inside a volume.
+    expect(buildingContaining(LAYOUT, c.position.x, c.position.y, c.position.z)).toBeNull();
     expect(c.target.y).toBeGreaterThanOrEqual(targetFloor(c.target.x, c.target.z) - 0.01);
   });
 });

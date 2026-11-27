@@ -208,13 +208,27 @@ for (const touch of [true, false]) {
       await expect(page.locator('#hud-district')).toHaveText('용산 국제업무지구');
       await page.keyboard.press('f');
       await waitMode(page, 'fly');
-      for (const vp of VIEWPORTS) {
+      for (const vp of [{ width: 320, height: 640 }, ...VIEWPORTS]) {
+        const at = `${vp.width}x${vp.height}`;
         await page.setViewportSize({ width: vp.width, height: vp.height });
-        await expectNoOverlap(page, `title row at ${vp.width}x${vp.height}`);
-        const cut = await page
-          .locator('#hud-mode')
-          .evaluate((el) => el.scrollWidth > el.clientWidth + 0.5);
-        expect(cut, `mode label cut at ${vp.width}x${vp.height}`).toBe(false);
+        await expectNoOverlap(page, `title row at ${at}`);
+        const row = await page.evaluate(() => {
+          const brand = document.querySelector<HTMLElement>('.hud-brand')!;
+          const toggle = document.getElementById('panel-toggle')!.getBoundingClientRect();
+          const right = (id: string): number => {
+            const el = document.getElementById(id);
+            return el && !el.hidden ? el.getBoundingClientRect().right : 0;
+          };
+          return {
+            overflow: brand.scrollWidth - brand.clientWidth,
+            mode: right('hud-mode'),
+            exit: right('hud-mode-exit'),
+            toggle: toggle.left,
+          };
+        });
+        expect(row.overflow, `title row overflows at ${at}`).toBeLessThanOrEqual(0.5);
+        expect(row.mode, `mode label reaches the toggle at ${at}`).toBeLessThan(row.toggle);
+        expect(row.exit, `× reaches the toggle at ${at}`).toBeLessThan(row.toggle);
       }
       const exit = page.locator('#hud-mode-exit');
       if (touch) {

@@ -19,6 +19,7 @@
   --bottom: max(16px, env(safe-area-inset-bottom));
   --top: max(12px, env(safe-area-inset-top));
   --toggle-size: 40px;
+  --touch-target: 44px;
   /* Floating HUD layers, low to high. One place so no two surfaces fight over the same spot. */
   --z-base: 1;
   --z-panel: 2;
@@ -133,7 +134,6 @@ body {
   /* Never reach the panel toggle (its size plus 12 px air). */
   max-width: calc(100vw - var(--gutter) - var(--gutter-r) - var(--toggle-size) - 12px);
   min-width: 0;
-  overflow: hidden;
 }
 .brand-mark {
   width: 3px;
@@ -191,8 +191,8 @@ body {
   flex: 0 0 auto;
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
+  width: var(--touch-target);
+  height: var(--touch-target);
   margin: -12px 0;
   padding: 0;
   border: 0;
@@ -982,6 +982,24 @@ body {
   opacity: 0;
   pointer-events: none;
 }
+/*
+ * Title row on narrow screens: while a mode label shows, the zone name steps aside (and on the
+ * narrowest phones the "// HANGANG" half of the brand), so the label and its × never reach the
+ * panel toggle.
+ */
+@media (max-width: 640px) {
+  #hud[data-mode='fly'] .hud-district,
+  #hud[data-mode='cinematic'] .hud-district {
+    display: none;
+  }
+}
+@media (max-width: 420px) {
+  #hud[data-mode='fly'] .brand-en,
+  #hud[data-mode='cinematic'] .brand-en {
+    display: none;
+  }
+}
+
 /* Debug ?stats readout (a sibling after #hud) steps aside for the help sheet, and on compact
    screens for the panel and the card too. */
 #hud[data-help='open'] ~ .hud-stats {

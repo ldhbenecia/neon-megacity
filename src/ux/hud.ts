@@ -117,8 +117,25 @@ export function createHud(opts: {
   const modeExit = document.getElementById('hud-mode-exit');
   // Touch screens have no Esc key: a × button leaves the mode instead of the "Esc로 끄기" hint.
   const coarse = window.matchMedia('(pointer: coarse)');
+  // Same breakpoint as the title-row rules in style.css: a short mouse label on narrow screens.
+  const narrow = window.matchMedia('(max-width: 640px)');
   const onModeExit = (): void => opts.onModeExit?.();
   modeExit?.addEventListener('click', onModeExit);
+  // Re-read on pointer or width changes too (a trackpad attached to a tablet, a rotated phone).
+  const renderMode = (): void => {
+    if (!modeEl) return;
+    const fly = coarse.matches
+      ? '비행 모드'
+      : narrow.matches
+        ? '비행 · Esc'
+        : '비행 모드 · Esc로 끄기';
+    const label = mode === 'fly' ? fly : mode === 'cinematic' ? '시네마틱' : '';
+    modeEl.textContent = label;
+    modeEl.hidden = label === '';
+    if (modeExit) modeExit.hidden = label === '' || !coarse.matches;
+  };
+  coarse.addEventListener('change', renderMode);
+  narrow.addEventListener('change', renderMode);
   const card = document.getElementById('hud-card');
   const toastEl = document.getElementById('hud-toast');
   const hint = document.getElementById('hud-hint');
@@ -172,12 +189,7 @@ export function createHud(opts: {
       if (m === mode) return;
       mode = m;
       if (root) root.dataset.mode = m;
-      if (!modeEl) return;
-      const fly = coarse.matches ? '비행 모드' : '비행 모드 · Esc로 끄기';
-      const label = m === 'fly' ? fly : m === 'cinematic' ? '시네마틱' : '';
-      modeEl.textContent = label;
-      modeEl.hidden = label === '';
-      if (modeExit) modeExit.hidden = label === '' || !coarse.matches;
+      renderMode();
       if (m !== 'orbit' && m !== 'flight') hideHint();
     },
     setDistrict(name) {
@@ -245,6 +257,8 @@ export function createHud(opts: {
       clearTimeout(hintTimer);
       cardClose?.removeEventListener('click', onCardClose);
       modeExit?.removeEventListener('click', onModeExit);
+      coarse.removeEventListener('change', renderMode);
+      narrow.removeEventListener('change', renderMode);
       helpClose?.removeEventListener('click', onHelpClose);
       cardListeners.clear();
       helpListeners.clear();
