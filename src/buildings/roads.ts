@@ -359,8 +359,15 @@ export function createWetMaterial(
         float dryR = ${dryRough.toFixed(2)} + 0.15 * (wGrain - 0.5);
         float wetR = mix(dryR * 0.75, 0.04, wPud);
         roughnessFactor = mix(dryR, wetR, uWet);`,
+      )
+      // Puddles act as dark mirrors (ART_DIRECTION 6.1): lift only the image-based specular there,
+      // so neon and sky reflections read under the real environment map without brightening asphalt.
+      .replace(
+        '#include <lights_fragment_maps>',
+        `#include <lights_fragment_maps>
+        radiance *= 1.0 + 2.0 * wPud * uWet;`,
       );
   };
-  m.customProgramCacheKey = () => `hangang-wet-${name}`;
+  m.customProgramCacheKey = () => `hangang-wet-v2-${name}`;
   return m;
 }
