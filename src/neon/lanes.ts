@@ -1,4 +1,5 @@
-import type { Bridge, Highway, Road, Vec3 } from '../city/layout';
+import * as THREE from 'three';
+import type { Bridge, Highway, Road, SkyLane, Vec3 } from '../city/layout';
 import { createRng } from '../core/random';
 import { isDivided, laneOffsets } from '../infra/profile';
 
@@ -105,6 +106,37 @@ export function bridgePaths(
       fade: 12,
     };
   });
+}
+
+/** Samples per 100 m of sky lane (centripetal Catmull-Rom through the layout's control points). */
+const SKY_SAMPLES_PER_100M = 4;
+
+// Drone lanes come from the layout (Layout.skyLanes), never from highway ids. Path y is 0 and
+// `altitude` is the absolute band, so vehicleStreams lifts each drone into it.
+export function skyPaths(lanes: readonly SkyLane[]): Path[] {
+  const out: Path[] = [];
+  for (const lane of lanes) {
+    if (lane.points.length < 2) continue;
+    const curve = new THREE.CatmullRomCurve3(
+      lane.points.map((p) => new THREE.Vector3(p.x, 0, p.z)),
+      lane.closed,
+      'centripetal',
+    );
+    const n = Math.max(8, Math.round((curve.getLength() / 100) * SKY_SAMPLES_PER_100M));
+    // Closed lanes keep the repeated end point so the last segment closes the loop.
+    const pts = curve.getSpacedPoints(n).map((v) => ({ x: v.x, y: 0, z: v.z }));
+    const r = resample(pts, pts.length);
+    out.push({
+      id: lane.id,
+      points: r.points,
+      length: r.length,
+      closed: lane.closed,
+      kind: 'flying',
+      fade: lane.closed ? 0 : 30,
+      altitude: lane.altitude,
+    });
+  }
+  return out;
 }
 
 export function highwayPath(
