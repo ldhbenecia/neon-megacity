@@ -259,8 +259,9 @@ test('automated runs never contact Google Analytics', async ({ page }) => {
   });
   await page.goto(app('nogui&time=0'));
   await waitForCity(page);
-  // Past the idle window in which the tag would be added.
-  await page.waitForTimeout(6000);
+  // Analytics records its decision once the city is ready; automation must get 'off'.
+  await expect(page.locator('html')).toHaveAttribute('data-analytics', 'off');
+  await waitFrames(page, 10);
   expect(calls).toEqual([]);
   expect(await page.evaluate(() => 'gtag' in window)).toBe(false);
 });

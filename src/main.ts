@@ -245,13 +245,27 @@ async function boot(): Promise<void> {
   renderer.setAnimationLoop(frame);
   await loader.done();
   // performance.now() is time since navigation: what a visitor waited for the city.
-  startAnalytics({ result: 'ready', readyMs: performance.now() });
-  if (ctx.env.quality !== 'ci') track('quality_tier', { tier: ctx.env.quality });
+  report({ result: 'ready', readyMs: performance.now() }, ctx.env.quality);
 }
 
-// Any failure (no WebGL, setup errors) turns the loader red instead of hanging on it.
-// loader.fail is idempotent, so stages that already reported are not logged twice.
-boot().catch((err: unknown) => {
-  startAnalytics({ result: 'error', readyMs: performance.now() });
-  loader.fail('boot', err);
-});
+/** Statistics never decide whether the city boots: any failure in them is swallowed. */
+function report(boot: { result: 'ready' | 'error'; readyMs: number }, quality?: Quality): void {
+  try {
+    startAnalytics(boot);
+    if (quality && quality !== 'ci') track('quality_tier', { tier: quality });
+  } catch {
+    // Analytics is optional.
+  }
+}
+
+/**
+ * Called by src/boot.ts once LAYOUT is published. Any failure (no WebGL, setup errors) turns the
+ * loader red instead of hanging on it; loader.fail is idempotent, so stages that already reported
+ * are not logged twice.
+ */
+export function start(): void {
+  boot().catch((err: unknown) => {
+    loader.fail('boot', err);
+    report({ result: 'error', readyMs: performance.now() });
+  });
+}

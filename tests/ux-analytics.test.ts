@@ -1,7 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   ANALYTICS_STORAGE_KEY,
+  PAGES_HOST,
   cleanEvent,
+  configParams,
   readOptOut,
   readyBucket,
   shouldLoad,
@@ -10,7 +12,7 @@ import {
 
 const base: LoadContext = {
   id: 'G-B6LC4ZYSC6',
-  hostname: 'ldhbenecia.github.io',
+  hostname: PAGES_HOST,
   search: '',
   webdriver: false,
   doNotTrack: false,
@@ -27,6 +29,7 @@ describe('analytics load conditions', () => {
     ['a malformed id', { id: 'UA-123' }],
     ['localhost', { hostname: 'localhost' }],
     ['a preview host', { hostname: '127.0.0.1' }],
+    ['a copy on another github.io account', { hostname: 'someone.github.io' }],
     ['automation (e2e, shots, perf)', { webdriver: true }],
     ['Do Not Track', { doNotTrack: true }],
     ['the panel opt-out', { optedOut: true }],
@@ -51,6 +54,19 @@ describe('analytics load conditions', () => {
       },
     };
     expect(readOptOut(broken)).toBe(false);
+  });
+});
+
+describe('analytics config', () => {
+  it('turns ad features off and sends the page without its query or referrer', () => {
+    const c = configParams({ origin: 'https://ldhbenecia.github.io', pathname: '/neon-megacity/' });
+    expect(c).toEqual({
+      allow_google_signals: false,
+      allow_ad_personalization_signals: false,
+      page_location: 'https://ldhbenecia.github.io/neon-megacity/',
+      page_referrer: '',
+    });
+    expect(JSON.stringify(c)).not.toContain('?');
   });
 });
 
@@ -79,5 +95,46 @@ describe('analytics events', () => {
     expect(readyBucket(2000)).toBe('2-5s');
     expect(readyBucket(7000)).toBe('5-10s');
     expect(readyBucket(30000)).toBe('>10s');
+  });
+});
+
+describe('analytics loading', () => {
+  it('loads nothing when the visitor opts out before the idle callback runs', async () => {
+    vi.resetModules();
+    let idle: (() => void) | undefined;
+    const created: string[] = [];
+    const win: Record<string, unknown> = {
+      requestIdleCallback: (fn: () => void) => {
+        idle = fn;
+      },
+    };
+    vi.stubGlobal('window', win);
+    vi.stubGlobal('location', {
+      hostname: 'ldhbenecia.github.io',
+      search: '',
+      origin: 'https://ldhbenecia.github.io',
+      pathname: '/neon-megacity/',
+    });
+    vi.stubGlobal('navigator', { webdriver: false, doNotTrack: '0' });
+    vi.stubGlobal('document', {
+      documentElement: { dataset: {} },
+      createElement: (tag: string) => {
+        created.push(tag);
+        return {};
+      },
+      head: { append: () => undefined },
+    });
+    try {
+      const a = await import('../src/ux/analytics');
+      a.startAnalytics({ result: 'ready', readyMs: 1000 }, 'G-B6LC4ZYSC6');
+      expect(idle).toBeDefined();
+      a.setAnalyticsOptOut(true, 'G-B6LC4ZYSC6');
+      idle?.();
+      expect(created).toEqual([]);
+      expect(win['ga-disable-G-B6LC4ZYSC6']).toBe(true);
+      expect(win.gtag).toBeUndefined();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

@@ -4,19 +4,23 @@
 /** Visitor opt-out, set from the control panel ("방문 통계 보내기"). */
 export const ANALYTICS_STORAGE_KEY = 'hangang.analytics';
 
+/** The deployed site; a copy of this build on another host must not report into the same id. */
+export const PAGES_HOST = 'ldhbenecia.github.io';
+
 export interface LoadContext {
   id: string | undefined;
   hostname: string;
   search: string;
   webdriver: boolean;
+  /** Do Not Track or Global Privacy Control. */
   doNotTrack: boolean;
   optedOut: boolean;
 }
 
-/** Only the deployed Pages site counts; previews and local servers would skew the numbers. */
+/** Only the deployed Pages site counts; previews, local servers and copies would skew the numbers. */
 export function shouldLoad(c: LoadContext): boolean {
   if (!c.id || !/^G-[A-Z0-9]{4,}$/.test(c.id)) return false;
-  if (!c.hostname.endsWith('.github.io')) return false;
+  if (c.hostname !== PAGES_HOST) return false;
   const q = new URLSearchParams(c.search);
   if (q.has('debug') || q.has('notrack') || q.get('quality') === 'ci') return false;
   return !c.webdriver && !c.doNotTrack && !c.optedOut;
@@ -74,6 +78,8 @@ interface GaWindow {
 
 let id: string | null = null;
 let enabled = false;
+// The panel choice for this visit; storage may be blocked, so it is never re-read from there.
+let optedOut = false;
 const pending: [AnalyticsEvent, Record<string, string>][] = [];
 
 const win = (): GaWindow => window as unknown as GaWindow;
@@ -83,7 +89,7 @@ function send(name: AnalyticsEvent, params: Record<string, string>): void {
   if (clean) win().gtag?.('event', name, clean);
 }
 
-/** Records an event; dropped unless analytics is on (queued until the tag is set up). */
+/** Records an event; dropped unless analytics started, queued until the tag is set up. */
 export function track(name: AnalyticsEvent, params: Record<string, string>): void {
   if (!enabled) return;
   if (id === null) pending.push([name, params]);
@@ -94,23 +100,30 @@ export function track(name: AnalyticsEvent, params: Record<string, string>): voi
  * Called once the city is ready. Decides whether to measure at all and, if so, loads gtag.js when
  * the page is idle so the first frames never wait on it.
  */
-export function startAnalytics(boot: { result: 'ready' | 'error'; readyMs: number }): void {
-  const gaId = buildId();
+export function startAnalytics(
+  boot: { result: 'ready' | 'error'; readyMs: number },
+  gaId = buildId(),
+): void {
   const ctx: LoadContext = {
     id: gaId,
     hostname: location.hostname,
     search: location.search,
     webdriver: navigator.webdriver,
-    doNotTrack: navigator.doNotTrack === '1',
+    doNotTrack: privacySignal(),
     optedOut: readOptOut(storage()),
   };
-  if (!gaId || !shouldLoad(ctx)) return;
+  optedOut = ctx.optedOut;
+  const on = Boolean(gaId) && shouldLoad(ctx);
+  document.documentElement.dataset.analytics = on ? 'on' : 'off';
+  if (!gaId || !on) return;
   enabled = true;
   track('boot_result', { result: boot.result, ready_bucket: readyBucket(boot.readyMs) });
   const load = (): void => {
+    // Turned off in the panel before the idle callback ran: load nothing at all.
+    if (!enabled || optedOut) return;
     const w = win();
     // Google's disable flag has to be in place before the first gtag() call.
-    w[`ga-disable-${gaId}`] = readOptOut(storage());
+    w[`ga-disable-${gaId}`] = false;
     w.dataLayer = w.dataLayer ?? [];
     // gtag.js reads arguments objects from dataLayer, not arrays.
     w.gtag = function gtag() {
@@ -118,10 +131,7 @@ export function startAnalytics(boot: { result: 'ready' | 'error'; readyMs: numbe
       w.dataLayer?.push(arguments);
     };
     w.gtag('js', new Date());
-    w.gtag('config', gaId, {
-      allow_google_signals: false,
-      allow_ad_personalization_signals: false,
-    });
+    w.gtag('config', gaId, configParams(location));
     const s = document.createElement('script');
     s.async = true;
     s.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(gaId)}`;
@@ -137,16 +147,36 @@ export function startAnalytics(boot: { result: 'ready' | 'error'; readyMs: numbe
   else setTimeout(load, 2000);
 }
 
+/**
+ * gtag config: no ad features, and the page_view carries the page without its query or referrer
+ * (?pose=, ?district= and the like would otherwise bypass the event allow-list).
+ */
+export function configParams(loc: Pick<Location, 'origin' | 'pathname'>): Record<string, unknown> {
+  return {
+    allow_google_signals: false,
+    allow_ad_personalization_signals: false,
+    page_location: loc.origin + loc.pathname,
+    page_referrer: '',
+  };
+}
+
 /** The panel toggle: stored, and applied at once through Google's documented disable flag. */
-export function setAnalyticsOptOut(off: boolean): void {
+export function setAnalyticsOptOut(off: boolean, gaId = buildId()): void {
   try {
     storage()?.setItem(ANALYTICS_STORAGE_KEY, off ? 'off' : 'on');
   } catch {
     // Storage blocked: the choice holds for this visit.
   }
-  const gaId = buildId();
+  optedOut = off;
   if (gaId) win()[`ga-disable-${gaId}`] = off;
-  if (off) enabled = false;
+  // Back on within the same visit: events flow again if the tag is already set up.
+  enabled = !off && id !== null;
+}
+
+/** Do Not Track or Global Privacy Control: the visitor already said no. */
+export function privacySignal(): boolean {
+  const n = navigator as Navigator & { globalPrivacyControl?: boolean };
+  return n.doNotTrack === '1' || n.globalPrivacyControl === true;
 }
 
 /** Whether a measurement id was built in (the panel shows the toggle only then). */
@@ -159,7 +189,7 @@ function buildId(): string | undefined {
   return (import.meta as { env?: { VITE_GA_ID?: string } }).env?.VITE_GA_ID;
 }
 
-function storage(): Storage | null {
+export function storage(): Storage | null {
   try {
     return window.localStorage;
   } catch {
