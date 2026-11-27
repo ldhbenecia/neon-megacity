@@ -2,7 +2,18 @@ import { CORPS } from '../city/layout';
 import type { NeonName } from '../core/palette';
 
 export type CellKind =
-  'band' | 'blade' | 'vtext' | 'crown' | 'panel' | 'ring' | 'line' | 'ad' | 'tent' | 'logo' | 'koi';
+  | 'band'
+  | 'blade'
+  | 'vtext'
+  | 'crown'
+  | 'panel'
+  | 'ring'
+  | 'line'
+  | 'ad'
+  | 'tent'
+  | 'logo'
+  | 'koi'
+  | 'paint';
 
 export interface Shop {
   name: string;
@@ -77,6 +88,20 @@ export const GENERIC_BANDS: readonly { name: string; sub: string }[] = [
   { name: '언덕 세탁소', sub: '' },
   { name: '한강 숯불갈비', sub: '' },
   { name: 'NIGHT OWL', sub: '' },
+];
+
+/** Painted names on Seongsu warehouse walls: old factory trade names, all fictional. */
+export const PAINT_COPY: readonly string[] = [
+  '새벽 제화',
+  '한강 인쇄',
+  '성수 공업사',
+  '동방 철공',
+  '은하 방직',
+  '뚝섬 정밀',
+  '서울숲 목공',
+  '달빛 피혁',
+  '강변 주물',
+  '별빛 제본',
 ];
 
 export const GENERIC_BLADES: readonly string[] = [

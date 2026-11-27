@@ -8,6 +8,7 @@ import {
   type BuildingSpec,
   type DistrictKind,
 } from '../src/city/layout';
+import { FACADE, baseArchetype, faceRole, windowStyle } from '../src/buildings/params';
 import { buildCatalog } from '../src/neon/catalog';
 import {
   EDGE_IN,
@@ -218,6 +219,20 @@ describe('neon sign placement: zero penetration (5.1)', () => {
       const full = media.find((s) => s.building === b.id);
       expect(full, `media face of ${b.id}`).toBeDefined();
       expect(face(b.id, full!.face).side).toBe(b.tags.mediaFace);
+    }
+  });
+
+  it('Seongsu paint is a factory name on a blank wall', () => {
+    const paint = P.flats.filter((f) => f.wash);
+    if (LAYOUT.buildings.some((b) => b.district === 'brick'))
+      expect(paint.length).toBeGreaterThan(10);
+    for (const s of paint) {
+      const b = spec(s.building);
+      const f = face(s.building, s.face);
+      expect(cat.cells[s.cell]?.kind).toBe('paint');
+      expect(windowStyle(baseArchetype(b), faceRole(b, f.side), b.seed).type).toBe(FACADE.plain);
+      expect(insideFace(f, s.u0, s.u1, s.y0, s.y1)).toBe(true);
+      expect(s.w).toBeGreaterThanOrEqual((f.width - 2 * EDGE_IN) * 0.5 - EPS);
     }
   });
 

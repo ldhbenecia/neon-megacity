@@ -12,6 +12,7 @@ import {
   PANEL_WORDS,
   RING_COPY,
   SHOPS,
+  PAINT_COPY,
   TENT_COPY,
   type CellKind,
 } from './content';
@@ -111,6 +112,7 @@ function specs(complexes: readonly string[]): CellSpec[] {
   RING_COPY.forEach((t, i) => add('ring', t, '', i % 2 ? 'neonCyan' : 'neonOrange', 1024, 64));
   AD_COPY.forEach((a, i) => add('ad', a.name, a.sub, color(i + 2), 128, 192));
   TENT_COPY.forEach((t) => add('tent', t, '', 'neonOrange', 256, 64));
+  PAINT_COPY.forEach((t) => add('paint', t, '', 'neonWhite', 512, 96));
   SCREEN_LINES.forEach((t, i) => add('line', t, '', i % 2 ? 'neonCyan' : 'neonOrange', 512, 64));
   CORPS.forEach((c, i) =>
     add('logo', CORP_EN[c].name, CORP_EN[c].tag, i % 2 ? 'neonCyan' : 'neonOrange', 256, 256),
@@ -157,6 +159,7 @@ export function buildCatalog(L: Pick<Layout, 'buildings'>): Catalog {
     tent: [],
     logo: [],
     koi: [],
+    paint: [],
   };
   const cells: Cell[] = list.map((s, index) => {
     const p = pos[index] as { x: number; y: number };

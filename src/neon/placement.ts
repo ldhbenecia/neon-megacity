@@ -15,7 +15,13 @@ import {
 import type { Catalog } from './catalog';
 import { CARGO_CROWN } from './content';
 import { firstHit, type Solid } from './solids';
-import { baseArchetype, type BaseArchetype } from '../buildings/params';
+import {
+  FACADE,
+  baseArchetype,
+  faceRole,
+  windowStyle,
+  type BaseArchetype,
+} from '../buildings/params';
 import { pointSegmentDistance } from '../city/math';
 
 export const Anim = { none: 0, flicker: 1, scroll: 2, broken: 3, fill: 4 } as const;
@@ -990,25 +996,36 @@ function placeBanners(c: Ctx, rng: Rng): void {
 }
 
 const PAINT_CHANCE = 0.85;
+const PAINT_ROAD_GAP = 14;
 
 // Seongsu: one big painted Korean name on the street wall of a warehouse, washed by warm lamps.
 function placePaint(c: Ctx, b: BuildingSpec, rng: Rng, zone: number): void {
   if (!rng.chance(PAINT_CHANCE)) return;
-  const fi = shopFaces(c, b)[0];
-  const f = fi === undefined ? undefined : c.faces[b.id]?.[fi];
-  if (!f || fi === undefined) return;
-  // Big painted name across more than half the wall, 2–4 syllables (SEOUL.md 4.3 brick).
+  // Only blank walls (no window grid under the wash) that a road can see; else no lettering.
+  const base = baseArchetype(b);
+  const blank = (c.faces[b.id] ?? [])
+    .map((f, fi) => ({ f, fi }))
+    .filter(
+      ({ f }) =>
+        f.tier === 0 &&
+        f.stack === 0 &&
+        f.shape !== 'cylinder' &&
+        windowStyle(base, faceRole(b, f.side), b.seed).type === FACADE.plain &&
+        c.roadGap(f.center.x + f.normal.x * 2, f.center.z + f.normal.z * 2) < PAINT_ROAD_GAP,
+    )
+    .sort((p, q) => q.f.width - p.f.width);
+  const pick = blank[0];
+  if (!pick) return;
+  const { f, fi } = pick;
+  // Big painted name across more than half the wall (SEOUL.md 4.3 brick).
   const usable = f.width - 2 * EDGE_IN;
   const w = Math.min(18, usable * 0.8);
   if (w < 5) return;
   const h = Math.min(3, Math.max(1.4, w / 5));
   const y0 = b.baseY + b.groundFloorH + rng.range(0.8, 2.2);
   const uc = rng.range(-(usable - w) / 2, (usable - w) / 2);
-  const short = c.cat.byKind.band.filter((i) => {
-    const k = c.cat.cells[i];
-    return k !== undefined && k.style === 0 && !k.sub && k.text.replace(/\s+/g, '').length <= 5;
-  });
-  const cell = short.length ? rng.pick(short) : pickCell(c, 'band', rng);
+  const cell = pickCell(c, 'paint', rng);
+  if (cell < 0) return;
   const s = tryWallSign(
     c,
     b,

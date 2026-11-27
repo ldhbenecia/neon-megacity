@@ -112,6 +112,18 @@ function drawBand(g: G, c: Cell, rng: Rng): void {
   }
 }
 
+// Plain light lettering on black: the paint shader keeps only the letters (additive).
+function drawPaint(g: G, c: Cell): void {
+  g.fillStyle = css(BLACK);
+  g.fillRect(0, 0, c.pw, c.ph);
+  g.font = `900 ${c.ph * 0.72}px ${FONT}`;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.shadowBlur = 0;
+  g.fillStyle = css(WHITE);
+  g.fillText(c.text, c.pw / 2, c.ph * 0.54, c.pw * 0.94);
+}
+
 function drawVerticalGlyphs(
   g: G,
   c: Cell,
@@ -421,6 +433,9 @@ export function buildAtlas(catalog: Catalog, renderer: THREE.WebGLRenderer, seed
         break;
       case 'tent':
         drawTent(g, c);
+        break;
+      case 'paint':
+        drawPaint(g, c);
         break;
       case 'logo':
         drawLogo(g, c, logoIdx++);
