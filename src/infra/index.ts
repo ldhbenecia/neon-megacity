@@ -122,7 +122,9 @@ function buildDetail(
 
 export function init(ctx: Ctx): CityModuleInstance {
   const L = ctx.LAYOUT;
-  const parts = buildInfra(L, infraColors(), ctx.env.quality !== 'low');
+  const colors = infraColors();
+  const parts = buildInfra(L, colors, ctx.env.quality !== 'low');
+  const floor = new THREE.Color(...colors.nightFloor);
 
   const group = new THREE.Group();
   group.name = 'infra';
@@ -139,7 +141,12 @@ export function init(ctx: Ctx): CityModuleInstance {
 
   const concrete = mesh(
     parts.concrete,
-    new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.88, metalness: 0 }),
+    new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.88,
+      metalness: 0,
+      emissive: floor,
+    }),
     'infra-concrete',
   );
   concrete.castShadow = true;
@@ -147,7 +154,12 @@ export function init(ctx: Ctx): CityModuleInstance {
 
   const steel = mesh(
     parts.steel,
-    new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.35 }),
+    new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.5,
+      metalness: 0.35,
+      emissive: floor,
+    }),
     'infra-steel',
   );
   steel.castShadow = true;
@@ -187,6 +199,7 @@ export function init(ctx: Ctx): CityModuleInstance {
   const pillarMat = new THREE.MeshStandardMaterial({
     color: MATERIAL.concrete,
     roughness: 0.9,
+    emissive: floor,
   });
   materials.push(pillarMat);
   const m4 = new THREE.Matrix4();

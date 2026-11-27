@@ -11,6 +11,16 @@ export function lin(hex: number, mul = 1): RGB {
   return [c.r * mul, c.g * mul, c.b * mul];
 }
 
+/**
+ * Faint self-light of concrete and steel (× concrete albedo, plus a teal tint): undersides the
+ * lights never reach would otherwise render pure black up close at night (target: under 20 %
+ * pure-black pixels looking at a deck underside from street height). Daylight drowns it.
+ */
+const NIGHT_FLOOR = 0.3;
+const NIGHT_FLOOR_TEAL = 0.004;
+
+const add = (a: RGB, b: RGB): RGB => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+
 export interface InfraColors {
   asphalt: RGB;
   concrete: RGB;
@@ -30,6 +40,8 @@ export interface InfraColors {
   uplight: RGB;
   uplightStrip: RGB;
   lamp: RGB;
+  /** Material emissive (not a vertex color): keeps unlit undersides readable at night. */
+  nightFloor: RGB;
 }
 
 export function infraColors(): InfraColors {
@@ -51,5 +63,6 @@ export function infraColors(): InfraColors {
     uplight: lin(NEON.neonCyan.hex, 0.7),
     uplightStrip: lin(NEON.neonCyan.hex, 4),
     lamp: lin(MATERIAL.streetLightSodium, 3),
+    nightFloor: add(lin(MATERIAL.concrete, NIGHT_FLOOR), lin(NEON.neonTeal.hex, NIGHT_FLOOR_TEAL)),
   };
 }
