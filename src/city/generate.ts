@@ -67,6 +67,7 @@ import type {
   Landmark,
   Layout,
   NamedRoad,
+  SkyLane,
   Ridge,
   Road,
   RoadKind,
@@ -109,7 +110,7 @@ const MEGA: Record<string, MegaPlan> = {
     tiers: [
       { count: 1, h: [600, 600], size: [80, 88] },
       { count: 6, h: [280, 450], size: [46, 54] },
-      { count: 16, h: [120, 250], size: [27, 34] },
+      { count: 16, h: [120, 250], size: [26, 32] },
       { count: 18, h: [40, 110], size: [26, 40] },
     ],
     landmark: 'yongsan-apex',
@@ -665,6 +666,12 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
     }
     sites.sort((a, b) => a.r - b.r);
     const placed: Obb[] = [];
+    // A site whose centre is under a placed tower can never host another; a site that rejected a
+    // footprint (accept) rejects any footprint containing it (same centre and rotation, both half
+    // extents at least as large), so those are skipped without testing.
+    const dead = new Uint8Array(sites.length);
+    const failW = new Float64Array(sites.length).fill(Infinity);
+    const failD = new Float64Array(sites.length).fill(Infinity);
     plan.tiers.forEach((tier, t) => {
       const hs = Array.from({ length: tier.count }, () => rng.range(tier.h[0], tier.h[1])).sort(
         (a, b) => b - a,
@@ -675,7 +682,10 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
         // The draft insets the lot by 4 % and the depth may be 15 % short: size for that.
         const side = Math.max(rng.range(tier.size[0], tier.size[1]), h / (MAX_SLENDER * 0.8));
         const depth = side * (t === 0 ? rng.range(0.95, 1) : rng.range(0.85, 1));
-        for (const site of sites) {
+        for (let si = 0; si < sites.length; si++) {
+          if (dead[si]) continue;
+          if (side / 2 >= (failW[si] as number) && depth / 2 >= (failD[si] as number)) continue;
+          const site = sites[si] as Vec2;
           const o: Obb = {
             x: site.x,
             z: site.z,
@@ -686,8 +696,16 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
           if (placed.some((q) => obbOverlap(q, o, TOWER_GAP))) continue;
           if (h > TALL_H && obbCorners(o).some((c) => terrainHeight(c.x, c.z) > TALL_GROUND))
             continue;
-          if (!accept(o, zone)) continue;
+          if (!accept(o, zone)) {
+            failW[si] = o.hw;
+            failD[si] = o.hd;
+            continue;
+          }
           placed.push(o);
+          sites.forEach((q, qi) => {
+            const l = toLocal(q.x - o.x, q.z - o.z, o.rotY);
+            if (Math.abs(l.x) < o.hw && Math.abs(l.z) < o.hd) dead[qi] = 1;
+          });
           const blockId = blocks.length;
           blocks.push({
             id: blockId,
@@ -1762,6 +1780,58 @@ function makeRidges(seed: number): Ridge[] {
   ];
 }
 
+/** Horizontal reach (m) and vertical margin (m) a sky lane keeps from buildings. */
+export const SKY_LANE_CLEAR = 60;
+export const SKY_LANE_MARGIN = 30;
+
+/**
+ * Flying-traffic routes (SEOUL.md 7.5): rings around the 용산, 여의도 and 테헤란로 towers and a
+ * long route over the river. Each band starts above every building within SKY_LANE_CLEAR m of
+ * the lane, so drones never fly through a tower.
+ */
+function makeSkyLanes(buildings: readonly BuildingSpec[], hash: GridHash): SkyLane[] {
+  const ring = (c: Vec2, r: number, n = 16): Vec2[] =>
+    Array.from({ length: n }, (_, i) => {
+      const a = (i / n) * Math.PI * 2;
+      return { x: c.x + Math.cos(a) * r, z: c.z + Math.sin(a) * r };
+    });
+  const yeouido = MEGA.yeouido?.peak ?? { x: -1090, z: 200 };
+  const [ta, tb] = TEHERAN;
+  const tmid = { x: (ta.x + tb.x) / 2, z: (ta.z + tb.z) / 2 };
+  const river = RIVER.samples.filter(
+    (p, i) => i % 20 === 0 && Math.abs(p.x) < HALF_X - 60 && Math.abs(p.z) < HALF_Z - 60,
+  );
+  const defs: { id: string; points: Vec2[]; closed: boolean; floor: number }[] = [
+    { id: 'sky-yongsan-ring', points: ring(SKYLINE_PEAK, 430), closed: true, floor: 140 },
+    { id: 'sky-yeouido-ring', points: ring(yeouido, 320), closed: true, floor: 140 },
+    { id: 'sky-gangnam-loop', points: ring(tmid, 330, 12), closed: true, floor: 120 },
+    { id: 'sky-river', points: river, closed: false, floor: 110 },
+  ];
+  return defs.map((d) => {
+    let top = 0;
+    const n = d.points.length;
+    const segs = d.closed ? n : n - 1;
+    for (let i = 0; i < segs; i++) {
+      const a = d.points[i] as Vec2;
+      const b = d.points[(i + 1) % n] as Vec2;
+      for (const id of hash.query(segmentBounds(a, b, SKY_LANE_CLEAR + 60))) {
+        const bd = buildings[id] as BuildingSpec;
+        const reach = SKY_LANE_CLEAR + Math.hypot(bd.w, bd.d) / 2;
+        if (pointSegmentDistance(bd, a, b) > reach) continue;
+        top = Math.max(top, bd.baseY + bd.h + bd.spireH);
+      }
+    }
+    const lo = Math.max(d.floor, Math.ceil(top + SKY_LANE_MARGIN));
+    return { id: d.id, points: d.points, closed: d.closed, altitude: [lo, lo + 60] };
+  });
+}
+
+function buildingHash(buildings: readonly BuildingSpec[]): GridHash {
+  const h = new GridHash();
+  buildings.forEach((b, id) => h.insert(id, obbBounds(footprintObb(b))));
+  return h;
+}
+
 function makeLandmarks(buildings: readonly BuildingSpec[]): Landmark[] {
   const out: Landmark[] = [];
   for (const b of buildings) {
@@ -1856,5 +1926,6 @@ export function generateLayout(seed = 2077): Layout {
     mountains: MOUNTAINS.map((m) => ({ ...m, peak: { ...m.peak } })),
     namedRoads,
     landmarks: makeLandmarks(buildings),
+    skyLanes: makeSkyLanes(buildings, buildingHash(buildings)),
   };
 }
