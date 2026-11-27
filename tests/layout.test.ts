@@ -42,7 +42,13 @@ import {
   type Vec2,
 } from '../src/city/layout';
 import { MAX_SLENDER, fitScale } from '../src/city/generate';
-import { riverDistanceLowerBound } from '../src/city/river';
+import {
+  PALACE_RECT,
+  TALL_GROUND,
+  TALL_H,
+  isForest,
+  riverDistanceLowerBound,
+} from '../src/city/river';
 import {
   hashString,
   obbOverlap,
@@ -82,11 +88,11 @@ describe('layout v3: determinism', () => {
       digest: digest(LAYOUT),
     }).toMatchInlineSnapshot(`
       {
-        "blocks": 1486,
-        "buildings": 6074,
-        "digest": "397a6a54",
-        "roads": 1209,
-        "slots": 3469,
+        "blocks": 1403,
+        "buildings": 5653,
+        "digest": "1864fc63",
+        "roads": 1175,
+        "slots": 3436,
       }
     `);
   });
@@ -112,7 +118,7 @@ describe('layout v3: counts (SEOUL.md 7.4)', () => {
     expect(B.length).toBeGreaterThanOrEqual(5000);
     expect(B.length).toBeLessThanOrEqual(7000);
     const hill = count((b) => b.archetype === 'hillHouse');
-    expect(hill).toBeGreaterThanOrEqual(150);
+    expect(hill).toBeGreaterThanOrEqual(100);
     expect(hill).toBeLessThanOrEqual(900);
     const mega = count((b) => b.h >= MEGA_MIN_H);
     expect(mega).toBeGreaterThanOrEqual(14);
@@ -125,7 +131,7 @@ describe('layout v3: counts (SEOUL.md 7.4)', () => {
     expect(top.h).toBe(600);
     expect(top.zoneId).toBe('yongsan');
     expect(top.tags.landmark).toBe('yongsan-apex');
-    expect(Math.hypot(top.x - SKYLINE_PEAK.x, top.z - SKYLINE_PEAK.z)).toBeLessThan(200);
+    expect(Math.hypot(top.x - SKYLINE_PEAK.x, top.z - SKYLINE_PEAK.z)).toBeLessThan(260);
     const mark = (id: string) => B.find((b) => b.tags.landmark === id)!;
     expect(mark('jamsil-blade').h).toBe(500);
     expect(mark('jamsil-blade').archetype).toBe('taperTower');
@@ -412,8 +418,8 @@ describe('layout v3: districts', () => {
   it('puts the Seoul districts where SEOUL.md 4.2 says', () => {
     const at = (x: number, z: number) => zoneAt(x, z).id;
     expect(at(SKYLINE_PEAK.x, SKYLINE_PEAK.z)).toBe('yongsan');
-    expect(at(-150, -800)).toBe('jongno');
-    expect(at(-190, -990)).toBe('palace');
+    expect(at(100, -800)).toBe('jongno');
+    expect(at(-190, -800)).toBe('palace');
     expect(at(-176, -389)).toBe('namsan');
     expect(at(980, -420)).toBe('seongsu');
     expect(at(-1000, -620)).toBe('hongdae');
@@ -787,6 +793,52 @@ describe('layout v3: water and islands', () => {
         expect(gap, `${b.id} vs ${o.id}`).toBeGreaterThanOrEqual(0.8 * Math.max(b.h, o.h) - 1e-6);
       }
     }
+  });
+});
+
+describe('layout v3: mountains stay wooded', () => {
+  it('builds nothing on slopes over 25 % or above the forest line', () => {
+    for (const b of B) {
+      const o = obb(b);
+      const c = Math.cos(o.rotY);
+      const sn = Math.sin(o.rotY);
+      for (const [lx, lz] of [
+        [0, 0],
+        [-o.hw, -o.hd],
+        [o.hw, -o.hd],
+        [o.hw, o.hd],
+        [-o.hw, o.hd],
+      ] as const) {
+        const x = o.x + c * lx + sn * lz;
+        const z = o.z - sn * lx + c * lz;
+        expect(isForest(x, z), `building ${b.id}`).toBe(false);
+      }
+    }
+  });
+
+  it('puts buildings over 40 m only on ground at most 20 m high', () => {
+    for (const b of B.filter((x) => x.h > TALL_H)) {
+      expect(terrainHeight(b.x, b.z), `building ${b.id}`).toBeLessThanOrEqual(TALL_GROUND);
+    }
+    for (const b of B.filter((x) => x.district === 'hillside')) {
+      expect(b.floors, `building ${b.id}`).toBeLessThanOrEqual(5);
+    }
+  });
+
+  it('lines the palace halls up on one axis inside a level court', () => {
+    const halls = B.filter((b) => b.district === 'palace');
+    expect(halls.length).toBeGreaterThanOrEqual(3);
+    const cx = (PALACE_RECT.x0 + PALACE_RECT.x1) / 2;
+    for (const b of halls) {
+      expect(Math.abs(b.x - cx)).toBeLessThan(1);
+      expect(b.archetype).toBe('palaceHall');
+      expect(b.baseY).toBe(0);
+    }
+    const r: { x0: number; x1: number; z0: number; z1: number } = PALACE_RECT;
+    for (let x = r.x0; x <= r.x1; x += 13) {
+      for (let z = r.z0; z <= r.z1; z += 11) expect(terrainHeight(x, z)).toBe(0);
+    }
+    expect(LAYOUT.roads.filter((r) => r.zoneId === 'palace')).toHaveLength(0);
   });
 });
 

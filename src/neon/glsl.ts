@@ -35,6 +35,12 @@ uniform float uMotion;
 uniform float uScroll;
 uniform float uWet;
 uniform float uNight;
+// NaN guards: bloom spreads a single NaN pixel into a black block, so never normalize a zero
+// vector, never pow a negative base (GLSL leaves it undefined).
+vec3 safeNormalize(vec3 v, vec3 fallback) {
+  float l2 = dot(v, v);
+  return l2 > 1e-12 ? v * inversesqrt(l2) : fallback;
+}
 float nHash(float n) { return fract(sin(n * 12.9898 + 4.1414) * 43758.5453); }
 float nHash2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float powerOn(float zone, float seed) {
@@ -80,7 +86,9 @@ void vehicleFrame(out vec3 P, out vec3 F, out vec3 R, out float fade) {
   vec3 p1 = pathAt(iPath.x, wrapU(uu + du, iPath.y));
   vec3 d = (p1 - p0) * iMotion.z;
   F = length(d) > 1e-4 ? normalize(d) : vec3(1.0, 0.0, 0.0);
-  R = normalize(vec3(-F.z, 0.0, F.x));
+  // A vertical tangent has no horizontal right vector; fall back instead of normalizing zero.
+  vec3 r = vec3(-F.z, 0.0, F.x);
+  R = dot(r, r) > 1e-12 ? normalize(r) : vec3(0.0, 0.0, 1.0);
   P = pathAt(iPath.x, uu) + R * iMotion.w + vec3(0.0, iExtra.x, 0.0);
   if (iPath.w > 0.5) P.y += sin(uTime * 0.8 + iExtra.y) * 1.2;
 }
@@ -97,7 +105,8 @@ export const ADDITIVE_TAIL = /* glsl */ `
   #include <colorspace_fragment>
   #ifdef USE_FOG
     #ifdef FOG_EXP2
-      float fogA = 1.0 - exp( - pow( fogDensity * 0.55 * vFogDepth, 2.0 ) );
+      float fogD = fogDensity * 0.55 * vFogDepth;
+      float fogA = 1.0 - exp( - fogD * fogD );
     #else
       float fogA = smoothstep( fogNear, fogFar, vFogDepth );
     #endif

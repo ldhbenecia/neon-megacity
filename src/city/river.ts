@@ -3,7 +3,7 @@
 // and stays strictly increasing in x, so `riverZ(x)` is a function of x.
 import { CatmullRomCurve3, Vector3 } from 'three';
 import { fbm1 } from './noise';
-import { clamp, closestSegmentT, pointInPolygon, pointSegmentDistance } from './math';
+import { clamp, closestSegmentT, pointInPolygon, pointSegmentDistance, smoothstep } from './math';
 import type { Island, Mountain, River, SideChannel, Vec2 } from './types';
 
 /** Map half extents (m). The map spans x ±HALF_X, z ±HALF_Z. */
@@ -442,7 +442,8 @@ export function islandAt(x: number, z: number): Island | null {
 // --- terrain (SEOUL.md 5.1) ---
 
 export const MOUNTAINS: readonly Mountain[] = [
-  { id: 'namsan', name: '남산', peak: { x: -176, z: -389 }, height: 160, radius: 300 },
+  // Radius kept tight so the 용산 tower field at its western foot stays on low ground.
+  { id: 'namsan', name: '남산', peak: { x: -176, z: -389 }, height: 160, radius: 250 },
   { id: 'bugak', name: '북악산', peak: { x: -200, z: -1180 }, height: 205, radius: 320 },
   { id: 'inwang', name: '인왕산', peak: { x: -470, z: -1015 }, height: 200, radius: 240 },
   { id: 'achasan', name: '아차산', peak: { x: 1615, z: -740 }, height: 170, radius: 260 },
@@ -485,7 +486,47 @@ export function terrainHeight(x: number, z: number): number {
     const n = 0.5 * fbm1(u, TERRAIN.seed) + 0.5 * fbm1(v, TERRAIN.seed + 17);
     h = Math.max(h, m.height * b * (1 + TERRAIN.detail * (2 * n - 1)));
   }
-  return h;
+  if (h === 0) return 0;
+  // The palace grounds are a level court at the foot of 북악 (fades out over PALACE_FADE m).
+  const dx = Math.max(PALACE_RECT.x0 - x, 0, x - PALACE_RECT.x1);
+  const dz = Math.max(PALACE_RECT.z0 - z, 0, z - PALACE_RECT.z1);
+  const out = Math.hypot(dx, dz);
+  return out >= PALACE_FADE ? h : h * smoothstep(0, PALACE_FADE, out);
+}
+
+/** Walled palace grounds (SEOUL.md 4.5): level ground south of 북악. Shared with the zone. */
+export const PALACE_RECT = { x0: -320, x1: -60, z0: -880, z1: -720 } as const;
+const PALACE_FADE = 25;
+
+/** Steepest ground slope (rise / run) at (x, z), from central differences 2 m apart. */
+export function terrainSlope(x: number, z: number): number {
+  const e = 2;
+  const gx = (terrainHeight(x + e, z) - terrainHeight(x - e, z)) / (2 * e);
+  const gz = (terrainHeight(x, z + e) - terrainHeight(x, z - e)) / (2 * e);
+  return Math.hypot(gx, gz);
+}
+
+/** Slope above which the ground stays forest (manager rule: 25 %). */
+export const FOREST_SLOPE = 0.25;
+/** Share of a mountain's peak height above which its ground stays forest. */
+export const FOREST_LINE = 0.55;
+/** Highest ground (m) a building over TALL_H may stand on. */
+export const TALL_GROUND = 20;
+export const TALL_H = 40;
+
+/**
+ * True where the mountains stay wooded: slopes over FOREST_SLOPE or ground above FOREST_LINE of
+ * the local mountain's height. Nothing is built there (hillside houses stop below it).
+ */
+export function isForest(x: number, z: number): boolean {
+  const h = terrainHeight(x, z);
+  if (h <= 0) return false;
+  if (terrainSlope(x, z) > FOREST_SLOPE) return true;
+  for (const m of MOUNTAINS) {
+    if (Math.hypot(x - m.peak.x, z - m.peak.z) < m.radius && h > FOREST_LINE * m.height)
+      return true;
+  }
+  return false;
 }
 
 /**

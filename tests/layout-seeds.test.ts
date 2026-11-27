@@ -125,10 +125,10 @@ describe.each(SEEDS)('seed %i', (seed) => {
       'apt-banpo': 20,
       'apt-apgu': 7,
       'apt-jamsil': 7,
-      'apt-gwangjin': 25,
+      'apt-gwangjin': 18,
     };
     for (const [id, n] of Object.entries(min)) expect(slabs(id), id).toBeGreaterThanOrEqual(n);
-    expect(B.filter((b) => b.archetype === 'apartmentSlab').length).toBeGreaterThanOrEqual(80);
+    expect(B.filter((b) => b.archetype === 'apartmentSlab').length).toBeGreaterThanOrEqual(70);
   });
 
   it('keeps non-megatower heights under their zone caps (heights.tallMax)', () => {
