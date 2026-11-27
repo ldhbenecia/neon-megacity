@@ -362,6 +362,8 @@ function saetgangOffset(x: number): number {
 }
 
 const SAETGANG_WIDTH = 50;
+/** Shortest distance (m) of the 샛강 centerline offset from the south bank (clear of 올림픽대로). */
+const SAETGANG_MOUTH = 75;
 
 /**
  * z of the south embankment on the vertical line at x (first point south of the centerline where
@@ -407,8 +409,6 @@ function sideChannelDistance(ch: SideChannel, x: number, z: number): number {
   if (x < first.x - 200 || x > last.x + 200 || z < first.z - 600 || z > first.z + 900) {
     return Infinity;
   }
-/** Shortest distance (m) of the 샛강 centerline offset from the south bank (clear of 올림픽대로). */
-const SAETGANG_MOUTH = 75;
   // The centerline is x-monotonic: scan outward from x until |dx| exceeds the best distance.
   let lo = 0;
   let hi = c.length - 1;

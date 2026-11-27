@@ -1698,23 +1698,6 @@ function makeRidges(seed: number): Ridge[] {
   ];
 }
 
-function makeLandmarks(buildings: readonly BuildingSpec[]): Landmark[] {
-  const out: Landmark[] = [];
-  for (const b of buildings) {
-    if (b.tags.landmark)
-      out.push({ id: b.tags.landmark, buildingId: b.id, x: b.x, z: b.z, h: b.h });
-  }
-  const namsan = MOUNTAINS.find((m) => m.id === 'namsan');
-  if (namsan) {
-    out.push({ id: 'namsan-mast', buildingId: null, x: namsan.peak.x, z: namsan.peak.z, h: 180 });
-  }
-  const palace = zoneById('palace');
-  const c = palace.polygon.reduce((a, p) => ({ x: a.x + p.x, z: a.z + p.z }), { x: 0, z: 0 });
-  const n = palace.polygon.length;
-  out.push({ id: 'palace', buildingId: null, x: c.x / n, z: c.z / n, h: 18 });
-  return out;
-}
-
 /** Horizontal reach (m) and vertical margin (m) a sky lane keeps from buildings. */
 export const SKY_LANE_CLEAR = 60;
 export const SKY_LANE_MARGIN = 30;
@@ -1765,6 +1748,23 @@ function buildingHash(buildings: readonly BuildingSpec[]): GridHash {
   const h = new GridHash();
   buildings.forEach((b, id) => h.insert(id, obbBounds(footprintObb(b))));
   return h;
+}
+
+function makeLandmarks(buildings: readonly BuildingSpec[]): Landmark[] {
+  const out: Landmark[] = [];
+  for (const b of buildings) {
+    if (b.tags.landmark)
+      out.push({ id: b.tags.landmark, buildingId: b.id, x: b.x, z: b.z, h: b.h });
+  }
+  const namsan = MOUNTAINS.find((m) => m.id === 'namsan');
+  if (namsan) {
+    out.push({ id: 'namsan-mast', buildingId: null, x: namsan.peak.x, z: namsan.peak.z, h: 180 });
+  }
+  const palace = zoneById('palace');
+  const c = palace.polygon.reduce((a, p) => ({ x: a.x + p.x, z: a.z + p.z }), { x: 0, z: 0 });
+  const n = palace.polygon.length;
+  out.push({ id: 'palace', buildingId: null, x: c.x / n, z: c.z / n, h: 18 });
+  return out;
 }
 
 export function generateLayout(seed = 2077): Layout {
@@ -1844,6 +1844,6 @@ export function generateLayout(seed = 2077): Layout {
     mountains: MOUNTAINS.map((m) => ({ ...m, peak: { ...m.peak } })),
     namedRoads,
     landmarks: makeLandmarks(buildings),
+    skyLanes: makeSkyLanes(buildings, buildingHash(buildings)),
   };
 }
-    skyLanes: makeSkyLanes(buildings, buildingHash(buildings)),
