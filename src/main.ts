@@ -13,6 +13,7 @@ import * as infra from './infra/index';
 import * as neon from './neon/index';
 import * as atmosphere from './atmosphere/index';
 import { createLoader, initUx, nextFrame, parseUxQuery } from './ux/index';
+import { QUALITY_STORAGE_KEY, storedTier, tierFromRenderer } from './ux/quality';
 
 const BOOT_WEIGHTS = { setup: 5, compile: 15, firstFrame: 3 } as const;
 
@@ -27,7 +28,24 @@ const MODULES: readonly (readonly [name: string, weight: number, module: CityMod
 
 const query = parseQuery(window.location.search);
 const debug = parseUxQuery(window.location.search).debug;
-const quality = query.quality ?? 'high';
+// Manual picks win: ?quality= (incl. ci), then the stored control-panel choice. Otherwise the tier
+// is guessed from the GPU once the renderer exists (see boot()).
+const manualQuality: Quality | null = query.quality ?? readStoredTier();
+let quality: Quality = manualQuality ?? 'high';
+
+function readStoredTier(): Quality | null {
+  try {
+    return storedTier(localStorage.getItem(QUALITY_STORAGE_KEY));
+  } catch {
+    return null;
+  }
+}
+
+function rendererName(renderer: THREE.WebGLRenderer): string | null {
+  const gl = renderer.getContext();
+  const ext = gl.getExtension('WEBGL_debug_renderer_info');
+  return ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : null;
+}
 const loader = createLoader();
 
 /**
@@ -54,6 +72,7 @@ async function boot(): Promise<void> {
   if (!container) throw new Error('#app container missing');
 
   const renderer = createRenderer();
+  if (!manualQuality) quality = tierFromRenderer(rendererName(renderer));
   // Pixel ratio is owned by ux/perf (adaptive, capped at 1.5).
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -141,6 +160,10 @@ async function boot(): Promise<void> {
   const ux = initUx(ctx, {
     ...(query.cam ? { cam: query.cam } : {}),
     resize,
+    manualQuality: manualQuality !== null,
+    emitQuality: (q) => {
+      for (const fn of [...qualityHandlers]) fn(q);
+    },
   });
   loader.detail('buildings', `건물 ${LAYOUT.buildings.length.toLocaleString('ko-KR')}동 조립 완료`);
 

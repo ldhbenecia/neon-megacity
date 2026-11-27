@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import type { Ctx } from '../core/types';
-import { AdaptiveDpr } from './dpr';
+import type { Ctx, Quality } from '../core/types';
+import { QualityController } from './quality';
 
 export interface FrameStats {
   calls: number;
@@ -10,6 +10,8 @@ export interface FrameStats {
   geometries: number;
   fps: number;
   dpr: number;
+  /** Current render tier (env.quality). */
+  tier: string;
 }
 
 export interface Perf {
@@ -22,12 +24,25 @@ export interface Perf {
 export const DPR_CAP = 1.5;
 export const LOW_DPR = 0.5;
 
-export function createPerf(ctx: Ctx, opts: { overlay: boolean; resize: () => void }): Perf {
-  const { renderer, gui } = ctx;
+export interface PerfOptions {
+  overlay: boolean;
+  resize: () => void;
+  /** The tier was picked by the user (?quality=, stored choice): no automatic changes. */
+  manual: boolean;
+  /** Called after a runtime tier change, once env.quality holds the new tier. */
+  emitQuality: (q: Quality) => void;
+}
+
+export function createPerf(ctx: Ctx, opts: PerfOptions): Perf {
+  const { renderer, gui, env } = ctx;
   renderer.info.autoReset = false;
-  const max = ctx.env.quality === 'ci' ? LOW_DPR : Math.min(window.devicePixelRatio || 1, DPR_CAP);
-  const adaptive = new AdaptiveDpr({ max });
-  renderer.setPixelRatio(adaptive.dpr);
+  // The ci tier is fixed; user tiers are driven by one controller (DPR first, then the tier).
+  const controller =
+    env.quality === 'ci'
+      ? null
+      : new QualityController(env.quality, window.devicePixelRatio || 1, opts.manual);
+  const startDpr = controller ? controller.state.dpr : LOW_DPR;
+  renderer.setPixelRatio(startDpr);
 
   const last: FrameStats = {
     calls: 0,
@@ -36,12 +51,18 @@ export function createPerf(ctx: Ctx, opts: { overlay: boolean; resize: () => voi
     textures: 0,
     geometries: 0,
     fps: 0,
-    dpr: adaptive.dpr,
+    dpr: startDpr,
+    tier: env.quality,
   };
   let acc = 0;
   let count = 0;
 
-  const quality = { dpr: adaptive.dpr, adaptive: true, avgMs: 0 };
+  const quality = {
+    tier: env.quality as string,
+    dpr: startDpr,
+    auto: !!controller && !opts.manual,
+    avgMs: 0,
+  };
   const folder = gui.addFolder('Performance');
   const applyDpr = (v: number): void => {
     renderer.setPixelRatio(v);
@@ -49,11 +70,8 @@ export function createPerf(ctx: Ctx, opts: { overlay: boolean; resize: () => voi
     quality.dpr = v;
     opts.resize();
   };
-  folder
-    .add(quality, 'adaptive')
-    .name('Adaptive DPR')
-    // Off means "full quality": restore the cap instead of freezing the last lowered value.
-    .onChange(() => applyDpr(adaptive.reset()));
+  folder.add(quality, 'auto').name('Auto quality');
+  folder.add(quality, 'tier').name('Tier').listen().disable();
   folder.add(quality, 'dpr').name('DPR').listen().disable();
   folder.add(quality, 'avgMs').name('avg frame (ms)').listen().disable();
   folder.close();
@@ -79,7 +97,7 @@ export function createPerf(ctx: Ctx, opts: { overlay: boolean; resize: () => voi
         last.fps = count / acc;
         acc = 0;
         count = 0;
-        quality.avgMs = Math.round(adaptive.averageMs * 10) / 10;
+        quality.avgMs = Math.round((controller?.averageMs ?? 0) * 10) / 10;
         if (overlay) {
           overlay.textContent =
             `fps   ${last.fps.toFixed(0).padStart(6)}\n` +
@@ -88,12 +106,20 @@ export function createPerf(ctx: Ctx, opts: { overlay: boolean; resize: () => voi
             `prog  ${String(last.programs).padStart(6)}\n` +
             `tex   ${String(last.textures).padStart(6)}\n` +
             `geo   ${String(last.geometries).padStart(6)}\n` +
-            `dpr   ${last.dpr.toFixed(2).padStart(6)}`;
+            `dpr   ${last.dpr.toFixed(2).padStart(6)}\n` +
+            `tier  ${quality.tier.padStart(6)}`;
         }
       }
-      if (!quality.adaptive) return;
-      const next = adaptive.sample(dt);
-      if (next !== null) applyDpr(next);
+      if (!controller || !quality.auto) return;
+      const change = controller.step(dt);
+      if (!change) return;
+      if (change.dpr !== last.dpr) applyDpr(change.dpr);
+      if (change.tierChanged) {
+        env.quality = change.tier;
+        quality.tier = change.tier;
+        last.tier = change.tier;
+        opts.emitQuality(change.tier);
+      }
     },
     stats() {
       return { ...last };

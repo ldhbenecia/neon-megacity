@@ -51,7 +51,7 @@ test.describe('performance budget', () => {
         await waitFrames(page, SETTLE_FRAMES);
         const s = await stats(page);
         checkBudget(s, formatClock(minutes));
-        expect.soft(s.dpr, 'low tier DPR').toBe(LOW_DPR);
+        expect.soft(s.dpr, 'ci tier DPR').toBe(LOW_DPR);
       }
       expect(errors).toEqual([]);
     });
