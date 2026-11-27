@@ -21,7 +21,6 @@ import { palaceGrounds, palacePlan } from './palace';
 import { createFacadeMaterial, createFacadeUniforms } from './facadeMaterial';
 import {
   lodDistancesFor,
-  LOD_DISTANCES,
   LOD_HYSTERESIS,
   chunkCenter,
   chunkGrid,
@@ -123,7 +122,7 @@ function collectChunks(
 interface ChunkLod {
   chunk: Chunk;
   group: THREE.Group;
-  box: THREE.Box3;
+  pos: THREE.Vector3;
   l1: THREE.Object3D;
   l2: THREE.Object3D;
   /** null: not built; Object3D without geometry: built but empty. */
@@ -139,13 +138,12 @@ export function init(ctx: Ctx): CityModuleInstance {
 
   const onStreet = streetTest(LAYOUT.roads);
   const chunks = collectChunks(LAYOUT, chunkGrid(LAYOUT, CITY.chunkSize), onStreet);
-  // Low tier (CI SwiftShader): start at LOD1, so no LOD0 detail (trees, stairs, props) and no
-  // interior-mapped windows; LOD2 takes over at the LOD1 distance.
-  const low = env.quality === 'ci';
+  // CI tier (SwiftShader, fixed at boot): no LOD0 detail and no interior-mapped facade program.
+  const ci = env.quality === 'ci';
 
   const uniforms = createFacadeUniforms();
   const facade = createFacadeMaterial(uniforms, false);
-  const facadeNear = low ? facade : createFacadeMaterial(uniforms, true);
+  const facadeNear = ci ? facade : createFacadeMaterial(uniforms, true);
   const geometries: THREE.BufferGeometry[] = [];
   const triangles = [0, 0];
   const info = {
@@ -164,9 +162,6 @@ export function init(ctx: Ctx): CityModuleInstance {
     return mesh;
   };
   let distances = lodDistancesFor(env.quality);
-  const offQuality = ctx.onQuality((q) => {
-    distances = lodDistancesFor(q);
-  });
   const lods: ChunkLod[] = chunks.map((chunk) => {
     const group = new THREE.Group();
     group.name = `chunk ${chunk.i},${chunk.j}`;
@@ -185,12 +180,7 @@ export function init(ctx: Ctx): CityModuleInstance {
     group.matrixAutoUpdate = false;
     group.traverse((o2) => o2.updateMatrix());
     group.updateMatrixWorld(true);
-    // World-space box of the chunk's LOD1 (or LOD2) geometry; LOD picks by distance to it.
-    const box = new THREE.Box3();
-    const bb = built[0]?.boundingBox ?? built[1]?.boundingBox;
-    if (bb) box.copy(bb).translate(group.position);
-    else box.setFromCenterAndSize(group.position, new THREE.Vector3());
-    return { chunk, group, box, l1, l2, l0: null, level: 1 };
+    return { chunk, group, pos: group.position.clone(), l1, l2, l0: null, level: 1 };
   });
   for (const c of lods) group.add(c.group);
   info['tris LOD1'] = triangles[0] ?? 0;
@@ -218,6 +208,15 @@ export function init(ctx: Ctx): CityModuleInstance {
     lod0Count--;
     shadowsChanged();
   };
+  // Tier changes come from the frame-time controller; dropping to a tier without LOD0 releases
+  // every LOD0 at once so the shadow map is redrawn once, not once per frame.
+  const offQuality = ctx.onQuality((q) => {
+    distances = lodDistancesFor(q);
+    if (distances[1] === 0) {
+      job = null;
+      for (const c of lods) releaseLod0(c);
+    }
+  });
   const newJob = (c: ChunkLod): Lod0Job =>
     lod0Job(new GeoBuilder(c.chunk.o.x, c.chunk.o.z), c.chunk.lod0);
   let job: { c: ChunkLod; job: Lod0Job } | null = null;
@@ -236,9 +235,8 @@ export function init(ctx: Ctx): CityModuleInstance {
     const noLod0 = distances[1] === 0;
     let farthestD = noLod0 ? -1 : distances[1] * LOD0_RELEASE_FACTOR;
     for (const c of lods) {
-      // Distance over zoom like THREE.LOD (the rig keeps zoom at 1), to the chunk box: a 400 m
-      // chunk's centre can be ~280 m from a building at its edge.
-      const d = c.box.distanceToPoint(camPos) / ctx.camera.zoom;
+      // Same metric as THREE.LOD: distance over zoom (the rig keeps zoom at 1; fov changes instead).
+      const d = camPos.distanceTo(c.pos) / ctx.camera.zoom;
       c.level = pickLevel(d, c.level, distances, LOD_HYSTERESIS);
       if (c.l0 && d > farthestD) {
         farthest = c;
@@ -271,17 +269,17 @@ export function init(ctx: Ctx): CityModuleInstance {
   };
   // Boot: LOD0 for the chunks around the starting camera at once, so the first view is final and
   // the near (interior-mapped) facade program is compiled with the rest during the boot stage.
-  for (let k = 0; k < lods.length && !low; k++) {
+  for (let k = 0; k < lods.length && !ci; k++) {
     updateLods(Infinity);
     if (!lods.some((c) => c.level === 0 && !c.l0)) break;
   }
   updateLods(0);
   // A far start pose has no LOD0 yet: build the nearest chunk's anyway and leave it visible for
   // the boot compile; the first update hides it again.
-  if (!low && lod0Count === 0) {
+  if (!ci && lod0Count === 0) {
     let first: ChunkLod | null = null;
     for (const c of lods) {
-      if (!first || c.box.distanceToPoint(camPos) < first.box.distanceToPoint(camPos)) first = c;
+      if (!first || camPos.distanceTo(c.pos) < camPos.distanceTo(first.pos)) first = c;
     }
     if (first) {
       attachLod0(first, newJob(first).step(Infinity) ?? null);
@@ -343,7 +341,7 @@ export function init(ctx: Ctx): CityModuleInstance {
       uniforms.uPower.value = env.powerOn;
       uniforms.uTime.value = elapsed;
       wet.value = Math.max(env.wetness, 0.55 * env.nightFactor);
-      updateLods(low ? 0 : LOD0_BUDGET_MS);
+      updateLods(ci ? 0 : LOD0_BUDGET_MS);
       info['LOD0 chunks'] = lod0Count;
     },
     dispose() {
