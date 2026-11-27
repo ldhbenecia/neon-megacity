@@ -33,7 +33,20 @@ function powBases(code: string): string[] {
   return out;
 }
 
-const SAFE_BASE = /^(max|clamp|abs|horizonSide)\s*\(|^\d+(\.\d*)?$/;
+const SAFE_CALL = /^(max|clamp|abs|horizonSide)\s*\(/;
+
+/** A bare literal, or one guard call that spans the whole base (not `clamp(t, 0, 1) - 0.2`). */
+function safeBase(base: string): boolean {
+  if (/^\d+(\.\d*)?$/.test(base)) return true;
+  const m = SAFE_CALL.exec(base);
+  if (!m) return false;
+  let depth = 0;
+  for (let i = m[0].length - 1; i < base.length; i++) {
+    if (base[i] === '(') depth++;
+    else if (base[i] === ')' && --depth === 0) return i === base.length - 1;
+  }
+  return false;
+}
 
 // file → bases known to be >= 0, with the reason. Remove an entry once its owner guards it.
 const ALLOWED: Record<string, Record<string, string>> = {
@@ -62,13 +75,20 @@ describe('NaN guard (black block bug)', () => {
     expect(() => guardHighPass('void main() { gl_FragColor = vec4(1.0); }')).toThrow(/NaN guard/);
   });
 
+  it('accepts only bases fully wrapped by a guard', () => {
+    const bases = powBases(
+      'pow(max(x, 0.0), 2.0) pow(clamp(t, 0.0, 1.0) - 0.2, 2.2) pow(2.0, e) pow(1.0 - y, 1.4)',
+    );
+    expect(bases.map(safeBase)).toEqual([true, false, true, false]);
+  });
+
   it('every GLSL pow() base is guarded against negatives', () => {
     const bad: string[] = [];
     for (const file of sources(SRC)) {
       const rel = relative(SRC, file).split('\\').join('/');
       const code = readFileSync(file, 'utf8').replace(/Math\.pow/g, 'Math_pow');
       for (const base of powBases(code)) {
-        if (SAFE_BASE.test(base) || ALLOWED[rel]?.[base]) continue;
+        if (safeBase(base) || ALLOWED[rel]?.[base]) continue;
         bad.push(`${rel}: pow(${base}, …)`);
       }
     }
