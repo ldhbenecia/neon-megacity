@@ -190,7 +190,8 @@ task (v3: Node ~1.0 s, likely 1–2 s in a laptop browser).
 
 **Costs.** A worker chunk duplicates part of three (BufferGeometry and math; est. 40–60 KB gzip,
 lazy, not counted in the initial-load budget). Determinism is unchanged (same code, same seeds;
-`tests/buildings-lod.test.ts` covers byte equality). Debugging spans two threads.
+`tests/buildings-lod.test.ts` pins sliced vs direct LOD0 bytes, `tests/buildings-passes.test.ts`
+(#57) far / near passes vs the full emit). Debugging spans two threads.
 
 **Verification.** Same longtask probe: the buildings slice must vanish from the main thread, the
 boot → interactive time must not grow, and the loader must keep animating (no task > 100 ms
