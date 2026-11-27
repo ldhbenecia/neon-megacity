@@ -8,9 +8,14 @@ describe('neon district fallback', () => {
     for (const d of ['megacore', 'corridor'] as const) {
       expect(districtSigns(d)).toEqual(districtSigns('core'));
     }
-    for (const d of ['nightlife', 'brick', 'oldtown', 'showroom'] as const) {
+    for (const d of ['brick', 'showroom'] as const) {
       expect(districtSigns(d)).toEqual(districtSigns('sangga'));
     }
+    // Same base rules, different mood: quiet old Jongno, dense Hongdae.
+    const sangga = districtSigns('sangga');
+    expect(districtSigns('oldtown').shopScale).toBeLessThan(sangga.shopScale);
+    expect(districtSigns('nightlife').shopScale).toBeGreaterThan(sangga.shopScale);
+    expect(districtSigns('oldtown').zone).toEqual(sangga.zone);
   });
 
   it('keeps unbuilt districts dark', () => {
