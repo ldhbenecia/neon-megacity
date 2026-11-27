@@ -146,7 +146,6 @@ export function lampBudget(L: Pick<Layout, 'roads'>): number {
   return Math.min(LAMP_CAP, Math.round(n));
 }
 
-// `groundAt` must match `L` (bare ground or road surface); the default is the built-in map's.
 /** Street panels and ads may take this share of the sign budget; building signs keep the rest. */
 export const STREET_SIGN_SHARE = 0.15;
 const BUSY_KINDS: ReadonlySet<string> = new Set(['nightlife', 'sangga', 'corridor', 'brick']);
@@ -181,6 +180,7 @@ function thinPoles(
   out.poles = out.poles.filter((_, i) => !dropPoles.has(i));
 }
 
+// `groundAt` must match `L` (bare ground or road surface); the default is the built-in map's.
 export function planStreet(
   L: Layout,
   cat: Catalog,

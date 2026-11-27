@@ -6,6 +6,7 @@ import {
   fountainJetsFromNozzles,
 } from '../src/neon/fountain';
 import { laneSlots, railPaths, vehicleStreams } from '../src/neon/lanes';
+import { trainCars } from '../src/neon/traffic';
 
 describe('neon fountains (SEOUL.md 3.3)', () => {
   const jets = fountainJets(LAYOUT.bridges, LAYOUT.river.waterY);
@@ -105,5 +106,15 @@ describe('neon trains on infra rail tracks', () => {
       expect(kmh).toBeGreaterThanOrEqual(55);
       expect(kmh).toBeLessThanOrEqual(75);
     }
+  });
+
+  it('splits every train into cars, each a car length further back on its own path point', () => {
+    const trains = vehicleStreams(paths, []);
+    const cars = trainCars(trains, paths);
+    expect(cars.length).toBe(trains.length * 6);
+    const len = paths[trains[0]!.path]!.length;
+    const step = ((cars[0]!.u0 - cars[1]!.u0 + 1) % 1) * len;
+    expect(step).toBeCloseTo(20, 6);
+    for (const c of cars) expect(c.u0).toBeGreaterThanOrEqual(0);
   });
 });

@@ -110,6 +110,8 @@ export function bridgePaths(
   });
 }
 
+const RAIL_MAX_SAMPLES = 512;
+
 /** Rail track polylines (rail top, approach slopes included) from infra, one path per track. */
 export function railPaths(
   tracks: ReadonlyMap<string, readonly { points: readonly Vec3[] }[]>,
@@ -118,7 +120,14 @@ export function railPaths(
   for (const [id, list] of tracks) {
     list.forEach((t, i) => {
       if (t.points.length < 2) return;
-      const r = resample([...t.points], Math.max(2, t.points.length));
+      // Even 2 m stations (the path shader assumes even spacing) keep infra's grade breaks
+      // within a metre.
+      let len = 0;
+      t.points.forEach((q, k) => {
+        const p = t.points[k - 1];
+        if (p) len += Math.hypot(q.x - p.x, q.y - p.y, q.z - p.z);
+      });
+      const r = resample([...t.points], Math.min(RAIL_MAX_SAMPLES, Math.ceil(len / 2) + 1));
       out.push({
         id: `rail-${id}-${i}`,
         points: r.points,

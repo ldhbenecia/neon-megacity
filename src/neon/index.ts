@@ -1,10 +1,12 @@
 import * as THREE from 'three';
 import {
+  buildingContaining,
   buildingFaces,
   deckHeightAt,
   highwayCurve,
   surfaceHeight,
   type BuildingFace,
+  type Layout,
   type Vec3,
 } from '../city/layout';
 import { MATERIAL, NEON, SCREEN_MIN_GAIN, type NeonName } from '../core/palette';
@@ -125,7 +127,8 @@ function decalList(
     return Number.isFinite(gap) ? Math.min(8, Math.max(3, gap + 0.3)) : 3;
   };
   for (const s of [...P.flats, ...street.flats]) {
-    if (s.kind === 'crown' || s.y0 > 30) continue;
+    // Painted walls are lit by their lamps, not glowing: no reflection on the road.
+    if (s.kind === 'crown' || s.wash || s.y0 > 30) continue;
     const f = s.face >= 0 ? faces[s.building]?.[s.face] : undefined;
     const nx = f ? f.normal.x : s.nx;
     const nz = f ? f.normal.z : s.nz;
@@ -308,7 +311,7 @@ export function init(ctx: Ctx): CityModuleInstance {
   crossPoles.computeBoundingSphere();
   crossPoles.name = 'neon-cross-poles';
   // Banners hang from cables tied to the facades a little higher on each side (a slight sag).
-  const wires = bannerWires(P.flats);
+  const wires = bannerWires(P.flats, L);
   const wireGeo = new THREE.CylinderGeometry(0.03, 0.03, 1, 4).translate(0, 0.5, 0);
   const bannerCables = new THREE.InstancedMesh(wireGeo, poleMat, Math.max(1, wires.length));
   const up = new THREE.Vector3(0, 1, 0);
@@ -454,22 +457,32 @@ export function init(ctx: Ctx): CityModuleInstance {
   };
 }
 
-const CABLE_REACH = 2.5;
+const CABLE_MAX_REACH = 8;
+const CABLE_STEP = 0.25;
 const CABLE_RISE = 1;
 
-function bannerWires(flats: readonly FlatSign[]): { a: Vec3; b: Vec3 }[] {
+// A banner cable runs from the banner end across the road until it meets a facade; without a
+// wall within reach there is no cable (nothing to tie it to).
+function bannerWires(flats: readonly FlatSign[], L: Layout): { a: Vec3; b: Vec3 }[] {
   const out: { a: Vec3; b: Vec3 }[] = [];
   for (const s of flats) {
     if (s.building >= 0) continue;
     const tx = -s.nz;
     const tz = s.nx;
+    const y = s.y1 + CABLE_RISE;
     for (const side of [-1, 1]) {
-      const e = (side * s.w) / 2;
-      const r = side * (s.w / 2 + CABLE_REACH);
-      out.push({
-        a: { x: s.x + tx * e, y: s.y1, z: s.z + tz * e },
-        b: { x: s.x + tx * r, y: s.y1 + CABLE_RISE, z: s.z + tz * r },
-      });
+      const ex = s.x + (tx * side * s.w) / 2;
+      const ez = s.z + (tz * side * s.w) / 2;
+      let anchor: Vec3 | null = null;
+      for (let d = CABLE_STEP; d <= CABLE_MAX_REACH; d += CABLE_STEP) {
+        const x = ex + tx * side * d;
+        const z = ez + tz * side * d;
+        if (buildingContaining(L, x, y, z) !== null) {
+          anchor = { x: x - tx * side * CABLE_STEP, y, z: z - tz * side * CABLE_STEP };
+          break;
+        }
+      }
+      if (anchor) out.push({ a: { x: ex, y: s.y1, z: ez }, b: anchor });
     }
   }
   return out;

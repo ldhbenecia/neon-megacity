@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { ADDITIVE_TAIL, COMMON_PARS, PATH_PARS, neonMaterial, type NeonUniforms } from './glsl';
+import { PAINT_BELOW, PAINT_PAD_X, PAINT_RISE } from './placement';
 
 // Halos, holograms, ground reflections, vehicle lights, fountains and wall paint share one shader program (perf budget: every
 // distinct source or define is another program). `uMode` picks the branch at run time, so
@@ -8,9 +9,9 @@ export const GlowMode = { halo: 0, holo: 1, decal: 2, vehicle: 3, fountain: 4, p
 export type GlowMode = (typeof GlowMode)[keyof typeof GlowMode];
 
 const PAINT_DEFS = /* glsl */ `
-  #define PAINT_PAD_X 1.15
-  #define PAINT_RISE 2.4
-  #define PAINT_BELOW 0.2
+  #define PAINT_PAD_X ${PAINT_PAD_X.toFixed(3)}
+  #define PAINT_RISE ${PAINT_RISE.toFixed(3)}
+  #define PAINT_BELOW ${PAINT_BELOW.toFixed(3)}
 `;
 
 const VERTEX = /* glsl */ `
@@ -212,7 +213,8 @@ const FRAGMENT = /* glsl */ `
       float cu = vUv.x * 6.0 + vParam.w * 13.0;
       float id = floor(cu);
       float halfW = mix(0.16, 0.34, nHash(id)) * (1.0 + 0.8 * sArc);
-      float aa = fwidth(cu);
+      // fwidth can be 0 (flat-on, no motion): keep the smoothstep edges apart.
+      float aa = max(fwidth(cu), 1e-4);
       float core = 1.0 - smoothstep(halfW - aa, halfW + aa, abs(fract(cu) - 0.5));
       // Far away the bands would alias into moire: fade them into an even translucent sheet.
       float jet = mix(core, 0.4, smoothstep(0.25, 0.8, aa));

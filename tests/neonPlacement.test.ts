@@ -8,10 +8,14 @@ import {
   type BuildingSpec,
   type DistrictKind,
 } from '../src/city/layout';
-import { FACADE, baseArchetype, faceRole, windowStyle } from '../src/buildings/params';
+import { faceBlank } from '../src/buildings/archetypes';
+import { pointSegmentDistance } from '../src/city/math';
 import { buildCatalog } from '../src/neon/catalog';
 import {
   EDGE_IN,
+  PAINT_BELOW,
+  PAINT_PAD_X,
+  PAINT_RISE,
   TIER_MARGIN,
   insideFace,
   placeSigns,
@@ -225,18 +229,32 @@ describe('neon sign placement: zero penetration (5.1)', () => {
   });
 
   it('Seongsu paint is a factory name on a blank wall', () => {
-    const paint = P.flats.filter((f) => f.wash);
+    // Run with buildings' own blank flags, as at run time (layout faces carry none).
+    const roads = LAYOUT.roads.filter((r) => r.kind !== 'stair');
+    const onStreet = (x: number, z: number): boolean =>
+      roads.some((r) => pointSegmentDistance({ x, z }, r.a, r.b) <= r.width / 2 + 2);
+    const blankFaces = LAYOUT.buildings.map((b) =>
+      b.district === 'brick'
+        ? buildingFaces(b).map((f) => ({ ...f, blank: faceBlank(b, f.side, onStreet) }))
+        : faces[b.id]!,
+    );
+    const BP = placeSigns(LAYOUT, blankFaces, cat, { reserved: street.flats.length });
+    const paint = BP.flats.filter((f) => f.wash);
     if (LAYOUT.buildings.some((b) => b.district === 'brick'))
-      expect(paint.length).toBeGreaterThan(5);
+      expect(paint.length).toBeGreaterThan(10);
     for (const s of paint) {
       const b = spec(s.building);
-      const f = face(s.building, s.face);
+      const f = blankFaces[s.building]![s.face]!;
       expect(cat.cells[s.cell]?.kind).toBe('paint');
-      const blank = (f as typeof f & { blank?: boolean }).blank;
-      if (blank === undefined) {
-        expect(windowStyle(baseArchetype(b), faceRole(b, f.side), b.seed).type).toBe(FACADE.plain);
-      } else expect(blank).toBe(true);
+      expect((f as typeof f & { blank?: boolean }).blank).toBe(true);
+      expect(f.side).not.toBe(b.tags.mediaFace);
       expect(insideFace(f, s.u0, s.u1, s.y0, s.y1)).toBe(true);
+      // The whole lit quad (padding and lamps above) fits the wall too.
+      const uc = (s.u0 + s.u1) / 2;
+      const pw = (s.w * PAINT_PAD_X) / 2;
+      const y0 = s.y0 - PAINT_BELOW * s.h;
+      const y1 = s.y0 + (PAINT_RISE - PAINT_BELOW) * s.h;
+      expect(insideFace(f, uc - pw, uc + pw, y0, y1)).toBe(true);
       expect(s.w).toBeGreaterThanOrEqual((f.width - 2 * EDGE_IN) * 0.5 - EPS);
     }
   });

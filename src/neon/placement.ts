@@ -720,9 +720,15 @@ function placeCrown(
   }
 }
 
+function roofUsable(c: Ctx, b: BuildingSpec): boolean {
+  const top = b.tiers.length - 1;
+  const fs = (c.faces[b.id] ?? []).filter((f) => f.stack === 0 && f.tier === top);
+  return fs.length === 0 || fs.some(usable);
+}
+
 function placeCross(c: Ctx, b: BuildingSpec, rng: Rng, zone: number): void {
   const t = topTier(b);
-  if (!t) return;
+  if (!t || !roofUsable(c, b)) return;
   const h = rng.range(4, 8);
   const poleH = rng.range(3, 6);
   const rotY = b.rotY + rng.range(-0.3, 0.3);
@@ -1024,6 +1030,10 @@ function placeBanners(c: Ctx, rng: Rng): void {
 }
 
 const PAINT_CHANCE = 0.85;
+// Must match PAINT_PAD_X / PAINT_RISE / PAINT_BELOW in glow.ts.
+export const PAINT_PAD_X = 1.15;
+export const PAINT_RISE = 2.0;
+export const PAINT_BELOW = 0.2;
 const PAINT_ROAD_GAP = 14;
 
 // Seongsu: one big painted Korean name on the street wall of a warehouse, washed by warm lamps.
@@ -1056,22 +1066,39 @@ function placePaint(c: Ctx, b: BuildingSpec, rng: Rng, zone: number): void {
   const usable = f.width - 2 * EDGE_IN;
   const w = Math.min(18, usable * 0.8);
   if (w < 5) return;
-  const h = Math.min(3, Math.max(1.4, w / 5));
-  const y0 = b.baseY + b.groundFloorH + rng.range(0.8, 2.2);
+  const y0 = b.baseY + b.groundFloorH + rng.range(0.6, 1.4);
+  // Lettering shrinks to fit low warehouses: the lamps above must stay on the wall.
+  const room = (f.y1 - TIER_MARGIN - y0) / (PAINT_RISE - PAINT_BELOW);
+  const h = Math.min(3, Math.max(1.4, w / 5), room);
+  if (h < 1.2) return;
   const uc = rng.range(-(usable - w) / 2, (usable - w) / 2);
   const cell = pickCell(c, 'paint', rng);
   if (cell < 0) return;
+  // The paint shader's quad (glow.ts PAINT_*) spans the lamps above and some padding: the whole
+  // quad must fit the wall and not cover other signs, so it is what gets checked and reserved.
+  const pw = (w * PAINT_PAD_X) / 2;
   const s = tryWallSign(
     c,
     b,
     fi,
     'band',
-    { u0: uc - w / 2, u1: uc + w / 2, y0, y1: y0 + h },
+    { u0: uc - pw, u1: uc + pw, y0: y0 - PAINT_BELOW * h, y1: y0 + (PAINT_RISE - PAINT_BELOW) * h },
     WALL_GAP.band,
     0.15,
     { cell, color: 'neonAmber', anim: Anim.none, zone, seed: rng.int(0, 1e6) },
   );
-  if (s) s.wash = true;
+  if (!s) return;
+  // Keep the sign's own fields on the lettering itself (what buildPaint draws from).
+  Object.assign(s, {
+    wash: true,
+    w,
+    h,
+    u0: uc - w / 2,
+    u1: uc + w / 2,
+    y0,
+    y1: y0 + h,
+    y: y0 + h / 2,
+  });
 }
 
 /** Hard ceiling on all sign instances (ART_DIRECTION 5.1); smaller maps get a share by area. */
@@ -1107,6 +1134,7 @@ function thinToBudget(c: Ctx, budget: number): void {
   );
   const tier = (s: FlatSign): number => {
     const shop = s.kind === 'band' || s.kind === 'blade';
+    if (s.wash) return 6;
     if (!shop) return s.kind === 'crown' ? 6 : 4;
     return s.building < 0 || HOT_KINDS.has(c.L.buildings[s.building]?.district ?? '') ? 2 : 0;
   };
@@ -1152,6 +1180,7 @@ export function placeSigns(
   const maxScreens = opts.maxScreens ?? 20;
   let ringBudget = opts.maxRings ?? 14;
   let mediaCount = 0;
+  let giantCount = 0;
   let mediaGapIndex: ((x: number, z: number) => number) | undefined;
   const mediaGap = (): ((x: number, z: number) => number) =>
     (mediaGapIndex ??= roadGapIndex(
@@ -1172,14 +1201,11 @@ export function placeSigns(
   for (const b of byHeight) {
     const rng = createRng((seed ^ Math.imul(b.seed | 0, 0x9e3779b1)) >>> 0);
     const zone = zoneDelay(b.district, rng);
-    if (b.h >= 160 && c.out.screens.length < maxScreens) {
-      placeScreens(
-        c,
-        b,
-        rng,
-        zone,
-        Math.min(b.h >= 250 ? 2 : 1, maxScreens - c.out.screens.length),
-      );
+    // Media screens share c.out.screens, so giant screens keep their own count (5.1: 15–24).
+    if (b.h >= 160 && giantCount < maxScreens) {
+      const before = c.out.screens.length;
+      placeScreens(c, b, rng, zone, Math.min(b.h >= 250 ? 2 : 1, maxScreens - giantCount));
+      giantCount += c.out.screens.length - before;
     }
     if (signForm(b) === 'cylinderTower' && b.h >= 60) {
       ringBudget -= placeRings(c, b, rng, zone, ringBudget);
@@ -1245,6 +1271,7 @@ export function placeSigns(
     .sort((a, z) => a.seed - z.seed);
   for (const b of roofs) {
     if (c.out.holos.length >= maxHolos - 3) break;
+    if (!roofUsable(c, b)) continue;
     if (!hrng.chance(0.35) || logos.length === 0) continue;
     const t = topTier(b);
     if (!t) continue;

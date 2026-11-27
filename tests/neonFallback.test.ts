@@ -64,15 +64,22 @@ describe('neon district fallback', () => {
     );
     const cat = buildCatalog(LAYOUT);
     const P = placeSigns(LAYOUT, faces, cat);
-    for (const s of [...P.flats, ...P.screens, ...P.tubes])
+    for (const s of [...P.flats, ...P.screens, ...P.tubes, ...P.rings, ...P.crosses]) {
       expect(marked.has(s.building)).toBe(false);
+    }
     const landmarks = new Set(LAYOUT.buildings.filter((b) => b.tags.landmark).map((b) => b.id));
     const plain = placeSigns(
       LAYOUT,
       LAYOUT.buildings.map((b) => buildingFaces(b)),
       cat,
     );
-    for (const s of [...plain.flats, ...plain.screens, ...plain.tubes, ...plain.rings]) {
+    for (const s of [
+      ...plain.flats,
+      ...plain.screens,
+      ...plain.tubes,
+      ...plain.rings,
+      ...plain.crosses,
+    ]) {
       expect(landmarks.has(s.building)).toBe(false);
     }
   });
