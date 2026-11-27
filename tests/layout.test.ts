@@ -88,11 +88,11 @@ describe('layout v3: determinism', () => {
       digest: digest(LAYOUT),
     }).toMatchInlineSnapshot(`
       {
-        "blocks": 1399,
-        "buildings": 5600,
-        "digest": "55aa45dc",
-        "roads": 1172,
-        "slots": 3449,
+        "blocks": 1400,
+        "buildings": 5634,
+        "digest": "85de6924",
+        "roads": 1171,
+        "slots": 3448,
       }
     `);
   });
@@ -801,6 +801,48 @@ describe('layout v3: water and islands', () => {
       }
     }
   });
+});
+
+describe('layout v3: mountain slopes', () => {
+  // Manager criteria (terrain at 0.375 × real elevation): no face over 100 % (45°), mid slopes
+  // under 60 % on average, and a gentle foot (< 15 %) where the city meets the mountain. Cells
+  // belong to the nearest peak; the palace terrace (a cut, not a natural slope) is left out of
+  // the foot check.
+  it('keeps every mountain under 100 % slope, mid slopes under 60 %, feet under 15 %', () => {
+    const owner = (x: number, z: number) =>
+      MOUNTAINS.reduce((a, m) =>
+        Math.hypot(x - m.peak.x, z - m.peak.z) < Math.hypot(x - a.peak.x, z - a.peak.z) ? m : a,
+      );
+    const terrace = (x: number, z: number) =>
+      x > PALACE_RECT.x0 - 120 &&
+      x < PALACE_RECT.x1 + 120 &&
+      z > PALACE_RECT.z0 - 120 &&
+      z < PALACE_RECT.z1 + 120;
+    for (const m of MOUNTAINS) {
+      let max = 0;
+      let midSum = 0;
+      let midN = 0;
+      let foot = 0;
+      for (let x = m.peak.x - m.radius; x <= m.peak.x + m.radius; x += 8) {
+        for (let z = m.peak.z - m.radius; z <= m.peak.z + m.radius; z += 8) {
+          if (owner(x, z) !== m) continue;
+          const h = terrainHeight(x, z);
+          if (h <= 0.05) continue;
+          const s = Math.hypot(terrainHeight(x + 4, z) - h, terrainHeight(x, z + 4) - h) / 4;
+          max = Math.max(max, s);
+          const b = h / m.height;
+          if (b >= 0.2 && b <= 0.8) {
+            midSum += s;
+            midN++;
+          }
+          if (b <= 0.04 && !terrace(x, z)) foot = Math.max(foot, s);
+        }
+      }
+      expect(max, `${m.id} max`).toBeLessThanOrEqual(1);
+      expect(midSum / midN, `${m.id} mid`).toBeLessThanOrEqual(0.6);
+      expect(foot, `${m.id} foot`).toBeLessThanOrEqual(0.15);
+    }
+  }, 120_000);
 });
 
 describe('layout v3: mountains stay wooded', () => {
