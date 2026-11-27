@@ -371,6 +371,7 @@ const FRAG_MAIN = /* glsl */ `
     fMetal = mix(mix(0.04, 0.45, metal * day), 0.55 * day, gm);
     fMetal = mix(fMetal, 0.6, fm);
   }
+  // Every wall type except self-lit ones (5 emissive, 6 동 number), which carry their own light.
   if (fType < 4.5 || fType > 6.5) {
     // f.y is measured from the window start, about one ground floor above the street.
     float bounce = exp(-max(f.y + 4.0, 0.0) / ${glsl(NIGHT_FILL.bounceFalloff)});
