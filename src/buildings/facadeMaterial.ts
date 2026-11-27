@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { MATERIAL, NEON, WINDOW_MIX } from '../core/palette';
+import { MATERIAL, NEON, NIGHT_FILL_AMBIENT, WINDOW_MIX } from '../core/palette';
 import { BRICK_GRAZE, FACADE_DAY, NIGHT_FILL } from './colors';
 
 const glsl = (v: number): string => v.toFixed(4);
@@ -390,7 +390,7 @@ const FRAG_MAIN = /* glsl */ `
     // f.y is measured from the window start, about one ground floor above the street.
     float bounce = exp(-max(f.y + 4.0, 0.0) / ${glsl(NIGHT_FILL.bounceFalloff)});
     float brick = step(8.5, fType);
-    fEmit += (${vec3(NIGHT_FILL.ambient)} * (1.0 - 0.6 * brick) + ${vec3(NIGHT_FILL.bounce)} * bounce) * uNight;
+    fEmit += (${vec3(NIGHT_FILL_AMBIENT)} * (1.0 - 0.6 * brick) + ${vec3(NIGHT_FILL.bounce)} * bounce) * uNight;
     // Seongsu brick: warm tungsten grazing from street lamps, scaled by albedo so the red and the
     // mortar courses read at night; glass is already dark here, so windows stay unlit.
     float graze = ${glsl(BRICK_GRAZE.floor)} + exp(-max(f.y + 4.0, 0.0) / ${glsl(BRICK_GRAZE.falloff)});

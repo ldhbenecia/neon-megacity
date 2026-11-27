@@ -232,6 +232,52 @@ lazy, not counted in the initial-load budget). Determinism is unchanged (same co
 boot → interactive time must not grow, and the loader must keep animating (no task > 100 ms
 during the buildings stage).
 
+## JS bundle: what it is made of, and a proposed target
+
+Measured on main 3db3a31 (neon included): initial JS 298.7 KB gzip (target 260, ceiling 400).
+Attribution from the production source map (`vite build --sourcemap`, minified bytes per source,
+gzip share scaled to the real total):
+
+| part                     | raw KB | gzip KB (share) |
+| ------------------------ | ------ | --------------- |
+| three core               | 715.5  | 173.6           |
+| src/neon                 | 75.2   | 25.7            |
+| src/buildings            | 56.3   | 20.8            |
+| src/city                 | 33.5   | 13.3            |
+| src/ux                   | 30.9   | 12.7            |
+| src/atmosphere           | 29.8   | 10.6            |
+| src/infra                | 21.1   | 8.5             |
+| lil-gui                  | 29.9   | 7.6             |
+| three/examples           | 33.8   | 7.5             |
+| src/terrain              | 14.0   | 5.5             |
+| src/lighting             | 10.4   | 4.3             |
+| src/core, main, unmapped | 21.2   | 8.5             |
+
+three core is 58 % and sets the floor; our modules add ~125 KB. Shader strings and sign text are
+inside their modules (neon's 25.7 KB includes its GLSL and catalogue).
+
+**Options, with their effect on the initial chunk:**
+
+| change                                                          | initial gzip | note                                                     |
+| --------------------------------------------------------------- | ------------ | -------------------------------------------------------- |
+| today                                                           | 298.7 KB     |                                                          |
+| lil-gui only with `?debug` (dynamic import + stub GUI)          | ~291 KB      | the only change that also cuts total download (−7.6 KB)  |
+| + neon and atmosphere as lazy chunks loaded at their boot stage | ~255 KB      | same total download; the first chunk parses ~15 % sooner |
+| + buildings, infra lazy too                                     | ~225 KB      | diminishing returns: every stage waits for its own fetch |
+
+**Decision (manager, #88).** The 400 KB ceiling covers _all_ JS (every chunk, worker chunks
+included); the 260 KB target covers the _first_ chunk. three core (173.6 KB) is the floor, so the
+target is met by splitting, not trimming:
+
+1. lil-gui only with `?debug` (dynamic import, stub panel otherwise): now, small PR.
+2. neon and atmosphere as lazy chunks, designed together with the boot Worker as one "async boot"
+   change after layout v3 (#32), with these conditions: no waterfall (all lazy chunks start
+   downloading as soon as the first chunk runs: `import()` on the first line of boot or
+   modulepreload); first paint and `__city.ready` measured before / after, and dropped if ready
+   gets slower; the init order and the meaning of `__city.ready` stay; a failed chunk download
+   shows an error and retry in the loader (never half a city); an e2e run under `BASE_PATH`
+   checks chunk URLs. `npm run size` already reports first and lazy chunks separately (#45).
+
 ## Findings and candidates
 
 - **Signs in layout v3 always hit the cap.** The sign total stays at its 16,000 cap, so thinning

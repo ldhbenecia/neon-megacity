@@ -54,11 +54,11 @@ export const FACADE_DAY = {
 } as const;
 
 /**
- * Night fill on facades (linear HDR, far below bloom): a teal ambient floor so near walls never
- * render pure black, and a warm bounce from shop fronts and street lights that fades with height.
+ * Warm bounce on facades at night from shop fronts and street lights, fading with height (linear
+ * HDR, far below bloom). The teal ambient floor is NIGHT_FILL_AMBIENT in core/palette.ts, shared
+ * with the ground.
  */
 export const NIGHT_FILL = {
-  ambient: [0.003, 0.005, 0.005],
   bounce: [0.012, 0.0075, 0.0035],
   bounceFalloff: 9,
 } as const;
