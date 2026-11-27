@@ -11,6 +11,7 @@ import {
   FOG_UNIFORMS,
   HEIGHT_FOG,
   fogFactor,
+  heightFogEnabled,
   heightFogScale,
 } from '../src/core/shaders/emissiveFog';
 
@@ -35,7 +36,10 @@ describe('searchlight mounts', () => {
 
 describe('shader time and altitude', () => {
   it('wraps shader time into a bounded range', () => {
-    expect(wrapTime(1234.5, TIME_WRAP.rain)).toBeCloseTo(234.5, 9);
+    expect(wrapTime(TIME_WRAP.rain + 234.5, TIME_WRAP.rain)).toBeCloseTo(234.5, 6);
+    // Rare enough (2.8 h), and float32 still resolves a millisecond at the top of the range.
+    expect(TIME_WRAP.rain).toBeGreaterThanOrEqual(10000);
+    expect(Math.fround(TIME_WRAP.rain - 0.001)).not.toBe(Math.fround(TIME_WRAP.rain));
     expect(wrapTime(3 * TIME_WRAP.clouds + 7, TIME_WRAP.clouds)).toBeCloseTo(7, 6);
     expect(wrapTime(5, 1000)).toBe(5);
   });
@@ -47,12 +51,22 @@ describe('shader time and altitude', () => {
 });
 
 describe('height fog toggle', () => {
-  it('CPU fog mirrors follow cityFogHeight.w like the shader', () => {
+  it('CPU fog mirrors take the toggle as an argument', () => {
+    expect(heightFogScale(400, 400, false)).toBe(1);
+    expect(fogFactor(0.001, 1000, 400, 400, false)).toBeCloseTo(1 - Math.exp(-1), 9);
+    expect(heightFogScale(400, 400, true)).toBeCloseTo(HEIGHT_FOG.top, 9);
+  });
+
+  it('heightFogEnabled reads cityFogHeight.w like the shader', () => {
     const h = FOG_UNIFORMS.cityFogHeight.value;
-    h[3] = 0;
-    expect(heightFogScale(400)).toBe(1);
-    expect(fogFactor(0.001, 1000, 400)).toBeCloseTo(1 - Math.exp(-1), 9);
-    h[3] = 1;
-    expect(heightFogScale(400)).toBeCloseTo(HEIGHT_FOG.top, 9);
+    const before = h[3] ?? 1;
+    try {
+      h[3] = 0;
+      expect(heightFogEnabled()).toBe(false);
+      h[3] = 1;
+      expect(heightFogEnabled()).toBe(true);
+    } finally {
+      h[3] = before;
+    }
   });
 });
