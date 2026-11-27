@@ -87,8 +87,12 @@ const WATER_LIGHT = /* glsl */ `
     vec3 look = transformDirectionByInverseViewMatrix(-geometryViewDir, viewMatrix);
     float steep = smoothstep(0.3, 0.85, -look.y);
     vec3 flatRay = normalize(vec3(rv.x, min(rv.y, 0.22), rv.z));
-    vec3 city = textureLod(envMap, envMapRotation * flatRay, roughnessToMip(0.08)).rgb * envMapIntensity;
-    reflectedLight.indirectSpecular += city * steep * uNight * 0.7;
+    // A blurred sample: the ripples scatter the ray, and a sharp one mostly hits sky between panels.
+    vec3 city = textureLod(envMap, envMapRotation * flatRay, roughnessToMip(0.3)).rgb * envMapIntensity;
+    // Far off the ripples flatten and the ray locks onto one panel (a solid band to the map edge).
+    // Horizontal distance: the topdown camera hangs 2.7 km up, right over the river.
+    float near = 1.0 - smoothstep(1400.0, 2600.0, length(look.xz) * length(vViewPosition));
+    reflectedLight.indirectSpecular += city * steep * near * uNight * 2.2;
   }
   #endif
 }
