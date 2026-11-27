@@ -11,13 +11,6 @@ import { mergeIntervals } from './params';
 export const ROAD_Y = 0.03;
 export const SIDEWALK_H = 0.15;
 
-const ASPHALT = ROAD.asphalt;
-const ALLEY = ROAD.alley;
-const MARK_WHITE = ROAD.markWhite;
-const MARK_YELLOW = ROAD.markYellow;
-const PAVEMENT = ROAD.pavement;
-const CURB = ROAD.curb;
-
 class FlatBuilder {
   pos: number[] = [];
   col: number[] = [];
@@ -117,7 +110,7 @@ export function buildRoads(L: Layout): THREE.BufferGeometry {
     if (len < 0.5) continue;
     const hw = r.width / 2;
     const step = isHill(r) ? 6 : len;
-    const color = r.kind === 'alley' ? ALLEY : ASPHALT;
+    const color = r.kind === 'alley' ? ROAD.alley : ROAD.asphalt;
     for (let s = 0; s < len - 1e-6; s += step)
       strip(B, r, s, Math.min(len, s + step), -hw, hw, 0, color);
     if (r.kind === 'alley' || isHill(r)) continue;
@@ -150,24 +143,25 @@ export function buildRoads(L: Layout): THREE.BufferGeometry {
         const z0 = edge + dir * 0.6;
         const z1 = edge + dir * 3.6;
         for (let l = -hw + 0.8; l < hw - 0.8; l += 1.2) {
-          strip(B, r, Math.min(z0, z1), Math.max(z0, z1), l, l + 0.6, lift, MARK_WHITE);
+          strip(B, r, Math.min(z0, z1), Math.max(z0, z1), l, l + 0.6, lift, ROAD.markWhite);
         }
       }
       const m0 = f0 + 4.5;
       const m1 = f1 - 4.5;
       if (m1 - m0 < 2) continue;
       if (r.kind === 'arterial') {
-        strip(B, r, m0, m1, -0.35, -0.2, lift, MARK_YELLOW);
-        strip(B, r, m0, m1, 0.2, 0.35, lift, MARK_YELLOW);
+        strip(B, r, m0, m1, -0.35, -0.2, lift, ROAD.markYellow);
+        strip(B, r, m0, m1, 0.2, 0.35, lift, ROAD.markYellow);
         for (const lane of [-hw / 2, hw / 2]) {
           for (let s = m0; s < m1 - 3; s += 9)
-            strip(B, r, s, s + 3, lane - 0.075, lane + 0.075, lift, MARK_WHITE);
+            strip(B, r, s, s + 3, lane - 0.075, lane + 0.075, lift, ROAD.markWhite);
         }
       } else {
-        for (let s = m0; s < m1 - 3; s += 8) strip(B, r, s, s + 3, -0.075, 0.075, lift, MARK_WHITE);
+        for (let s = m0; s < m1 - 3; s += 8)
+          strip(B, r, s, s + 3, -0.075, 0.075, lift, ROAD.markWhite);
       }
-      strip(B, r, m0, m1, hw - 0.55, hw - 0.4, lift, MARK_WHITE);
-      strip(B, r, m0, m1, -hw + 0.4, -hw + 0.55, lift, MARK_WHITE);
+      strip(B, r, m0, m1, hw - 0.55, hw - 0.4, lift, ROAD.markWhite);
+      strip(B, r, m0, m1, -hw + 0.4, -hw + 0.55, lift, ROAD.markWhite);
     }
   }
   return B.build();
@@ -237,7 +231,7 @@ function slab(
     block.z - s * lx + c * lz,
   ];
   const y = SIDEWALK_H;
-  B.quad([W(r.x0, r.z1, y), W(r.x1, r.z1, y), W(r.x1, r.z0, y), W(r.x0, r.z0, y)], PAVEMENT);
+  B.quad([W(r.x0, r.z1, y), W(r.x1, r.z1, y), W(r.x1, r.z0, y), W(r.x0, r.z0, y)], ROAD.pavement);
   const edges: [number, number, number, number][] = [
     [r.x0, r.z1, r.x1, r.z1],
     [r.x1, r.z1, r.x1, r.z0],
@@ -249,7 +243,7 @@ function slab(
     const b0 = W(bx, bz, 0);
     const len = Math.hypot(b0[0] - a0[0], b0[2] - a0[2]);
     const n: [number, number, number] = [-(b0[2] - a0[2]) / len, 0, (b0[0] - a0[0]) / len];
-    B.quad([a0, b0, W(bx, bz, y), W(ax, az, y)], CURB, n);
+    B.quad([a0, b0, W(bx, bz, y), W(ax, az, y)], ROAD.curb, n);
   }
 }
 
