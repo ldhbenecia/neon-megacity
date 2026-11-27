@@ -3,6 +3,8 @@ import {
   advanceTime,
   dayFactorAt,
   envKeyAt,
+  fillColorAt,
+  fillFactorAt,
   keyLightAt,
   moonDirectionAt,
   shadowFrameFor,
@@ -177,5 +179,29 @@ describe('shouldRefreshShadow', () => {
     }
     expect(renders).toBeLessThanOrEqual(61);
     expect(renders).toBeGreaterThan(10);
+  });
+});
+
+describe('shadow fill (env.fillFactor / fillColor)', () => {
+  const floor = [0.003, 0.005, 0.005] as const;
+  const navy = [0.01, 0.018, 0.058] as const;
+
+  it('is full at night, already up while the sun is low, and off by day', () => {
+    expect(fillFactorAt(-0.5)).toBe(1);
+    expect(fillFactorAt(0.153)).toBeGreaterThan(0.8);
+    expect(fillFactorAt(0.35)).toBe(0);
+    expect(fillFactorAt(0.8)).toBe(0);
+    for (let e = -0.3; e < 0.5; e += 0.01) {
+      expect(fillFactorAt(e)).toBeGreaterThanOrEqual(1 - dayFactorAt(e) - 1e-9);
+    }
+  });
+
+  it('is the night teal at night and the dark sky tint (same strength) at dusk', () => {
+    expect(fillColorAt(-0.5, navy, floor)).toEqual([...floor]);
+    const dusk = fillColorAt(0.153, navy, floor);
+    const k = fillFactorAt(0.153);
+    expect(Math.max(...dusk)).toBeCloseTo(0.005 * k, 6);
+    expect(dusk[2]).toBeGreaterThan(dusk[1]!);
+    expect(fillColorAt(0.8, navy, floor)).toEqual([0, 0, 0]);
   });
 });

@@ -72,6 +72,37 @@ export function dayFactorAt(sunElevation: number): number {
   return smoothstep(-0.1, 0.15, sunElevation);
 }
 
+/**
+ * Weight of the shadow fill (env.fillFactor): 1 at night, and already up while the sun is low
+ * (late sunset, backlit banks and walls), 0 by day: max(nightFactor, 1 - smoothstep(0.1, 0.35, e)).
+ */
+export function fillFactorAt(sunElevation: number): number {
+  return Math.max(1 - dayFactorAt(sunElevation), 1 - smoothstep(0.1, 0.35, sunElevation));
+}
+
+/**
+ * Linear RGB of the shadow fill: the night teal floor, turning toward the sky's own dark tint
+ * (scaled to the same strength) for the part of the fill that comes from a low sun rather than
+ * from night, so dusk shadows look sky-lit instead of teal. Scaled by fillFactorAt.
+ */
+export function fillColorAt(
+  sunElevation: number,
+  sky: readonly [number, number, number],
+  floor: readonly [number, number, number],
+  out: [number, number, number] = [0, 0, 0],
+): [number, number, number] {
+  const fill = fillFactorAt(sunElevation);
+  const night = 1 - dayFactorAt(sunElevation);
+  const dusk = fill > 1e-4 ? Math.min(1, Math.max(0, 1 - night / fill)) : 0;
+  const peak = Math.max(floor[0], floor[1], floor[2]);
+  const skyPeak = Math.max(sky[0], sky[1], sky[2], 1e-6);
+  for (let i = 0; i < 3; i++) {
+    const tint = ((sky[i] ?? 0) / skyPeak) * peak;
+    out[i] = ((floor[i] ?? 0) + (tint - (floor[i] ?? 0)) * dusk) * fill;
+  }
+  return out;
+}
+
 // Both weights are 0 at the hand-over, so swapping sun and moon never pops.
 export function keyLightAt(
   sunElevation: number,
