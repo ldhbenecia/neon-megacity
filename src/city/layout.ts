@@ -22,9 +22,10 @@ export const CITY = {
 } as const;
 
 /**
- * The city layout, published once by `setLayout` before any other app module is evaluated:
- * src/boot.ts generates it in the city worker (or on the main thread as a fallback) and imports
- * the app afterwards; tests publish it in tests/setup-layout.ts.
+ * The city layout. `undefined` while the app modules are evaluated: src/boot.ts generates it in
+ * the city worker (or on the main thread as a fallback), publishes it with `setLayout` and only
+ * then calls `start()`. Read it at call time only (docs/ARCHITECTURE.md); tests publish it in
+ * tests/setup-layout.ts.
  */
 export let LAYOUT: Layout;
 

@@ -2,8 +2,8 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig, type Plugin } from 'vite';
 
 /**
- * src/boot.ts imports the app (src/main.ts) only after the city worker returned the layout. These
- * modulepreload links let the browser download the app chunks in parallel with that work.
+ * src/boot.ts imports the app (src/main.ts) dynamically, next to the city worker. These
+ * modulepreload links start the app chunk downloads with the HTML, before boot.ts has run.
  */
 function preloadApp(): Plugin {
   let base = './';
