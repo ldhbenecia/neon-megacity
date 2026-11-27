@@ -299,6 +299,45 @@ test('minimap: drawn in the panel, and clicking a zone flies there', async ({ pa
   expect(errors).toEqual([]);
 });
 
+test('quality row: a fixed tier is applied and saved, auto goes back to the device tier', async ({
+  page,
+}) => {
+  // Plain URL (no ?quality=): the stored pick drives the tier. Start from a stored 'low' so the
+  // boot never depends on the device estimate.
+  await page.addInitScript(() => localStorage.setItem('hangang.quality', 'low'));
+  await page.goto('./?nogui&time=0');
+  await waitForCity(page);
+  await page.click('#panel-toggle');
+  const now = page.locator('#quality-now');
+  await expect(now).toHaveText('· 하');
+  await page.click('#quality-group button[data-quality="medium"]');
+  await expect(now).toHaveText('· 중');
+  await page.keyboard.press('ArrowRight');
+  await expect(now).toHaveText('· 하');
+  await expect(page.locator('#quality-group button[data-quality="low"]')).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
+  expect(await page.evaluate(() => localStorage.getItem('hangang.quality'))).toBe('low');
+  await page.click('#quality-group button[data-quality="auto"]');
+  await expect(now).toHaveText(/^· 자동 · (상|중|하)$/);
+  expect(await page.evaluate(() => localStorage.getItem('hangang.quality'))).toBe('auto');
+});
+
+test('automated runs never contact Google Analytics', async ({ page }) => {
+  const calls: string[] = [];
+  page.on('request', (r) => {
+    if (/googletagmanager\.com|google-analytics\.com/.test(r.url())) calls.push(r.url());
+  });
+  await page.goto(app('nogui&time=0'));
+  await waitForCity(page);
+  // Analytics records its decision once the city is ready; automation must get 'off'.
+  await expect(page.locator('html')).toHaveAttribute('data-analytics', 'off');
+  await waitFrames(page, 10);
+  expect(calls).toEqual([]);
+  expect(await page.evaluate(() => 'gtag' in window)).toBe(false);
+});
+
 test.describe('camera rig', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto(app('nogui&stats&cam=overview&time=0.0'));

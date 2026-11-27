@@ -20,7 +20,7 @@ import { namsanMast } from './landmarks';
 import { palaceGrounds, palacePlan } from './palace';
 import { createFacadeMaterial, createFacadeUniforms } from './facadeMaterial';
 import {
-  LOD_DISTANCES,
+  lodDistancesFor,
   LOD_HYSTERESIS,
   chunkCenter,
   chunkGrid,
@@ -138,13 +138,12 @@ export function init(ctx: Ctx): CityModuleInstance {
 
   const onStreet = streetTest(LAYOUT.roads);
   const chunks = collectChunks(LAYOUT, chunkGrid(LAYOUT, CITY.chunkSize), onStreet);
-  // Low tier (CI SwiftShader): start at LOD1, so no LOD0 detail (trees, stairs, props) and no
-  // interior-mapped windows; LOD2 takes over at the LOD1 distance.
-  const low = env.quality === 'ci';
+  // CI tier (SwiftShader, fixed at boot): no LOD0 detail and no interior-mapped facade program.
+  const ci = env.quality === 'ci';
 
   const uniforms = createFacadeUniforms();
   const facade = createFacadeMaterial(uniforms, false);
-  const facadeNear = low ? facade : createFacadeMaterial(uniforms, true);
+  const facadeNear = ci ? facade : createFacadeMaterial(uniforms, true);
   const geometries: THREE.BufferGeometry[] = [];
   const triangles = [0, 0];
   const info = {
@@ -162,10 +161,7 @@ export function init(ctx: Ctx): CityModuleInstance {
     mesh.matrixAutoUpdate = false;
     return mesh;
   };
-  // Low tier never builds LOD0: LOD1 from 0 m, LOD2 from the LOD1 distance.
-  const distances: readonly [number, number, number] = low
-    ? [0, 0, LOD_DISTANCES[1]]
-    : [0, LOD_DISTANCES[1], LOD_DISTANCES[2]];
+  let distances = lodDistancesFor(env.quality);
   const lods: ChunkLod[] = chunks.map((chunk) => {
     const group = new THREE.Group();
     group.name = `chunk ${chunk.i},${chunk.j}`;
@@ -212,6 +208,15 @@ export function init(ctx: Ctx): CityModuleInstance {
     lod0Count--;
     shadowsChanged();
   };
+  // Tier changes come from the frame-time controller; dropping to a tier without LOD0 releases
+  // every LOD0 at once so the shadow map is redrawn once, not once per frame.
+  const offQuality = ctx.onQuality((q) => {
+    distances = lodDistancesFor(q);
+    if (distances[1] === 0) {
+      job = null;
+      for (const c of lods) releaseLod0(c);
+    }
+  });
   const newJob = (c: ChunkLod): Lod0Job =>
     lod0Job(new GeoBuilder(c.chunk.o.x, c.chunk.o.z), c.chunk.lod0);
   let job: { c: ChunkLod; job: Lod0Job } | null = null;
@@ -227,7 +232,8 @@ export function init(ctx: Ctx): CityModuleInstance {
     let nearest: ChunkLod | null = null;
     let nearestD = Infinity;
     let farthest: ChunkLod | null = null;
-    let farthestD = LOD_DISTANCES[1] * LOD0_RELEASE_FACTOR;
+    const noLod0 = distances[1] === 0;
+    let farthestD = noLod0 ? -1 : distances[1] * LOD0_RELEASE_FACTOR;
     for (const c of lods) {
       // Same metric as THREE.LOD: distance over zoom (the rig keeps zoom at 1; fov changes instead).
       const d = camPos.distanceTo(c.pos) / ctx.camera.zoom;
@@ -245,7 +251,8 @@ export function init(ctx: Ctx): CityModuleInstance {
       c.l1.visible = shown === 1;
       c.l2.visible = shown === 2;
     }
-    if (farthest && lod0Count > LOD0_KEEP) releaseLod0(farthest);
+    // Tiers without LOD0 release every built one (one per frame); otherwise keep a small cache.
+    if (farthest && (noLod0 || lod0Count > LOD0_KEEP)) releaseLod0(farthest);
     // The boot-compile LOD0 has done its job once the first frame runs (after the compile stage).
     if (warm) {
       if (warm.level !== 0) releaseLod0(warm);
@@ -262,14 +269,14 @@ export function init(ctx: Ctx): CityModuleInstance {
   };
   // Boot: LOD0 for the chunks around the starting camera at once, so the first view is final and
   // the near (interior-mapped) facade program is compiled with the rest during the boot stage.
-  for (let k = 0; k < lods.length && !low; k++) {
+  for (let k = 0; k < lods.length && !ci; k++) {
     updateLods(Infinity);
     if (!lods.some((c) => c.level === 0 && !c.l0)) break;
   }
   updateLods(0);
   // A far start pose has no LOD0 yet: build the nearest chunk's anyway and leave it visible for
   // the boot compile; the first update hides it again.
-  if (!low && lod0Count === 0) {
+  if (!ci && lod0Count === 0) {
     let first: ChunkLod | null = null;
     for (const c of lods) {
       if (!first || camPos.distanceTo(c.pos) < camPos.distanceTo(first.pos)) first = c;
@@ -334,10 +341,11 @@ export function init(ctx: Ctx): CityModuleInstance {
       uniforms.uPower.value = env.powerOn;
       uniforms.uTime.value = elapsed;
       wet.value = Math.max(env.wetness, 0.55 * env.nightFactor);
-      updateLods(low ? 0 : LOD0_BUDGET_MS);
+      updateLods(ci ? 0 : LOD0_BUDGET_MS);
       info['LOD0 chunks'] = lod0Count;
     },
     dispose() {
+      offQuality();
       scene.remove(group);
       for (const g of geometries) g.dispose();
       for (const c of lods) releaseLod0(c);

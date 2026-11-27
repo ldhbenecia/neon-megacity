@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BRIDGE_LOD_FAR, BRIDGE_LOD_NEAR, bridgeDetailOn } from '../src/infra/lod';
+import { BRIDGE_LOD_FAR, BRIDGE_LOD_NEAR, bridgeDetailOn, bridgeLodRange } from '../src/infra/lod';
 
 const at = (d: number) => d * d;
 
@@ -20,5 +20,18 @@ describe('infra: bridge detail LOD', () => {
     on = false;
     for (let i = 0; i < 5; i++) on = bridgeDetailOn(on, mid);
     expect(on).toBe(false);
+  });
+
+  it('quality tiers: high 600 m, medium 400 m with the same hysteresis, low and ci none', () => {
+    const high = bridgeLodRange('high')!;
+    expect(high.near2).toBe(at(BRIDGE_LOD_NEAR));
+    expect(high.far2).toBeCloseTo(at(BRIDGE_LOD_FAR), 6);
+    const medium = bridgeLodRange('medium')!;
+    expect(Math.sqrt(medium.near2)).toBeCloseTo(400, 9);
+    expect(Math.sqrt(medium.far2)).toBeCloseTo(440, 9);
+    expect(bridgeDetailOn(false, at(450), high)).toBe(true);
+    expect(bridgeDetailOn(false, at(450), medium)).toBe(false);
+    expect(bridgeLodRange('low')).toBeNull();
+    expect(bridgeLodRange('ci')).toBeNull();
   });
 });
