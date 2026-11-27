@@ -60,6 +60,7 @@ describe('geometry from the city worker', () => {
       expect(unpacked.index && bytes(unpacked.index.array)).toStrictEqual(
         direct.index && bytes(direct.index.array),
       );
+      expect(unpacked.index?.array.constructor).toBe(direct.index?.array.constructor);
       expect(unpacked.groups).toStrictEqual(direct.groups);
     }
   }, 120_000);
@@ -115,9 +116,14 @@ describe('geometry from the city worker', () => {
       ['walks', m.roads.buildSidewalks(layout)],
     ] as const) {
       const got = m.pack.unpackGeometry(cloned[key]);
+      expect(Object.keys(got.attributes).sort()).toEqual(Object.keys(direct.attributes).sort());
       for (const [name, a] of Object.entries(direct.attributes)) {
-        expect(bytes(got.getAttribute(name).array), `${key}.${name}`).toStrictEqual(bytes(a.array));
+        const g = got.getAttribute(name);
+        expect(bytes(g.array), `${key}.${name}`).toStrictEqual(bytes(a.array));
+        expect(g.itemSize).toBe(a.itemSize);
+        expect(g.normalized).toBe(a.normalized);
       }
+      expect(got.index?.array.constructor).toBe(direct.index?.array.constructor);
       expect(got.index && bytes(got.index.array)).toStrictEqual(
         direct.index && bytes(direct.index.array),
       );
