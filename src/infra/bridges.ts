@@ -19,6 +19,7 @@ import {
   type BridgeFrame,
   type BridgeParts,
   type BridgeShape,
+  bridgeS,
 } from './bridgeFrame';
 import { buildTruss } from './bridgeTrusses';
 import type { InfraColors } from './colors';
@@ -57,6 +58,11 @@ function deckPath(f: BridgeFrame, from: number, to: number, y: (s: number) => nu
 }
 
 /** What runs on a deck: road lanes, a subway down the middle, or tracks only. */
+/** Track bed top above the deck surface ('all': one bed per track, 'center': a shared bed). */
+const BED_TOP = { all: 0.25, center: 0.3 } as const;
+/** Rail height above its bed. neon runs trains on the rail tops (InfraApi.railTracks). */
+const RAIL_H = 0.16;
+
 interface DeckUse {
   width: number;
   lanes: number;
@@ -88,7 +94,6 @@ function buildDeck(
     const rl = sgn * (half - 0.2);
     parts.detail.steel.sweep(frames, boxEdges(rl - 0.08, rl + 0.08, 1.05, 1.2, railColor));
   }
-  // Rail posts every 6 m.
   for (let s = Math.ceil(from / 6) * 6; s <= to; s += 6) {
     for (const sgn of [-1, 1] as const) {
       const l = sgn * (half - 0.2);
@@ -105,17 +110,17 @@ function buildDeck(
   const tracks = trackCenters(use);
   if (use.tracks === 'center') {
     const b = TRACK_BED / 2;
-    parts.concrete.sweep(frames, openBoxEdges(-b, b, -0.02, 0.3, c.underside));
+    parts.concrete.sweep(frames, openBoxEdges(-b, b, -0.02, BED_TOP.center, c.underside));
   }
+  const top = use.tracks === 'all' ? BED_TOP.all : BED_TOP.center;
   for (const t of tracks) {
     if (use.tracks === 'all') {
-      parts.concrete.sweep(frames, openBoxEdges(t - 1.6, t + 1.6, -0.02, 0.25, c.underside));
+      parts.concrete.sweep(frames, openBoxEdges(t - 1.6, t + 1.6, -0.02, top, c.underside));
     }
-    const top = use.tracks === 'all' ? 0.25 : 0.3;
     for (const g of [-GAUGE / 2, GAUGE / 2]) {
       parts.detail.steel.sweep(
         frames,
-        openBoxEdges(t + g - 0.06, t + g + 0.06, top, top + 0.16, c.steel),
+        openBoxEdges(t + g - 0.06, t + g + 0.06, top, top + RAIL_H, c.steel),
       );
     }
   }
@@ -153,8 +158,7 @@ function buildDeck(
   }
 }
 
-/** Lateral track centers of a deck. */
-export function trackCenters(use: Pick<DeckUse, 'width' | 'lanes' | 'tracks'>): number[] {
+export function trackCenters(use: DeckUse): number[] {
   if (use.tracks === 'center') return [-TRACK_BED / 4, TRACK_BED / 4];
   if (use.tracks === 'none') return [];
   const n = Math.max(1, Math.round(use.lanes));
@@ -348,9 +352,6 @@ const buildGirder: BridgeBuilder = (b, f, parts, c, obstacles) => {
   );
 };
 
-/** Rail top above the deck surface: 'all' tracks sit on a 0.25 m bed, a center bed is 0.3 m. */
-const RAIL_TOP = { all: 0.25 + 0.16, center: 0.3 + 0.16 } as const;
-
 /**
  * Rail top polylines of every track on a bridge (InfraApi.railTracks): upper deck tracks over
  * the whole deck and its ramps, lower deck tracks abutment to abutment.
@@ -361,12 +362,11 @@ export function railTracks(b: Bridge): V3[][] {
   const add = (use: DeckUse, from: number, to: number, y: (s: number) => number): void => {
     if (use.tracks === 'none') return;
     const path = deckPath(f, from, to, y);
-    const top = RAIL_TOP[use.tracks];
+    const top = BED_TOP[use.tracks] + RAIL_H;
     for (const t of trackCenters(use)) {
       out.push(
         path.map((p): V3 => {
-          const s = (p[0] - f.mid[0]) * f.u[0] + (p[2] - f.mid[2]) * f.u[2];
-          return bridgePoint(f, s, t, p[1] + top);
+          return bridgePoint(f, bridgeS(f, p[0], p[2]), t, p[1] + top);
         }),
       );
     }

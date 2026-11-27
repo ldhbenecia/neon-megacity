@@ -15,6 +15,7 @@ import {
   type BridgeBuilder,
   type BridgeFrame,
   type BridgeParts,
+  bridgeS,
 } from './bridgeFrame';
 import type { InfraColors } from './colors';
 import { framesAlong, type MeshData, type RGB, type V3 } from './mesh';
@@ -31,23 +32,46 @@ interface TrussStyle {
   /** Top chord rises toward mid-span (camelback). */
   curved: boolean;
   color: (c: InfraColors) => RGB;
+  /** Glow line along each plane's top chord. */
+  line?: (c: InfraColors) => RGB;
+  /** Dots on every other top node of the outer planes. */
+  nodeDots?: boolean;
+  /** Diamond points where the lattice diagonals cross. */
+  crossDots?: boolean;
+  /** White dots on the deck rail, approaches included. */
+  railDots: boolean;
 }
 
+const steel = (c: InfraColors): RGB => c.archSteel;
+
+const DEFAULT_STYLE: TrussStyle = {
+  web: 'warren',
+  panel: 10,
+  continuous: true,
+  curved: false,
+  color: steel,
+  line: (c) => c.trussLine,
+  railDots: true,
+};
+
 const STYLES: Record<string, TrussStyle> = {
-  default: { web: 'warren', panel: 10, continuous: true, curved: false, color: (c) => c.archSteel },
   railTruss: {
     web: 'pratt',
     panel: 12,
     continuous: false,
     curved: false,
-    color: (c) => c.archSteel,
+    color: steel,
+    nodeDots: true,
+    railDots: false,
   },
   subwayDeck: {
     web: 'warren',
     panel: 11,
     continuous: false,
     curved: true,
-    color: (c) => c.archSteel,
+    color: steel,
+    line: (c) => c.chordCyan,
+    railDots: false,
   },
   orangeChord: {
     web: 'lattice',
@@ -55,11 +79,13 @@ const STYLES: Record<string, TrussStyle> = {
     continuous: true,
     curved: false,
     color: (c) => c.trussRed,
+    crossDots: true,
+    railDots: true,
   },
 };
 
 export function trussStyle(b: Bridge): TrussStyle {
-  return STYLES[b.motif] ?? (STYLES.default as TrussStyle);
+  return (Object.hasOwn(STYLES, b.motif) ? STYLES[b.motif] : undefined) ?? DEFAULT_STYLE;
 }
 
 /** Lateral positions of the truss planes: the deck edges, plus one between tracks of a rail bridge. */
@@ -157,25 +183,22 @@ export const buildTruss: BridgeBuilder = (b, f, parts, c, obstacles) => {
       first ??= plane;
       // Outer planes only, every other node: a dot on every node of every plane reads as a grid.
       const outer = k === 0 || k === planes.length - 1;
-      if (b.motif === 'railTruss' && outer) {
+      if (style.nodeDots && outer) {
         plane.top.forEach((t, i) => {
           if (i % 2 === 0) point(parts, [t[0], t[1] + 0.7, t[2]], 0.35, c.railDot);
         });
       }
-      if (b.motif === 'orangeChord')
-        for (const x of plane.crossings) point(parts, x, 0.45, c.diamondPoint);
-      const lineColor =
-        b.motif === 'subwayDeck' ? c.chordCyan : b.motif === 'railTruss' ? undefined : c.trussLine;
-      if (lineColor && b.motif !== 'orangeChord') {
+      if (style.crossDots) for (const x of plane.crossings) point(parts, x, 0.45, c.diamondPoint);
+      const lineColor = style.line?.(c);
+      if (lineColor) {
         const line = plane.top.map((t): V3 => [t[0], t[1] + 0.5, t[2]]);
         parts.glow.sweep(framesAlong(line), boxEdges(-0.15, 0.15, -0.06, 0.06, lineColor));
       }
     }
-    // Top lateral struts at every top node of the first plane.
     const lo = planes[0] as number;
     const hi = planes[planes.length - 1] as number;
     for (const t of first?.top ?? []) {
-      const s = (t[0] - f.mid[0]) * f.u[0] + (t[2] - f.mid[2]) * f.u[2];
+      const s = bridgeS(f, t[0], t[2]);
       parts.detail.steel.beam(
         bridgePoint(f, s, lo, t[1]),
         bridgePoint(f, s, hi, t[1]),
@@ -185,8 +208,7 @@ export const buildTruss: BridgeBuilder = (b, f, parts, c, obstacles) => {
       );
     }
   }
-  if (b.motif !== 'railTruss' && b.motif !== 'subwayDeck') {
-    // White dots on the rail every 4 m, approaches included.
+  if (style.railDots) {
     for (const sgn of [-1, 1] as const) {
       for (let s = f.landA + 2; s <= f.landB - 2; s += 4) {
         point(

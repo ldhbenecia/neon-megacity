@@ -13,7 +13,7 @@ import { obbSegmentDistance } from '../city/math';
 import type { InfraColors } from './colors';
 import type { HwPath } from './highways';
 import { len, sub, type RGB, type V3 } from './mesh';
-import type { ColumnInstance, DetailParts, InfraParts } from './parts';
+import { rotYForLateral, type ColumnInstance, type DetailParts, type InfraParts } from './parts';
 import { DECK_THICKNESS } from './profile';
 
 /**
@@ -60,9 +60,20 @@ export function bridgeFrame(b: Bridge): BridgeFrame {
   const span = len(d);
   const u: V3 = [d[0] / span, 0, d[2] / span];
   const v: V3 = [-u[2], 0, u[0]];
-  const along = (q: { x: number; z: number }): number =>
-    (q.x - mid[0]) * u[0] + (q.z - mid[2]) * u[2];
-  return { mid, u, v, spanHalf: span / 2, landA: along(b.landA), landB: along(b.landB) };
+  const axis = { mid, u };
+  return {
+    mid,
+    u,
+    v,
+    spanHalf: span / 2,
+    landA: bridgeS(axis, b.landA.x, b.landA.z),
+    landB: bridgeS(axis, b.landB.x, b.landB.z),
+  };
+}
+
+/** Station s on the bridge axis of world point (x, z). */
+export function bridgeS(f: Pick<BridgeFrame, 'mid' | 'u'>, x: number, z: number): number {
+  return (x - f.mid[0]) * f.u[0] + (z - f.mid[2]) * f.u[2];
 }
 
 export function bridgePoint(f: BridgeFrame, s: number, l: number, y: number): V3 {
@@ -75,19 +86,24 @@ export function deckYAt(b: Bridge, f: BridgeFrame, s: number): number {
   return Math.max(0, bridgeDeckY(b, p[0], p[2]) ?? 0);
 }
 
-/** Builder key for a bridge. Unknown kinds (newer layouts) fall back to 'girder'. */
-export type BridgeShape =
-  'arch' | 'truss' | 'doubleDeck' | 'girder' | 'deckArch' | 'tiedArch' | 'cableStayed';
+/**
+ * Minimum span count per shape (truss: continuous three-span Warren), and the typical span (m)
+ * used only when the layout's `spans` is not a finite number.
+ */
+const SPANS = {
+  arch: { len: Infinity, min: 2 },
+  truss: { len: 80, min: 3 },
+  doubleDeck: { len: 40, min: 2 },
+  girder: { len: 70, min: 2 },
+  deckArch: { len: 90, min: 2 },
+  tiedArch: { len: 80, min: 1 },
+  cableStayed: { len: 90, min: 2 },
+} as const satisfies Record<string, { len: number; min: number }>;
 
-const SHAPES: ReadonlySet<string> = new Set<BridgeShape>([
-  'arch',
-  'truss',
-  'doubleDeck',
-  'girder',
-  'deckArch',
-  'tiedArch',
-  'cableStayed',
-]);
+/** Builder key for a bridge. Unknown kinds (newer layouts) fall back to 'girder'. */
+export type BridgeShape = keyof typeof SPANS;
+
+const SHAPES: ReadonlySet<string> = new Set(Object.keys(SPANS));
 
 export function bridgeShape(b: Bridge): BridgeShape {
   // Widened to string so a layout whose BridgeKind union drops a name still compiles.
@@ -104,20 +120,6 @@ export function lowerDeckY(b: Bridge): number | undefined {
   if (shape === 'doubleDeck') return b.lowerDeckY ?? LOWER_DECK_Y;
   return shape === 'girder' ? b.lowerDeckY : undefined;
 }
-
-/**
- * Minimum span count per shape (truss: continuous three-span Warren), and the typical span (m)
- * used only when the layout's `spans` is not a finite number.
- */
-const SPANS: Record<BridgeShape, { len: number; min: number }> = {
-  arch: { len: Infinity, min: 2 },
-  truss: { len: 80, min: 3 },
-  doubleDeck: { len: 40, min: 2 },
-  girder: { len: 70, min: 2 },
-  deckArch: { len: 90, min: 2 },
-  tiedArch: { len: 80, min: 1 },
-  cableStayed: { len: 90, min: 2 },
-};
 
 /** Shortest span `spans` may ask for (m); bounds the pier count for a bad layout value. */
 const MIN_SPAN = 10;
@@ -152,8 +154,20 @@ const MIN_ISLAND_SPAN = 20;
  * s range where the deck (anywhere across its width) crosses the bridge's stop island: the
  * longest unbroken run, insets applied. Undefined when there is none or it is too short.
  */
-export function islandRange(b: Bridge, f: BridgeFrame): { s0: number; s1: number } | undefined {
+export function islandRange(b: Bridge, f: BridgeFrame): IslandRange | undefined {
   if (!b.island) return undefined;
+  // Piers, spans and washes all ask for it; f is always bridgeFrame(b), so b is the key.
+  const hit = islandRanges.get(b);
+  if (hit) return hit.range;
+  const range = scanIsland(b, f);
+  islandRanges.set(b, { range });
+  return range;
+}
+
+type IslandRange = { readonly s0: number; readonly s1: number };
+const islandRanges = new WeakMap<Bridge, { range: IslandRange | undefined }>();
+
+function scanIsland(b: Bridge, f: BridgeFrame): IslandRange | undefined {
   const h = f.spanHalf;
   const on = (s: number): boolean =>
     [-b.width / 2, 0, b.width / 2].some((l) => {
@@ -316,7 +330,8 @@ export function pierBlocksHighway(c: ColumnInstance, highways: readonly HwPath[]
 const MIN_PIER_H = 1.5;
 
 /**
- * River piers (`w` × `d`, up to `topY`, a height or one per station) and ground piers under the approaches and a stop island.
+ * River piers (`w` × `d`, up to `topY`, a height or one per station) and ground piers under the
+ * approaches and a stop island.
  * Returns the river stations actually placed.
  */
 export function pushPiers(
@@ -329,7 +344,7 @@ export function pushPiers(
   { roads, highways }: Obstacles,
 ): number[] {
   const topAt = typeof topY === 'number' ? () => topY : topY;
-  const rotY = Math.atan2(-f.v[2], f.v[0]);
+  const rotY = rotYForLateral(f.v);
   const blocked = (c: ColumnInstance): boolean =>
     approachPierBlocksRoad(c, roads) || pierBlocksHighway(c, highways);
   // River piers can land outside the water when the span is wider than the channel.
@@ -376,10 +391,7 @@ export function buildPierWashes(
   pierW: number,
   pierD: number,
   topY: number | ((s: number) => number),
-  color: (s: number) => { wash: RGB; strip: RGB } = () => ({
-    wash: c.uplight,
-    strip: c.uplightStrip,
-  }),
+  color: (s: number) => { wash: RGB; strip: RGB },
 ): void {
   const waterY = RIVER.waterY;
   for (const s0 of stations) {
@@ -413,7 +425,6 @@ export function buildPierWashes(
           parts.wash.tri(a, d + 1, d);
         }
       }
-      // Fixture strip at the waterline.
       parts.glow.beam(p(-w, waterY + 0.4), p(w, waterY + 0.4), 0.25, 0.25, strip);
     }
   }

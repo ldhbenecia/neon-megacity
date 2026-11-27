@@ -11,10 +11,26 @@ import {
   resample,
   spanList,
   type BridgeBuilder,
+  type BridgeFrame,
   type Span,
 } from './bridgeFrame';
 import { framesAlong, type RGB, type V3 } from './mesh';
 import { DECK_THICKNESS, boxEdges, openBoxEdges } from './profile';
+
+/** n + 1 rib points from s0 to s1 at lateral l, heights from y(s). */
+function ribPoints(
+  f: BridgeFrame,
+  s0: number,
+  s1: number,
+  l: number,
+  n: number,
+  y: (s: number) => number,
+): V3[] {
+  return Array.from({ length: n + 1 }, (_, k) => {
+    const s = s0 + ((s1 - s0) * k) / n;
+    return bridgePoint(f, s, l, y(s));
+  });
+}
 
 /** v2: two parabolic arch spans over a center pier, white ribs, cyan points, white hangers. */
 export const buildArch: BridgeBuilder = (b, f, parts, c, obstacles) => {
@@ -28,13 +44,8 @@ export const buildArch: BridgeBuilder = (b, f, parts, c, obstacles) => {
   ] as const) {
     for (const sgn of [-1, 1] as const) {
       const l = sgn * ribL;
-      const pts: V3[] = [];
-      for (let i = 0; i <= 32; i++) {
-        const s = s0 + ((s1 - s0) * i) / 32;
-        pts.push(bridgePoint(f, s, l, archY(s, s0, s1, springY, crownY)));
-      }
+      const pts = ribPoints(f, s0, s1, l, 32, (s) => archY(s, s0, s1, springY, crownY));
       parts.steel.sweep(framesAlong(pts), boxEdges(-0.8, 0.8, -1.1, 1.1, c.archSteel));
-      // Cyan points along the rib crest, every 6 m of arc length.
       for (const p of resample(pts, 6)) {
         parts.points.push({
           p: [p[0], p[1] + 1.25, p[2]],
@@ -43,7 +54,6 @@ export const buildArch: BridgeBuilder = (b, f, parts, c, obstacles) => {
           color: c.archPoint,
         });
       }
-      // White hangers every 6 m where the rib clears the deck.
       for (let s = s0 + 6; s < s1 - 3; s += 6) {
         const ry = archY(s, s0, s1, springY, crownY) - 1.1;
         if (ry - b.deckY < 2) continue;
@@ -101,10 +111,7 @@ export const buildDeckArch: BridgeBuilder = (b, f, parts, c, obstacles) => {
     const y = (s: number): number => archY(s, s0, s1, spring, crown);
     for (const sgn of [-1, 1] as const) {
       const l = sgn * ribL;
-      const pts = Array.from({ length: FACETS + 1 }, (_, k) => {
-        const s = s0 + ((s1 - s0) * k) / FACETS;
-        return bridgePoint(f, s, l, y(s));
-      });
+      const pts = ribPoints(f, s0, s1, l, FACETS, y);
       for (let k = 0; k < FACETS; k++) {
         parts.steel.beam(pts[k] as V3, pts[k + 1] as V3, ribW, ribH, c.archSteel, f.v);
       }
@@ -182,26 +189,21 @@ export const buildTiedArch: BridgeBuilder = (b, f, parts, c, obstacles) => {
   const landmark = arched.length === 1 && spans.length > 1;
   const line: RGB = b.motif === 'redArch' ? c.archRed : c.archWhite;
   const ribHalf = landmark ? 1.2 : 0.7;
+  const crownY = b.deckY + rise;
+  const ribTop = ribHalf * 1.3;
   for (const sp of arched) {
-    const crownY = b.deckY + rise;
     const y = (s: number): number => archY(s, sp.s0, sp.s1, springY, crownY);
     for (const sgn of [-1, 1] as const) {
       const l = sgn * ribL;
-      const pts = Array.from({ length: TIED_SEGMENTS + 1 }, (_, k) => {
-        const s = sp.s0 + ((sp.s1 - sp.s0) * k) / TIED_SEGMENTS;
-        return bridgePoint(f, s, l, y(s));
-      });
+      const pts = ribPoints(f, sp.s0, sp.s1, l, TIED_SEGMENTS, y);
       const frames = framesAlong(pts);
-      parts.steel.sweep(
-        frames,
-        boxEdges(-ribHalf, ribHalf, -ribHalf * 1.3, ribHalf * 1.3, c.archSteel),
-      );
+      parts.steel.sweep(frames, boxEdges(-ribHalf, ribHalf, -ribTop, ribTop, c.archSteel));
       // Landmark arch: the whole crest glows; low arches: a thin line.
       const lw = landmark ? ribHalf : 0.22;
       parts.glow.sweep(
         frames,
         // Glow is single-sided: keep the sides so the line still shows from below.
-        openBoxEdges(-lw, lw, ribHalf * 1.3 - 0.02, ribHalf * 1.3 + 0.12, line),
+        openBoxEdges(-lw, lw, ribTop - 0.02, ribTop + 0.12, line),
       );
       parts.steel.beam(
         bridgePoint(f, sp.s0, l, b.deckY - 0.3),
@@ -212,7 +214,7 @@ export const buildTiedArch: BridgeBuilder = (b, f, parts, c, obstacles) => {
         f.v,
       );
       for (let s = sp.s0 + 6; s < sp.s1 - 3; s += 6) {
-        const ry = y(s) - ribHalf * 1.3;
+        const ry = y(s) - ribTop;
         if (ry - b.deckY < 1.5) continue;
         parts.steel.beam(
           bridgePoint(f, s, l, b.deckY + 0.5),
@@ -226,10 +228,14 @@ export const buildTiedArch: BridgeBuilder = (b, f, parts, c, obstacles) => {
     for (let s = sp.s0 + 10; s < sp.s1 - 5; s += 10) {
       const ry = y(s);
       if (ry - b.deckY < BRACE_CLEAR) continue;
-      const strut = (to: typeof parts.steel): void =>
-        to.beam(bridgePoint(f, s, -ribL, ry), bridgePoint(f, s, ribL, ry), 0.6, 0.6, c.archSteel);
       // A landmark arch's bracing is part of its silhouette.
-      strut(landmark ? parts.steel : parts.detail.steel);
+      (landmark ? parts.steel : parts.detail.steel).beam(
+        bridgePoint(f, s, -ribL, ry),
+        bridgePoint(f, s, ribL, ry),
+        0.6,
+        0.6,
+        c.archSteel,
+      );
     }
   }
   for (const sp of spans.filter((q) => q.island)) {

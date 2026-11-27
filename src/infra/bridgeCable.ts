@@ -3,7 +3,7 @@
 // under a short mast, a horizontal cyan ring around the mast top and an orange band up each leg.
 // Cables fan from the mast to both deck edges, white dots on every other cable.
 import { bridgePoint, pushPiers, type BridgeBuilder } from './bridgeFrame';
-import { add, norm, scale, sub, type V3 } from './mesh';
+import { add, len, norm, scale, sub, type V3 } from './mesh';
 import { DECK_THICKNESS } from './profile';
 
 /** Cables per pylon, per side and per direction. */
@@ -57,10 +57,11 @@ export const buildCableStayed: BridgeBuilder = (b, f, parts, c, obstacles) => {
       );
     }
     for (const dir of [-1, 1] as const) {
-      const next = ends[i + 1 + (dir === 1 ? 1 : -1)] as number;
+      const j = i + dir;
+      const next = ends[j + 1] as number;
       const gap = Math.abs(next - s0);
       // Meet the neighbour pylon's fan halfway; reach close to an abutment.
-      const neighbourIsPylon = next !== -f.spanHalf && next !== f.spanHalf;
+      const neighbourIsPylon = j >= 0 && j < placed.length;
       const reach = neighbourIsPylon ? gap / 2 - 3 : gap - 12;
       if (reach < 12) continue;
       for (let k = 0; k < CABLES; k++) {
@@ -72,7 +73,7 @@ export const buildCableStayed: BridgeBuilder = (b, f, parts, c, obstacles) => {
           parts.steel.beam(top, deck, 0.22, 0.22, c.archSteel);
           if (k % 2 === 0) continue;
           const span = sub(deck, top);
-          const n = Math.floor(Math.hypot(span[0], span[1], span[2]) / 12);
+          const n = Math.floor(len(span) / 12);
           for (let j = 1; j < n; j++) {
             parts.points.push({
               p: add(top, scale(span, j / n)),
