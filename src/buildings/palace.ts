@@ -2,7 +2,7 @@
 // gates, a covered corridor around the main court, side halls and a rear garden. It follows the
 // composition of a Joseon palace (layers of courts on one south-north axis), not any real plan.
 import { createRng, type Rng } from '../core/random';
-import { palaceWallDistance } from '../city/layout';
+import { PALACE_AXIS, palaceWallDistance } from '../city/layout';
 import { toLocal } from '../city/math';
 import type { BuildingSpec, Layout, PalaceWall, Vec2 } from '../city/types';
 import { UNIT_ICO, type GeoBuilder, type V3 } from './builder';
@@ -34,7 +34,7 @@ export function palacePlan(
   const xs = zone.polygon.map((p) => p.x);
   const zs = zone.polygon.map((p) => p.z);
   const halls = layout.buildings
-    .filter((b) => b.tags.palacePart === 'gate' || b.tags.palacePart === 'hall')
+    .filter((b) => b.tags.palaceId !== undefined && PALACE_AXIS.includes(b.tags.palaceId))
     .sort((a, b) => b.z - a.z);
   if (halls.length === 0) return null;
   const axisX = halls.reduce((s, h) => s + h.x, 0) / halls.length;
@@ -104,8 +104,56 @@ function palaceStructure(g: GeoBuilder, w: PalaceWall, lv: 0 | 1 | 2): void {
   }
 }
 
+/** Islands and bridges for the pavilions standing in the ponds (Gyeonghoeru, Hyangwonjeong). */
+function islands(g: GeoBuilder, plan: PalacePlan, lv: 0 | 1 | 2): void {
+  const stoneS = plain(0x7a766c, 0.9);
+  for (const pond of plan.ponds) {
+    if (pond.length < 3) continue;
+    const xs = pond.map((p) => p.x);
+    const zs = pond.map((p) => p.z);
+    const box = {
+      x0: Math.min(...xs),
+      x1: Math.max(...xs),
+      z0: Math.min(...zs),
+      z1: Math.max(...zs),
+    };
+    const p = plan.parts.find((b) => b.x > box.x0 && b.x < box.x1 && b.z > box.z0 && b.z < box.z1);
+    if (!p) continue;
+    if (p.tags.palaceId === 'gyeonghoeru') {
+      // Square stone island; three stone bridges to the east bank.
+      g.box(p.x, 0, p.z, p.w + 6, 1, p.d + 6, p.rotY, stoneS);
+      const x0 = p.x + (p.w + 6) / 2;
+      const len = box.x1 - x0;
+      if (len > 0.5) {
+        for (const dz of lv === 2 ? [0] : [-p.d / 3, 0, p.d / 3]) {
+          g.box(x0 + len / 2, 0, p.z + dz, len + 0.4, 0.9, dz === 0 ? 4 : 3, 0, stoneS);
+        }
+      }
+    } else if (p.tags.palaceId === 'hyangwonjeong') {
+      const r = p.w / 2 + 4;
+      const ring: V3[] = [];
+      for (let i = 0; i < 12; i++) {
+        const a = (i / 12) * Math.PI * 2;
+        ring.push([p.x + r * Math.cos(a), 0.7, p.z - r * Math.sin(a)]);
+      }
+      face(g, ring, plain(0x3a4a34, 0.95), [p.x, -1, p.z]);
+      for (let i = 0; i < 12; i++) {
+        const a = ring[i] as V3;
+        const b = ring[(i + 1) % 12] as V3;
+        face(g, [[a[0], 0, a[2]], [b[0], 0, b[2]], b, a], stoneS, [p.x, 0.3, p.z]);
+      }
+      // Wooden bridge from the island to the north bank.
+      const z0 = box.z0;
+      const z1 = p.z - r;
+      if (z1 - z0 > 0.5) {
+        g.box(p.x, 0.4, (z0 + z1) / 2, 2.2, 0.4, z1 - z0 + 0.4, 0, plain(SEOUL_COLORS.wood, 0.85));
+      }
+    }
+  }
+}
+
 /** Pond water and tree clumps around it (the pavilion is a layout building). */
-function garden(g: GeoBuilder, plan: PalacePlan, rng: Rng, lv: 0 | 1 | 2): void {
+function garden(g: GeoBuilder, plan: PalacePlan, seed: number, lv: 0 | 1 | 2): void {
   const leaf = plain(SEOUL_COLORS.foliage, 0.95);
   // Trees stay north of the innermost east-west wall, off every wall and every palace building.
   const inner = plan.walls.filter(
@@ -121,18 +169,20 @@ function garden(g: GeoBuilder, plan: PalacePlan, rng: Rng, lv: 0 | 1 | 2): void 
       const l = toLocal(x - b.x, z - b.z, b.rotY);
       return Math.abs(l.x) < b.w / 2 + m && Math.abs(l.z) < b.d / 2 + m;
     });
-  for (const pond of plan.ponds) {
-    if (pond.length < 3) continue;
+  plan.ponds.forEach((pond, pi) => {
+    if (pond.length < 3) return;
+    // One stream per pond, so LOD1's prefix of LOD0's candidates holds for every pond.
+    const rng = createRng(seed + pi * 101);
     const cx = pond.reduce((s, p) => s + p.x, 0) / pond.length;
     const cz = pond.reduce((s, p) => s + p.z, 0) / pond.length;
     const r = Math.max(...pond.map((p) => Math.hypot(p.x - cx, p.z - cz)));
     face(
       g,
       pond.map((p): V3 => [p.x, 0.09, p.z]),
-      plain(SEOUL_COLORS.water, 0.08),
+      plain(SEOUL_COLORS.water, 0.3),
       [cx, -1, cz],
     );
-    if (lv === 2) continue;
+    if (lv === 2) return;
     // LOD1 plants the first candidates of LOD0, so trees never move between levels.
     const n = lv === 0 ? 24 : 10;
     for (let i = 0; i < n; i++) {
@@ -147,7 +197,7 @@ function garden(g: GeoBuilder, plan: PalacePlan, rng: Rng, lv: 0 | 1 | 2): void 
       if (plan.walls.some((w) => palaceWallDistance(w, x, z) < sz + 1)) continue;
       g.place(UNIT_ICO, x, sz * 0.9, z, sz, sz * 0.9, sz, rot, leaf);
     }
-  }
+  });
 }
 
 /**
@@ -165,7 +215,8 @@ export function palaceGrounds(g: GeoBuilder, plan: PalacePlan, lv: 0 | 1 | 2): v
   if (walkLen > 2) {
     g.box(plan.axisX, 0, plan.z1 - walkLen / 2, 6, 0.35, walkLen, 0, plain(0x8a847a, 0.85));
   }
-  garden(g, plan, createRng(plan.seed + 3), lv);
+  garden(g, plan, plan.seed + 3, lv);
+  islands(g, plan, lv);
   // Faint warm light along the inside of the outer wall base.
   if (lv === 0) {
     const s = glow(SEOUL_COLORS.uplight, 0.25);
