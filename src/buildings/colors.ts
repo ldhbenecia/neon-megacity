@@ -65,7 +65,7 @@ export const NIGHT_FILL = {
 
 /** Night grazing light on brick walls: color × albedo, strongest at street level. */
 export const BRICK_GRAZE = {
-  color: [0.3, 0.2, 0.12],
+  color: [0.21, 0.14, 0.085],
   falloff: 8,
   floor: 0.2,
 } as const;

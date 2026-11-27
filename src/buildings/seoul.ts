@@ -146,7 +146,7 @@ export function brickWarehouseRoof(
   const h = Math.min(5, spec.floorH);
   const P = frame(t.x, t.z, spec.rotY);
   const c = P(t.w * 0.15, t.y1, 0);
-  const s = glow(SEOUL_COLORS.tungsten, 0.22);
+  const s = glow(SEOUL_COLORS.tungsten, 0.12);
   g.box(c[0], t.y1, c[2], w, h, d, spec.rotY, s);
   g.box(c[0], t.y1 + h, c[2], w + 0.6, 0.4, d + 0.6, spec.rotY, plain(SEOUL_COLORS.steel, 0.5));
 }
