@@ -99,3 +99,10 @@ export {
 } from './queries';
 export { toWorld, toLocal, sideNormal } from './math';
 export { CORPS } from './archetypes';
+export {
+  PALACE_PLAN,
+  PALACE_AXIS_X,
+  PALACE_GATE_HALF,
+  palaceWallAt,
+  palaceWallDistance,
+} from './palace';

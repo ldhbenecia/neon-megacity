@@ -10,6 +10,10 @@ import {
   ZONES,
   ISLANDS,
   MOUNTAINS,
+  PALACE_AXIS_X,
+  PALACE_GATE_HALF,
+  PALACE_PLAN,
+  palaceWallAt,
   TERRAIN,
   islandAt,
   parkWidthAt,
@@ -41,13 +45,7 @@ import {
   type Tier,
   type Vec2,
 } from '../src/city/layout';
-import {
-  MAX_SLENDER,
-  PALACE_PLAN,
-  SKY_LANE_CLEAR,
-  SKY_LANE_MARGIN,
-  fitScale,
-} from '../src/city/generate';
+import { MAX_SLENDER, SKY_LANE_CLEAR, SKY_LANE_MARGIN, fitScale } from '../src/city/generate';
 import { PALACE_HALLS } from '../src/city/archetypes';
 import {
   PALACE_RECT,
@@ -60,6 +58,7 @@ import {
   hashString,
   obbOverlap,
   obbSegmentDistance,
+  pointInPolygon,
   pointSegmentDistance,
   sideNormal,
   toLocal,
@@ -95,9 +94,9 @@ describe('layout v3: determinism', () => {
       digest: digest(LAYOUT),
     }).toMatchInlineSnapshot(`
       {
-        "blocks": 1411,
-        "buildings": 5681,
-        "digest": "656133dd",
+        "blocks": 1418,
+        "buildings": 5688,
+        "digest": "8ae9fdd4",
         "roads": 1189,
         "slots": 3477,
       }
@@ -814,12 +813,11 @@ describe('layout v3: water and islands', () => {
 describe('layout v3: building names', () => {
   it('names buildings after their quarter', () => {
     const named = (zone: string) => B.filter((b) => b.zoneId === zone).map((b) => b.tags.name);
-    expect(B.filter((b) => b.archetype === 'palaceHall').map((b) => b.tags.name)).toEqual([
-      '한빛문',
-      '정운전',
-      '사현전',
-      '평안전',
-    ]);
+    expect(
+      B.filter((b) => b.tags.palacePart === 'gate' || b.tags.palacePart === 'hall').map(
+        (b) => b.tags.name,
+      ),
+    ).toEqual(['한빛문', '정운전', '사현전', '평안전']);
     for (const b of B) expect(b.tags.name, b.archetype).not.toMatch(/[\u4e00-\u9fff]/u);
     expect(named('hongdae').some((n) => /전자상가|시장/u.test(n))).toBe(false);
     expect(named('seongsu').some((n) => n.includes('벽돌창고'))).toBe(false);
@@ -841,6 +839,48 @@ describe('layout v3: building names', () => {
     }
     for (const b of B.filter((x) => x.archetype === 'hillHouse')) {
       expect(b.tags.name).toMatch(/^[^·]+ \d+번지$/u);
+    }
+  });
+});
+
+describe('layout v3: palace grounds', () => {
+  const palace = B.filter((b) => b.archetype === 'palaceHall');
+  const walls = LAYOUT.palaceWalls;
+
+  it('tags the gate, axis halls, 4–8 side halls and one pond pavilion', () => {
+    const part = (p: string) => palace.filter((b) => b.tags.palacePart === p);
+    expect(part('gate').map((b) => b.tags.name)).toEqual([PALACE_HALLS[0]]);
+    expect(part('hall')).toHaveLength(PALACE_PLAN.length - 1);
+    expect(part('annex').length).toBeGreaterThanOrEqual(4);
+    expect(part('annex').length).toBeLessThanOrEqual(8);
+    const pav = part('pavilion');
+    expect(pav).toHaveLength(1);
+    expect(pointInPolygon(pav[0]!, LAYOUT.palacePonds[0]!)).toBe(true);
+    expect(pav[0]!.tags.name).toMatch(/정$/u);
+    // Two tiers each (platform, body), as every palaceHall.
+    for (const b of palace) expect(b.tiers).toHaveLength(2);
+  });
+
+  it('closes the outer wall except the main gate on the axis, inner walls with axis gates', () => {
+    const outer = walls.filter((w) => w.kind === 'wall' && w.height === 4);
+    expect(outer).toHaveLength(5);
+    const south = PALACE_RECT.z1;
+    expect(palaceWallAt(LAYOUT, PALACE_AXIS_X, south)).toBeNull();
+    expect(palaceWallAt(LAYOUT, PALACE_AXIS_X - PALACE_GATE_HALF - 2, south)?.kind).toBe('wall');
+    expect(palaceWallAt(LAYOUT, PALACE_RECT.x0, (PALACE_RECT.z0 + south) / 2)?.kind).toBe('wall');
+    const inner = walls.filter((w) => w.kind === 'wall' && w.height < 4);
+    expect(inner).toHaveLength(4);
+    for (const w of inner) expect(palaceWallAt(LAYOUT, PALACE_AXIS_X, w.a.z)).toBeNull();
+    const terrace = walls.filter((w) => w.kind === 'terrace');
+    expect(terrace).toHaveLength(1);
+    expect(terrace[0]!.height).toBeCloseTo(1.2, 9);
+  });
+
+  it('keeps every palace building off the walls and corridors', () => {
+    for (const b of palace) {
+      for (const w of walls.filter((x) => x.kind !== 'terrace')) {
+        expect(obbSegmentDistance(obb(b), w.a, w.b), b.tags.name).toBeGreaterThan(w.width / 2);
+      }
     }
   });
 });
@@ -875,7 +915,7 @@ describe('layout v3: mountains stay wooded', () => {
   });
 
   it('lines the palace halls up on one axis inside a level court', () => {
-    const halls = B.filter((b) => b.district === 'palace');
+    const halls = B.filter((b) => b.tags.palacePart === 'gate' || b.tags.palacePart === 'hall');
     expect(halls.length).toBeGreaterThanOrEqual(3);
     const cx = (PALACE_RECT.x0 + PALACE_RECT.x1) / 2;
     for (const b of halls) {
