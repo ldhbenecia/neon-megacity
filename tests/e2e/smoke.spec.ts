@@ -17,7 +17,7 @@ test('loads with zero console errors and renders frames', async ({ page }) => {
   const errors = collectErrors(page);
   await page.goto(app());
   await waitForCity(page);
-  await expect(page.locator('#city-canvas')).toBeVisible();
+  await expect(page.locator('canvas')).toBeVisible();
   // lil-gui is fetched only with ?debug.
   await expect(page.locator('.lil-gui')).toHaveCount(0);
   await expect(page.locator('#clock')).toHaveText(/^\d{2}:\d{2}$/);

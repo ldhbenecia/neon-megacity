@@ -344,14 +344,6 @@ body {
     color 150ms var(--ease),
     scale 150ms var(--ease);
 }
-.minimap {
-  display: block;
-  width: 100%;
-  margin-bottom: 10px;
-  border-radius: 10px;
-  background: rgba(0, 0, 0, 0.28);
-  touch-action: manipulation;
-}
 .district-row {
   display: flex;
   flex-wrap: wrap;

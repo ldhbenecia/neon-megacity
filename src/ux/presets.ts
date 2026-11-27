@@ -140,15 +140,6 @@ export function terrainClear({ position: p, target: t }: Pose): boolean {
 let districtCache: DistrictView[] | null = null;
 
 /** One view per named zone (the riverside band is reached through the bridge presets). */
-/** Zone kinds that stand out (chips, minimap): the quarters most visitors look for first. */
-export const MAJOR_KINDS: ReadonlySet<string> = new Set([
-  'megacore',
-  'corridor',
-  'nightlife',
-  'brick',
-  'oldtown',
-]);
-
 export function districtViews(): readonly DistrictView[] {
   // Fill zones (강북권/강남권) are generic padding, not places anyone looks for. West to east.
   districtCache ??= LAYOUT.districts

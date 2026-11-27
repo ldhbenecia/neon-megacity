@@ -39,7 +39,7 @@ async function stream(
 ): Promise<void> {
   await page.evaluate(
     ({ deltaY, count, ctrlKey, at }) => {
-      const canvas = document.querySelector('#city-canvas')!;
+      const canvas = document.querySelector('#app canvas')!;
       const r = canvas.getBoundingClientRect();
       for (let i = 0; i < count; i++) {
         canvas.dispatchEvent(
