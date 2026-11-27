@@ -367,7 +367,13 @@ export function ridgeHeight(r: Ridge, angle: number): number {
   const peak = r.peakSouth + (r.peakNorth - r.peakSouth) * north;
   const u = ((((angle / (Math.PI * 2)) % 1) + 1) % 1) * 16;
   const n = fbm1(u, r.seed, 4, 16);
-  return peak * Math.min(1, Math.pow(n / 0.8, 1.6));
+  let h = peak * Math.min(1, Math.pow(n / 0.8, 1.6));
+  // Named peaks (북한산, 관악산 …) rise above the noise profile as sharp bumps.
+  for (const p of r.peaks) {
+    const da = Math.atan2(Math.sin(angle - p.angle), Math.cos(angle - p.angle)) / p.width;
+    h = Math.max(h, p.height * Math.exp(-da * da) * (0.85 + 0.15 * n));
+  }
+  return h;
 }
 
 /** World position of a point on a ridge ring at `angle` (top of the silhouette). */

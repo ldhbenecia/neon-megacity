@@ -1,5 +1,5 @@
 import type { CameraPreset } from '../core/query';
-import type { Ctx } from '../core/types';
+import type { Ctx, Quality } from '../core/types';
 import { createCameraRig, type CameraRig, type RigDebug } from './cameraRig';
 import { createControls } from './controls';
 import { createHud, type Hud } from './hud';
@@ -28,6 +28,10 @@ export interface Ux {
 export interface UxOptions {
   cam?: CameraPreset;
   resize: () => void;
+  /** env.quality came from ?quality= or a stored pick: the controller leaves it alone. */
+  manualQuality: boolean;
+  /** Runs the ctx.onQuality handlers after a runtime tier change. */
+  emitQuality: (q: Quality) => void;
 }
 
 const POWER_S = 1.2;
@@ -55,7 +59,12 @@ export function initUx(ctx: Ctx, opts: UxOptions): Ux {
     hud,
   });
   const controls = createControls(ctx, rig, hud);
-  const perf = createPerf(ctx, { overlay: q.stats, resize: opts.resize });
+  const perf = createPerf(ctx, {
+    overlay: q.stats,
+    resize: opts.resize,
+    manual: opts.manualQuality,
+    emitQuality: opts.emitQuality,
+  });
 
   if (q.stats) {
     window.__hangang = {

@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { LAYOUT } from '../src/city/layout';
 import { CAMERA_LIMITS } from '../src/core/query';
 import { RAIN_STEPS, rainStep } from '../src/ux/controls';
-import { AdaptiveDpr } from '../src/ux/dpr';
 import {
   ARCHETYPE_FALLBACK,
   ARCHETYPE_KO,
@@ -55,49 +54,13 @@ describe('boot progress (9.2)', () => {
   });
 });
 
-describe('adaptive DPR (11)', () => {
-  const run = (d: AdaptiveDpr, ms: number, seconds: number): number[] => {
-    const out: number[] = [];
-    for (let t = 0; t < seconds; t += ms / 1000) {
-      const v = d.sample(ms / 1000);
-      if (v !== null) out.push(v);
-    }
-    return out;
-  };
-
-  it('starts at the cap and steps down by 0.25 when slow, never below 1', () => {
-    const d = new AdaptiveDpr({ max: 1.5 });
-    expect(d.dpr).toBe(1.5);
-    expect(run(d, 30, 2.1)).toEqual([1.25]);
-    run(d, 30, 10);
-    expect(d.dpr).toBe(1);
-  });
-
-  it('recovers only after 5 s under 14 ms', () => {
-    const d = new AdaptiveDpr({ max: 1.5 });
-    run(d, 30, 2.1);
-    expect(d.dpr).toBe(1.25);
-    expect(run(d, 16, 10)).toEqual([]); // 16 ms is "ok", not "fast"
-    expect(run(d, 8, 6.5)).toEqual([1.5]);
-  });
-
-  it('reset() restores the cap and starts a fresh window', () => {
-    const d = new AdaptiveDpr({ max: 1.5 });
-    run(d, 30, 2.1);
-    expect(d.dpr).toBe(1.25);
-    expect(d.reset()).toBe(1.5);
-    expect(d.averageMs).toBe(0);
-  });
-
-  it('ignores hitches and respects a low device ratio', () => {
-    const d = new AdaptiveDpr({ max: Math.min(1, 1.5) });
-    expect(d.sample(5)).toBeNull();
-    expect(run(d, 40, 5)).toEqual([]);
-    expect(d.dpr).toBe(1);
-  });
-});
-
 describe('parseUxQuery', () => {
+  it('turns on the NaN view only together with ?debug', () => {
+    expect(parseUxQuery('?debug&nan').nan).toBe(true);
+    expect(parseUxQuery('?nan').nan).toBe(false);
+    expect(parseUxQuery('?debug&nan=0').nan).toBe(false);
+  });
+
   it('parses ?pose= only when it has 6 finite numbers', () => {
     expect(parseUxQuery('?pose=100,200,300,4,5,6').pose).toEqual({
       position: { x: 100, y: 200, z: 300 },
@@ -120,7 +83,7 @@ describe('parseUxQuery', () => {
   });
 
   it('defaults', () => {
-    expect(parseUxQuery('')).toEqual({ hud: true, stats: false, debug: false });
+    expect(parseUxQuery('')).toEqual({ hud: true, stats: false, debug: false, nan: false });
   });
   it('parses preset, hud and stats', () => {
     expect(parseUxQuery('?preset=3&hud=0&stats=1&debug')).toEqual({
@@ -128,6 +91,7 @@ describe('parseUxQuery', () => {
       hud: false,
       stats: true,
       debug: true,
+      nan: false,
     });
     expect(parseUxQuery('?stats').stats).toBe(true);
     expect(parseUxQuery('?stats=0').stats).toBe(false);

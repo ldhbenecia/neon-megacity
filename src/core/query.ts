@@ -3,7 +3,7 @@
 //   ?cam=<name>  preset camera pose
 //   ?rain=0..1   initial rain intensity
 //   ?nogui       hide the lil-gui panel
-//   ?quality=low|high  render tier (low: software GL for CI, see Quality)
+//   ?quality=high|medium|low|ci  render tier (ci: software GL test tier, see Quality)
 
 import {
   CITY,
@@ -202,6 +202,8 @@ export function parseQuery(search: string): QueryOptions {
   const cam = params.get('cam');
   if (isPreset(cam)) opts.cam = cam;
   const quality = params.get('quality');
-  if (quality === 'low' || quality === 'high') opts.quality = quality;
+  if (quality === 'high' || quality === 'medium' || quality === 'low' || quality === 'ci') {
+    opts.quality = quality;
+  }
   return opts;
 }

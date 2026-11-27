@@ -13,7 +13,14 @@ import { buildAtlas } from './atlas';
 import { buildCatalog } from './catalog';
 import { createNeonUniforms } from './glsl';
 import { hdrColor } from './geom';
-import { bridgePaths, groundPaths, highwayPath, vehicleStreams, type Path } from './lanes';
+import {
+  bridgePaths,
+  groundPaths,
+  highwayPath,
+  vehicleStreams,
+  type Path,
+  skyPaths,
+} from './lanes';
 import { createLightPool, type LightCandidate } from './lights';
 import { placeSigns, roadGapIndex, type Placement } from './placement';
 import { buildHolograms, buildRings, buildScreens } from './screens';
@@ -234,8 +241,8 @@ export function init(ctx: Ctx): CityModuleInstance {
   const catalog = buildCatalog({ buildings: [...specs] });
   const atlas = buildAtlas(catalog, ctx.renderer);
   disposables.push(atlas.texture);
-  const P = placeSigns(L, faces, catalog);
   const street = planStreet(L, catalog, sidewalkH);
+  const P = placeSigns(L, faces, catalog, { reserved: street.flats.length });
 
   const flats = buildFlatSigns(shared, atlas.texture, catalog, [...P.flats, ...street.flats]);
   const solidMat = emissiveSolidMaterial(shared);
@@ -317,14 +324,7 @@ export function init(ctx: Ctx): CityModuleInstance {
     const s = curveSamples(hw.id);
     if (s) paths.push(highwayPath(hw.id, s, hw.closed));
   }
-  const ringS = curveSamples('hw-ring');
-  const riverS = curveSamples('hw-river-north');
-  if (ringS) {
-    paths.push({ ...highwayPath('fly-ring-low', ringS, true, 'flying'), altitude: [80, 140] });
-    paths.push({ ...highwayPath('fly-ring-high', ringS, true, 'flying'), altitude: [200, 260] });
-  }
-  if (riverS)
-    paths.push({ ...highwayPath('fly-river', riverS, false, 'flying'), altitude: [140, 200] });
+  paths.push(...skyPaths(L.skyLanes));
   const vehicles = vehicleStreams(paths, L.highways);
   const traffic = buildTraffic(shared, paths, vehicles);
   group.add(traffic.group);

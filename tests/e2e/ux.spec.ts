@@ -155,10 +155,14 @@ test('first entry shows a controls hint that fades out', async ({ page }) => {
 test('lil-gui is a developer panel: hidden by default, shown with ?debug', async ({ page }) => {
   await page.goto(app());
   await waitForCity(page);
-  await expect(page.locator('.lil-gui.lil-root')).toBeHidden();
+  await expect(page.locator('.lil-gui')).toHaveCount(0);
   await page.goto(app('debug'));
   await waitForCity(page);
   await expect(page.locator('.lil-gui.lil-root')).toBeVisible();
+  // ?nogui wins: the panel is not even fetched.
+  await page.goto(app('debug&nogui'));
+  await waitForCity(page);
+  await expect(page.locator('.lil-gui')).toHaveCount(0);
 });
 
 test.describe('city controls', () => {

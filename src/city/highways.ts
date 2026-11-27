@@ -1,27 +1,52 @@
-// Elevated highways, at-grade riverside road and the three bridges (ART_DIRECTION 2.3, 2.5).
+// 한강 bridges (SEOUL.md 3.3) and the riverside / 내부순환로 highways (SEOUL.md 5.3).
 // Curves are centripetal Catmull-Rom (three.js CatmullRomCurve3) so infra and neon traffic
 // evaluate exactly the same path from the same control points.
 import { CatmullRomCurve3, Vector3 } from 'three';
 import { pointSegmentDistance } from './math';
-import { MAP_HALF, RIVERSIDE_HALF } from './districts';
-import { RIVER, riverFrame } from './river';
-import type { Bridge, BridgeKind, BridgeMotif, Highway, HighwayKind, Vec2, Vec3 } from './types';
+import {
+  HALF_X,
+  HALF_Z,
+  riverFrame,
+  riverNearest,
+  riverOffset,
+  bankPoint,
+  riverSignedDistance,
+  riverWidthAt,
+  riverZ,
+} from './river';
+import type {
+  Bridge,
+  BridgeKind,
+  BridgeMotif,
+  Highway,
+  HighwayKind,
+  IslandId,
+  Vec2,
+  Vec3,
+} from './types';
 
 /** Extra no-build margin around a highway deck: corridor = width + 6 m. */
 const CORRIDOR_MARGIN = 6;
-/** Lateral offset of the riverside highways from the river centerline (m). */
-const HW_OFFSET = 150;
 
-/** Ring road (hw-ring): rounded rectangle on the core arterial grid, around the skyline peak. */
-export const RING = { x0: -330, x1: 210, z0: -650, z1: -110, radius: 160 } as const;
-const RING_C = { x: (RING.x0 + RING.x1) / 2, z: (RING.z0 + RING.z1) / 2 };
+/** 강변북로: centre this far outside the north embankment (m), deck height. */
+export const GANGBYEON_OFFSET = 30;
+/**
+ * 강변북로 deck height. It passes over the north bridge approaches 17..43 m outside the bank,
+ * where the highest approach (반포대교, 16 m over a 100 m ramp) is still ~13.3 m high; 21 m keeps
+ * MIN_ROAD_CLEARANCE under the 1.5 m deck slab.
+ */
+export const GANGBYEON_Y = 21;
+/**
+ * 올림픽대로: centre this far outside the south embankment (m), at grade. The south approaches
+ * pass over it (see BRIDGE_RAMP_SOUTH_MIN).
+ */
+export const OLYMPIC_OFFSET = 30;
+const OLYMPIC_Y = 0.3;
+const OLYMPIC_WIDTH = 28;
+/** 내부순환로 deck height. */
+const NAEBU_Y = 26;
 
-/** Ring deck height at a position: 22..28 m, two gentle waves per lap. */
-export function ringDeckY(x: number, z: number): number {
-  return 25 + 3 * Math.sin(2 * Math.atan2(z - RING_C.z, x - RING_C.x));
-}
-
-const BRIDGE_DEFS: {
+interface BridgeDef {
   id: string;
   name: string;
   kind: BridgeKind;
@@ -33,59 +58,166 @@ const BRIDGE_DEFS: {
   width: number;
   lanes: number;
   structureH: number;
-}[] = [
+  rail?: boolean;
+  island?: IslandId;
+  /** Cross the river along the normal at this x instead of at `x` (keeps 한강철교 parallel to 한강대교). */
+  normalX?: number;
+}
+
+/** West → east. `x` is the projected OSM bridge centre on the centerline (SEOUL.md 3.1). */
+const BRIDGE_DEFS: BridgeDef[] = [
   {
-    id: 'bridge-a',
-    name: '아치교',
-    kind: 'arch',
+    id: 'br-seongsan',
+    name: '성산대교',
+    kind: 'deckArch',
     motif: 'cyanRib',
-    spans: 2,
-    x: -520,
-    deckY: 12,
+    spans: 5,
+    x: -1453,
+    deckY: 14,
     width: 28,
     lanes: 6,
-    structureH: 36,
+    structureH: 12,
   },
   {
-    id: 'bridge-b',
-    name: '트러스교',
-    kind: 'truss',
-    motif: 'orangeChord',
-    spans: 3,
-    x: 140,
-    deckY: 10,
-    width: 24,
-    lanes: 4,
-    structureH: 14,
-  },
-  {
-    id: 'bridge-c',
-    name: '2층교',
-    kind: 'doubleDeck',
-    motif: 'redBand',
+    id: 'br-yanghwa',
+    name: '양화대교',
+    kind: 'tiedArch',
+    motif: 'whiteArch',
     spans: 6,
-    x: 760,
-    deckY: 10,
-    lowerDeckY: 4,
+    x: -1279,
+    deckY: 12,
+    width: 32,
+    lanes: 6,
+    structureH: 14,
+    island: 'seonyu',
+  },
+  {
+    id: 'br-seogang',
+    name: '서강대교',
+    kind: 'tiedArch',
+    motif: 'redArch',
+    spans: 3,
+    x: -925,
+    deckY: 14,
+    width: 26,
+    lanes: 6,
+    structureH: 55,
+    island: 'bamseom',
+  },
+  {
+    id: 'br-mapo',
+    name: '마포대교',
+    kind: 'girder',
+    motif: 'textRail',
+    spans: 6,
+    x: -788,
+    deckY: 12,
+    width: 30,
+    lanes: 8,
+    structureH: 0,
+  },
+  {
+    id: 'br-hangang-rail',
+    name: '한강철교',
+    kind: 'truss',
+    motif: 'railTruss',
+    spans: 7,
+    x: -551,
+    deckY: 12,
+    width: 48,
+    lanes: 4,
+    structureH: 12,
+    rail: true,
+    normalX: -480,
+    island: 'nodeul',
+  },
+  {
+    id: 'br-hangang',
+    name: '한강대교',
+    kind: 'tiedArch',
+    motif: 'whiteArch',
+    spans: 6,
+    x: -480,
+    deckY: 12,
+    width: 30,
+    lanes: 6,
+    structureH: 14,
+    island: 'nodeul',
+  },
+  {
+    id: 'br-banpo',
+    name: '반포대교·잠수교',
+    kind: 'doubleDeck',
+    motif: 'fountain',
+    spans: 8,
+    x: 96,
+    deckY: 16,
+    lowerDeckY: 1,
     width: 30,
     lanes: 6,
     structureH: 6,
   },
+  {
+    id: 'br-dongho',
+    name: '동호대교',
+    kind: 'truss',
+    motif: 'subwayDeck',
+    spans: 5,
+    x: 468,
+    deckY: 12,
+    width: 30,
+    lanes: 6,
+    structureH: 12,
+    rail: true,
+  },
+  {
+    id: 'br-seongsu',
+    name: '성수대교',
+    kind: 'truss',
+    motif: 'orangeChord',
+    spans: 4,
+    x: 662,
+    deckY: 12,
+    width: 26,
+    lanes: 4,
+    structureH: 16,
+  },
+  {
+    id: 'br-cheongdam',
+    name: '청담대교',
+    kind: 'doubleDeck',
+    motif: 'subwayDeck',
+    spans: 6,
+    x: 1087,
+    deckY: 14,
+    lowerDeckY: 6,
+    width: 28,
+    lanes: 4,
+    structureH: 6,
+    rail: true,
+  },
+  {
+    id: 'br-olympic',
+    name: '올림픽대교',
+    kind: 'cableStayed',
+    motif: 'ringPylon',
+    spans: 5,
+    x: 1670,
+    deckY: 14,
+    width: 30,
+    lanes: 6,
+    structureH: 88,
+  },
 ];
 
-/** Distance from the centerline to the north approach landing (outer edge of the riverside band). */
-export const BRIDGE_LAND = RIVERSIDE_HALF;
+/** North approach length beyond the embankment (m): lands past 강변북로. */
+export const BRIDGE_RAMP_NORTH = 100;
 /**
- * South approach landing distance. The south approach crosses over hw-south (150 ± 12 m at
- * y 0.3), so it lands further out to keep ≥ MIN_ROAD_CLEARANCE under the deck there
- * (deck 10 m → about 7 m at 162 m).
+ * Shortest south approach beyond the embankment (m). A bridge whose deck would not clear
+ * 올림픽대로 by MIN_ROAD_CLEARANCE where the road actually passes under it (it bends away from
+ * the bank on the inner side of a curve) gets a longer one (see `southRamp`).
  */
-export const BRIDGE_LAND_SOUTH = 260;
-/**
- * hw-river-north deck height. 16 m (ART_DIRECTION had 14) so the deck underside stays
- * MIN_ROAD_CLEARANCE above the north bridge approaches it crosses (≈ 8.6 m at 137 m).
- */
-export const HW_RIVER_NORTH_Y = 16;
+export const BRIDGE_RAMP_SOUTH_MIN = 180;
 /** Thickest deck slab the clearance guarantee assumes (m). Infra decks must not be thicker. */
 export const MAX_DECK_THICKNESS = 1.5;
 /** Minimum vertical clearance between a deck underside and a road or deck below it (m). */
@@ -109,68 +241,114 @@ export function bridgeDeckY(br: Bridge, x: number, z: number, margin = 0): numbe
   const rampA = Math.hypot(br.a.x - br.landA.x, br.a.z - br.landA.z);
   const rampB = Math.hypot(br.b.x - br.landB.x, br.b.z - br.landB.z);
   const over = s < 0 ? -s / rampA : (s - span) / rampB;
-  return over > 1 ? null : br.deckY * (1 - over);
+  // Exactly at a landing, rounding can give 1 + 1e-16; keep the deck there.
+  if (over > 1 + 1e-9) return null;
+  return Math.max(0, br.deckY * (1 - Math.min(1, over)));
+}
+
+/**
+ * South ramp length (beyond the bank) that keeps the deck ≥ MIN_ROAD_CLEARANCE above 올림픽대로
+ * where the road crosses the bridge axis.
+ */
+let olympicCache: Vec3[] | null = null;
+function olympicPoints(): Vec3[] {
+  olympicCache ??= bankPoints(1, OLYMPIC_OFFSET, OLYMPIC_Y);
+  return olympicCache;
+}
+
+let olympicSampleCache: Vec3[] | null = null;
+function olympicSamples(): Vec3[] {
+  olympicSampleCache ??= highwaySamples({ points: olympicPoints(), closed: false }, 4);
+  return olympicSampleCache;
+}
+
+function southRamp(c: Vec2, south: Vec2, half: number, width: number, deckY: number): number {
+  const road = olympicSamples();
+  const roadHalf = OLYMPIC_WIDTH / 2;
+  let far = 0;
+  for (const p of road) {
+    const dx = p.x - c.x;
+    const dz = p.z - c.z;
+    const along = dx * south.x + dz * south.z - half;
+    const lateral = Math.abs(-dx * south.z + dz * south.x);
+    if (along > 0 && along < 600 && lateral < width / 2 + roadHalf) far = Math.max(far, along);
+  }
+  // deck (1 - (far + roadHalf) / L) - MAX_DECK_THICKNESS - road y ≥ MIN_ROAD_CLEARANCE
+  const keep = 1 - (MIN_ROAD_CLEARANCE + MAX_DECK_THICKNESS + OLYMPIC_Y) / deckY;
+  return Math.max(BRIDGE_RAMP_SOUTH_MIN, Math.ceil((far + roadHalf) / keep) + 5);
+}
+
+/** Distance along `dir` from c (on the centerline) where the axis meets the embankment. */
+function bankCrossing(c: Vec2, dir: Vec2): number {
+  let lo = 0;
+  let hi = 600;
+  for (let i = 0; i < 40; i++) {
+    const k = (lo + hi) / 2;
+    if (riverSignedDistance(c.x + dir.x * k, c.z + dir.z * k) < 0) lo = k;
+    else hi = k;
+  }
+  return (lo + hi) / 2;
 }
 
 export function makeBridges(): Bridge[] {
   return BRIDGE_DEFS.map((d) => {
-    const { p, south } = riverFrame(d.x);
-    const at = (k: number): Vec2 => ({ x: p.x + south.x * k, z: p.z + south.z * k });
-    const half = RIVER.width / 2;
+    const c = riverOffset(d.x, 0);
+    const { south } = riverFrame(d.normalX ?? d.x);
+    const at = (k: number): Vec2 => ({ x: c.x + south.x * k, z: c.z + south.z * k });
+    // Abutments sit where the axis actually meets the bank (bends and skewed axes included).
+    const kA = bankCrossing(c, { x: -south.x, z: -south.z });
+    const kB = bankCrossing(c, south);
     const b: Bridge = {
       id: d.id,
       name: d.name,
       kind: d.kind,
-      a: at(-half),
-      b: at(half),
-      landA: at(-BRIDGE_LAND),
-      landB: at(BRIDGE_LAND_SOUTH),
+      a: at(-kA),
+      b: at(kB),
+      landA: at(-kA - BRIDGE_RAMP_NORTH),
+      landB: at(kB + southRamp(c, south, kB, d.width, d.deckY)),
       deckY: d.deckY,
       width: d.width,
       lanes: d.lanes,
       structureH: d.structureH,
       spans: d.spans,
-      rail: false,
+      rail: d.rail ?? false,
       motif: d.motif,
     };
     if (d.lowerDeckY !== undefined) b.lowerDeckY = d.lowerDeckY;
+    if (d.island) b.island = d.island;
     return b;
   });
 }
 
-function riverOffsetPoints(offset: number, y: number): Vec3[] {
-  return Array.from({ length: 33 }, (_, i) => {
-    const x = -1300 + (2600 * i) / 32;
-    const { p, south } = riverFrame(x);
-    return { x: p.x + south.x * offset, y, z: p.z + south.z * offset };
-  });
-}
-
-function ringPoints(): Vec3[] {
-  const { x0, x1, z0, z1, radius: r } = RING;
-  // Corner centers, walked clockwise when viewed from above (north = -Z up the screen).
-  const corners = [
-    { cx: x1 - r, cz: z0 + r, a0: -Math.PI / 2 }, // NE
-    { cx: x1 - r, cz: z1 - r, a0: 0 }, // SE
-    { cx: x0 + r, cz: z1 - r, a0: Math.PI / 2 }, // SW
-    { cx: x0 + r, cz: z0 + r, a0: Math.PI }, // NW
-  ];
-  const pts: Vec3[] = [];
-  for (const c of corners) {
-    for (let k = 0; k <= 4; k++) {
-      const a = c.a0 + (k / 4) * (Math.PI / 2);
-      const x = c.cx + Math.cos(a) * r;
-      const z = c.cz + Math.sin(a) * r;
-      pts.push({ x, y: ringDeckY(x, z), z });
-    }
+/**
+ * Points that follow a bank at `outside` m beyond it. Raw offsets every 25 m bunch up and
+ * reverse on the inner side of a bend, which folds the deck, so they are smoothed by neighbour
+ * averaging and pushed back out (away from the nearest centerline point) whenever smoothing
+ * pulls one closer than `outside`. Every 4th point is kept (~100 m apart).
+ */
+function bankPoints(side: -1 | 1, outside: number, y: number): Vec3[] {
+  let pts: Vec2[] = [];
+  for (let x = -HALF_X - 150; x <= HALF_X + 150 + 1e-6; x += 25)
+    pts.push(bankPoint(x, side, outside));
+  for (let iter = 0; iter < 160; iter++) {
+    const next = pts.map((p, i) => {
+      if (i === 0 || i === pts.length - 1) return p;
+      const a = pts[i - 1] as Vec2;
+      const b = pts[i + 1] as Vec2;
+      return { x: (a.x + 2 * p.x + b.x) / 4, z: (a.z + 2 * p.z + b.z) / 4 };
+    });
+    pts = next.map((p) => {
+      const n = riverNearest(p.x, p.z);
+      const want = riverWidthAt(n.cx) / 2 + outside;
+      if (n.d >= want) return p;
+      const c = { x: n.cx, z: riverZ(n.cx) };
+      const len = Math.hypot(p.x - c.x, p.z - c.z) || 1;
+      return { x: c.x + ((p.x - c.x) / len) * want, z: c.z + ((p.z - c.z) / len) * want };
+    });
   }
-  return pts;
-}
-
-/** z of hw-river-north at x (approximate; exact enough to aim ramps at it). */
-function riverNorthAt(x: number, y: number): Vec3 {
-  const { p, south } = riverFrame(x);
-  return { x: p.x - south.x * HW_OFFSET, y, z: p.z - south.z * HW_OFFSET };
+  return pts
+    .filter((_, i) => i % 4 === 0 || i === pts.length - 1)
+    .map((p) => ({ x: p.x, y, z: p.z }));
 }
 
 function bezierPoints(p0: Vec3, p1: Vec3, p2: Vec3, p3: Vec3, n = 12): Vec3[] {
@@ -189,23 +367,102 @@ function bezierPoints(p0: Vec3, p1: Vec3, p2: Vec3, p3: Vec3, n = 12): Vec3[] {
   });
 }
 
-function rampPoints(id: 'a' | 'b'): Vec3[] {
-  if (id === 'a') {
-    // Ring east side → river-north, eastbound (inner ramp, descending 25 → 16).
-    const p0 = { x: RING.x1, y: ringDeckY(RING.x1, -300), z: -300 };
-    const end = riverNorthAt(480, HW_RIVER_NORTH_Y);
-    const pre = riverNorthAt(360, HW_RIVER_NORTH_Y);
-    return bezierPoints(p0, { x: RING.x1 + 15, y: 0, z: -200 }, pre, end);
+const v3 = (x: number, z: number, y = NAEBU_Y): Vec3 => ({ x, y, z });
+
+/** 내부순환로 west leg: 성산대교 north end → 홍제 tunnel portal past the north edge. */
+const NAEBU_W: Vec3[] = [
+  v3(-1480, -880),
+  v3(-1390, -990),
+  v3(-1270, -1080),
+  v3(-1120, -1160),
+  v3(-990, -1240),
+  v3(-910, -1360),
+];
+
+/** 내부순환로 east leg: 정릉 tunnel portal past the north edge → 성수 (강변북로). */
+const NAEBU_E: Vec3[] = [
+  v3(250, -1360),
+  v3(330, -1150),
+  v3(430, -970),
+  v3(620, -720),
+  v3(780, -540),
+  v3(900, -410),
+];
+
+/** Control point of `parent` nearest to world x, with the unit direction to the next one. */
+function parentAt(parent: readonly Vec3[], x: number): { p: Vec3; dir: Vec2 } {
+  let k = 0;
+  for (let i = 1; i < parent.length - 1; i++) {
+    if (Math.abs((parent[i] as Vec3).x - x) < Math.abs((parent[k] as Vec3).x - x)) k = i;
   }
-  // River-north westbound → ring east side (outer ramp, climbing 16 → ~25).
-  const p0 = riverNorthAt(620, HW_RIVER_NORTH_Y);
-  const p1 = riverNorthAt(480, HW_RIVER_NORTH_Y);
-  const p3 = { x: RING.x1, y: ringDeckY(RING.x1, -440), z: -440 };
-  return bezierPoints(p0, { ...p1, z: p1.z - 30 }, { x: RING.x1 + 20, y: 0, z: -360 }, p3);
+  const p = parent[k] as Vec3;
+  const n = parent[k + 1] as Vec3;
+  const len = Math.hypot(n.x - p.x, n.z - p.z);
+  return { p, dir: { x: (n.x - p.x) / len, z: (n.z - p.z) / len } };
+}
+
+/**
+ * Cubic ramp from a point on a parent deck to a point on another, tangent to both. `out` pushes
+ * the first / last third sideways (left of travel when positive) so the ramp leaves the parent
+ * deck's footprint quickly instead of running inside it.
+ */
+function tangentRamp(
+  a: Vec3,
+  da: Vec2,
+  outA: number,
+  b: Vec3,
+  db: Vec2,
+  outB: number,
+  reach: number,
+): Vec3[] {
+  const left = (d: Vec2): Vec2 => ({ x: d.z, z: -d.x });
+  const la = left(da);
+  const lb = left(db);
+  return bezierPoints(
+    a,
+    { x: a.x + da.x * reach + la.x * outA, y: 0, z: a.z + da.z * reach + la.z * outA },
+    { x: b.x - db.x * reach + lb.x * outB, y: 0, z: b.z - db.z * reach + lb.z * outB },
+    b,
+    16,
+  );
+}
+
+let gangbyeonCache: Vec3[] | null = null;
+function gangbyeonPoints(): Vec3[] {
+  gangbyeonCache ??= bankPoints(-1, GANGBYEON_OFFSET, GANGBYEON_Y);
+  return gangbyeonCache;
+}
+
+/** West ramp: off 강변북로 to its north (left of eastbound travel), up into 내부순환로. */
+function rampWest(): Vec3[] {
+  const { p, dir } = parentAt(gangbyeonPoints(), -1800);
+  const end = NAEBU_W[0] as Vec3;
+  const nx = (NAEBU_W[1] as Vec3).x - end.x;
+  const nz = (NAEBU_W[1] as Vec3).z - end.z;
+  const nl = Math.hypot(nx, nz);
+  return tangentRamp(p, dir, 80, end, { x: nx / nl, z: nz / nl }, 0, 110);
+}
+
+/** East ramp: from the end of 내부순환로 down onto 강변북로 eastbound, joining from its north. */
+function rampEast(): Vec3[] {
+  const start = NAEBU_E[NAEBU_E.length - 1] as Vec3;
+  const prev = NAEBU_E[NAEBU_E.length - 2] as Vec3;
+  const sl = Math.hypot(start.x - prev.x, start.z - prev.z);
+  const { p, dir } = parentAt(gangbyeonPoints(), 1250);
+  return tangentRamp(
+    start,
+    { x: (start.x - prev.x) / sl, z: (start.z - prev.z) / sl },
+    0,
+    p,
+    dir,
+    80,
+    110,
+  );
 }
 
 interface HwDef {
   id: string;
+  name: string;
   kind: HighwayKind;
   points: Vec3[];
   closed: boolean;
@@ -218,48 +475,63 @@ function hwDefs(): HwDef[] {
   return [
     {
       id: 'hw-river-north',
+      name: '강변북로',
       kind: 'elevated',
-      points: riverOffsetPoints(-HW_OFFSET, HW_RIVER_NORTH_Y),
+      points: gangbyeonPoints(),
       closed: false,
       width: 26,
       lanes: 6,
       pillarSpacing: 36,
     },
     {
-      id: 'hw-ring',
-      kind: 'elevated',
-      points: ringPoints(),
-      closed: true,
-      width: 18,
-      lanes: 4,
-      pillarSpacing: 32,
-    },
-    {
-      id: 'hw-interchange-a',
-      kind: 'ramp',
-      points: rampPoints('a'),
-      closed: false,
-      width: 10,
-      lanes: 2,
-      pillarSpacing: 28,
-    },
-    {
-      id: 'hw-interchange-b',
-      kind: 'ramp',
-      points: rampPoints('b'),
-      closed: false,
-      width: 10,
-      lanes: 2,
-      pillarSpacing: 28,
-    },
-    {
       id: 'hw-south',
+      name: '올림픽대로',
       kind: 'atGrade',
-      points: riverOffsetPoints(HW_OFFSET, 0.3),
+      points: olympicPoints(),
       closed: false,
-      width: 24,
-      lanes: 6,
+      width: OLYMPIC_WIDTH,
+      lanes: 8,
       pillarSpacing: 0,
+    },
+    {
+      id: 'hw-naebu-w',
+      name: '내부순환로',
+      kind: 'elevated',
+      points: NAEBU_W,
+      closed: false,
+      width: 22,
+      lanes: 4,
+      pillarSpacing: 34,
+    },
+    {
+      id: 'hw-naebu-e',
+      name: '내부순환로',
+      kind: 'elevated',
+      points: NAEBU_E,
+      closed: false,
+      width: 22,
+      lanes: 4,
+      pillarSpacing: 34,
+    },
+    {
+      id: 'hw-naebu-w-ramp',
+      name: '내부순환로 진입로',
+      kind: 'ramp',
+      points: rampWest(),
+      closed: false,
+      width: 10,
+      lanes: 2,
+      pillarSpacing: 28,
+    },
+    {
+      id: 'hw-naebu-e-ramp',
+      name: '내부순환로 진출로',
+      kind: 'ramp',
+      points: rampEast(),
+      closed: false,
+      width: 10,
+      lanes: 2,
+      pillarSpacing: 28,
     },
   ];
 }
@@ -298,11 +570,20 @@ export function makeHighways(bridges: readonly Bridge[]): Highway[] {
       for (let i = skipEnds; i < pts.length - skipEnds; i++) {
         if (d.closed && i === pts.length - 1) break; // closed curves repeat the first point
         const v = pts[i] as Vector3;
-        if (Math.abs(v.x) > MAP_HALF || Math.abs(v.z) > MAP_HALF) continue;
+        if (Math.abs(v.x) > HALF_X || Math.abs(v.z) > HALF_Z) continue;
         if (onBridge(bridges, { x: v.x, z: v.z }, 4)) continue;
         pillars.push({ x: v.x, y: v.y, z: v.z });
       }
     }
     return { ...d, pillars, corridorHalf: (d.width + CORRIDOR_MARGIN) / 2 };
   });
+}
+
+/** Bridge frame helper for tests and infra: unit vector along the river at a bridge. */
+export function bridgeAlong(br: Bridge): Vec2 {
+  // The bridge axis a→b turned 90°, so skewed bridges (한강철교) get their own frame.
+  const dx = br.b.x - br.a.x;
+  const dz = br.b.z - br.a.z;
+  const len = Math.hypot(dx, dz);
+  return { x: dz / len, z: -dx / len };
 }

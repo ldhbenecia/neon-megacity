@@ -1,18 +1,19 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import GUI from 'lil-gui';
 import { CITY, LAYOUT } from './city/layout';
 import { postEnabled } from './core/gl';
 import { NIGHT } from './core/palette';
 import { CAMERA_LIMITS, parseQuery } from './core/query';
-import type { CityModule, CityModuleInstance, Ctx } from './core/types';
+import type { CityModule, CityModuleInstance, Ctx, Quality } from './core/types';
 import * as lighting from './lighting/index';
 import * as terrain from './terrain/index';
 import * as buildings from './buildings/index';
 import * as infra from './infra/index';
 import * as neon from './neon/index';
 import * as atmosphere from './atmosphere/index';
+import { createGui } from './ux/gui';
 import { createLoader, initUx, nextFrame, parseUxQuery } from './ux/index';
+import { QUALITY_STORAGE_KEY, storedTier, tierFromRenderer } from './ux/quality';
 
 const BOOT_WEIGHTS = { setup: 5, compile: 15, firstFrame: 3 } as const;
 
@@ -26,8 +27,26 @@ const MODULES: readonly (readonly [name: string, weight: number, module: CityMod
 ];
 
 const query = parseQuery(window.location.search);
-const debug = parseUxQuery(window.location.search).debug;
-const quality = query.quality ?? 'high';
+const uxQuery = parseUxQuery(window.location.search);
+const debug = uxQuery.debug;
+// Manual picks win: ?quality= (incl. ci), then the stored control-panel choice. Otherwise the tier
+// is guessed from the GPU once the renderer exists (see boot()).
+const manualQuality: Quality | null = query.quality ?? readStoredTier();
+let quality: Quality = manualQuality ?? 'high';
+
+function readStoredTier(): Quality | null {
+  try {
+    return storedTier(localStorage.getItem(QUALITY_STORAGE_KEY));
+  } catch {
+    return null;
+  }
+}
+
+function rendererName(renderer: THREE.WebGLRenderer): string | null {
+  const gl = renderer.getContext();
+  const ext = gl.getExtension('WEBGL_debug_renderer_info');
+  return ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : null;
+}
 const loader = createLoader();
 
 /**
@@ -40,7 +59,7 @@ function createRenderer(): THREE.WebGLRenderer {
   const make = (antialias: boolean): THREE.WebGLRenderer =>
     new THREE.WebGLRenderer({ antialias, powerPreference: 'high-performance' });
   const renderer = make(false);
-  if (quality === 'low' || postEnabled(quality, renderer)) return renderer;
+  if (quality === 'ci' || postEnabled(quality, renderer)) return renderer;
   renderer.dispose();
   renderer.forceContextLoss();
   return make(true);
@@ -54,6 +73,9 @@ async function boot(): Promise<void> {
   if (!container) throw new Error('#app container missing');
 
   const renderer = createRenderer();
+  if (!manualQuality) {
+    quality = tierFromRenderer(rendererName(renderer), navigator.maxTouchPoints > 1);
+  }
   // Pixel ratio is owned by ux/perf (adaptive, capped at 1.5).
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -75,13 +97,14 @@ async function boot(): Promise<void> {
   controls.maxPolarAngle = CAMERA_LIMITS.maxPolarAngle;
   controls.screenSpacePanning = false;
 
-  // lil-gui is the developer panel: only with ?debug (and never with ?nogui). Regular users get
-  // the ux controls (time scrubber, weather, camera) instead.
-  const gui = new GUI({ title: 'City Controls' });
+  // lil-gui is the developer panel: only with ?debug (and never with ?nogui), loaded on demand.
+  // Regular users get the ux controls (time scrubber, weather, camera) and a no-op stand-in.
+  const gui = await createGui(debug && !query.nogui);
   gui.close();
-  if (query.nogui || !debug) gui.hide();
 
   const resizeHandlers: ((w: number, h: number) => void)[] = [];
+  // Filled by modules; ux calls them after changing env.quality (the controller lands with ux).
+  const qualityHandlers: ((q: Quality) => void)[] = [];
   const resize = (): void => {
     const w = window.innerWidth;
     const h = window.innerHeight;
@@ -102,6 +125,7 @@ async function boot(): Promise<void> {
     gui,
     CITY,
     LAYOUT,
+    debug: { nan: uxQuery.nan },
     env: {
       timeOfDay: query.time ?? 0.9,
       timeLocked: query.time !== undefined,
@@ -127,11 +151,22 @@ async function boot(): Promise<void> {
     onResize: (fn) => {
       resizeHandlers.push(fn);
     },
+    onQuality: (fn) => {
+      qualityHandlers.push(fn);
+      return () => {
+        const i = qualityHandlers.indexOf(fn);
+        if (i >= 0) qualityHandlers.splice(i, 1);
+      };
+    },
   };
 
   const ux = initUx(ctx, {
     ...(query.cam ? { cam: query.cam } : {}),
     resize,
+    manualQuality: manualQuality !== null,
+    emitQuality: (q) => {
+      for (const fn of [...qualityHandlers]) fn(q);
+    },
   });
   loader.detail('buildings', `건물 ${LAYOUT.buildings.length.toLocaleString('ko-KR')}동 조립 완료`);
 

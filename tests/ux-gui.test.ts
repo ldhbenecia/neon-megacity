@@ -1,0 +1,35 @@
+import { describe, expect, it } from 'vitest';
+import { createGui, stubGui } from '../src/ux/gui';
+
+describe('stubGui', () => {
+  it('answers the chains the modules use and does nothing', () => {
+    const gui = stubGui();
+    const params = { on: true };
+    const folder = gui.addFolder('Atmosphere');
+    folder
+      .add(params, 'on')
+      .name('On')
+      .onChange(() => (params.on = false))
+      .listen()
+      .disable();
+    folder.close();
+    folder.destroy();
+    gui.hide();
+    expect(params.on).toBe(true);
+  });
+
+  it('converts to a string and iterates as empty', () => {
+    const gui = stubGui();
+    expect((gui as unknown as { toString(): string }).toString()).toBe('[gui stub]');
+    expect(gui.controllers).toEqual([]);
+    expect(gui.folders).toEqual([]);
+    expect(gui.controllersRecursive()).toEqual([]);
+    expect(gui.foldersRecursive()).toEqual([]);
+  });
+
+  it('is not a thenable, so awaiting it resolves to the stub', async () => {
+    const gui = await createGui(false);
+    expect(typeof (gui as unknown as { then?: unknown }).then).toBe('undefined');
+    expect(() => gui.addFolder('x')).not.toThrow();
+  });
+});

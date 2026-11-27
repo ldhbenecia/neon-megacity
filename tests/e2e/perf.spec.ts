@@ -34,10 +34,13 @@ test.describe('performance budget', () => {
 
   test('full quality: preset 2 @ noon', async ({ page }) => {
     const errors = collectErrors(page);
-    await page.goto('./?nogui&stats&preset=2&time=0.5&rain=0.35');
+    // A manual pick: no GPU guess (SwiftShader would be 'low') and no automatic changes.
+    await page.goto('./?nogui&stats&preset=2&time=0.5&rain=0.35&quality=high');
     await waitForCity(page);
     await waitFrames(page, SETTLE_FRAMES);
-    checkBudget(await stats(page), 'full noon');
+    const s = await stats(page);
+    expect(s.tier).toBe('high');
+    checkBudget(s, 'full noon');
     expect(errors).toEqual([]);
   });
 
@@ -51,7 +54,7 @@ test.describe('performance budget', () => {
         await waitFrames(page, SETTLE_FRAMES);
         const s = await stats(page);
         checkBudget(s, formatClock(minutes));
-        expect.soft(s.dpr, 'low tier DPR').toBe(LOW_DPR);
+        expect.soft(s.dpr, 'ci tier DPR').toBe(LOW_DPR);
       }
       expect(errors).toEqual([]);
     });

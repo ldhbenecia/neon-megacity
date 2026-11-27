@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { NIGHT_FILL_AMBIENT } from '../core/palette';
 import type { Ctx, CityModuleInstance } from '../core/types';
 import { buildChannel, buildGround } from './ground';
 import { createRidges, type RidgeEnv } from './ridges';
@@ -44,7 +45,7 @@ export function init(ctx: Ctx): CityModuleInstance {
   channel.matrixAutoUpdate = false;
   group.add(channel);
 
-  const water = createWater(env.quality !== 'low');
+  const water = createWater(env.quality !== 'ci');
   water.mesh.matrixAutoUpdate = false;
   group.add(water.mesh);
 
@@ -62,8 +63,12 @@ export function init(ctx: Ctx): CityModuleInstance {
 
   return {
     update(_dt, elapsed) {
+      const [r, g, b] = NIGHT_FILL_AMBIENT;
+      const k = env.nightFactor;
+      groundMat.emissive.setRGB(r * k, g * k, b * k);
+      channelMat.emissive.setRGB(r * k, g * k, b * k);
       ridgeEnv.dayFactor = env.dayFactor;
-      water.update(elapsed);
+      water.update(elapsed, env.nightFactor);
       ridges.update(elapsed, ridgeEnv, renderer.getPixelRatio());
     },
     dispose() {

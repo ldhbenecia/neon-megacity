@@ -323,6 +323,13 @@ export const TERRAIN_COLORS = {
   water: 0x050708,
 } as const;
 
+/**
+ * Night fill (linear HDR, far below the bloom threshold): a teal floor for surfaces whose albedo
+ * times the night light rounds to pure black, scaled by env.nightFactor. Shared by facades and
+ * terrain so near walls, ground and slopes read at the same level.
+ */
+export const NIGHT_FILL_AMBIENT = [0.003, 0.005, 0.005] as const;
+
 /** Aviation obstruction lights on the far ridges (2.4): neonRed at this HDR multiplier. */
 export const RIDGE_BEACON_HDR = 4;
 
