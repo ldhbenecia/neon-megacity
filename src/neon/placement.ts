@@ -999,6 +999,12 @@ const PAINT_CHANCE = 0.85;
 const PAINT_ROAD_GAP = 14;
 
 // Seongsu: one big painted Korean name on the street wall of a warehouse, washed by warm lamps.
+// buildings publishes `blank` (same rule as its facade); without it, fall back to that rule here.
+function isBlank(f: BuildingFace, b: BuildingSpec, base: BaseArchetype): boolean {
+  const flag = (f as BuildingFace & { blank?: boolean }).blank;
+  return flag ?? windowStyle(base, faceRole(b, f.side), b.seed).type === FACADE.plain;
+}
+
 function placePaint(c: Ctx, b: BuildingSpec, rng: Rng, zone: number): void {
   if (!rng.chance(PAINT_CHANCE)) return;
   // Only blank walls (no window grid under the wash) that a road can see; else no lettering.
@@ -1010,7 +1016,7 @@ function placePaint(c: Ctx, b: BuildingSpec, rng: Rng, zone: number): void {
         f.tier === 0 &&
         f.stack === 0 &&
         f.shape !== 'cylinder' &&
-        windowStyle(base, faceRole(b, f.side), b.seed).type === FACADE.plain &&
+        isBlank(f, b, base) &&
         c.roadGap(f.center.x + f.normal.x * 2, f.center.z + f.normal.z * 2) < PAINT_ROAD_GAP,
     )
     .sort((p, q) => q.f.width - p.f.width);

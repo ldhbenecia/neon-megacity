@@ -230,7 +230,10 @@ describe('neon sign placement: zero penetration (5.1)', () => {
       const b = spec(s.building);
       const f = face(s.building, s.face);
       expect(cat.cells[s.cell]?.kind).toBe('paint');
-      expect(windowStyle(baseArchetype(b), faceRole(b, f.side), b.seed).type).toBe(FACADE.plain);
+      const blank = (f as typeof f & { blank?: boolean }).blank;
+      if (blank === undefined) {
+        expect(windowStyle(baseArchetype(b), faceRole(b, f.side), b.seed).type).toBe(FACADE.plain);
+      } else expect(blank).toBe(true);
       expect(insideFace(f, s.u0, s.u1, s.y0, s.y1)).toBe(true);
       expect(s.w).toBeGreaterThanOrEqual((f.width - 2 * EDGE_IN) * 0.5 - EPS);
     }
