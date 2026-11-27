@@ -1,4 +1,11 @@
-import { districtAt, type Layout, type Road, type StreetSlot, type Vec2 } from '../city/layout';
+import {
+  districtAt,
+  isUnbuilt,
+  type Layout,
+  type Road,
+  type StreetSlot,
+  type Vec2,
+} from '../city/layout';
 import { closestSegmentT } from '../city/math';
 import type { NeonName } from '../core/palette';
 import { createRng } from '../core/random';
@@ -135,6 +142,9 @@ export function planStreet(L: Layout, cat: Catalog, sidewalkH: number, seed = 42
   const lift = (_s: StreetSlot): number => sidewalkH;
 
   for (const s of L.slots) {
+    // Palace grounds and parks keep street lights but carry no signs or stalls.
+    const quiet = s.kind !== 'streetLight' && s.kind !== 'stairLamp';
+    if (quiet && isUnbuilt(districtAt(s.x, s.z))) continue;
     if (s.kind === 'streetLight' || s.kind === 'stairLamp') {
       const stair = s.kind === 'stairLamp';
       const scale = stair ? 0.35 : 1;
