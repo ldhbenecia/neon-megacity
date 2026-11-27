@@ -105,6 +105,18 @@ function bankStrip(x0: number, x1: number, side: Side, o0: number, o1: number): 
 }
 
 /** Rectangle of half widths around segment a→b (a road corridor). */
+/** Band between offsets o0 < o1 (m) to the right of a→b (south of 테헤란로), extended by ext. */
+function sideBand(a: Vec2, b: Vec2, o0: number, o1: number, ext = 0): Vec2[] {
+  const len = Math.hypot(b.x - a.x, b.z - a.z);
+  const ux = (b.x - a.x) / len;
+  const uz = (b.z - a.z) / len;
+  const p = (q: Vec2, s: number, o: number): Vec2 => ({
+    x: q.x + ux * s - uz * o,
+    z: q.z + uz * s + ux * o,
+  });
+  return [p(a, -ext, o0), p(b, ext, o0), p(b, ext, o1), p(a, -ext, o1)];
+}
+
 function corridor(a: Vec2, b: Vec2, half: number, ext = 0): Vec2[] {
   const dx = b.x - a.x;
   const dz = b.z - a.z;
@@ -139,6 +151,10 @@ export const TEHERAN: readonly [Vec2, Vec2] = [
   { x: 559, z: 592 },
   { x: 1073, z: 389 },
 ];
+const TEHERAN_MID: Vec2 = {
+  x: (TEHERAN[0].x + TEHERAN[1].x) / 2,
+  z: (TEHERAN[0].z + TEHERAN[1].z) / 2,
+};
 
 const H = (min: number, max: number, tallShare = 0, tallMax = max): ZoneHeights => ({
   min,
@@ -445,6 +461,24 @@ const DEFS: ZoneDef[] = [
   },
 
   {
+    id: 'cheongdam',
+    kind: 'showroom',
+    name: '압구정·청담',
+    nameEn: 'CHEONGDAM',
+    side: 'south',
+    // The river bends up to 테헤란로 east of 압구정, so the showroom streets sit behind the
+    // avenue's south frontage (gangnam keeps the first 130 m), east half of the avenue.
+    polygon: sideBand(TEHERAN_MID, TEHERAN[1], 130, 340, 60),
+    gridAngle: -10 * DEG,
+    origin: { x: 700, z: 230 },
+    pitch: [80, 80],
+    roadWidth: 20,
+    roadKind: 'street',
+    heights: H(6, 18, 0.5, 70),
+    coverage: 0.4,
+    litScale: 1,
+  },
+  {
     id: 'gangnam',
     kind: 'corridor',
     name: '강남·테헤란로',
@@ -461,23 +495,7 @@ const DEFS: ZoneDef[] = [
     coverage: 0.45,
     litScale: 1,
   },
-  {
-    id: 'cheongdam',
-    kind: 'showroom',
-    name: '압구정·청담',
-    nameEn: 'CHEONGDAM',
-    side: 'south',
-    polygon: bankStrip(480, 1150, 'south', 260, 430),
-    bank: { x0: 480, x1: 1150, o0: 260, o1: 430 },
-    gridAngle: -10 * DEG,
-    origin: { x: 700, z: 230 },
-    pitch: [80, 80],
-    roadWidth: 20,
-    roadKind: 'street',
-    heights: H(6, 18, 0.5, 70),
-    coverage: 0.4,
-    litScale: 1,
-  },
+
   {
     id: 'jamsil',
     kind: 'megacore',
