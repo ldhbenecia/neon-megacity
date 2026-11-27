@@ -1,11 +1,12 @@
 // Usage: npm run shots -- [label] [--swiftshader|--gpu] [--no-build] [--only=<substring>] [--burst]
+//   [--keep]
 //   [--black-limit=<percent>]
 // Every city shot prints its mean luminance and near-black pixel ratio; a ratio above the limit
 // (default 60 %, looser for dark night shots) fails the run. --burst also shoots frame by frame
 // while zooming, flying and orbiting, where transient black rectangles show up; only frames
-// over the limit are saved.
+// over the limit are saved (--keep also saves each scene's final rest frame).
 import { execSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { chromium, type Browser, type Page } from '@playwright/test';
 import { preview } from 'vite';
@@ -102,6 +103,10 @@ async function burst(
   scene: { name: string; query: string; limit?: number },
 ): Promise<string[]> {
   const limit = limitFor(scene.limit);
+  // A clean rerun into the same label must not leave an earlier run's failed frames behind.
+  for (const f of readdirSync(outDir)) {
+    if (f.startsWith(`${scene.name}-`) && f.endsWith('.png')) rmSync(resolve(outDir, f));
+  }
   const page = await browser.newPage({ viewport: VIEWPORT });
   try {
     const errors = collectErrors(page);
@@ -109,14 +114,16 @@ async function burst(
     await waitPowered(page);
     const log: string[] = [];
     const bad: string[] = [];
-    // Only frames over the limit are written to disk; the rest are measured and dropped.
-    const snap = async (tag: string): Promise<void> => {
+    const snap = async (tag: string, keep = false): Promise<void> => {
       const png = await page.screenshot();
       const l = await measure(page, png);
       log.push(`${tag}:${l.black.toFixed(0)}`);
-      if (l.black > limit) bad.push(`${tag} ${fmt(l)}`);
-      if (l.black > limit) {
-        writeFileSync(resolve(outDir, `${scene.name}-${tag}.png`), png);
+      const over = l.black > limit;
+      if (over) bad.push(`${tag} ${fmt(l)}`);
+      if (over || keep) {
+        const file = resolve(outDir, `${scene.name}-${tag}.png`);
+        writeFileSync(file, png);
+        console.log(file);
       }
     };
     for (let i = 0; i < 3; i++) {
@@ -152,7 +159,7 @@ async function burst(
     // Rest: what the user sees after letting go (the rig opens a blocked view within ~1 s).
     for (let i = 0; i < 3; i++) {
       await waitFrames(page, 30);
-      await snap(`rest${i}`);
+      await snap(`rest${i}`, i === 2 && flags.has('--keep'));
     }
     console.log(`${scene.name} black% ${log.join(' ')}`);
     const out = bad.map((b) => `${scene.name}: black frame ${b}`);
