@@ -23,8 +23,9 @@ describe('neon drones fly the layout sky lanes', () => {
     });
   });
 
-  it('puts drones on every lane, inside its altitude band', () => {
-    expect(drones.length).toBeGreaterThan(0);
+  it('puts drones on every lane, inside its altitude band (ART_DIRECTION 40–80 aloft)', () => {
+    expect(drones.length).toBeGreaterThanOrEqual(40);
+    expect(drones.length).toBeLessThanOrEqual(80);
     paths.forEach((p, i) => {
       const on = drones.filter((d) => d.path === i);
       expect(on.length, p.id).toBeGreaterThan(0);
@@ -35,5 +36,11 @@ describe('neon drones fly the layout sky lanes', () => {
         expect(d.lift).toBeLessThanOrEqual(hi + 3 + 1e-6);
       }
     });
+  });
+
+  it('fails loudly on a broken lane instead of dropping it', () => {
+    expect(() =>
+      skyPaths([{ id: 'sky-bad', points: [{ x: 0, z: 0 }], closed: true, altitude: [100, 160] }]),
+    ).toThrow(/sky-bad/);
   });
 });
