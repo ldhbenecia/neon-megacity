@@ -57,13 +57,17 @@ const VERTEX = /* glsl */ `
       float facing = dot(safeNormalize(cameraPosition - world, vec3(0.0, 1.0, 0.0)), n);
       vFace = smoothstep(0.35, 0.85, abs(facing)) * sign(facing);
     } else if (uMode > 3.5) {
-      // Water curtain: a jet sheet from the deck edge (iPos, iPos.w long, along iParam.xy, out to
-      // side iParam.z) rising 3 m then falling iSize.y to the water, iSize.x out from the deck.
+      // Water jets from the deck edge (iPos, iPos.w long, along iParam.xy, spraying to side
+      // iParam.z): out iSize.x and down iSize.y to the water on a parabola, fanning along the deck.
       vec2 along = iParam.xy;
       vec2 outw = vec2(-along.y, along.x) * iParam.z;
       float sArc = position.y;
-      float yArc = iPos.y + 3.0 * sArc - (iSize.y + 3.0) * sArc * sArc;
-      vec2 xz = iPos.xz + along * (position.x * iPos.w) + outw * (iSize.x * sArc);
+      // Choreography: the reach swells in slow waves along the bridge.
+      float wave = 0.72 + 0.28 * sin(uTime * 0.6 + iParam.w * 18.0);
+      float v0 = 4.0 * wave;
+      float yArc = iPos.y + v0 * sArc - (v0 + iSize.y) * sArc * sArc;
+      float u = position.x + (position.x - 0.5) * 0.6 * sArc;
+      vec2 xz = iPos.xz + along * (u * iPos.w) + outw * (iSize.x * wave * sArc);
       mvPosition = viewMatrix * vec4(xz.x, yArc, xz.y, 1.0);
       vUv = position.xy;
       vParam = iParam;
@@ -153,19 +157,29 @@ const FRAGMENT = /* glsl */ `
       gl_FragColor = vec4(col * a, 1.0);
     } else if (uMode > 3.5) {
       if (vFade <= 0.0) discard;
-      float cu = vUv.x * 24.0 + vParam.w * 13.0;
+      float sArc = vUv.y;
+      // Six jets per segment, each a soft band that thickens as it falls; some nozzles idle.
+      float cu = vUv.x * 6.0 + vParam.w * 13.0;
       float id = floor(cu);
-      float streak = 1.0 - smoothstep(0.0, 0.5, abs(fract(cu) - 0.5));
-      float drop = fract(vUv.y * 6.0 - uTime * (0.8 + nHash(id) * 0.6) + nHash(id + 7.0));
-      float sheet = 0.35 + 0.65 * smoothstep(0.0, 0.25, drop) * (1.0 - smoothstep(0.6, 1.0, drop));
-      float edge = smoothstep(0.0, 0.05, vUv.y) * (1.0 - smoothstep(0.85, 1.0, vUv.y));
+      float halfW = mix(0.16, 0.34, nHash(id)) * (1.0 + 0.8 * sArc);
+      float aa = fwidth(cu);
+      float core = 1.0 - smoothstep(halfW - aa, halfW + aa, abs(fract(cu) - 0.5));
+      // Far away the bands would alias into moire: fade them into an even translucent sheet.
+      float jet = mix(core, 0.4, smoothstep(0.25, 0.8, aa));
+      float on = step(0.12, nHash(id + 11.0));
+      float flow = 0.6 + 0.4 * sin(sArc * 18.0 - uTime * (4.0 + 2.0 * nHash(id + 3.0)) + id * 1.7);
+      // Dense at the nozzle, thinning as it falls and breaking up before the water.
+      float body = (1.0 - 0.55 * sArc) * smoothstep(0.0, 0.04, sArc) * (1.0 - smoothstep(0.5, 0.88, sArc));
+      float splash = smoothstep(0.6, 0.85, sArc) * (1.0 - smoothstep(0.85, 0.97, sArc));
       // Cyan, white, magenta drifting along the bridge in soft waves (SEOUL.md 3.3: no rainbow).
       float k = fract(vParam.w + uTime * 0.03) * 3.0;
       float f = smoothstep(0.0, 0.35, fract(k));
       vec3 c0 = k < 1.0 ? uGlowA : (k < 2.0 ? uHead : uGlowB);
       vec3 c1 = k < 1.0 ? uHead : (k < 2.0 ? uGlowB : uGlowA);
       vec3 col = mix(uTail, mix(c0, c1, f), uNight);
-      float a = 0.55 * streak * sheet * edge * vFade * uPower * (0.7 + 0.3 * uNight);
+      // Daylight: faint translucent white water; night: lit jets.
+      float strength = mix(0.22, 0.6, uNight);
+      float a = strength * (jet * on * flow * body + 0.22 * splash) * vFade * uPower;
       gl_FragColor = vec4(col * a, 1.0);
     } else if (uMode > 2.5) {
       float a;

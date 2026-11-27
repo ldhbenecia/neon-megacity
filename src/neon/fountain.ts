@@ -8,7 +8,7 @@ import { GlowMode, glowMaterial } from './glow';
 /** Jets per deck side; the one knob a lower quality tier turns down. */
 export const FOUNTAIN_JETS_PER_SIDE = 48;
 const END_INSET = 8;
-const ARC_SEGMENTS = 16;
+const ARC_SEGMENTS = 20;
 
 // Neighbouring jets share a colour; groups of 8 step a little along the bridge, so colours drift as waves.
 function jetPhase(i: number, side: 1 | -1): number {
@@ -62,7 +62,7 @@ export function fountainJets(
           alongZ: az,
           side,
           phase: jetPhase(i, side),
-          reach: 10 + 4 * (((i * 0.37) % 1) - 0.5),
+          reach: 20 + 6 * (((i * 0.37) % 1) - 0.5),
           drop: br.deckY - waterY,
         });
       }
@@ -100,7 +100,7 @@ export function fountainJetsFromNozzles(
           alongZ: az,
           side,
           phase: jetPhase(i, side),
-          reach: 10 + 4 * (((i * 0.37) % 1) - 0.5),
+          reach: 20 + 6 * (((i * 0.37) % 1) - 0.5),
           drop: line.a.y - waterY,
         });
       }
@@ -132,7 +132,7 @@ export function buildFountains(shared: NeonUniforms, jets: readonly Jet[]): THRE
       uHead: { value: c(NEON.neonWhite.hex, 1.2) },
       uGlowB: { value: c(NEON.neonMagenta.hex, 1.4) },
       // Daylight: plain white water.
-      uTail: { value: c(NEON.neonWhite.hex, 1.6) },
+      uTail: { value: c(NEON.neonWhite.hex, 0.9) },
     },
   });
   const mesh = new THREE.Mesh(geo, mat);
