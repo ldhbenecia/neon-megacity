@@ -63,7 +63,7 @@ function yongsanApex(c: Ctx): void {
     const p = P(lx, 0, lz);
     return { x: p[0], z: p[2] };
   };
-  const legW = W * 0.36;
+  const legW = W * 0.32;
   const gap = W - 2 * legW;
   const legD = D * 0.9;
   const yM = y0 + H * 0.8;
