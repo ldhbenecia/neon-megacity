@@ -496,7 +496,7 @@ export function terrainHeight(x: number, z: number): number {
 
 /** Walled palace grounds (SEOUL.md 4.5): level ground south of 북악. Shared with the zone. */
 export const PALACE_RECT = { x0: -320, x1: -60, z0: -880, z1: -720 } as const;
-const PALACE_FADE = 40;
+const PALACE_FADE = 25;
 
 /** Steepest ground slope (rise / run) at (x, z), from central differences 2 m apart. */
 export function terrainSlope(x: number, z: number): number {
