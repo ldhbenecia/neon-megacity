@@ -10,6 +10,7 @@ import {
   ZONES,
   ISLANDS,
   MOUNTAINS,
+  MOUNTAIN_RANGES,
   TERRAIN,
   islandAt,
   parkWidthAt,
@@ -51,6 +52,7 @@ import {
 } from '../src/city/river';
 import {
   hashString,
+  obbCorners,
   obbOverlap,
   obbSegmentDistance,
   pointSegmentDistance,
@@ -88,11 +90,11 @@ describe('layout v3: determinism', () => {
       digest: digest(LAYOUT),
     }).toMatchInlineSnapshot(`
       {
-        "blocks": 1411,
-        "buildings": 5681,
-        "digest": "f7213c16",
-        "roads": 1189,
-        "slots": 3477,
+        "blocks": 1415,
+        "buildings": 5640,
+        "digest": "a8658955",
+        "roads": 1181,
+        "slots": 3474,
       }
     `);
   });
@@ -804,7 +806,80 @@ describe('layout v3: water and islands', () => {
   });
 });
 
+describe('layout v3: mountain slopes', () => {
+  // Manager criteria (terrain at 0.375 × real elevation): no face over 100 % (45°), mid slopes
+  // under 60 % on average, and a gentle foot (< 15 %) where the city meets the mountain. Cells
+  // belong to the nearest peak; the palace terrace (a cut, not a natural slope) is left out of
+  // the foot check.
+  it('keeps every mountain under 100 % slope, mid slopes under 60 %, feet under 15 %', () => {
+    const owner = (x: number, z: number) =>
+      MOUNTAINS.reduce((a, m) =>
+        Math.hypot(x - m.peak.x, z - m.peak.z) < Math.hypot(x - a.peak.x, z - a.peak.z) ? m : a,
+      );
+    const terrace = (x: number, z: number) =>
+      x > PALACE_RECT.x0 - 120 &&
+      x < PALACE_RECT.x1 + 120 &&
+      z > PALACE_RECT.z0 - 120 &&
+      z < PALACE_RECT.z1 + 120;
+    for (const m of MOUNTAINS) {
+      let max = 0;
+      let midSum = 0;
+      let midN = 0;
+      let foot = 0;
+      for (let x = m.peak.x - m.radius; x <= m.peak.x + m.radius; x += 8) {
+        for (let z = m.peak.z - m.radius; z <= m.peak.z + m.radius; z += 8) {
+          if (owner(x, z) !== m) continue;
+          const h = terrainHeight(x, z);
+          if (h <= 0.05) continue;
+          const s = Math.hypot(terrainHeight(x + 4, z) - h, terrainHeight(x, z + 4) - h) / 4;
+          max = Math.max(max, s);
+          const b = h / m.height;
+          if (b >= 0.2 && b <= 0.8) {
+            midSum += s;
+            midN++;
+          }
+          if (b <= 0.04 && !terrace(x, z)) foot = Math.max(foot, s);
+        }
+      }
+      expect(max, `${m.id} max`).toBeLessThanOrEqual(1);
+      expect(midSum / midN, `${m.id} mid`).toBeLessThanOrEqual(0.6);
+      expect(foot, `${m.id} foot`).toBeLessThanOrEqual(0.15);
+    }
+  }, 120_000);
+});
+
+describe('layout v3: mountain feet and the river', () => {
+  // terrain splits ground cells where the ground rises over 2 m and drops cells within 40 m of the
+  // water (bankReach); raised ground stays two coarse cells (2 × 24 m) beyond that, so the split
+  // cells never meet the dropped waterside cells.
+  it('keeps raised ground (> 2 m) at least 88 m from the water', () => {
+    for (const r of MOUNTAIN_RANGES) {
+      for (let x = r.x0; x <= r.x1; x += 8) {
+        for (let z = r.z0; z <= r.z1; z += 8) {
+          if (terrainHeight(x, z) <= 2) continue;
+          expect(waterSignedDistance(x, z), `${r.ids.join('+')} ${x},${z}`).toBeGreaterThanOrEqual(
+            88,
+          );
+        }
+      }
+    }
+  });
+});
+
 describe('layout v3: mountains stay wooded', () => {
+  it('seats every building at its lowest footprint corner (slopes get a retaining base)', () => {
+    for (const b of B) {
+      const corners = obbCorners(obb(b)).map((p) => terrainHeight(p.x, p.z));
+      expect(b.baseY, b.id.toString()).toBeLessThanOrEqual(Math.min(...corners) + 1e-6);
+    }
+  });
+
+  it("keeps 남산's summit pad clear for the mast", () => {
+    const n = MOUNTAINS.find((m) => m.id === 'namsan')!;
+    expect(isForest(n.peak.x, n.peak.z)).toBe(true);
+    for (const b of B) expect(Math.hypot(b.x - n.peak.x, b.z - n.peak.z)).toBeGreaterThan(35);
+  });
+
   it('builds nothing on slopes over 25 % or above the forest line', () => {
     for (const b of B) {
       const o = obb(b);

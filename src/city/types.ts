@@ -123,8 +123,12 @@ export interface Mountain {
   id: string;
   name: string;
   peak: Vec2;
-  /** Peak terrain height (real elevation × 0.6, SEOUL.md 5.1). */
+  /** Peak spine height (real elevation × 0.375, SEOUL.md 5.1). */
   height: number;
+  /**
+   * Reach (m) of this peak's share of its range from the peak; the radii of a range's peaks
+   * together cover all of its ground. Range boxes: MOUNTAIN_RANGES.
+   */
   radius: number;
 }
 
