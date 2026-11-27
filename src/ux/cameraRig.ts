@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { LAYOUT, buildingTop, surfaceHeight, type Vec3 } from '../city/layout';
+import { LAYOUT, buildingTop, deckHeightAt, surfaceHeight, type Vec3 } from '../city/layout';
 import type { Ctx } from '../core/types';
 import {
   WALL_MARGIN,
@@ -8,6 +8,7 @@ import {
   pick,
   resolveCollision,
   targetFloor,
+  viewClearance,
 } from './collision';
 import type { Hud, RigMode } from './hud';
 import { reducedMotion } from './loader';
@@ -80,6 +81,9 @@ const MOVE_KEYS = new Set([
 ]);
 
 /** Above this height no building volume (spires included) can be within the wall margin. */
+/** Camera clearance above an elevated deck surface and below it (girders, m). */
+const DECK_ABOVE = 3;
+const DECK_BELOW = 4;
 const SKY_CLEAR = LAYOUT.buildings.reduce((m, b) => Math.max(m, buildingTop(b)), 0) + WALL_MARGIN;
 
 const _v = new THREE.Vector3();
@@ -132,6 +136,9 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
   const vel = new THREE.Vector3();
   let zoomPending = 0;
   const zoomAnchor = new THREE.Vector3();
+  // Closest the cursor zoom gets to its anchor this gesture: the hit building's view clearance,
+  // or the 6 m floor when the gesture started inside it (the user asked to go closer).
+  let zoomFloor = 6;
   let lastAnchorAt = -1;
   const lastAnchorPx = { x: -1e9, y: -1e9 };
   let fovTarget = BASE_FOV;
@@ -460,6 +467,10 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
     const offRay = toAnchor.normalize().dot(raycaster.ray.direction) < Math.cos(0.04);
     if (moved > 8 || elapsed - lastAnchorAt > 0.25 || near || offRay) {
       const hit = pickRay();
+      const b = hit?.kind === 'building' ? LAYOUT.buildings[hit.id] : undefined;
+      const clear = b ? viewClearance(b) : 6;
+      const inside = hit !== null && hit.t <= clear * 1.05;
+      zoomFloor = inside ? 6 : clear;
       if (hit) zoomAnchor.set(hit.point.x, hit.point.y, hit.point.z);
       else
         zoomAnchor
@@ -640,7 +651,10 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
     if (s > 1 && orbit * s > CAMERA_LIMITS.maxDistance) {
       s = Math.max(1, CAMERA_LIMITS.maxDistance / orbit);
     }
-    if (s < 1 && toAnchor * s < 6) s = Math.min(1, 6 / Math.max(toAnchor, 1e-6));
+    if (s < 1 && toAnchor * s < zoomFloor) {
+      s = Math.min(1, zoomFloor / Math.max(toAnchor, 1e-6));
+      zoomPending = 0;
+    }
     camera.position.sub(zoomAnchor).multiplyScalar(s).add(zoomAnchor);
     controls.target.sub(zoomAnchor).multiplyScalar(s).add(zoomAnchor);
     const d = camera.position.distanceTo(controls.target);
@@ -659,6 +673,17 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
     if (p.y <= SKY_CLEAR) {
       const fixed = resolveCollision(LAYOUT, p);
       if (fixed) p.set(fixed.x, fixed.y, fixed.z);
+    }
+    // Elevated decks are not building volumes: keep out of the slab (roadway above, girders
+    // below) through the nearer face, or the top one where the gap under it is too low (ramp
+    // feet). Collision runs again in case that face is inside a building.
+    const deck = deckHeightAt(LAYOUT, p.x, p.z);
+    if (deck !== null && p.y > deck - DECK_BELOW && p.y < deck + DECK_ABOVE) {
+      const below = deck - DECK_BELOW;
+      const above = deck + DECK_ABOVE;
+      p.y = below < cameraFloor(p.x, p.z) || above - p.y < p.y - below ? above : below;
+      const again = resolveCollision(LAYOUT, p);
+      if (again) p.set(again.x, again.y, again.z);
     }
     const floor = cameraFloor(p.x, p.z);
     if (p.y < floor) p.y = floor;

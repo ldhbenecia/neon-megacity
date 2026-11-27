@@ -318,6 +318,36 @@ test.describe('camera rig', () => {
     expect(dist(p, home)).toBeLessThan(2);
   });
 
+  test('the camera never renders from inside a building while zooming, flying and orbiting', async ({
+    page,
+  }) => {
+    test.setTimeout(240_000);
+    const at = await page.evaluate(() => window.__hangang?.buildingPoint() ?? null);
+    expect(at, 'no building under the central viewport').not.toBeNull();
+    await page.evaluate(() => window.__hangang!.resetInside());
+    // Zoom toward the cursor on a building as far as the rig lets it.
+    await page.mouse.move(at!.x, at!.y);
+    for (let i = 0; i < 6; i++) {
+      await page.mouse.wheel(0, -1200);
+      await waitFrames(page, 1);
+    }
+    await page.keyboard.down('w');
+    await waitFrames(page, 20);
+    await page.keyboard.up('w');
+    await page.mouse.move(800, 450);
+    await page.mouse.down();
+    await page.mouse.move(1100, 480, { steps: 12 });
+    await page.mouse.up();
+    await page.keyboard.press('f');
+    await waitMode(page, 'fly');
+    await page.keyboard.down('w');
+    await waitFrames(page, 20);
+    await page.keyboard.up('w');
+    await waitFrames(page, 5);
+    const inside = await page.evaluate(() => window.__hangang!.inside());
+    expect(inside.frames, `camera inside building: ${JSON.stringify(inside)}`).toBe(0);
+  });
+
   test('F toggles fly mode, C toggles the cinematic and any input stops it', async ({ page }) => {
     await page.keyboard.press('f');
     await waitMode(page, 'fly');
