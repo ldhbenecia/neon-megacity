@@ -901,6 +901,10 @@ function placeHolo(
 const MEDIA_MAX = 24;
 const MEDIA_MAIN_GAP = 40;
 const BANNER_MAX = 400;
+/** Board width cap (m); the cables span the rest of the street to the walls. */
+export const BANNER_MAX_W = 7;
+/** No blade sign within this distance along the street, so the two never overlap down the alley. */
+export const BANNER_BLADE_CLEAR = 8;
 
 // Teheran-ro canyon: one street-facing screen per mid-rise tower; a tagged media face is covered
 // edge to edge (SEOUL.md 4.3 mediaSlab).
@@ -976,16 +980,29 @@ function placeBanners(c: Ctx, rng: Rng): void {
     if (len < 30) continue;
     const dir = { x: (r.b.x - r.a.x) / len, z: (r.b.z - r.a.z) / len };
     const across = { x: -dir.z, z: dir.x };
+    const blades = c.out.flats.filter((f) => {
+      if (f.kind !== 'blade') return false;
+      const along = (f.x - r.a.x) * dir.x + (f.z - r.a.z) * dir.z;
+      const off = Math.abs((f.x - r.a.x) * across.x + (f.z - r.a.z) * across.z);
+      return (
+        along > -BANNER_BLADE_CLEAR && along < len + BANNER_BLADE_CLEAR && off < r.width / 2 + 6
+      );
+    });
     for (
       let t = 10 + rng.range(0, 6);
       t < len - 10 && placed < BANNER_MAX;
-      t += rng.range(12, 20)
+      t += rng.range(22, 34)
     ) {
       const x = r.a.x + dir.x * t;
       const z = r.a.z + dir.z * t;
-      const w = r.width * 0.9 + 1;
-      const h = rng.range(0.9, 1.3);
-      const y0 = surfaceHeight(x, z) + rng.range(5.5, 7.5);
+      const w = Math.min(r.width * 0.9 + 1, BANNER_MAX_W);
+      const h = rng.range(0.8, 1.1);
+      const y0 = surfaceHeight(x, z) + rng.range(6, 8);
+      const nearBlade = blades.some((f) => {
+        const along = (f.x - r.a.x) * dir.x + (f.z - r.a.z) * dir.z;
+        return Math.abs(along - t) < BANNER_BLADE_CLEAR && f.y0 < y0 + h + 1 && f.y1 > y0 - 1;
+      });
+      if (nearBlade) continue;
       const vol: Solid = {
         kind: 'box',
         x,
