@@ -1,6 +1,6 @@
 import { WINDOW_LIT } from '../core/palette';
 import { createRng } from '../core/random';
-import { baseKind, isUnbuilt } from '../city/layout';
+import { baseKindOf, isUnbuilt } from '../city/layout';
 import { sideNormal } from '../city/math';
 import { ZONES } from '../city/districts';
 import type { Archetype, BuildingSpec, DistrictKind, Side } from '../city/types';
@@ -122,7 +122,7 @@ export const NIGHT_MEDIAN_LIT = 0.32;
 // v3 kinds light like their closest v2 kind; the palace and parks stay dark.
 export function districtLitFactor(kind: DistrictKind): number {
   if (isUnbuilt(kind)) return 0;
-  const d = baseKind(kind);
+  const d = baseKindOf(kind);
   const r =
     d === 'core' || d === 'sangga' || d === 'apartment' || d === 'hillside' || d === 'midtown'
       ? WINDOW_LIT.night[d]
