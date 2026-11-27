@@ -10,21 +10,21 @@ import { chromium, type Browser, type Page } from '@playwright/test';
 import { preview } from 'vite';
 import { SWIFTSHADER_ARGS, collectErrors, waitFrames } from '../tests/e2e/helpers';
 
-// Night limit 80 % is temporary (target 40 %) until the night floors of buildings, highway
-// undersides and ground land; the NaN rectangles this exists to catch cover 92-97 %.
-const NIGHT_LIMIT = 80;
+// Night shots allow 40 % near-black (measured max ~35 % with the night floors of #74/#77); the
+// NaN rectangles this exists to catch cover 92-97 %.
+const NIGHT_LIMIT = 40;
 
 /** Per-shot `limit` for legitimately dark shots; an explicit --black-limit overrides it. */
 const SHOTS: { name: string; query: string; limit?: number }[] = [
   { name: 'night-overview', query: 'time=0.0&cam=overview&rain=0.4', limit: NIGHT_LIMIT },
   { name: 'night-street', query: 'time=0.0&cam=street&rain=0.5', limit: NIGHT_LIMIT },
   { name: 'night-core-closeup', query: 'time=0.95&cam=core&rain=0.3', limit: NIGHT_LIMIT },
-  { name: 'night-topdown', query: 'time=0.02&cam=topdown&rain=0.2', limit: 90 },
+  { name: 'night-topdown', query: 'time=0.02&cam=topdown&rain=0.2', limit: NIGHT_LIMIT },
   { name: 'sunset-skyline', query: 'time=0.74&cam=skyline&rain=0' },
   { name: 'noon-overview', query: 'time=0.5&cam=overview&rain=0' },
   { name: 'noon-street', query: 'time=0.5&cam=street&rain=0' },
   { name: 'sunset-overview', query: 'time=0.74&cam=overview&rain=0' },
-  { name: 'heavy-rain-street', query: 'time=0.92&cam=street&rain=1', limit: 85 },
+  { name: 'heavy-rain-street', query: 'time=0.92&cam=street&rain=1', limit: NIGHT_LIMIT },
 ];
 
 const BURST_SCENES: { name: string; query: string; limit?: number }[] = [
