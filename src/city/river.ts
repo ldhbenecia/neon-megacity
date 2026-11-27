@@ -2,6 +2,7 @@
 // The centerline passes through the projected bridge centres (OSM, SEOUL.md 2.1 projection)
 // and stays strictly increasing in x, so `riverZ(x)` is a function of x.
 import { CatmullRomCurve3, Vector3 } from 'three';
+import { CALLS } from './calls';
 import { fbm1 } from './noise';
 import { clamp, closestSegmentT, pointInPolygon, pointSegmentDistance, smoothstep } from './math';
 import type { Island, Mountain, River, SideChannel, Vec2 } from './types';
@@ -533,6 +534,7 @@ export const EMBANK_SLOPE = 4;
  * plain. Continuous everywhere.
  */
 export function terrainHeight(x: number, z: number): number {
+  CALLS.terrainHeight++;
   let h = 0;
   for (const m of MOUNTAINS) {
     const d = Math.hypot(x - m.peak.x, z - m.peak.z);
@@ -592,6 +594,7 @@ export function isForest(x: number, z: number): boolean {
  * and the water surface (y -4). Use it for props, cameras and anything resting on the ground.
  */
 export function surfaceHeight(x: number, z: number): number {
+  CALLS.surfaceHeight++;
   const isl = islandAt(x, z);
   if (isl && isl.kind !== 'land') return isl.y;
   const ds = sideChannelDistance(SAETGANG, x, z);
