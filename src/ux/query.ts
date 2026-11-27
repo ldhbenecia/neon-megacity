@@ -8,6 +8,8 @@ export interface UxQuery {
   hud: boolean;
   stats: boolean;
   debug: boolean;
+  /** `?debug&nan`: paint NaN/Inf HDR pixels (atmosphere post), passed on as `ctx.debug.nan`. */
+  nan: boolean;
 }
 
 /** OrbitControls would silently move a pose outside these on its first update. */
@@ -29,7 +31,9 @@ export function parseUxQuery(search: string, presetCount = 8): UxQuery {
     hud: flag('hud', true),
     stats: flag('stats', false),
     debug: flag('debug', false),
+    nan: false,
   };
+  out.nan = out.debug && flag('nan', false);
   const raw = params.get('preset');
   if (raw !== null && /^\d+$/.test(raw.trim())) {
     const n = Number(raw);
