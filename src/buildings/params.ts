@@ -4,6 +4,7 @@ import { baseKindOf, isUnbuilt } from '../city/layout';
 import { sideNormal } from '../city/math';
 import { ZONES } from '../city/districts';
 import type { Archetype, BuildingSpec, DistrictKind, Side } from '../city/types';
+import type { Quality } from '../core/types';
 
 // Shader type ids decoded in facadeMaterial.ts.
 export const FACADE = {
@@ -198,6 +199,18 @@ export function faceRole(
 }
 
 export const LOD_DISTANCES = [0, 380, 1100] as const;
+/** LOD0 radius on the medium tier (high uses LOD_DISTANCES[1]). */
+export const LOD0_MEDIUM = 250;
+
+/**
+ * LOD start distances per quality tier (perf design #66). 'ci' and 'low' build no LOD0, so no
+ * interior mapping either ('ci' also pulls LOD2 in); medium pulls LOD0 in to 250 m.
+ */
+export function lodDistancesFor(q: Quality): [number, number, number] {
+  if (q === 'ci') return [0, 0, LOD_DISTANCES[1]];
+  if (q === 'low') return [0, 0, LOD_DISTANCES[2]];
+  return [0, q === 'medium' ? LOD0_MEDIUM : LOD_DISTANCES[1], LOD_DISTANCES[2]];
+}
 export const LOD_HYSTERESIS = 0.1;
 export const LOD2_MIN_HEIGHT = 40;
 
