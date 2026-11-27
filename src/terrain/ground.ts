@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { LAYOUT, RIVER, isForest, type Vec2 } from '../city/layout';
+import { LAYOUT, RIVER, isForest, terrainHeight, type Vec2 } from '../city/layout';
 import { TERRAIN_COLORS as TC } from '../core/palette';
 import {
   GROUND_RADIUS,
@@ -156,9 +156,14 @@ function canopyLift(
   return CANOPY * f * inside * keep * canopy;
 }
 
+/** A cell is split once one corner rises this far (m); flat ground inside a radius stays coarse. */
+const MOUNTAIN_RISE = 2;
+
 function nearMountain(x: number, z: number): boolean {
   for (const m of LAYOUT.mountains) {
-    if (Math.hypot(x - m.peak.x, z - m.peak.z) < m.radius) return true;
+    if (Math.hypot(x - m.peak.x, z - m.peak.z) < m.radius) {
+      return terrainHeight(x, z) > MOUNTAIN_RISE;
+    }
   }
   return false;
 }
