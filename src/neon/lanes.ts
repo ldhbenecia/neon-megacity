@@ -154,9 +154,8 @@ export function vehicleStreams(
   const hw = new Map(highways.map((h) => [h.id, h]));
   const density = { ground: 2.2, bridge: 26, highway: 34, flying: 6, ...opts.density };
   const perLane = (p: Path): number => Math.max(1, Math.round((density[p.kind] * p.length) / 1000));
-  // Over the cap, side streets get fewer cars (some none) and arterials keep theirs; a no-op on
-  // maps under the cap, so their streams stay identical.
-  let sideScale = 1;
+  // Over the cap, side streets lose cars first (some none); arterials shrink only if they alone
+  // exceed the cap. A no-op on maps under the cap, so their streams stay identical.
   const groundCount = (art: boolean): number =>
     paths
       .filter((p) => p.kind === 'ground' && !!p.arterial === art)
@@ -164,20 +163,25 @@ export function vehicleStreams(
   const arterialCars = groundCount(true);
   const sideCars = groundCount(false);
   const cap = opts.groundCap ?? GROUND_CAP;
-  if (arterialCars + sideCars > cap && sideCars > 0) {
-    sideScale = Math.max(0, (cap - arterialCars) / sideCars);
+  let sideScale = 1;
+  let mainScale = 1;
+  if (arterialCars + sideCars > cap) {
+    mainScale = Math.min(1, cap / Math.max(1, arterialCars));
+    sideScale = sideCars > 0 ? Math.max(0, (cap - arterialCars * mainScale) / sideCars) : 1;
   }
   const out: Vehicle[] = [];
-  let carry = 0;
+  const carry = { main: 0, side: 0 };
   paths.forEach((p, pi) => {
     for (const slot of laneSlots(p, hw)) {
       const dir = slot.dir;
       let count = perLane(p);
-      if (sideScale < 1 && p.kind === 'ground' && !p.arterial) {
+      const scale = p.kind !== 'ground' ? 1 : p.arterial ? mainScale : sideScale;
+      if (scale < 1) {
         // Carry the fraction across lanes so short streets do not all round down to zero.
-        carry += count * sideScale;
-        count = Math.floor(carry);
-        carry -= count;
+        const key = p.arterial ? 'main' : 'side';
+        carry[key] += count * scale;
+        count = Math.floor(carry[key]);
+        carry[key] -= count;
       }
       const kmh =
         p.kind === 'ground'

@@ -120,6 +120,18 @@ describe('neon traffic lanes', () => {
     }
   });
 
+  it('the ground cap also thins arterials when they alone exceed it', () => {
+    const arterialLanes = vehicles.filter(
+      (v) => paths[v.path]!.kind === 'ground' && paths[v.path]!.arterial,
+    ).length;
+    const cap = Math.floor(arterialLanes / 2);
+    const few = vehicleStreams(paths, LAYOUT.highways, { groundCap: cap });
+    const ground = few.filter((v) => paths[v.path]!.kind === 'ground');
+    expect(ground.length).toBeLessThanOrEqual(cap);
+    expect(ground.length).toBeGreaterThan(cap * 0.8);
+    expect(ground.every((v) => paths[v.path]!.arterial)).toBe(true);
+  });
+
   it('resample keeps endpoints and packPaths stores the sample count', () => {
     const r = resample(
       [

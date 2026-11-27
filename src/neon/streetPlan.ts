@@ -146,7 +146,14 @@ export function lampBudget(L: Pick<Layout, 'roads'>): number {
   return Math.min(LAMP_CAP, Math.round(n));
 }
 
-export function planStreet(L: Layout, cat: Catalog, sidewalkH: number, seed = 4242): StreetPlan {
+// `groundAt` must match `L` (bare ground or road surface); the default is the built-in map's.
+export function planStreet(
+  L: Layout,
+  cat: Catalog,
+  sidewalkH: number,
+  seed = 4242,
+  groundAt: (x: number, z: number) => number = surfaceHeight,
+): StreetPlan {
   const rng = createRng(seed);
   const nearest = makeRoadIndex(L.roads);
   const out: StreetPlan = { lamps: [], pools: [], stalls: [], busStops: [], poles: [], flats: [] };
@@ -308,6 +315,6 @@ export function planStreet(L: Layout, cat: Catalog, sidewalkH: number, seed = 42
   }
   // On slopes the pool centre (under the lamp head or sign) can sit higher than the slot it
   // came from; never let a pool sink into the ground.
-  for (const p of out.pools) p.y = Math.max(p.y, surfaceHeight(p.x, p.z) + POOL_LIFT);
+  for (const p of out.pools) p.y = Math.max(p.y, groundAt(p.x, p.z) + POOL_LIFT);
   return out;
 }

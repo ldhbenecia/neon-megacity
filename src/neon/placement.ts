@@ -221,9 +221,10 @@ const KIND_OVERRIDES: ReadonlyMap<string, Partial<DistrictSigns>> = new Map([
 function safeBaseKind(district: DistrictKind): string | undefined {
   try {
     return baseKind(district);
-  } catch {
-    // Newer layouts may carry kinds the shared table does not know yet.
-    return undefined;
+  } catch (e) {
+    // Newer layouts may carry kinds the shared table does not know yet; anything else is a bug.
+    if (e instanceof Error && e.message.startsWith('unknown district kind')) return undefined;
+    throw e;
   }
 }
 
@@ -321,15 +322,17 @@ interface Ctx {
   roadGap: (x: number, z: number) => number;
 }
 
-export function roadGapIndex(L: Pick<Layout, 'roads'>): (x: number, z: number) => number {
+// Distances are exact up to `pad` m past a road edge; farther points may read Infinity.
+export function roadGapIndex(L: Pick<Layout, 'roads'>, pad = 0): (x: number, z: number) => number {
   const cell = 64;
   const grid = new Map<string, Layout['roads']>();
   for (const r of L.roads) {
     if (r.kind === 'stair') continue;
-    const x0 = Math.floor((Math.min(r.a.x, r.b.x) - r.width) / cell);
-    const x1 = Math.floor((Math.max(r.a.x, r.b.x) + r.width) / cell);
-    const z0 = Math.floor((Math.min(r.a.z, r.b.z) - r.width) / cell);
-    const z1 = Math.floor((Math.max(r.a.z, r.b.z) + r.width) / cell);
+    const m = r.width + pad;
+    const x0 = Math.floor((Math.min(r.a.x, r.b.x) - m) / cell);
+    const x1 = Math.floor((Math.max(r.a.x, r.b.x) + m) / cell);
+    const z0 = Math.floor((Math.min(r.a.z, r.b.z) - m) / cell);
+    const z1 = Math.floor((Math.max(r.a.z, r.b.z) + m) / cell);
     for (let i = x0; i <= x1; i++) {
       for (let j = z0; j <= z1; j++) {
         const k = `${i},${j}`;
@@ -862,30 +865,37 @@ export function signCount(P: Placement): number {
   );
 }
 
-// Over budget, drop street-level shop signs that face side streets first, outside hot districts.
-// A no-op when the map fits (v2), so its placement stays identical.
+// Over budget, drop signs in tiers: side-street shop signs outside hot districts first, then
+// hot-district shop signs, then any other wall sign. A no-op when the map fits (v2).
 function thinToBudget(c: Ctx, budget: number): void {
   const excess = signCount(c.out) - budget;
   if (excess <= 0) return;
-  const mainGap = roadGapIndex({ roads: c.L.roads.filter((r) => r.kind === 'arterial') });
-  const cands = c.out.flats
-    .map((s, i) => ({ i, s }))
-    .filter(
-      ({ s }) =>
-        (s.kind === 'band' || s.kind === 'blade') &&
-        !HOT_KINDS.has(c.L.buildings[s.building]?.district ?? ''),
-    )
-    .map(({ i, s }) => ({
+  const mainGap = roadGapIndex(
+    { roads: c.L.roads.filter((r) => r.kind === 'arterial') },
+    MAIN_ROAD_GAP,
+  );
+  const tier = (s: FlatSign): number => {
+    const shop = s.kind === 'band' || s.kind === 'blade';
+    if (!shop) return s.kind === 'crown' ? 6 : 4;
+    return HOT_KINDS.has(c.L.buildings[s.building]?.district ?? '') ? 2 : 0;
+  };
+  const order = c.out.flats
+    .map((s, i) => ({
       i,
-      key: (mainGap(s.x, s.z) < MAIN_ROAD_GAP ? 1 : 0) + (s.seed % 9973) / 9973 / 2,
+      key: tier(s) + (mainGap(s.x, s.z) < MAIN_ROAD_GAP ? 1 : 0) + (s.seed % 9973) / 9973 / 2,
     }))
     .sort((a, z) => a.key - z.key || a.i - z.i);
-  const drop = new Set(cands.slice(0, excess).map((k) => k.i));
+  const drop = new Set(order.slice(0, excess).map((k) => k.i));
   c.out.flats = c.out.flats.filter((_, i) => !drop.has(i));
+  if (signCount(c.out) > budget) {
+    console.warn(`neon: ${signCount(c.out)} signs exceed the budget of ${budget}`);
+  }
 }
 
 export interface PlacementOptions {
   seed?: number;
+  /** Sign instances placed elsewhere (street panels and ads) that share the budget. */
+  reserved?: number;
   maxScreens?: number;
   maxRings?: number;
   maxHolos?: number;
@@ -990,7 +1000,7 @@ export function placeSigns(
       if (p) placeHolo(c, p.x, p.z, L.river.waterY + 14, hrng, 0.02, koi);
     }
   }
-  thinToBudget(c, signBudget(L));
+  thinToBudget(c, signBudget(L) - (opts.reserved ?? 0));
   return c.out;
 }
 
