@@ -97,9 +97,6 @@ const MOVE_KEYS = new Set([
   'ArrowRight',
 ]);
 
-/** Above this height no building volume (spires included) can be within the wall margin. */
-const SKY_CLEAR = LAYOUT.buildings.reduce((m, b) => Math.max(m, buildingTop(b)), 0) + WALL_MARGIN;
-
 const _v = new THREE.Vector3();
 const _w = new THREE.Vector3();
 const _fwd = new THREE.Vector3();
@@ -123,6 +120,9 @@ function isTyping(target: EventTarget | null): boolean {
 }
 
 export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
+  // Above this height no building volume (spires included) can be within the wall margin. Read
+  // here, with the rig, not at module evaluation: the rig is created once the layout exists.
+  const skyClear = LAYOUT.buildings.reduce((m, b) => Math.max(m, buildingTop(b)), 0) + WALL_MARGIN;
   const { camera, controls, gui, renderer, env } = ctx;
   const { hud } = opts;
   const canvas = renderer.domElement;
@@ -763,7 +763,7 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
         controls.target.z -= dz;
       }
     }
-    if (p.y <= SKY_CLEAR) {
+    if (p.y <= skyClear) {
       const fixed = resolveCollision(LAYOUT, p);
       if (fixed) p.set(fixed.x, fixed.y, fixed.z);
     }

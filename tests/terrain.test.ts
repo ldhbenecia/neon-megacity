@@ -334,15 +334,20 @@ describe('ground grid', () => {
     // A T-junction is fine when the long edge and its short pieces are collinear: each open edge's
     // midpoint must lie on another open edge. A crack (fine vertex off the coarse edge) fails.
     type P = { x: number; y: number; z: number };
-    const open: [P, P, string][] = [];
+    // Every open edge can be a partner; only those away from water and the rim are checked
+    // (cells dropped along the water leave real borders). Filtering partners too would leave a
+    // piece whose collinear long edge happens to sit just inside the water filter unmatched.
+    const all: [P, P, string][] = [];
+    const checked: [P, P, string][] = [];
     for (const [k, n] of edges) {
       if (n !== 1) continue;
+      const [p, q] = k.split(',').map(Number) as [number, number];
+      const e: [P, P, string] = [xz(p), xz(q), k];
+      all.push(e);
       const m = midOf(k);
-      // Borders are expected along water (dropped cells) and at the outer rim.
       if (Math.abs(m.x) > CITY.halfX || Math.abs(m.z) > CITY.halfZ) continue;
       if (groundWaterDistance(m.x, m.z) < 60) continue;
-      const [p, q] = k.split(',').map(Number) as [number, number];
-      open.push([xz(p), xz(q), k]);
+      checked.push(e);
     }
     // In 3D: a crack is a fine vertex lifted off the coarse edge.
     const onSegment = (m: P, a: P, b: P) => {
@@ -354,9 +359,9 @@ describe('ground grid', () => {
       return t > -1e-6 && t < 1 + 1e-6 && e < 1e-3;
     };
     let cracked = 0;
-    for (const [a, b, k] of open) {
+    for (const [a, b, k] of checked) {
       const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, z: (a.z + b.z) / 2 };
-      if (!open.some(([c, d, k2]) => k2 !== k && onSegment(m, c, d))) cracked++;
+      if (!all.some(([c, d, k2]) => k2 !== k && onSegment(m, c, d))) cracked++;
     }
     expect(cracked).toBe(0);
   }, 20_000);
