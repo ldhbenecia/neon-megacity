@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import type { Ridge } from '../city/layout';
 import { NEON, RIDGE_BEACON_HDR, RIDGE_COLORS } from '../core/palette';
 import { createRng } from '../core/random';
+import { HORIZON_SIDE_GLSL } from '../lighting/horizonGlsl';
 import { ridgePeaks, ridgeProfile } from './shape';
 
 const RIDGE_VERTEX = /* glsl */ `
@@ -31,12 +32,10 @@ varying vec3 vColor;
 varying vec3 vWorld;
 varying float vFog;
 varying float vTop;
+${HORIZON_SIDE_GLSL}
 void main() {
   vec3 dir = normalize(vWorld - cameraPosition);
-  vec2 sxz = uSunDir.xz;
-  float sl = length(sxz);
-  float side = sl > 1e-4 ? dot(normalize(dir.xz + 1e-6), sxz / sl) * 0.5 + 0.5 : 0.5;
-  vec3 horizon = mix(uHorizonAnti, uHorizon, pow(side, 2.2));
+  vec3 horizon = mix(uHorizonAnti, uHorizon, pow(horizonSide(dir, uSunDir), 2.2));
   vec3 base = mix(vColor, horizon * 0.28, uDay);
   float mist = (1.0 - smoothstep(0.0, 0.7, vTop)) * 0.22;
   float fog = clamp(vFog + (1.0 - vFog) * mist, 0.0, 1.0);
