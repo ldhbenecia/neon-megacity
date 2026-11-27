@@ -252,6 +252,26 @@ test('?district= starts at a zone and the title names the zone in view', async (
   );
 });
 
+test('quality row: a fixed tier is applied and saved, auto goes back to the device tier', async ({
+  page,
+}) => {
+  // Plain URL (no ?quality=): the panel choice is what drives the tier here.
+  await page.goto('./?nogui&time=0');
+  await waitForCity(page);
+  await page.click('#panel-toggle');
+  const now = page.locator('#quality-now');
+  await page.click('#quality-group button[data-quality="low"]');
+  await expect(now).toHaveText('· 하');
+  await expect(page.locator('#quality-group button[data-quality="low"]')).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
+  expect(await page.evaluate(() => localStorage.getItem('hangang.quality'))).toBe('low');
+  await page.click('#quality-group button[data-quality="auto"]');
+  await expect(now).toContainText('자동 · ');
+  expect(await page.evaluate(() => localStorage.getItem('hangang.quality'))).toBe('auto');
+});
+
 test.describe('camera rig', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto(app('nogui&stats&cam=overview&time=0.0'));
