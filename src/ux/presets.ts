@@ -43,7 +43,7 @@ export function safePose(L: Layout, pose: Pose): Pose {
 
 /** SEOUL.md 6: number keys 1-8 (cameraPreset names in brackets). */
 const SEOUL_PRESETS: readonly [string, CameraPreset][] = [
-  ['반포대교 남단', 'banpo'],
+  ['한강과 용산', 'banpo'],
   ['여의도 상공', 'yeouido'],
   ['남산에서', 'namsan'],
   ['테헤란로', 'teheran'],
