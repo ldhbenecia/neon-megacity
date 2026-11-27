@@ -40,8 +40,12 @@ interface Box {
   cylinder: boolean;
 }
 
+const boxCache = new WeakMap<BuildingSpec, Box[]>();
+
 function boxesOf(b: BuildingSpec): Box[] {
-  return buildingVolumes(b).map((t) => ({
+  const hit = boxCache.get(b);
+  if (hit) return hit;
+  const boxes = buildingVolumes(b).map((t) => ({
     x: t.x,
     z: t.z,
     hw: t.w / 2,
@@ -50,6 +54,8 @@ function boxesOf(b: BuildingSpec): Box[] {
     y1: t.y1,
     cylinder: t.shape === 'cylinder',
   }));
+  boxCache.set(b, boxes);
+  return boxes;
 }
 
 function hullOf(b: BuildingSpec): Box {
@@ -65,7 +71,7 @@ function hullOf(b: BuildingSpec): Box {
 }
 
 function exitFrom(b: BuildingSpec, box: Box, p: Vec3, m: number): Vec3 | null {
-  if (p.y < box.y0 - m || p.y > box.y1 + m) return null;
+  if (p.y <= box.y0 - m + EDGE_EPS || p.y >= box.y1 + m - EDGE_EPS) return null;
   const up = box.y1 + m - p.y;
   // Walls only push sideways while the point is below the roof line; above it, only "up".
   if (box.cylinder) {
@@ -97,21 +103,15 @@ function exitFrom(b: BuildingSpec, box: Box, p: Vec3, m: number): Vec3 | null {
   return { x: box.x + w.x, y: p.y, z: box.z + w.z };
 }
 
-export function resolveCollision(L: Layout, p: Vec3, margin = WALL_MARGIN): Vec3 | null {
+function settle(L: Layout, p: Vec3, m: number): { at: Vec3; moved: boolean; settled: boolean } {
   let cur: Vec3 = { x: p.x, y: p.y, z: p.z };
   let moved = false;
-  for (let iter = 0; iter < 4; iter++) {
+  for (let iter = 0; iter < 6; iter++) {
     let fix: Vec3 | null = null;
-    for (const id of buildingsInAabb(
-      L,
-      cur.x - margin,
-      cur.z - margin,
-      cur.x + margin,
-      cur.z + margin,
-    )) {
+    for (const id of buildingsInAabb(L, cur.x - m, cur.z - m, cur.x + m, cur.z + m)) {
       const b = L.buildings[id] as BuildingSpec;
       for (const box of boxesOf(b)) {
-        const e = exitFrom(b, box, cur, margin);
+        const e = exitFrom(b, box, cur, m);
         if (e && (!fix || dist2(cur, e) < dist2(cur, fix))) fix = e;
       }
     }
@@ -119,14 +119,36 @@ export function resolveCollision(L: Layout, p: Vec3, margin = WALL_MARGIN): Vec3
       const id = buildingContaining(L, cur.x, cur.y, cur.z);
       if (id !== null) {
         const b = L.buildings[id] as BuildingSpec;
-        fix = exitFrom(b, hullOf(b), cur, margin);
+        fix = exitFrom(b, hullOf(b), cur, m);
       }
     }
-    if (!fix) break;
+    if (!fix) return { at: cur, moved, settled: true };
     cur = fix;
     moved = true;
   }
-  return moved ? cur : null;
+  return { at: cur, moved, settled: false };
+}
+
+/**
+ * Slides `p` to the nearest point outside every building volume plus `margin`. Where the margins
+ * of blocks closer than 2 x margin overlap (rows of low sangga) nothing settles: a point already
+ * outside every volume is then left where it is, and only a point that would stay inside a volume
+ * (a camera that started inside one) is lifted over that building's roof. Applying the result
+ * again returns null.
+ */
+export function resolveCollision(L: Layout, p: Vec3, margin = WALL_MARGIN): Vec3 | null {
+  const r = settle(L, p, margin);
+  if (r.settled) return r.moved ? r.at : null;
+  if (buildingContaining(L, p.x, p.y, p.z) === null) return null;
+  // Rise straight up from where the camera was, not from wherever the oscillation stopped.
+  let at: Vec3 = { x: p.x, y: p.y, z: p.z };
+  for (let i = 0; i < 4; i++) {
+    const id = buildingContaining(L, at.x, at.y, at.z);
+    if (id === null) break;
+    at = { x: at.x, y: buildingTop(L.buildings[id] as BuildingSpec) + margin, z: at.z };
+  }
+  const after = settle(L, at, margin);
+  return after.settled ? after.at : at;
 }
 
 const dist2 = (a: Vec3, b: Vec3): number => (a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2;

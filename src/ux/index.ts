@@ -5,7 +5,7 @@ import { createControls } from './controls';
 import { createHud, type Hud } from './hud';
 import { reducedMotion } from './loader';
 import { createPerf, estimateMemory, type FrameStats, type Perf } from './perf';
-import { LAYOUT } from '../city/layout';
+import { LAYOUT, buildingContaining } from '../city/layout';
 import { camPose, DEFAULT_PRESET, rigPreset, rigPresets, safePose } from './presets';
 import { parseUxQuery, poseInLimits } from './query';
 
@@ -66,6 +66,15 @@ export function initUx(ctx: Ctx, opts: UxOptions): Ux {
     emitQuality: opts.emitQuality,
   });
 
+  // ?stats only: frames rendered with the camera inside a building volume (tells a collision
+  // miss apart from a rendering fault when the screen goes black).
+  const inside: { frames: number; last: number | null; at: number[] | null; mode: string | null } =
+    {
+      frames: 0,
+      last: null,
+      at: null,
+      mode: null,
+    };
   if (q.stats) {
     window.__hangang = {
       stats: (): FrameStats => perf.stats(),
@@ -79,6 +88,13 @@ export function initUx(ctx: Ctx, opts: UxOptions): Ux {
         return { position: { ...position }, target: { ...target } };
       },
       buildingPoint: () => rig.buildingPoint(),
+      inside: () => ({ ...inside, at: inside.at && [...inside.at] }),
+      resetInside: () => {
+        inside.frames = 0;
+        inside.last = null;
+        inside.at = null;
+        inside.mode = null;
+      },
     };
   }
 
@@ -113,6 +129,16 @@ export function initUx(ctx: Ctx, opts: UxOptions): Ux {
     afterUpdate() {
       hud.update(ctx.env.timeOfDay);
       controls.update();
+      if (q.stats) {
+        const p = ctx.camera.position;
+        const id = buildingContaining(LAYOUT, p.x, p.y, p.z);
+        if (id !== null) {
+          inside.frames++;
+          inside.last = id;
+          inside.at = [p.x, p.y, p.z];
+          inside.mode = rig.mode;
+        }
+      }
     },
     frameStart() {
       perf.frameStart();
