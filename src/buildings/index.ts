@@ -3,6 +3,7 @@ import { buildingFaces, buildingTop, terrainHeight } from '../city/layout';
 import { pointSegmentDistance, toLocal } from '../city/math';
 import { GridHash, segmentBounds } from '../city/spatial';
 import type { BuildingsApi, CityModuleInstance, Ctx, Road } from '../core/types';
+import type { Vec2 } from '../city/types';
 import { GeoBuilder } from './builder';
 import {
   LOD0_BUDGET_MS,
@@ -113,12 +114,24 @@ function collectChunks(
       const l = toLocal(x - h.x, z - h.z, h.rotY);
       return Math.abs(l.x) <= h.w / 2 + 2 && Math.abs(l.z) <= h.d / 2 + 2;
     });
-  const gate = (x: number, z: number): boolean => onStreet(x, z) || inHall(x, z);
+  // Roads running alongside the wall don't open it; only ones crossing its line do.
+  const crossing = (a: Vec2, b: Vec2, x: number, z: number): boolean => {
+    const len = Math.hypot(b.x - a.x, b.z - a.z) || 1;
+    const wx = (b.x - a.x) / len;
+    const wz = (b.z - a.z) / len;
+    return LAYOUT.roads.some((r) => {
+      if (r.kind === 'stair') return false;
+      const rl = Math.hypot(r.b.x - r.a.x, r.b.z - r.a.z) || 1;
+      const along = Math.abs(((r.b.x - r.a.x) * wx + (r.b.z - r.a.z) * wz) / rl);
+      return along < 0.5 && pointSegmentDistance({ x, z }, r.a, r.b) <= r.width / 2 + 1;
+    });
+  };
   for (const zone of LAYOUT.districts) {
     if (zone.kind !== 'palace') continue;
     zone.polygon.forEach((a, i) => {
       const b = zone.polygon[(i + 1) % zone.polygon.length];
       if (!b) return;
+      const gate = (x: number, z: number): boolean => crossing(a, b, x, z) || inHall(x, z);
       const c = chunkAt((a.x + b.x) / 2, (a.z + b.z) / 2);
       palaceWall(c.l1, a, b, terrainHeight, gate);
       c.lod0.push((g) => palaceWall(g, a, b, terrainHeight, gate));
