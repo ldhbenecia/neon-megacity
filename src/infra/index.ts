@@ -305,7 +305,13 @@ export function init(ctx: Ctx): CityModuleInstance {
   const emissive = [glowMat, washMat, pointMat];
   // Night fill: unlit undersides and piers would round to pure black up close. They get no street
   // or window light at all, so they need INFRA_FILL × the facade / terrain floor to read.
-  const filled = [concrete.material, steel.material, pillarMat] as THREE.MeshStandardMaterial[];
+  // Deck surfaces (asphalt is in the concrete mesh) and lane paint too: at dusk the road reads black.
+  const filled = [
+    concrete.material,
+    steel.material,
+    pillarMat,
+    paintMat,
+  ] as THREE.MeshStandardMaterial[];
   return {
     update() {
       if (detail) {
