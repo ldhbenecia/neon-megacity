@@ -143,6 +143,12 @@ export interface Ctx {
   debug?: { readonly nan: boolean };
 }
 
+/**
+ * `scene.userData.compile`, published by atmosphere when its post chain needs program variants
+ * the canvas pass would not compile. main awaits it during boot (the "compile" stage).
+ */
+export type CompileHook = () => void | Promise<void>;
+
 export interface CityModuleInstance {
   update?(dt: number, elapsed: number): void;
   dispose?(): void;
