@@ -1,7 +1,20 @@
 import * as THREE from 'three';
 import { RIVER } from '../city/layout';
 import { TERRAIN_COLORS } from '../core/palette';
-import { bankReach, channelRows, channelSlices, waterEdgeD } from './shape';
+import type { Vec2 } from '../city/layout';
+import {
+  SIDE_STRIPS,
+  SIDE_WATER_EDGE,
+  bankReach,
+  centroid,
+  channelRows,
+  channelSlices,
+  islandMoats,
+  sideSlices,
+  sideStripDistance,
+  waterEdgeD,
+  type ChannelSlices,
+} from './shape';
 
 const WATER_PARS = /* glsl */ `
 uniform float uTime;
@@ -60,28 +73,79 @@ export interface Water {
 }
 
 /** `ripples: false` (low quality tier) keeps the flat glossy surface without the noise normals. */
-export function createWater(ripples = true): Water {
-  const c = channelSlices();
-  const depths = [c.xs.map(bankReach), c.xs.map(waterEdgeD)];
-  const north = channelRows(c, depths, -1)[1] ?? [];
-  const south = channelRows(c, depths, 1)[1] ?? [];
-  const pos: number[] = [];
-  const idx: number[] = [];
-  for (let i = 0; i < c.xs.length; i++) {
+// Band between the two rows at bank distance `edge`, one quad per slice.
+function appendBand(
+  pos: number[],
+  idx: number[],
+  c: ChannelSlices,
+  outer: readonly number[],
+  edge: readonly number[],
+  dist?: (x: number, z: number) => number,
+): void {
+  const depths = [outer, edge];
+  const north = channelRows(c, depths, -1, dist)[1] ?? [];
+  const south = channelRows(c, depths, 1, dist)[1] ?? [];
+  const base = pos.length / 3;
+  for (let i = 0; i < c.slices.length; i++) {
     const n = north[i];
     const s = south[i];
     if (!n || !s) throw new Error('terrain: water row out of range');
     pos.push(n.x, RIVER.waterY, n.z, s.x, RIVER.waterY, s.z);
     if (i > 0) {
-      const a = (i - 1) * 2;
+      const a = base + (i - 1) * 2;
       idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
     }
   }
+}
+
+// Convex fan; wound so its face points up whichever way the polygon runs.
+function appendFan(pos: number[], idx: number[], poly: readonly Vec2[]): void {
+  const c = centroid(poly);
+  const base = pos.length / 3;
+  pos.push(c.x, RIVER.waterY, c.z);
+  for (const p of poly) pos.push(p.x, RIVER.waterY, p.z);
+  let area = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i] as Vec2;
+    const b = poly[(i + 1) % poly.length] as Vec2;
+    area += a.x * b.z - b.x * a.z;
+  }
+  for (let i = 0; i < poly.length; i++) {
+    const a = base + 1 + i;
+    const b = base + 1 + ((i + 1) % poly.length);
+    if (area > 0) idx.push(base, b, a);
+    else idx.push(base, a, b);
+  }
+}
+
+export function buildWaterGeometry(): THREE.BufferGeometry {
+  const pos: number[] = [];
+  const idx: number[] = [];
+  const c = channelSlices();
+  appendBand(pos, idx, c, c.xs.map(bankReach), c.xs.map(waterEdgeD));
+  SIDE_STRIPS.forEach((_, i) => {
+    const s = sideSlices(i);
+    appendBand(
+      pos,
+      idx,
+      s,
+      s.slices.map(() => 20),
+      s.slices.map(() => SIDE_WATER_EDGE),
+      (x, z) => sideStripDistance(i, x, z),
+    );
+  });
+  for (const m of islandMoats()) appendFan(pos, idx, m);
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   geometry.setIndex(idx);
   geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
+  return geometry;
+}
+
+/** `ripples: false` (low quality tier) keeps the flat glossy surface without the noise normals. */
+export function createWater(ripples = true): Water {
+  const geometry = buildWaterGeometry();
 
   const uTime: THREE.IUniform<number> = { value: 0 };
   const material = new THREE.MeshStandardMaterial({

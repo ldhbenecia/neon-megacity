@@ -251,11 +251,12 @@ export function channelRows(
   c: ChannelSlices,
   depths: readonly (readonly number[])[],
   side: -1 | 1,
+  dist: (x: number, z: number) => number = channelDistance,
 ): Vec2[][] {
   const d0 = depths[0];
   if (!d0) return [];
   const offset = c.half.map((h, i) => (h + (d0[i] ?? 0)) * side);
-  const outer = isoRow(c.slices, offset, d0, (p) => channelDistance(p.x, p.z));
+  const outer = isoRow(c.slices, offset, d0, (p) => dist(p.x, p.z));
   const dirs = fanDirections(c.slices, outer.moved, side);
   return depths.map((d, j) => {
     if (j === 0) return outer.points;
@@ -331,6 +332,199 @@ export function channelProfile(outer: number, parkWidth: number): ProfilePoint[]
 /** Bank distance of the water edge at x (< 0, inside the channel). */
 export function waterEdgeD(x: number): number {
   return -channelParkWidth(x) - EMBANK_SLOPE * 0.5;
+}
+
+// --- 샛강 and the islands ---
+
+/** How far each side channel runs on past its mouths, through the main park into the water. */
+const MOUTH_RUN = 70;
+
+export interface SideStrip {
+  /** Centerline with both mouths run on into the main river. */
+  line: Vec2[];
+  half: number;
+}
+
+function segDistance(p: Vec2, a: Vec2, b: Vec2): number {
+  const dx = b.x - a.x;
+  const dz = b.z - a.z;
+  const l2 = dx * dx + dz * dz;
+  const t = l2 > 0 ? Math.min(1, Math.max(0, ((p.x - a.x) * dx + (p.z - a.z) * dz) / l2)) : 0;
+  return Math.hypot(p.x - a.x - dx * t, p.z - a.z - dz * t);
+}
+
+// Two corner-cutting passes (ends kept): the layout samples every 12 m, and its kinks fold the
+// inner bank rows of a 50 m channel.
+function chaikin(line: readonly Vec2[], passes = 2): Vec2[] {
+  let pts = line.slice();
+  for (let k = 0; k < passes; k++) {
+    const next: Vec2[] = [pts[0] as Vec2];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i] as Vec2;
+      const b = pts[i + 1] as Vec2;
+      next.push(
+        { x: a.x * 0.75 + b.x * 0.25, z: a.z * 0.75 + b.z * 0.25 },
+        { x: a.x * 0.25 + b.x * 0.75, z: a.z * 0.25 + b.z * 0.75 },
+      );
+    }
+    next.push(pts[pts.length - 1] as Vec2);
+    pts = next;
+  }
+  return pts;
+}
+
+function towardRiver(end: Vec2): Vec2 {
+  let c = RIVER.samples[0] ?? end;
+  for (const q of RIVER.samples) {
+    if (Math.hypot(q.x - end.x, q.z - end.z) < Math.hypot(c.x - end.x, c.z - end.z)) c = q;
+  }
+  const l = Math.hypot(c.x - end.x, c.z - end.z) || 1;
+  return { x: (c.x - end.x) / l, z: (c.z - end.z) / l };
+}
+
+export const SIDE_STRIPS: readonly SideStrip[] = RIVER.channels.map((ch) => {
+  const c = ch.centerline;
+  const first = c[0];
+  const last = c[c.length - 1];
+  if (!first || !last) throw new Error('terrain: empty side channel');
+  const a = towardRiver(first);
+  const b = towardRiver(last);
+  return {
+    line: chaikin([
+      { x: first.x + a.x * MOUTH_RUN, z: first.z + a.z * MOUTH_RUN },
+      ...c,
+      { x: last.x + b.x * MOUTH_RUN, z: last.z + b.z * MOUTH_RUN },
+    ]),
+    half: ch.width / 2,
+  };
+});
+
+const SIDE_BOXES = SIDE_STRIPS.map((s) => {
+  const xs = s.line.map((p) => p.x);
+  const zs = s.line.map((p) => p.z);
+  const m = s.half + 200;
+  return {
+    x0: Math.min(...xs) - m,
+    x1: Math.max(...xs) + m,
+    z0: Math.min(...zs) - m,
+    z1: Math.max(...zs) + m,
+  };
+});
+
+/** Signed distance to the water edge of one side strip (> 200 m away: Infinity). */
+export function sideStripDistance(i: number, x: number, z: number): number {
+  const s = SIDE_STRIPS[i];
+  const box = SIDE_BOXES[i];
+  if (!s || !box || x < box.x0 || x > box.x1 || z < box.z0 || z > box.z1) return Infinity;
+  const p = { x, z };
+  let best = Infinity;
+  for (let k = 0; k < s.line.length - 1; k++) {
+    best = Math.min(best, segDistance(p, s.line[k] as Vec2, s.line[k + 1] as Vec2));
+  }
+  return best - s.half;
+}
+
+export function sideDistance(x: number, z: number): number {
+  let best = Infinity;
+  for (let i = 0; i < SIDE_STRIPS.length; i++) best = Math.min(best, sideStripDistance(i, x, z));
+  return best;
+}
+
+/** Distance the ground keeps from any water: the main channel and the side channels. */
+export function groundWaterDistance(x: number, z: number): number {
+  return Math.min(channelDistance(x, z), sideDistance(x, z));
+}
+
+/** Slices along a side strip every `step` m; `south` is the left normal of the walking direction. */
+export function sideSlices(i: number, step = 8): ChannelSlices {
+  const s = SIDE_STRIPS[i];
+  if (!s) throw new Error('terrain: no side strip');
+  const pts: Vec2[] = [];
+  for (let k = 0; k < s.line.length - 1; k++) {
+    const a = s.line[k] as Vec2;
+    const b = s.line[k + 1] as Vec2;
+    const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / step));
+    for (let j = 0; j < n; j++)
+      pts.push({ x: a.x + ((b.x - a.x) * j) / n, z: a.z + ((b.z - a.z) * j) / n });
+  }
+  pts.push(s.line[s.line.length - 1] as Vec2);
+  const slices = pts.map((p, k) => {
+    const a = pts[Math.max(0, k - 1)] as Vec2;
+    const b = pts[Math.min(pts.length - 1, k + 1)] as Vec2;
+    const l = Math.hypot(b.x - a.x, b.z - a.z) || 1;
+    const along = { x: (b.x - a.x) / l, z: (b.z - a.z) / l };
+    return { p, along, south: { x: -along.z, z: along.x } };
+  });
+  return { xs: pts.map((p) => p.x), slices, half: pts.map(() => s.half) };
+}
+
+/** Bank-to-stone profile of a side channel: no park, the embankment runs straight into the water. */
+export function sideProfile(outer: number): ProfilePoint[] {
+  const below = RIVER.waterY - 0.8;
+  const edgeD = -EMBANK_SLOPE * (below / RIVER.waterY);
+  return [
+    { d: outer, y: RIVER.bankY, part: 'bank' },
+    { d: 0, y: RIVER.bankY, part: 'bank' },
+    { d: 0, y: RIVER.bankY, part: 'embankment' },
+    { d: edgeD, y: below, part: 'embankment' },
+  ];
+}
+
+/** Bank distance of a side channel's water edge, tucked under the embankment stone. */
+export const SIDE_WATER_EDGE = -EMBANK_SLOPE * 0.5;
+
+/** Width of the ring of water cut around an island that sits on the park strip. */
+export const MOAT = 10;
+
+export function centroid(poly: readonly Vec2[]): Vec2 {
+  let x = 0;
+  let z = 0;
+  for (const p of poly) {
+    x += p.x;
+    z += p.z;
+  }
+  return { x: x / Math.max(1, poly.length), z: z / Math.max(1, poly.length) };
+}
+
+/** Convex polygon offset outward by `d` m, each vertex along its corner bisector (mitred). */
+export function grow(poly: readonly Vec2[], d: number): Vec2[] {
+  const n = poly.length;
+  let area = 0;
+  for (let i = 0; i < n; i++) {
+    const a = poly[i] as Vec2;
+    const b = poly[(i + 1) % n] as Vec2;
+    area += a.x * b.z - b.x * a.z;
+  }
+  const out = area > 0 ? 1 : -1;
+  const normal = (a: Vec2, b: Vec2): Vec2 => {
+    const l = Math.hypot(b.x - a.x, b.z - a.z) || 1;
+    return { x: ((b.z - a.z) / l) * out, z: (-(b.x - a.x) / l) * out };
+  };
+  return poly.map((p, i) => {
+    const u = normal(poly[(i + n - 1) % n] as Vec2, p);
+    const v = normal(p, poly[(i + 1) % n] as Vec2);
+    const m = { x: u.x + v.x, z: u.z + v.z };
+    const k = m.x * v.x + m.z * v.z || 1;
+    return { x: p.x + (m.x / k) * d, z: p.z + (m.z / k) * d };
+  });
+}
+
+export function inPolygon(x: number, z: number, poly: readonly Vec2[]): boolean {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i] as Vec2;
+    const b = poly[j] as Vec2;
+    if (a.z > z !== b.z > z && x < ((b.x - a.x) * (z - a.z)) / (b.z - a.z) + a.x) inside = !inside;
+  }
+  return inside;
+}
+
+/** Island rings that cut through the park strip: the park is dropped and water shows inside. */
+export function islandMoats(): Vec2[][] {
+  return LAYOUT.islands
+    .filter((isl) => isl.kind !== 'land')
+    .filter((isl) => isl.polygon.some((p) => channelDistance(p.x, p.z) > waterEdgeD(p.x)))
+    .map((isl) => grow(isl.polygon, MOAT));
 }
 
 export function gridAxis(
