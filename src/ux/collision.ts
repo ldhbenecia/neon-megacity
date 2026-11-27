@@ -18,6 +18,8 @@ import {
 export const GROUND_CLEARANCE = 2;
 export const WATER_CLEARANCE = 3;
 export const WALL_MARGIN = 1.5;
+// A point pushed onto the margin boundary must count as outside despite rotation round-off.
+const EDGE_EPS = 1e-6;
 
 export function cameraFloor(x: number, z: number): number {
   const s = surfaceHeight(x, z);
@@ -71,7 +73,7 @@ function exitFrom(b: BuildingSpec, box: Box, p: Vec3, m: number): Vec3 | null {
     const dz = p.z - box.z;
     const r = Math.hypot(dx, dz);
     const R = box.hw + m;
-    if (r > R) return null;
+    if (r >= R - EDGE_EPS) return null;
     const side = R - r;
     if (up <= side) return { x: p.x, y: box.y1 + m, z: p.z };
     const nx = r > 1e-6 ? dx / r : 1;
@@ -81,7 +83,7 @@ function exitFrom(b: BuildingSpec, box: Box, p: Vec3, m: number): Vec3 | null {
   const l = toLocal(p.x - box.x, p.z - box.z, b.rotY);
   const hx = box.hw + m;
   const hz = box.hd + m;
-  if (Math.abs(l.x) > hx || Math.abs(l.z) > hz) return null;
+  if (Math.abs(l.x) >= hx - EDGE_EPS || Math.abs(l.z) >= hz - EDGE_EPS) return null;
   const options: [number, number, number][] = [
     [hx - l.x, hx, l.z],
     [hx + l.x, -hx, l.z],

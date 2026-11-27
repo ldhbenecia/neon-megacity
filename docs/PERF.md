@@ -35,7 +35,8 @@ headroom is left: on a real display rAF is capped by vsync.
 
 ## Snapshot: main e2b7fef (lighting, infra, atmosphere, ux; terrain, buildings, neon are stubs)
 
-Apple M4 (Metal ANGLE), 2400×1350 (DPR 1.5 held for every run), full quality, canvas 4× MSAA.
+Apple M4 (Metal ANGLE), 2400×1350 (DPR 1.5 held for every run), full quality, canvas 4× MSAA
+(before #43; the canvas has no MSAA since).
 
 | scenario               | frame ms (mean / p95) | fps | calls | tris   | programs | textures | geo MB | tex MB |
 | ---------------------- | --------------------- | --- | ----- | ------ | -------- | -------- | ------ | ------ |
@@ -61,7 +62,7 @@ infra init 46–83 ms, first frame 31–79 ms. Canvas: 98.9 MB (`gl.SAMPLES` = 4
 | triangles               | ≤ 1.2 M / 2.0 M           | 0.15 M                      |                                                  |
 | shader programs         | ≤ 35 / 50                 | 28–30                       | **already close to the target with 3 modules**   |
 | textures                | ≤ 24 / 40                 | 19–21                       | **close to the target**; post targets count here |
-| GPU memory              | ≤ 200 MB / 320 MB         | ~10 MB scene + 99 MB canvas | canvas = 2400×1350 × 8 B × 4 MSAA samples        |
+| GPU memory              | ≤ 200 MB / 320 MB         | ~10 MB scene + 99 MB canvas | before #43; canvas now 24.7 MB (×1)              |
 | module update CPU       | ≤ 1.5 / 3 ms              | ≤ 0.06 ms                   |                                                  |
 | boot → interactive (M1) | ≤ 3 s / 10 s              | 0.4–0.5 s                   |                                                  |
 | JS gzip                 | ≤ 260 / 400 KB            | 243.2 KB                    | **close to the target**                          |
@@ -81,10 +82,11 @@ triangles, 61 calls), not fill.
 
 ## Top bottlenecks (real GPU)
 
-1. **GPU memory: ≥ 225 MB against the 200 MB target** (post-processing targets not counted). Geometry 122 MB, almost all buildings LOD0
-   (the low tier, which skips LOD0, has 29.8 MB), plus a 99 MB canvas with 4× MSAA that is wasted
-   while the post chain renders into its own HDR target. Next: no canvas MSAA when post is on;
-   build LOD0 only for chunks near the camera.
+1. **GPU memory: over the 200 MB target.** Geometry 122 MB, almost all buildings LOD0 (the low
+   tier, which skips LOD0, has 29.8 MB), canvas 24.7 MB since #43 (was 99 MB with 4× MSAA), plus
+   post targets that `__hangang.memory()` cannot reach (not measured; at DPR 1.5 the HDR scene
+   target alone is 2400×1350 × (8 B color + 4 B depth) ≈ 37 MB, then the bloom mips). Next: build
+   LOD0 only for chunks near the camera.
 2. **Shader programs: 37 against the target 35** (ceiling 50). Buildings adds 2 facade variants,
    shadows keep their variant at night (#31). Neon has not arrived yet. Next: shared materials
    and `onBeforeCompile` variants across modules; every new program needs a reason.
@@ -94,19 +96,54 @@ triangles, 61 calls), not fill.
 
 Same ART_DIRECTION 11 ceilings; v3 must fit them, not raise them. Per-module rules for v3:
 
-| item                      | rule for v3                                                                                                                                                |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| draw calls (buildings 90) | one draw per visible chunk × LOD × material. ~70 chunks of 400 m fit; adding a material per chunk does not                                                 |
-| buildings LOD0            | LOD distance measured to the chunk AABB, not its centre (SEOUL.md 2.1), so 400 m chunks keep the v2 LOD0 radius (380 m); LOD0 built lazily near the camera |
-| geometry memory           | ≤ 120 MB total (v2 is 122 MB; ×1.43 buildings would be ~175 MB)                                                                                            |
-| street slots              | one `InstancedMesh` per kind; street lights as emissive quads / shader, real `PointLight`s ≤ 8 in total; trees LOD0 only                                   |
-| infra triangles           | ≤ 300 k on screen; bridges get near / far LOD at 600 m (660 m back), low tier builds far only (temporary test limit 360 k until then)                      |
-| triangles on screen       | ≤ 1.2 M target at the top-down and river presets (v2: 0.36 M)                                                                                              |
-| layout generation         | ≤ 1 s in the browser on an M1-class laptop; otherwise precompute it at build time or move it to a Worker in parallel with PMREM bakes                      |
-| boot → interactive        | ≤ 3 s M1, ≤ 6 s Intel iGPU (v2 with buildings: 1.0–1.6 s on M4)                                                                                            |
-| low tier (`env.quality`)  | every new module adds its branch in the same PR: skip LOD0 / near meshes, props, per-pixel noise and post                                                  |
+| item                      | rule for v3                                                                                                                                                                                                                                        |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| draw calls (buildings 90) | one draw per visible chunk × LOD × material. ~70 chunks of 400 m fit; adding a material per chunk does not                                                                                                                                         |
+| buildings LOD0            | LOD distance measured to the chunk AABB, not its centre (SEOUL.md 2.1), so 400 m chunks keep the v2 LOD0 radius (380 m); LOD0 built lazily near the camera                                                                                         |
+| geometry memory           | ≤ 120 MB total (v2 is 122 MB; ×1.43 buildings would be ~175 MB)                                                                                                                                                                                    |
+| street slots              | one `InstancedMesh` per kind; street lights as emissive quads / shader, real `PointLight`s ≤ 8 in total; trees LOD0 only                                                                                                                           |
+| infra triangles           | ≤ 300 k on screen; bridge detail (`BRIDGE_LOD_NEAR` 600 m / `BRIDGE_LOD_FAR` 660 m, 3D distance to the deck centre) is off in the low tier; test limit 300 k, worst over a 100 m camera grid plus bridge centres and midpoints: v2 134 k, v3 285 k |
+| triangles on screen       | ≤ 1.2 M target at the top-down and river presets (v2: 0.36 M)                                                                                                                                                                                      |
+| layout generation         | ≤ 1 s in the browser on an M1-class laptop; otherwise precompute it at build time or move it to a Worker in parallel with PMREM bakes                                                                                                              |
+| boot → interactive        | ≤ 3 s M1, ≤ 6 s Intel iGPU (v2 with buildings: 1.0–1.6 s on M4)                                                                                                                                                                                    |
+| low tier (`env.quality`)  | every new module adds its branch in the same PR: skip LOD0 / near meshes, props, per-pixel noise and post                                                                                                                                          |
 
 Check after each v3 PR with `npm run perf -- v3` on the heaviest presets (SEOUL.md 7: overview and namsan) plus top-down.
+
+## Shader programs: what splits them, and the budget per team
+
+`renderer.info.programs` (HUD `prog`, `npm run perf` column) counts compiled programs. three makes a
+new one for every distinct combination of:
+
+- shader source: every `ShaderMaterial` with its own GLSL string. Branch by attribute or uniform
+  (type id, colour, blink phase) inside one shader instead of near-copies.
+- `defines`: a define on some materials only (e.g. `BLINK`) doubles the program. UnrealBloomPass did
+  this with `KERNEL_PAIRS` per mip (5 programs; now one shared blur, `src/atmosphere/bloomBlur.ts`).
+- `onBeforeCompile` patches: shared only with the same `customProgramCacheKey`.
+- mesh kind: the same material on `InstancedMesh` and `Mesh` (USE_INSTANCING), or on `BatchedMesh`
+  (USE_BATCHING), is two programs.
+- built-in material flags: vertexColors, map, alphaTest, side, transparent, fog on / off,
+  receiveShadow (USE_SHADOWMAP), castShadow (adds a depth variant).
+- render target: with post on, the scene renders untonemapped into the HDR target; drawing one
+  material to both the canvas and the target compiles both variants.
+- day / night: swap uniforms, never materials or shadow flags (#31).
+- helpers that stay alive: a `PMREMGenerator` keeps its programs until disposed. Lighting disposes
+  it once every env key is baked: at boot in full quality; the low tier bakes lazily and usually
+  keeps it.
+
+Budget (ceiling 50 stays the CI gate; team total 45 leaves a reserve):
+
+| team                  | now (main, full quality) | allocation incl. v3 |
+| --------------------- | ------------------------ | ------------------- |
+| lighting              | 1                        | 2                   |
+| terrain               | 4                        | 4                   |
+| buildings             | 4                        | 6 (v3 archetypes)   |
+| infra                 | 6                        | 8 (bridge types)    |
+| atmosphere            | ~11                      | 12                  |
+| neon                  | (#46 pending)            | 8                   |
+| shadow depth variants | 3                        | 3                   |
+| reserve               |                          | 2                   |
+| **total**             | **29**                   | **45**              |
 
 ## Findings and candidates
 
@@ -146,4 +183,6 @@ Check after each v3 PR with `npm run perf -- v3` on the heaviest presets (SEOUL.
 - **Cold shader cache.** An early run (whose GPU probe did not boot the app) showed first-frame
   0.5–0.9 s, later runs 31–79 ms; the OS shader cache likely explains it. Re-check once buildings
   and neon add programs.
-- **JS bundle.** 243 KB gzip, 17 KB under the target with half the modules still stubs.
+- **JS bundle.** 266.5 KB gzip on main after buildings, over the 260 KB target (`npm run size`
+  warns in CI). Candidate: load lil-gui (only shown with `?debug`) lazily; every module calls
+  `ctx.gui.addFolder` at init, so it needs a typed stand-in when the panel is off.

@@ -1,5 +1,6 @@
 // Lighting owns the only moon disc; atmosphere draws stars on top.
 import * as THREE from 'three';
+import { HORIZON_SIDE_GLSL } from './horizonGlsl';
 
 const SKY_VERTEX = /* glsl */ `
 varying vec3 vDir;
@@ -24,7 +25,7 @@ uniform vec3 uMoonColor;
 uniform float uMoonVis;
 uniform float uLinearOut;
 varying vec3 vDir;
-
+${HORIZON_SIDE_GLSL}
 float hash12(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * 0.1031);
   p3 += dot(p3, p3.yzx + 33.33);
@@ -42,10 +43,7 @@ void main() {
   vec3 dir = normalize(vDir);
   float h = dir.y;
 
-  vec2 sxz = uSunDir.xz;
-  float sl = length(sxz);
-  float side = sl > 1e-4 ? dot(normalize(dir.xz + 1e-6), sxz / sl) * 0.5 + 0.5 : 0.5;
-  vec3 horizon = mix(uHorizonAnti, uHorizon, pow(side, 2.2));
+  vec3 horizon = mix(uHorizonAnti, uHorizon, pow(horizonSide(dir, uSunDir), 2.2));
 
   float up = max(h, 0.0);
   vec3 col = mix(horizon, uZenith, 1.0 - exp(-up * 3.2));

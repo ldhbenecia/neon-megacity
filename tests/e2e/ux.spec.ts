@@ -221,6 +221,19 @@ test('?hud=0 starts hidden', async ({ page }) => {
   await expect(page.locator('#hud')).toHaveClass(/is-hidden/);
 });
 
+test('?pose= sets the initial camera pose', async ({ page }) => {
+  await page.goto(app('nogui&stats&pose=300,400,700,0,80,0'));
+  await waitForCity(page);
+  const c = await cam(page);
+  expect(c.mode).toBe('orbit');
+  expect(c.position.x).toBeCloseTo(300, 0);
+  expect(c.position.y).toBeCloseTo(400, 0);
+  expect(c.position.z).toBeCloseTo(700, 0);
+  expect(c.target.x).toBeCloseTo(0, 0);
+  expect(c.target.y).toBeCloseTo(80, 0);
+  expect(c.target.z).toBeCloseTo(0, 0);
+});
+
 test.describe('camera rig', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto(app('nogui&stats&cam=overview&time=0.0'));
@@ -276,11 +289,13 @@ test.describe('camera rig', () => {
   });
 
   test('clicking a building flies to it and shows the card; Esc clears it', async ({ page }) => {
-    await page.mouse.click(800, 450);
+    const at = await page.evaluate(() => window.__hangang?.buildingPoint() ?? null);
+    expect(at, 'no building under the central viewport').not.toBeNull();
+    await page.mouse.click(at!.x, at!.y);
     await waitMode(page, 'flight');
     await waitMode(page, 'orbit');
     const c = await cam(page);
-    expect(c.selected).not.toBeNull();
+    expect(c.selected).toBe(at!.id);
     await expect(page.locator('#hud-card')).toBeVisible();
     await expect(page.locator('#hud-card [data-field="name"]')).not.toBeEmpty();
     await page.keyboard.press('Escape');
@@ -292,13 +307,15 @@ test.describe('camera rig', () => {
     await page.keyboard.press('8');
     await waitMode(page, 'flight');
     await waitMode(page, 'orbit');
-    expect((await cam(page)).position.y).toBeGreaterThan(1800);
+    const top = await page.evaluate(() => window.__hangang!.preset(8).position);
+    expect(dist((await cam(page)).position, top)).toBeLessThan(2);
     await expect(page.locator('#hud-toast')).toContainText('탑다운');
     await page.keyboard.press('r');
     await waitMode(page, 'flight');
     await waitMode(page, 'orbit');
     const p = (await cam(page)).position;
-    expect(dist(p, { x: -420, y: 38, z: 300 })).toBeLessThan(2);
+    const home = await page.evaluate(() => window.__hangang!.preset(1).position);
+    expect(dist(p, home)).toBeLessThan(2);
   });
 
   test('F toggles fly mode, C toggles the cinematic and any input stops it', async ({ page }) => {

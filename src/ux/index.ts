@@ -5,8 +5,9 @@ import { createControls } from './controls';
 import { createHud, type Hud } from './hud';
 import { reducedMotion } from './loader';
 import { createPerf, estimateMemory, type FrameStats, type Perf } from './perf';
-import { camPose, DEFAULT_PRESET, rigPreset } from './presets';
-import { parseUxQuery } from './query';
+import { LAYOUT } from '../city/layout';
+import { camPose, DEFAULT_PRESET, rigPreset, rigPresets, safePose } from './presets';
+import { parseUxQuery, poseInLimits } from './query';
 
 export { createLoader, nextFrame, type Loader } from './loader';
 export { parseUxQuery } from './query';
@@ -34,12 +35,19 @@ const POWER_S = 1.2;
 export function initUx(ctx: Ctx, opts: UxOptions): Ux {
   const q = parseUxQuery(window.location.search);
   const reduceMotion = reducedMotion();
-  const deterministic = opts.cam !== undefined || q.preset !== undefined;
+  // safePose may lower the target onto the camera (e.g. a target straight above it).
+  const pose = q.pose ? safePose(LAYOUT, q.pose) : undefined;
+  const custom = pose && poseInLimits(pose) ? pose : undefined;
+  const deterministic = custom !== undefined || opts.cam !== undefined || q.preset !== undefined;
   const hud = createHud({
     visible: q.hud,
     onDeselect: () => rig.select(null),
   });
-  const initial = opts.cam ? camPose(opts.cam) : rigPreset(q.preset ?? DEFAULT_PRESET);
+  const initial = custom
+    ? custom
+    : opts.cam
+      ? camPose(opts.cam)
+      : rigPreset(q.preset ?? DEFAULT_PRESET);
   const rig = createCameraRig(ctx, {
     initial,
     dollyIn: !deterministic,
@@ -54,6 +62,14 @@ export function initUx(ctx: Ctx, opts: UxOptions): Ux {
       stats: (): FrameStats => perf.stats(),
       camera: (): RigDebug => rig.debug(),
       memory: () => estimateMemory(ctx),
+      preset: (key: number) => {
+        if (!Number.isInteger(key) || key < 1 || key > rigPresets().length) {
+          throw new RangeError(`no rig preset ${key}`);
+        }
+        const { position, target } = rigPreset(key);
+        return { position: { ...position }, target: { ...target } };
+      },
+      buildingPoint: () => rig.buildingPoint(),
     };
   }
 

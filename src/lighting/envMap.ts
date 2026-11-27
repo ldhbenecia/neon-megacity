@@ -134,7 +134,9 @@ export interface EnvMaps {
 }
 
 export function createEnvMaps(renderer: THREE.WebGLRenderer, size = 256): EnvMaps {
-  const pmrem = new THREE.PMREMGenerator(renderer);
+  // Created on demand and dropped once every key is baked (boot in full quality; the low tier bakes
+  // lazily and usually keeps it): its blur/convolution programs would otherwise stay compiled.
+  let pmrem: THREE.PMREMGenerator | null = null;
   const cache = new Map<EnvKey, THREE.WebGLRenderTarget>();
 
   function bake(keyName: EnvKey): THREE.WebGLRenderTarget {
@@ -156,6 +158,7 @@ export function createEnvMaps(renderer: THREE.WebGLRenderer, size = 256): EnvMap
     const panelGeo = buildPanels(key);
     const panelMat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
     scene.add(new THREE.Mesh(domeGeo, domeMat), new THREE.Mesh(panelGeo, panelMat));
+    pmrem ??= new THREE.PMREMGenerator(renderer);
     const target = pmrem.fromScene(scene, 0.02, 0.1, DOME_RADIUS * 2, { size });
     domeGeo.dispose();
     domeMat.dispose();
@@ -164,12 +167,18 @@ export function createEnvMaps(renderer: THREE.WebGLRenderer, size = 256): EnvMap
     return target;
   }
 
+  function releaseGenerator(): void {
+    pmrem?.dispose();
+    pmrem = null;
+  }
+
   return {
     get(key) {
       let t = cache.get(key);
       if (!t) {
         t = bake(key);
         cache.set(key, t);
+        if (cache.size === ENV_KEY_LIST.length) releaseGenerator();
       }
       return t.texture;
     },
@@ -179,7 +188,7 @@ export function createEnvMaps(renderer: THREE.WebGLRenderer, size = 256): EnvMap
     dispose() {
       for (const t of cache.values()) t.dispose();
       cache.clear();
-      pmrem.dispose();
+      releaseGenerator();
     },
   };
 }

@@ -26,6 +26,7 @@ Read `docs/ARCHITECTURE.md` before editing. Summary:
 - `ctx.env` fields have a single owner (see ARCHITECTURE.md and `src/core/types.ts`). Only the owner writes a field; everyone else reads it.
 - `env.timeLocked` is set at boot when `?time=` is given; lighting must then not advance `env.timeOfDay`.
 - URL query hooks (`src/core/query.ts`): `?time=0..1`, `?cam=overview|street|core|topdown|skyline` (poses via `cameraPreset(name)`), `?rain=0..1`, `?nogui`, `?quality=low` (CI tier, `env.quality`).
+- UX query hooks (`src/ux/query.ts`): `?pose=px,py,pz,tx,ty,tz` (initial camera; wins over `?cam` and `?preset`), `?preset=1..8`, `?hud=0`, `?stats`, `?debug` (lil-gui panel and shader error checks).
 - `window.__city = { ready, frames }` is updated every frame; e2e tests and the screenshot script wait on it. Don't remove it.
 - Colors and exposure constants come from `src/core/palette.ts`; visual targets are in `docs/ART_DIRECTION.md`.
 

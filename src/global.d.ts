@@ -16,8 +16,8 @@ interface HangangStats {
 interface HangangMemory {
   geometryBytes: number;
   textureBytes: number;
-  /** Drawing buffer: color + depth, times MSAA samples. */
-  framebufferBytes: number;
+  /** Canvas drawing buffer only (color + depth, × MSAA samples); post targets are not included. */
+  canvasBytes: number;
   samples: number;
 }
 
@@ -29,6 +29,8 @@ interface HangangCamera {
   fov: number;
   selected: number | null;
 }
+
+type HangangVec3 = { x: number; y: number; z: number };
 
 declare global {
   interface Window {
@@ -42,8 +44,18 @@ declare global {
       powered: boolean;
       /** Moving average of each module's update() CPU time (ms), keyed by module name. */
       cpu: Record<string, number>;
+      /** Buildings LOD0 still being built near the camera (screenshots wait for 0). */
+      lod0Pending: number;
     };
     /** Only with `?stats`: frame counters and camera rig state (src/ux). */
-    __hangang?: { stats(): HangangStats; camera(): HangangCamera; memory(): HangangMemory };
+    __hangang?: {
+      stats(): HangangStats;
+      camera(): HangangCamera;
+      memory(): HangangMemory;
+      /** Copy of rig preset `key`'s pose on the loaded layout; throws outside 1..8. */
+      preset(key: number): { position: HangangVec3; target: HangangVec3 };
+      /** Uncovered canvas point (client px) whose click picks building `id`, center first. */
+      buildingPoint(): { x: number; y: number; id: number } | null;
+    };
   }
 }
