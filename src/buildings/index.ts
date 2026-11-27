@@ -20,6 +20,7 @@ import { namsanMast } from './landmarks';
 import { palaceGrounds, palacePlan } from './palace';
 import { createFacadeMaterial, createFacadeUniforms } from './facadeMaterial';
 import {
+  lodDistancesFor,
   LOD_DISTANCES,
   LOD_HYSTERESIS,
   chunkCenter,
@@ -122,7 +123,7 @@ function collectChunks(
 interface ChunkLod {
   chunk: Chunk;
   group: THREE.Group;
-  pos: THREE.Vector3;
+  box: THREE.Box3;
   l1: THREE.Object3D;
   l2: THREE.Object3D;
   /** null: not built; Object3D without geometry: built but empty. */
@@ -162,10 +163,10 @@ export function init(ctx: Ctx): CityModuleInstance {
     mesh.matrixAutoUpdate = false;
     return mesh;
   };
-  // Low tier never builds LOD0: LOD1 from 0 m, LOD2 from the LOD1 distance.
-  const distances: readonly [number, number, number] = low
-    ? [0, 0, LOD_DISTANCES[1]]
-    : [0, LOD_DISTANCES[1], LOD_DISTANCES[2]];
+  let distances = lodDistancesFor(env.quality);
+  const offQuality = ctx.onQuality((q) => {
+    distances = lodDistancesFor(q);
+  });
   const lods: ChunkLod[] = chunks.map((chunk) => {
     const group = new THREE.Group();
     group.name = `chunk ${chunk.i},${chunk.j}`;
@@ -184,7 +185,12 @@ export function init(ctx: Ctx): CityModuleInstance {
     group.matrixAutoUpdate = false;
     group.traverse((o2) => o2.updateMatrix());
     group.updateMatrixWorld(true);
-    return { chunk, group, pos: group.position.clone(), l1, l2, l0: null, level: 1 };
+    // World-space box of the chunk's LOD1 (or LOD2) geometry; LOD picks by distance to it.
+    const box = new THREE.Box3();
+    const bb = built[0]?.boundingBox ?? built[1]?.boundingBox;
+    if (bb) box.copy(bb).translate(group.position);
+    else box.setFromCenterAndSize(group.position, new THREE.Vector3());
+    return { chunk, group, box, l1, l2, l0: null, level: 1 };
   });
   for (const c of lods) group.add(c.group);
   info['tris LOD1'] = triangles[0] ?? 0;
@@ -227,10 +233,12 @@ export function init(ctx: Ctx): CityModuleInstance {
     let nearest: ChunkLod | null = null;
     let nearestD = Infinity;
     let farthest: ChunkLod | null = null;
-    let farthestD = LOD_DISTANCES[1] * LOD0_RELEASE_FACTOR;
+    const noLod0 = distances[1] === 0;
+    let farthestD = noLod0 ? -1 : distances[1] * LOD0_RELEASE_FACTOR;
     for (const c of lods) {
-      // Same metric as THREE.LOD: distance over zoom (the rig keeps zoom at 1; fov changes instead).
-      const d = camPos.distanceTo(c.pos) / ctx.camera.zoom;
+      // Distance over zoom like THREE.LOD (the rig keeps zoom at 1), to the chunk box: a 400 m
+      // chunk's centre can be ~280 m from a building at its edge.
+      const d = c.box.distanceToPoint(camPos) / ctx.camera.zoom;
       c.level = pickLevel(d, c.level, distances, LOD_HYSTERESIS);
       if (c.l0 && d > farthestD) {
         farthest = c;
@@ -245,7 +253,8 @@ export function init(ctx: Ctx): CityModuleInstance {
       c.l1.visible = shown === 1;
       c.l2.visible = shown === 2;
     }
-    if (farthest && lod0Count > LOD0_KEEP) releaseLod0(farthest);
+    // Tiers without LOD0 release every built one (one per frame); otherwise keep a small cache.
+    if (farthest && (noLod0 || lod0Count > LOD0_KEEP)) releaseLod0(farthest);
     // The boot-compile LOD0 has done its job once the first frame runs (after the compile stage).
     if (warm) {
       if (warm.level !== 0) releaseLod0(warm);
@@ -272,7 +281,7 @@ export function init(ctx: Ctx): CityModuleInstance {
   if (!low && lod0Count === 0) {
     let first: ChunkLod | null = null;
     for (const c of lods) {
-      if (!first || camPos.distanceTo(c.pos) < camPos.distanceTo(first.pos)) first = c;
+      if (!first || c.box.distanceToPoint(camPos) < first.box.distanceToPoint(camPos)) first = c;
     }
     if (first) {
       attachLod0(first, newJob(first).step(Infinity) ?? null);
@@ -338,6 +347,7 @@ export function init(ctx: Ctx): CityModuleInstance {
       info['LOD0 chunks'] = lod0Count;
     },
     dispose() {
+      offQuality();
       scene.remove(group);
       for (const g of geometries) g.dispose();
       for (const c of lods) releaseLod0(c);
