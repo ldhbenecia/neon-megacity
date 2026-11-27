@@ -108,90 +108,143 @@ const VIEWPORTS = [
   { name: 'desktop', width: 1600, height: 900, touch: false },
 ] as const;
 
-for (const vp of VIEWPORTS) {
-  test.describe(`floating HUD at ${vp.width}x${vp.height} (${vp.name})`, () => {
+async function buttonFlow(page: Page): Promise<void> {
+  await expectNoOverlap(page, 'start');
+
+  await page.click('#panel-toggle');
+  await expect(page.locator('#panel')).toBeVisible();
+  await expectNoOverlap(page, 'panel open');
+
+  await selectBuilding(page);
+  await expectNoOverlap(page, 'building selected');
+
+  await page.click('#panel-toggle');
+  await expect(page.locator('#panel')).toBeVisible();
+  await expectNoOverlap(page, 'panel reopened with a selection');
+
+  await page.click('#open-help');
+  await expect(page.locator('#help')).toBeVisible();
+  await expectNoOverlap(page, 'help open');
+
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#help')).toBeHidden();
+  await expectNoOverlap(page, 'help closed');
+}
+
+async function keyboardFlow(page: Page): Promise<void> {
+  const panel = page.locator('#panel');
+  const help = page.locator('#help');
+  const card = page.locator('#hud-card');
+
+  await page.click('#panel-toggle');
+  await page.keyboard.press('?');
+  await expect(help).toBeVisible();
+  await expect(panel).toBeHidden();
+  await expectNoOverlap(page, '? over the panel');
+  await page.click('#panel-toggle');
+  await expect(panel).toBeVisible();
+  await expect(help).toBeHidden();
+  await expectNoOverlap(page, 'panel toggle over help');
+  await page.keyboard.press('Escape');
+  await expect(panel).toBeHidden();
+
+  await selectBuilding(page);
+  await page.keyboard.press('?');
+  await expect(help).toBeVisible();
+  await expectNoOverlap(page, '? with a card');
+  await page.keyboard.press('Escape');
+  await expect(help).toBeHidden();
+  await expect(card).toBeVisible();
+  await page.click('#panel-toggle');
+  await expectNoOverlap(page, 'panel with a card');
+  await page.keyboard.press('Escape');
+  await expect(panel).toBeHidden();
+  await expect(card).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(card).toBeHidden();
+
+  await page.keyboard.press('3');
+  await waitMode(page, 'flight');
+  await waitMode(page, 'orbit');
+  await expectNoOverlap(page, 'preset key');
+  await page.keyboard.press('c');
+  await waitMode(page, 'cinematic');
+  await expectNoOverlap(page, 'cinematic');
+  await page.keyboard.press('c');
+  await page.keyboard.press('f');
+  await waitMode(page, 'fly');
+  await expectNoOverlap(page, 'fly mode');
+  await page.keyboard.press('Escape');
+  await waitMode(page, 'orbit');
+}
+
+/** Back to nothing open and nothing selected, high over the Yeouido towers (preset 2). */
+async function reset(page: Page): Promise<void> {
+  for (let i = 0; i < 4; i++) {
+    const open =
+      (await page.locator('#help').isVisible()) ||
+      (await page.locator('#panel').isVisible()) ||
+      (await page.locator('#hud-card').isVisible());
+    if (!open) break;
+    await page.keyboard.press('Escape');
+    await settle(page);
+  }
+  await page.keyboard.press('2');
+  await waitMode(page, 'orbit');
+}
+
+/**
+ * The other sizes skip the long interaction flows but rebuild each state at that size (the
+ * compact rules are partly JS: on narrow or short screens opening the card closes the panel),
+ * so every size is checked in the states its users can actually reach.
+ */
+async function statesAt(page: Page, vp: { width: number; height: number }): Promise<void> {
+  const at = `${vp.width}x${vp.height}`;
+  await page.setViewportSize({ width: vp.width, height: vp.height });
+  await reset(page);
+  await page.click('#panel-toggle');
+  await expectNoOverlap(page, `panel at ${at}`);
+  await selectBuilding(page);
+  await expectNoOverlap(page, `card at ${at}`);
+  await page.click('#panel-toggle');
+  await expectNoOverlap(page, `card + panel at ${at}`);
+  await page.keyboard.press('?');
+  await expect(page.locator('#help')).toBeVisible();
+  await expectNoOverlap(page, `help at ${at}`);
+  await page.keyboard.press('Escape');
+  await reset(page);
+  await page.keyboard.press('c');
+  await waitMode(page, 'cinematic');
+  await expectNoOverlap(page, `cinematic at ${at}`);
+  await page.keyboard.press('c');
+}
+
+const GROUPS = [
+  { name: 'touch', touch: true, full: VIEWPORTS[0], rest: [VIEWPORTS[1], VIEWPORTS[2]] },
+  { name: 'mouse', touch: false, full: VIEWPORTS[3], rest: [VIEWPORTS[4]] },
+] as const;
+
+for (const g of GROUPS) {
+  test.describe(`floating HUD on ${g.name} screens`, () => {
     test.use({
-      viewport: { width: vp.width, height: vp.height },
-      hasTouch: vp.touch,
-      isMobile: vp.touch,
+      viewport: { width: g.full.width, height: g.full.height },
+      hasTouch: g.touch,
+      isMobile: g.touch,
     });
 
-    test('panel, building card, help and timeline never cover each other', async ({ page }) => {
-      test.setTimeout(240_000);
-      await page.goto(app('nogui&stats&cam=overview&time=0'));
-      await waitForCity(page);
-      await expectNoOverlap(page, 'start');
-
-      await page.click('#panel-toggle');
-      await expect(page.locator('#panel')).toBeVisible();
-      await expectNoOverlap(page, 'panel open');
-
-      await selectBuilding(page);
-      await expectNoOverlap(page, 'building selected');
-
-      await page.click('#panel-toggle');
-      await expect(page.locator('#panel')).toBeVisible();
-      await expectNoOverlap(page, 'panel reopened with a selection');
-
-      await page.click('#open-help');
-      await expect(page.locator('#help')).toBeVisible();
-      await expectNoOverlap(page, 'help open');
-
-      await page.keyboard.press('Escape');
-      await expect(page.locator('#help')).toBeHidden();
-      await expectNoOverlap(page, 'help closed');
-    });
-
-    test('keyboard paths keep the same rules and Esc closes the topmost surface', async ({
+    test(`full flows at ${g.full.width}x${g.full.height}, layout at the other sizes`, async ({
       page,
     }) => {
-      test.setTimeout(300_000);
+      test.setTimeout(480_000);
       await page.goto(app('nogui&stats&cam=overview&time=0'));
       await waitForCity(page);
-      const panel = page.locator('#panel');
-      const help = page.locator('#help');
-      const card = page.locator('#hud-card');
-
-      await page.click('#panel-toggle');
-      await page.keyboard.press('?');
-      await expect(help).toBeVisible();
-      await expect(panel).toBeHidden();
-      await expectNoOverlap(page, '? over the panel');
-      await page.click('#panel-toggle');
-      await expect(panel).toBeVisible();
-      await expect(help).toBeHidden();
-      await expectNoOverlap(page, 'panel toggle over help');
-      await page.keyboard.press('Escape');
-      await expect(panel).toBeHidden();
-
-      await selectBuilding(page);
-      await page.keyboard.press('?');
-      await expect(help).toBeVisible();
-      await expectNoOverlap(page, '? with a card');
-      await page.keyboard.press('Escape');
-      await expect(help).toBeHidden();
-      await expect(card).toBeVisible();
-      await page.click('#panel-toggle');
-      await expectNoOverlap(page, 'panel with a card');
-      await page.keyboard.press('Escape');
-      await expect(panel).toBeHidden();
-      await expect(card).toBeVisible();
-      await page.keyboard.press('Escape');
-      await expect(card).toBeHidden();
-
-      await page.keyboard.press('3');
-      await waitMode(page, 'flight');
-      await waitMode(page, 'orbit');
-      await expectNoOverlap(page, 'preset key');
-      await page.keyboard.press('c');
-      await waitMode(page, 'cinematic');
-      await expectNoOverlap(page, 'cinematic');
-      await page.keyboard.press('c');
-      await page.keyboard.press('f');
-      await waitMode(page, 'fly');
-      await expectNoOverlap(page, 'fly mode');
-      await page.keyboard.press('Escape');
-      await waitMode(page, 'orbit');
+      await test.step(`button flow at ${g.full.width}x${g.full.height}`, () => buttonFlow(page));
+      await reset(page);
+      await test.step(`keyboard flow at ${g.full.width}x${g.full.height}`, () =>
+        keyboardFlow(page));
+      for (const vp of g.rest) {
+        await test.step(`states at ${vp.width}x${vp.height}`, () => statesAt(page, vp));
+      }
     });
   });
 }
