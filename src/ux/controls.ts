@@ -2,9 +2,19 @@
 // writes `timeOfDay` only while `timeLocked` is true (the documented exception: lighting does
 // not advance it while locked). Weather buttons set `rainTarget`; atmosphere eases `rain` to it.
 import { clockMinutes } from '../core/clock';
+import { parseQuery } from '../core/query';
 import type { Ctx } from '../core/types';
 import type { CameraRig } from './cameraRig';
+import {
+  analyticsConfigured,
+  privacySignal,
+  readOptOut,
+  setAnalyticsOptOut,
+  storage,
+} from './analytics';
 import type { Hud } from './hud';
+import type { Perf } from './perf';
+import { QUALITY_STORAGE_KEY, type UserTier } from './quality';
 import { districtViews, rigPresets } from './presets';
 
 export interface Controls {
@@ -14,7 +24,9 @@ export interface Controls {
   dispose(): void;
 }
 
+const TIER_KO: Readonly<Record<string, string>> = { high: '상', medium: '중', low: '하', ci: 'CI' };
 /** Zone kinds whose chips stand out: the quarters most visitors look for first. */
+
 const MAJOR_KINDS = new Set(['megacore', 'corridor', 'nightlife', 'brick', 'oldtown']);
 
 export const RAIN_STEPS = [0, 0.35, 1] as const;
@@ -27,7 +39,7 @@ export function rainStep(rain: number): number {
   return best;
 }
 
-export function createControls(ctx: Ctx, rig: CameraRig, hud: Hud): Controls {
+export function createControls(ctx: Ctx, rig: CameraRig, hud: Hud, perf: Perf): Controls {
   const { env } = ctx;
   const toggle = document.getElementById('panel-toggle');
   const panel = document.getElementById('panel');
@@ -169,6 +181,20 @@ export function createControls(ctx: Ctx, rig: CameraRig, hud: Hud): Controls {
     cleanup.push(() => districtRoot.replaceChildren());
   }
 
+  // Visit statistics opt-out: shown only in builds that carry a measurement id.
+  const swAnalytics = document.getElementById('sw-analytics');
+  // Hidden for Do Not Track / GPC visitors: nothing is sent, so there is nothing to switch.
+  if (swAnalytics && analyticsConfigured() && !privacySignal()) {
+    swAnalytics.hidden = false;
+    let sending = !readOptOut(storage());
+    swAnalytics.setAttribute('aria-checked', String(sending));
+    on(swAnalytics, 'click', () => {
+      sending = !sending;
+      setAnalyticsOptOut(!sending);
+      swAnalytics.setAttribute('aria-checked', String(sending));
+    });
+  }
+
   on(swCine, 'click', () => {
     rig.setCinematic(rig.mode !== 'cinematic');
     if (rig.mode === 'cinematic') setPanel(false);
@@ -206,6 +232,56 @@ export function createControls(ctx: Ctx, rig: CameraRig, hud: Hud): Controls {
   let lastRainStep = -1;
   renderWeather();
 
+  // Quality row: auto, or a fixed tier that turns the frame-time controller off (saved).
+  const qualityGroup = document.getElementById('quality-group');
+  const qualityNow = document.getElementById('quality-now');
+  const urlQuality = parseQuery(location.search).quality !== undefined;
+  const qualityButtons = [
+    ...(qualityGroup?.querySelectorAll<HTMLButtonElement>('button[data-quality]') ?? []),
+  ];
+  let lastQuality = '';
+  const renderQuality = (): void => {
+    const q = perf.quality();
+    const key = `${q.tier}/${q.auto}`;
+    if (key === lastQuality) return;
+    lastQuality = key;
+    if (qualityGroup) qualityGroup.hidden = q.tier === 'ci';
+    const picked = q.auto ? 'auto' : q.tier;
+    for (const b of qualityButtons)
+      b.setAttribute('aria-checked', String(b.dataset.quality === picked));
+    if (qualityNow)
+      qualityNow.textContent =
+        q.tier === 'ci' ? '' : `· ${q.auto ? '자동 · ' : ''}${TIER_KO[q.tier]}`;
+  };
+  for (const b of qualityButtons) {
+    on(b, 'click', () => {
+      const choice = b.dataset.quality as 'auto' | UserTier;
+      // ?quality= wins over the stored pick at boot, so a pick made under it lasts this visit only.
+      if (!urlQuality) {
+        try {
+          localStorage.setItem(QUALITY_STORAGE_KEY, choice);
+        } catch {
+          // Private mode or blocked storage: the pick still applies for this visit.
+        }
+      }
+      perf.choose(choice);
+      renderQuality();
+    });
+  }
+  on(qualityGroup?.querySelector('.segmented') ?? null, 'keydown', (e) => {
+    if (e.code !== 'ArrowLeft' && e.code !== 'ArrowRight') return;
+    e.preventDefault();
+    e.stopPropagation();
+    const at = qualityButtons.findIndex((b) => b.getAttribute('aria-checked') === 'true');
+    const next = Math.min(
+      qualityButtons.length - 1,
+      Math.max(0, at + (e.code === 'ArrowRight' ? 1 : -1)),
+    );
+    qualityButtons[next]?.click();
+    qualityButtons[next]?.focus();
+  });
+  renderQuality();
+
   return {
     markDistrict(id) {
       if (id === currentDistrict || !districtRoot) return;
@@ -238,6 +314,7 @@ export function createControls(ctx: Ctx, rig: CameraRig, hud: Hud): Controls {
         }
       }
       const step = rainStep(env.rainTarget);
+      renderQuality();
       if (step !== lastRainStep) {
         lastRainStep = step;
         renderWeather();

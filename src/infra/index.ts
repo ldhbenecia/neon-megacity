@@ -9,12 +9,12 @@ import * as THREE from 'three';
 import { deckHeightAt, type Vec2, type Vec3 } from '../city/layout';
 import { MATERIAL, NIGHT_FILL_AMBIENT } from '../core/palette';
 import { EMISSIVE_FOG_DENSITY_SCALE, applyEmissiveFog } from '../core/shaders/emissiveFog';
-import type { CityModuleInstance, Ctx, InfraApi } from '../core/types';
+import type { CityModuleInstance, Ctx, InfraApi, Quality } from '../core/types';
 import { fountainNozzles, railTracks } from './bridges';
 import { buildInfra } from './build';
 import { infraColors } from './colors';
 import { hwPath, visiblePoints } from './highways';
-import { bridgeDetailOn } from './lod';
+import { bridgeDetailOn, bridgeLodRange, type BridgeLodRange } from './lod';
 import type { MeshData, V3 } from './mesh';
 import type { BridgeDetail, DetailParts } from './parts';
 import { DECK_THICKNESS } from './profile';
@@ -261,6 +261,40 @@ export function init(ctx: Ctx): CityModuleInstance {
 
   group.add(concrete, steel, paint, columns, beams, glow, wash, points);
   if (detail) group.add(...detail.meshes);
+
+  // Quality knob (PERF.md): detail distance by tier. 'low' (and a 'low' boot) still builds the
+  // detail and only hides it, so moving back up a tier needs no rebuild.
+  let lod: BridgeLodRange | null = null;
+  // lighting renders shadows on demand; detail casts them, so every visibility change asks for one.
+  const refreshDetail = (fresh: boolean): void => {
+    if (!detail) return;
+    const cam = ctx.camera.position;
+    let changed = false;
+    for (const b of detail.bridges) {
+      const dx = cam.x - b.center[0];
+      const dy = cam.y - b.center[1];
+      const dz = cam.z - b.center[2];
+      const on =
+        lod !== null && bridgeDetailOn(fresh ? false : b.on, dx * dx + dy * dy + dz * dz, lod);
+      if (on === b.on) continue;
+      b.on = on;
+      changed = true;
+      detail.meshes.forEach((m, k) => {
+        const id = b.ids[k] ?? -1;
+        if (id >= 0) m.setVisibleAt(id, on);
+      });
+    }
+    if (changed) ctx.renderer.shadowMap.needsUpdate = true;
+  };
+  // 'low' hides every instance but keeps the meshes themselves visible: boot warm-up compiles
+  // visible objects only, so their programs stay compiled for a later move up a tier.
+  const applyQuality = (q: Quality): void => {
+    lod = bridgeLodRange(q);
+    // States frozen while hidden are stale: decide afresh from the camera now.
+    refreshDetail(true);
+  };
+  applyQuality(ctx.env.quality);
+  const offQuality = ctx.onQuality(applyQuality);
   ctx.scene.add(group);
 
   const curves = new Map<string, THREE.CatmullRomCurve3>();
@@ -317,21 +351,7 @@ export function init(ctx: Ctx): CityModuleInstance {
   ] as THREE.MeshStandardMaterial[];
   return {
     update() {
-      if (detail) {
-        const cam = ctx.camera.position;
-        for (const b of detail.bridges) {
-          const dx = cam.x - b.center[0];
-          const dy = cam.y - b.center[1];
-          const dz = cam.z - b.center[2];
-          const on = bridgeDetailOn(b.on, dx * dx + dy * dy + dz * dz);
-          if (on === b.on) continue;
-          b.on = on;
-          detail.meshes.forEach((m, k) => {
-            const id = b.ids[k] ?? -1;
-            if (id >= 0) m.setVisibleAt(id, on);
-          });
-        }
-      }
+      if (lod) refreshDetail(false);
       const day = DAY_LIGHTS + (1 - DAY_LIGHTS) * ctx.env.nightFactor;
       const gain = ctx.env.neonGain * ctx.env.powerOn * settings.gain * day;
       for (const m of emissive) m.color.setScalar(gain);
@@ -352,6 +372,7 @@ export function init(ctx: Ctx): CityModuleInstance {
       for (const im of [columns, beams, points]) im.dispose();
       detail?.meshes.forEach((m) => m.dispose());
       folder.destroy();
+      offQuality();
       if (ctx.infra === api) delete ctx.infra;
     },
   };

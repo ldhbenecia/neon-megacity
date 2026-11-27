@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { LAYOUT, buildingTop, surfaceHeight, type Vec3 } from '../city/layout';
 import type { Ctx } from '../core/types';
+import { track } from './analytics';
 import {
   WALL_MARGIN,
   cameraFloor,
@@ -181,6 +182,7 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
   });
 
   const setMode = (m: RigMode): void => {
+    if ((m === 'fly' || m === 'cinematic') && m !== mode) track('mode_entered', { mode: m });
     mode = m;
     hud.setMode(m);
     app?.classList.toggle('is-fly', m === 'fly');
@@ -249,6 +251,7 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
     const p = rigPreset(key);
     presetKey = p.key;
     hud.toast(`프리셋 ${p.key} · ${p.name}`);
+    track('preset_used', { preset: p.name });
     flyTo(p);
   };
 
@@ -257,6 +260,7 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
     if (!d) return false;
     presetKey = null;
     hud.toast(d.name);
+    track('district_used', { district: d.name });
     flyTo(d);
     return true;
   };

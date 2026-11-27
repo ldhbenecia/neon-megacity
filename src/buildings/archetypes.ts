@@ -34,13 +34,13 @@ import {
   type BaseSpec,
 } from './params';
 import { emitLandmark } from './landmarks';
+import { emitPalaceCustom, isCustomForm, palaceBody, palaceForm } from './gyeongbok';
 import {
   SEOUL_COLORS,
   brickProps,
   brickWarehouseRoof,
   cornice,
   hanokRoof,
-  palaceHall,
   showroomSlab,
   taperSeams,
 } from './seoul';
@@ -270,6 +270,14 @@ export function emitBuilding(raw: BuildingSpec, T: Targets, onStreet?: StreetTes
   if (b.inL2) levels.push([T.l2, 2]);
   else if (!discards(T.l2)) lowBox(b, T.l2);
 
+  if (spec.archetype === 'palaceHall') {
+    const form = palaceForm(spec.tags.palaceId, spec.tags.palacePart);
+    if (isCustomForm(form)) {
+      for (const [g, lv] of levels) if (!discards(g)) emitPalaceCustom(g, spec, form, lv);
+      return;
+    }
+  }
+
   const landmark = spec.tags.landmark;
   if (landmark) {
     const roof = plain(b.roof, 0.92);
@@ -316,7 +324,7 @@ function seoulExtras(g: GeoBuilder, b: Bld, lv: 0 | 1 | 2): void {
       brickWarehouseRoof(g, spec, seeded01(spec.seed + 31), lv);
       break;
     case 'palaceHall':
-      palaceHall(g, spec, lv);
+      palaceBody(g, spec, palaceForm(spec.tags.palaceId, spec.tags.palacePart), lv);
       break;
     case 'hanokRow':
       hanokRoof(g, spec, spec.front, lv);
