@@ -33,7 +33,7 @@ function setSrgb(color: THREE.Color, rgb: RGB, scale = 1): THREE.Color {
 export function init(ctx: Ctx): CityModuleInstance {
   const { scene, renderer, camera, controls, gui, env } = ctx;
 
-  const low = env.quality === 'low';
+  const low = env.quality === 'ci';
   renderer.shadowMap.enabled = !low;
   renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.shadowMap.autoUpdate = false;
@@ -185,7 +185,7 @@ export function init(ctx: Ctx): CityModuleInstance {
   }
   folder.close();
 
-  // Baking mid-session stalls a frame, so every key is baked at boot (low quality bakes lazily).
+  // Baking mid-session stalls a frame, so every key is baked at boot (the ci tier bakes lazily).
   if (!low) envMaps.bakeAll();
   // Other modules read env during their own init.
   apply(0);

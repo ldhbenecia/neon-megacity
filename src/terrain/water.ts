@@ -46,7 +46,7 @@ export interface Water {
   dispose(): void;
 }
 
-/** `ripples: false` (low quality tier) keeps the flat glossy surface without the noise normals. */
+/** `ripples: false` (ci quality tier) keeps the flat glossy surface without the noise normals. */
 export function createWater(ripples = true): Water {
   const c = channelSlices();
   const depths = [c.xs.map(bankReach), c.xs.map(waterEdgeD)];

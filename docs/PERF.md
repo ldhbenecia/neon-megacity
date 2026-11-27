@@ -8,7 +8,7 @@ every PR that changes performance, with before / after numbers in the PR body.
 ```sh
 npm run perf -- <label>                  # real GPU (Metal ANGLE), builds first
 npm run perf -- <label> --no-build --only=탑다운
-npm run perf -- <label> --quality=low    # the CI tier
+npm run perf -- <label> --quality=ci     # the CI tier
 npm run perf -- <label> --swiftshader    # software GL, slow
 ```
 
