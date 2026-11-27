@@ -11,6 +11,7 @@ import * as buildings from './buildings/index';
 import * as infra from './infra/index';
 import * as neon from './neon/index';
 import * as atmosphere from './atmosphere/index';
+import { startAnalytics, track } from './ux/analytics';
 import { createGui } from './ux/gui';
 import { createLoader, initUx, nextFrame, parseUxQuery } from './ux/index';
 import { QUALITY_STORAGE_KEY, storedTier, tierFromRenderer } from './ux/quality';
@@ -244,6 +245,18 @@ async function boot(): Promise<void> {
   ux.powerOn();
   renderer.setAnimationLoop(frame);
   await loader.done();
+  // performance.now() is time since navigation: what a visitor waited for the city.
+  report({ result: 'ready', readyMs: performance.now() }, ctx.env.quality);
+}
+
+/** Statistics never decide whether the city boots: any failure in them is swallowed. */
+function report(boot: { result: 'ready' | 'error'; readyMs: number }, quality?: Quality): void {
+  try {
+    startAnalytics(boot);
+    if (quality && quality !== 'ci') track('quality_tier', { tier: quality });
+  } catch {
+    // Analytics is optional.
+  }
 }
 
 /**
@@ -254,5 +267,6 @@ async function boot(): Promise<void> {
 export function start(): void {
   boot().catch((err: unknown) => {
     loader.fail('boot', err);
+    report({ result: 'error', readyMs: performance.now() });
   });
 }

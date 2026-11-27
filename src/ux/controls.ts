@@ -4,6 +4,13 @@
 import { clockMinutes } from '../core/clock';
 import type { Ctx } from '../core/types';
 import type { CameraRig } from './cameraRig';
+import {
+  analyticsConfigured,
+  privacySignal,
+  readOptOut,
+  setAnalyticsOptOut,
+  storage,
+} from './analytics';
 import type { Hud } from './hud';
 import { districtViews, rigPresets } from './presets';
 
@@ -167,6 +174,20 @@ export function createControls(ctx: Ctx, rig: CameraRig, hud: Hud): Controls {
       districtRoot.append(row);
     }
     cleanup.push(() => districtRoot.replaceChildren());
+  }
+
+  // Visit statistics opt-out: shown only in builds that carry a measurement id.
+  const swAnalytics = document.getElementById('sw-analytics');
+  // Hidden for Do Not Track / GPC visitors: nothing is sent, so there is nothing to switch.
+  if (swAnalytics && analyticsConfigured() && !privacySignal()) {
+    swAnalytics.hidden = false;
+    let sending = !readOptOut(storage());
+    swAnalytics.setAttribute('aria-checked', String(sending));
+    on(swAnalytics, 'click', () => {
+      sending = !sending;
+      setAnalyticsOptOut(!sending);
+      swAnalytics.setAttribute('aria-checked', String(sending));
+    });
   }
 
   on(swCine, 'click', () => {
