@@ -1,0 +1,134 @@
+import { expect, test, type Page } from '@playwright/test';
+import { app, waitForCity, waitFrames } from './helpers';
+
+// Floating HUD surfaces that must never cover each other. The toast is left out on purpose:
+// it is a short-lived announcement drawn above everything.
+const SURFACES = [
+  '.hud-brand',
+  '#panel-toggle',
+  '#panel',
+  '#hud-card',
+  '#timeline',
+  '#help',
+  '#hud-hint',
+  '.touch-pad',
+] as const;
+
+interface Box {
+  name: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+async function settle(page: Page): Promise<void> {
+  // HUD transitions run on wall-clock CSS time, not frames.
+  await page.evaluate(() =>
+    Promise.all(
+      document
+        .getAnimations()
+        .filter((a) => a.effect instanceof KeyframeEffect && a.effect.target instanceof Element)
+        .filter((a) => (a.effect as KeyframeEffect).target!.closest('#hud'))
+        .map((a) => a.finished),
+    ),
+  );
+  await waitFrames(page, 2);
+}
+
+async function visibleBoxes(page: Page): Promise<Box[]> {
+  return page.evaluate((selectors) => {
+    const out: Box[] = [];
+    for (const sel of selectors) {
+      const el = document.querySelector<HTMLElement>(sel);
+      if (!el) continue;
+      const st = getComputedStyle(el);
+      if (st.display === 'none' || st.visibility === 'hidden' || Number(st.opacity) < 0.05) {
+        continue;
+      }
+      const r = el.getBoundingClientRect();
+      if (r.width < 1 || r.height < 1) continue;
+      out.push({ name: sel, x: r.left, y: r.top, w: r.width, h: r.height });
+    }
+    return out;
+  }, SURFACES);
+}
+
+async function expectNoOverlap(page: Page, step: string): Promise<void> {
+  await settle(page);
+  const boxes = await visibleBoxes(page);
+  const vw = page.viewportSize()!;
+  for (const b of boxes) {
+    expect(b.x, `${step}: ${b.name} off the left edge`).toBeGreaterThanOrEqual(-0.5);
+    expect(b.y, `${step}: ${b.name} off the top edge`).toBeGreaterThanOrEqual(-0.5);
+    expect(b.x + b.w, `${step}: ${b.name} off the right edge`).toBeLessThanOrEqual(vw.width + 0.5);
+    expect(b.y + b.h, `${step}: ${b.name} off the bottom edge`).toBeLessThanOrEqual(
+      vw.height + 0.5,
+    );
+  }
+  for (let i = 0; i < boxes.length; i++) {
+    for (let j = i + 1; j < boxes.length; j++) {
+      const a = boxes[i]!;
+      const b = boxes[j]!;
+      const ix = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+      const iy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+      expect(
+        ix > 1 && iy > 1,
+        `${step}: ${a.name} overlaps ${b.name} ${JSON.stringify([a, b])}`,
+      ).toBe(false);
+    }
+  }
+}
+
+const VIEWPORTS = [
+  { name: 'phone', width: 390, height: 844, touch: true },
+  { name: 'phone landscape', width: 844, height: 390, touch: true },
+  { name: 'tablet', width: 768, height: 1024, touch: true },
+  { name: 'laptop', width: 1280, height: 720, touch: false },
+  { name: 'desktop', width: 1600, height: 900, touch: false },
+] as const;
+
+for (const vp of VIEWPORTS) {
+  test.describe(`floating HUD at ${vp.width}x${vp.height} (${vp.name})`, () => {
+    test.use({
+      viewport: { width: vp.width, height: vp.height },
+      hasTouch: vp.touch,
+      isMobile: vp.touch,
+    });
+
+    test('panel, building card, help and timeline never cover each other', async ({ page }) => {
+      test.setTimeout(240_000);
+      await page.goto(app('nogui&stats&cam=overview&time=0'));
+      await waitForCity(page);
+      await expectNoOverlap(page, 'start');
+
+      await page.click('#panel-toggle');
+      await expect(page.locator('#panel')).toBeVisible();
+      await expectNoOverlap(page, 'panel open');
+
+      const at = await page.evaluate(() => window.__hangang?.buildingPoint() ?? null);
+      expect(at, 'no building under an uncovered canvas point').not.toBeNull();
+      await page.mouse.click(at!.x, at!.y);
+      await page.waitForFunction(
+        () =>
+          window.__hangang?.camera().mode === 'orbit' &&
+          document.getElementById('hud-card')?.hidden === false,
+        undefined,
+        { timeout: 90_000 },
+      );
+      await expectNoOverlap(page, 'building selected');
+
+      await page.click('#panel-toggle');
+      await expect(page.locator('#panel')).toBeVisible();
+      await expectNoOverlap(page, 'panel reopened with a selection');
+
+      await page.click('#open-help');
+      await expect(page.locator('#help')).toBeVisible();
+      await expectNoOverlap(page, 'help open');
+
+      await page.keyboard.press('Escape');
+      await expect(page.locator('#help')).toBeHidden();
+      await expectNoOverlap(page, 'help closed');
+    });
+  });
+}

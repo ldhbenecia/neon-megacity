@@ -46,9 +46,13 @@ export function createControls(ctx: Ctx, rig: CameraRig, hud: Hud): Controls {
     cleanup.push(() => el.removeEventListener(type, fn as EventListener, opts));
   };
 
+  const hudRoot = document.getElementById('hud');
+  // Same breakpoint as the compact rules in style.css: the panel and the card take turns there.
+  const compact = window.matchMedia('(max-width: 640px), (max-height: 520px)');
   const setPanel = (open: boolean, focus = false): void => {
     if (!panel || !toggle) return;
     panel.hidden = !open;
+    if (hudRoot) hudRoot.dataset.panel = open ? 'open' : 'closed';
     toggle.setAttribute('aria-expanded', String(open));
     toggle.setAttribute('aria-label', open ? '도시 설정 닫기' : '도시 설정 열기');
     if (open && focus) panel.querySelector<HTMLElement>('button')?.focus({ preventScroll: true });
@@ -67,6 +71,11 @@ export function createControls(ctx: Ctx, rig: CameraRig, hud: Hud): Controls {
     { capture: true },
   );
   on(ctx.renderer.domElement, 'pointerdown', () => setPanel(false));
+  cleanup.push(
+    hud.onCard((open) => {
+      if (open && compact.matches) setPanel(false);
+    }),
+  );
   on(openHelp, 'click', () => {
     setPanel(false);
     hud.toggleHelp(true);
