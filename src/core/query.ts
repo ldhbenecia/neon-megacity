@@ -242,7 +242,8 @@ function seoulPoses(): Record<
   const sx = (seongsu.a.x + seongsu.b.x) / 2;
   const sz = (seongsu.a.z + seongsu.b.z) / 2;
   return {
-    banpo: pose([bx, 18, bz], [banpo.landA.x, 10, banpo.landA.z]),
+    // 22 m over the deck: lower, the deck itself fills the bottom of the frame.
+    banpo: pose([bx, banpo.deckY + 22, bz], [banpo.landA.x, 10, banpo.landA.z]),
     // Over the river east of the island, looking down at the cluster around the gold tower.
     yeouido: pose([gold.x + 510, 260, gold.z - 120], [gold.x, 140, gold.z]),
     // Just off the summit, over Yongsan's towers toward Yeouido and the river bend.
