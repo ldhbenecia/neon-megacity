@@ -10,6 +10,8 @@ export interface Path {
   kind: 'ground' | 'bridge' | 'highway' | 'flying';
   fade: number;
   altitude?: readonly [number, number];
+  /** Ground paths on arterials keep full traffic when the ground cap thins side streets. */
+  arterial?: boolean;
 }
 
 export interface Vehicle {
@@ -74,6 +76,7 @@ export function groundPaths(
       closed: false,
       kind: 'ground',
       fade: 10,
+      arterial: r.kind === 'arterial',
     });
   }
   return out;
@@ -117,6 +120,7 @@ export function highwayPath(
 export interface StreamOptions {
   seed?: number;
   density?: Partial<Record<Path['kind'], number>>;
+  groundCap?: number;
 }
 
 // laneOffsets: + = right of the curve direction. The reverse direction's frame is mirrored, so
@@ -138,6 +142,9 @@ export function laneSlots(
   return both(offs.filter((o) => o > 0));
 }
 
+/** Ground vehicles on the whole map (art direction 6.2, v3 decision). */
+export const GROUND_CAP = 1200;
+
 export function vehicleStreams(
   paths: readonly Path[],
   highways: readonly Highway[],
@@ -146,11 +153,32 @@ export function vehicleStreams(
   const rng = createRng(opts.seed ?? 6060);
   const hw = new Map(highways.map((h) => [h.id, h]));
   const density = { ground: 2.2, bridge: 26, highway: 34, flying: 6, ...opts.density };
+  const perLane = (p: Path): number => Math.max(1, Math.round((density[p.kind] * p.length) / 1000));
+  // Over the cap, side streets get fewer cars (some none) and arterials keep theirs; a no-op on
+  // maps under the cap, so their streams stay identical.
+  let sideScale = 1;
+  const groundCount = (art: boolean): number =>
+    paths
+      .filter((p) => p.kind === 'ground' && !!p.arterial === art)
+      .reduce((n, p) => n + perLane(p) * laneSlots(p, hw).length, 0);
+  const arterialCars = groundCount(true);
+  const sideCars = groundCount(false);
+  const cap = opts.groundCap ?? GROUND_CAP;
+  if (arterialCars + sideCars > cap && sideCars > 0) {
+    sideScale = Math.max(0, (cap - arterialCars) / sideCars);
+  }
   const out: Vehicle[] = [];
+  let carry = 0;
   paths.forEach((p, pi) => {
     for (const slot of laneSlots(p, hw)) {
       const dir = slot.dir;
-      const count = Math.max(1, Math.round((density[p.kind] * p.length) / 1000));
+      let count = perLane(p);
+      if (sideScale < 1 && p.kind === 'ground' && !p.arterial) {
+        // Carry the fraction across lanes so short streets do not all round down to zero.
+        carry += count * sideScale;
+        count = Math.floor(carry);
+        carry -= count;
+      }
       const kmh =
         p.kind === 'ground'
           ? rng.range(30, 50)

@@ -8,7 +8,15 @@ import {
   type BuildingSpec,
 } from '../src/city/layout';
 import { buildCatalog } from '../src/neon/catalog';
-import { EDGE_IN, TIER_MARGIN, insideFace, placeSigns, type FlatSign } from '../src/neon/placement';
+import {
+  EDGE_IN,
+  TIER_MARGIN,
+  insideFace,
+  placeSigns,
+  signBudget,
+  signCount,
+  type FlatSign,
+} from '../src/neon/placement';
 import { buildingSolids, firstHit, solidsOverlap, type Solid } from '../src/neon/solids';
 
 const faces = LAYOUT.buildings.map((b) => buildingFaces(b));
@@ -252,18 +260,45 @@ describe('neon sign placement: zero penetration (5.1)', () => {
     const again = placeSigns(LAYOUT, faces, cat);
     expect(again.flats.length).toBe(P.flats.length);
     expect(again.flats[123]).toEqual(P.flats[123]);
-    const total =
-      P.flats.length +
-      P.tubes.length +
-      P.crosses.length +
-      P.screens.length +
-      P.rings.length +
-      P.holos.length;
+    const total = signCount(P);
     expect(total).toBeGreaterThanOrEqual(2500);
-    expect(total).toBeLessThanOrEqual(8000);
+    expect(total).toBeLessThanOrEqual(signBudget(LAYOUT));
+    expect(signBudget(LAYOUT)).toBeLessThanOrEqual(16000);
     const moving =
       P.flats.filter((s) => s.anim !== 0).length + P.tubes.filter((t) => t.anim !== 0).length;
     expect(moving / (P.flats.length + P.tubes.length)).toBeLessThanOrEqual(0.1);
+  });
+
+  it('sign density per building follows each district mood (SEOUL.md 4.4)', () => {
+    // [min, max] mean flat signs per building; a district only counts with enough buildings.
+    const RANGE: Record<string, [number, number]> = {
+      sangga: [2, 6],
+      nightlife: [3, 9],
+      brick: [1.5, 6],
+      oldtown: [0.3, 2],
+      midtown: [0.5, 2],
+      core: [0.2, 1.5],
+      megacore: [0.2, 1.5],
+      apartment: [0.5, 1.5],
+      industrial: [0, 1],
+      hillside: [0, 0.05],
+      riverside: [0, 0.5],
+    };
+    const buildings = new Map<string, number>();
+    const signs = new Map<string, number>();
+    for (const b of LAYOUT.buildings)
+      buildings.set(b.district, (buildings.get(b.district) ?? 0) + 1);
+    for (const s of P.flats) {
+      const d = spec(s.building).district;
+      signs.set(d, (signs.get(d) ?? 0) + 1);
+    }
+    for (const [d, n] of buildings) {
+      const r = RANGE[d];
+      if (!r || n < 20) continue;
+      const mean = (signs.get(d) ?? 0) / n;
+      expect(mean, d).toBeGreaterThanOrEqual(r[0]);
+      expect(mean, d).toBeLessThanOrEqual(r[1]);
+    }
   });
 
   it('apartment crowns show their own complex name', () => {
