@@ -617,8 +617,65 @@ export function zoneSide(id: string): Side | null {
   return SIDE_OF.get(id) ?? null;
 }
 
+// Zone grid: cells of ZONE_CELL m whose four corners fall in one zone answer from
+// the cache; cells on a boundary ("mixed") and unvisited ones fall through to the exact test, so
+// results never change. Zone edges are polygons and bank-distance strips tens of metres across,
+// so a whole zone cannot hide inside a cell.
+const ZONE_CELL = 16;
+const ZC_NX = Math.ceil((2 * HALF_X) / ZONE_CELL);
+const ZC_NZ = Math.ceil((2 * HALF_Z) / ZONE_CELL);
+const UNKNOWN = -1;
+const MIXED = -2;
+let zoneGrid: Int16Array | null = null;
+
 /** Zone containing (x, z). Points outside the map are clamped onto it. */
 export function zoneAt(x: number, z: number): DistrictZone {
+  const e = 1e-6;
+  const px = clamp(x, -HALF_X + e, HALF_X - e);
+  const pz = clamp(z, -HALF_Z + e, HALF_Z - e);
+  const i = Math.floor((px + HALF_X) / ZONE_CELL);
+  const k = Math.floor((pz + HALF_Z) / ZONE_CELL);
+  zoneGrid ??= new Int16Array(ZC_NX * ZC_NZ).fill(UNKNOWN);
+  const idx = k * ZC_NX + i;
+  let v = zoneGrid[idx] as number;
+  if (v === UNKNOWN) {
+    // Corners are shared by four cells, so each is classified once.
+    const c = cornerZone(i, k);
+    let same = true;
+    for (const [dx, dz] of CORNERS) {
+      if (cornerZone(i + dx, k + dz) !== c) {
+        same = false;
+        break;
+      }
+    }
+    v = same ? c : MIXED;
+    zoneGrid[idx] = v;
+  }
+  return v >= 0 ? (ZONES[v] as DistrictZone) : zoneExact(px, pz);
+}
+
+let cornerGrid: Int16Array | null = null;
+
+function cornerZone(i: number, k: number): number {
+  cornerGrid ??= new Int16Array((ZC_NX + 1) * (ZC_NZ + 1)).fill(UNKNOWN);
+  const idx = k * (ZC_NX + 1) + i;
+  let v = cornerGrid[idx] as number;
+  if (v === UNKNOWN) {
+    v = zoneIndex(zoneExact(-HALF_X + i * ZONE_CELL, -HALF_Z + k * ZONE_CELL));
+    cornerGrid[idx] = v;
+  }
+  return v;
+}
+
+const CORNERS = [
+  [1, 0],
+  [0, 1],
+  [1, 1],
+] as const;
+const ZONE_INDEX = new Map(ZONES.map((zn, i) => [zn, i]));
+const zoneIndex = (zn: DistrictZone): number => ZONE_INDEX.get(zn) as number;
+
+function zoneExact(x: number, z: number): DistrictZone {
   const e = 1e-6;
   const p = { x: clamp(x, -HALF_X + e, HALF_X - e), z: clamp(z, -HALF_Z + e, HALF_Z - e) };
   // The distance beyond the bank is only computed exactly when a threshold (band edge, bank

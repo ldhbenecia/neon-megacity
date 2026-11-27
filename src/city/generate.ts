@@ -663,6 +663,12 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
     }
     sites.sort((a, b) => a.r - b.r);
     const placed: Obb[] = [];
+    // A site whose centre is under a placed tower can never host another; a site that rejected a
+    // footprint (accept) rejects any footprint containing it (same centre and rotation, both half
+    // extents at least as large), so those are skipped without testing.
+    const dead = new Uint8Array(sites.length);
+    const failW = new Float64Array(sites.length).fill(Infinity);
+    const failD = new Float64Array(sites.length).fill(Infinity);
     plan.tiers.forEach((tier, t) => {
       const hs = Array.from({ length: tier.count }, () => rng.range(tier.h[0], tier.h[1])).sort(
         (a, b) => b - a,
@@ -673,7 +679,10 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
         // The draft insets the lot by 4 % and the depth may be 15 % short: size for that.
         const side = Math.max(rng.range(tier.size[0], tier.size[1]), h / (MAX_SLENDER * 0.8));
         const depth = side * (t === 0 ? rng.range(0.95, 1) : rng.range(0.85, 1));
-        for (const site of sites) {
+        for (let si = 0; si < sites.length; si++) {
+          if (dead[si]) continue;
+          if (side / 2 >= (failW[si] as number) && depth / 2 >= (failD[si] as number)) continue;
+          const site = sites[si] as Vec2;
           const o: Obb = {
             x: site.x,
             z: site.z,
@@ -684,8 +693,16 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
           if (placed.some((q) => obbOverlap(q, o, TOWER_GAP))) continue;
           if (h > TALL_H && obbCorners(o).some((c) => terrainHeight(c.x, c.z) > TALL_GROUND))
             continue;
-          if (!accept(o, zone)) continue;
+          if (!accept(o, zone)) {
+            failW[si] = o.hw;
+            failD[si] = o.hd;
+            continue;
+          }
           placed.push(o);
+          sites.forEach((q, qi) => {
+            const l = toLocal(q.x - o.x, q.z - o.z, o.rotY);
+            if (Math.abs(l.x) < o.hw && Math.abs(l.z) < o.hd) dead[qi] = 1;
+          });
           const blockId = blocks.length;
           blocks.push({
             id: blockId,
