@@ -41,11 +41,13 @@ import {
   HALF_X,
   HALF_Z,
   ISLANDS,
+  PALACE_RECT,
   TALL_GROUND,
   TALL_H,
   bankPoint,
   isForest,
   MOUNTAINS,
+  MOUNTAIN_RANGES,
   RIVER,
   SAETGANG,
   parkWidthAt,
@@ -189,6 +191,31 @@ function gridRange(zone: DistrictZone): { u0: number; u1: number; v0: number; v1
 
 const ROAD_STEP = 4;
 
+/** Highest ground (m) a zone other than the hillside village builds or lays streets on. */
+export const FLAT_GROUND = 6;
+
+/**
+ * Ground a zone may build on or run a street across: never forest, and above FLAT_GROUND only in
+ * the hillside village (이태원·해방촌). The mountain feet stay green and empty (the terrain paints
+ * forest from about this height), and no streetlight or car ends up on a slope.
+ */
+function buildableGround(zone: DistrictZone, x: number, z: number): boolean {
+  // Off every mountain range the ground is the plain: no terrain samples needed.
+  if (!MOUNTAIN_RANGES.some((r) => x >= r.x0 && x <= r.x1 && z >= r.z0 && z <= r.z1)) return true;
+  if (zone.kind !== 'hillside' && terrainHeight(x, z) > FLAT_GROUND) return false;
+  return !isForest(x, z);
+}
+
+/** Depth (m) of the open band south of the palace wall: 광화문's forecourt along 세종대로. */
+export const PALACE_FRONT_DEPTH = 40;
+const PALACE_FRONT: Obb = {
+  x: (PALACE_RECT.x0 + PALACE_RECT.x1) / 2,
+  z: PALACE_RECT.z1 + PALACE_FRONT_DEPTH / 2,
+  hw: (PALACE_RECT.x1 - PALACE_RECT.x0) / 2,
+  hd: PALACE_FRONT_DEPTH / 2,
+  rotY: 0,
+};
+
 /** Clip a grid line (local u or v = `fixed`, t0..t1 along the other axis) to the zone. */
 function clipLine(
   zone: DistrictZone,
@@ -210,6 +237,7 @@ function clipLine(
     const inside =
       i <= n &&
       zoneAt(p.x, p.z).id === zone.id &&
+      buildableGround(zone, p.x, p.z) &&
       waterClear(p.x, p.z, half) &&
       !underLowDeck(bridges, p.x, p.z, half);
     if (inside && start === null) start = t;
@@ -547,8 +575,9 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
     for (const p of [...obbCorners(o), { x: o.x, z: o.z }]) {
       if (zoneAt(p.x, p.z).id !== zone.id) return false;
       if (!waterClear(p.x, p.z, RIVER_CLEARANCE)) return false;
-      if (isForest(p.x, p.z)) return false;
+      if (!buildableGround(zone, p.x, p.z)) return false;
     }
+    if (obbOverlap(o, PALACE_FRONT, -1e-6)) return false;
     if (obstacles.blocked(o)) return false;
     for (const id of lotHash.query(obbBounds(o))) {
       if (obbOverlap((lots[id] as Lot).obb, o, -1e-6)) return false; // touching lots are fine
@@ -1671,11 +1700,12 @@ function buildSlots(
     for (const id of hash.query(obbBounds(probe))) {
       if (obbOverlap(footprints[id] as Obb, probe)) return false;
     }
-    // Park strips (둔치) are fine; open water, 샛강 included, is not.
+    // Park strips (둔치) are fine; open water, 샛강 included, and forest are not.
     return (
       Math.abs(p.x) < HALF_X &&
       Math.abs(p.z) < HALF_Z &&
-      surfaceHeight(p.x, p.z) > RIVER.waterY + 0.5
+      surfaceHeight(p.x, p.z) > RIVER.waterY + 0.5 &&
+      !isForest(p.x, p.z)
     );
   };
   const add = (kind: SlotKind, p: Vec2, rotY: number): void => {

@@ -48,7 +48,14 @@ import {
   type Tier,
   type Vec2,
 } from '../src/city/layout';
-import { MAX_SLENDER, SKY_LANE_CLEAR, SKY_LANE_MARGIN, fitScale } from '../src/city/generate';
+import {
+  FLAT_GROUND,
+  MAX_SLENDER,
+  PALACE_FRONT_DEPTH,
+  SKY_LANE_CLEAR,
+  SKY_LANE_MARGIN,
+  fitScale,
+} from '../src/city/generate';
 import {
   PALACE_RECT,
   TALL_GROUND,
@@ -97,11 +104,11 @@ describe('layout v3: determinism', () => {
       digest: digest(LAYOUT),
     }).toMatchInlineSnapshot(`
       {
-        "blocks": 1427,
-        "buildings": 5652,
-        "digest": "ec480d1",
-        "roads": 1181,
-        "slots": 3474,
+        "blocks": 1413,
+        "buildings": 5585,
+        "digest": "96cf8860",
+        "roads": 1161,
+        "slots": 3240,
       }
     `);
   });
@@ -1033,6 +1040,38 @@ describe('layout v3: mountain feet and the river', () => {
 });
 
 describe('layout v3: mountains stay wooded', () => {
+  it('keeps streets, street furniture and buildings off the forest and the mountain feet', () => {
+    for (const r of LAYOUT.roads) {
+      for (const t of [0, 0.25, 0.5, 0.75, 1]) {
+        const x = r.a.x + (r.b.x - r.a.x) * t;
+        const z = r.a.z + (r.b.z - r.a.z) * t;
+        if (r.kind === 'arterial' || zoneAt(x, z).kind === 'hillside') continue;
+        expect(isForest(x, z), `road ${r.id}`).toBe(false);
+      }
+    }
+    for (const s of LAYOUT.slots) expect(isForest(s.x, s.z), `slot ${s.kind}`).toBe(false);
+    // Only the hillside village stands on raised ground; elsewhere the mountain feet stay empty.
+    for (const b of B) {
+      if (b.district === 'hillside') continue;
+      for (const p of obbCorners(obb(b))) {
+        expect(terrainHeight(p.x, p.z), `building ${b.id} ${b.zoneId}`).toBeLessThanOrEqual(
+          FLAT_GROUND + 1e-6,
+        );
+      }
+    }
+  });
+
+  it("leaves 광화문's forecourt open: no building in the band south of the palace wall", () => {
+    const band = {
+      x: (PALACE_RECT.x0 + PALACE_RECT.x1) / 2,
+      z: PALACE_RECT.z1 + PALACE_FRONT_DEPTH / 2,
+      hw: (PALACE_RECT.x1 - PALACE_RECT.x0) / 2,
+      hd: PALACE_FRONT_DEPTH / 2,
+      rotY: 0,
+    };
+    for (const b of B) expect(obbOverlap(obb(b), band, -1e-6), `building ${b.id}`).toBe(false);
+  });
+
   it('seats every building at its lowest footprint corner (slopes get a retaining base)', () => {
     for (const b of B) {
       const corners = obbCorners(obb(b)).map((p) => terrainHeight(p.x, p.z));
