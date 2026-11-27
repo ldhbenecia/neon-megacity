@@ -1,5 +1,9 @@
 import * as THREE from 'three';
 import { MATERIAL, NEON, WINDOW_MIX } from '../core/palette';
+import { FACADE_DAY } from './colors';
+
+const glsl = (v: number): string => v.toFixed(4);
+const vec3 = (c: readonly [number, number, number]): string => `vec3(${c.map(glsl).join(', ')})`;
 
 export interface FacadeUniforms {
   uLitRatio: { value: number };
@@ -310,8 +314,8 @@ const FRAG_MAIN = /* glsl */ `
     if (far < 0.99 && mask > 0.001) {
       vec3 nV = normalize(vNormal);
       vec3 upV = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
-      // A window face parallel to view-up would make the tangent normalize(0) = NaN, which bloom
-      // spreads into black blocks; fall back to any perpendicular axis.
+      // A face whose normal is parallel to view-up (a horizontal face) would make the tangent
+      // normalize(0) = NaN, which bloom spreads into black blocks; fall back to another axis.
       vec3 cr = cross(upV, nV);
       vec3 tV = dot(cr, cr) > 1e-8 ? normalize(cr) : normalize(cross(vec3(1.0, 0.0, 0.0), nV) + vec3(0.0, 0.0, 1e-4));
       vec3 dv = normalize(-vViewPosition);
@@ -355,11 +359,11 @@ const FRAG_MAIN = /* glsl */ `
     float matPick = fhash(vec2(fSeed * 53.0, 7.0));
     float concrete = step(matPick, 0.4);
     float metal = step(0.4, matPick) * step(matPick, 0.7);
-    float wallRough = mix(0.8, 0.35, metal);
-    fAlbedo *= 1.0 + day * (0.7 * concrete + 0.25 * metal);
+    float wallRough = mix(0.8, 0.35, metal * day);
+    fAlbedo *= 1.0 + day * (${glsl(FACADE_DAY.concreteGain)} * concrete + ${glsl(FACADE_DAY.metalGain)} * metal);
     float gm = clamp(mask, 0.0, 1.0) * (1.0 - 0.5 * far);
     float fm = frame * gm * (1.0 - far);
-    vec3 glass = mix(vec3(0.012, 0.016, 0.02), vec3(0.045, 0.055, 0.065), day);
+    vec3 glass = mix(${vec3(FACADE_DAY.glassNight)}, ${vec3(FACADE_DAY.glassDay)}, day);
     fAlbedo = mix(fAlbedo, glass, gm);
     fAlbedo = mix(fAlbedo, vec3(0.03), fm);
     fRough = mix(wallRough, 0.05, gm);

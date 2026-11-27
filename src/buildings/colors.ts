@@ -1,4 +1,6 @@
-// Albedo of non-facade parts (sRGB hex). Facade ranges come from MATERIAL in core/palette.ts.
+// Albedo of building parts (sRGB hex) that only buildings uses. Shared colors and the facade range
+// live in core/palette.ts (lighting-owned); these stay here so buildings can tune its own props
+// without editing another module's file.
 export const ROAD = {
   asphalt: 0x16181a,
   alley: 0x24262a,
@@ -41,4 +43,12 @@ export const PROP = {
   planters: [0x1c2a1c, 0x3a2a22],
   pole: 0x3a3a3a,
   outsideStair: 0x3a3c3c,
+} as const;
+
+/** Facade shader material split (ART_DIRECTION 4.3 #6). Glass albedo is linear. */
+export const FACADE_DAY = {
+  glassNight: [0.012, 0.016, 0.02],
+  glassDay: [0.045, 0.055, 0.065],
+  concreteGain: 0.7,
+  metalGain: 0.25,
 } as const;
