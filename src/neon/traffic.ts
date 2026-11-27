@@ -223,9 +223,35 @@ export interface Traffic {
   vehicles: number;
   flying: number;
   trains: number;
-  /** Draw this share (0..1) of cars and drones; trains stay whole. */
+  /** Draw this share (0..1) of cars and drones; trains stay whole. Eases in over SHARE_FADE_S. */
   setShare(share: number): void;
+  /** Cars and drones drawn once the current share is reached. */
+  drawn(): { vehicles: number; flying: number };
+  update(dt: number): void;
   dispose(): void;
+}
+
+const SHARE_FADE_S = 1.5;
+
+/**
+ * Draw order for cars or drones: paths take turns by rank / path count (seed breaks ties). The first
+ * vehicle of every path comes before any second one, so a prefix at least as long as the path count
+ * leaves no path empty, and longer paths keep close to their share.
+ */
+export function shareOrder(list: readonly Vehicle[]): Vehicle[] {
+  const byPath = new Map<number, Vehicle[]>();
+  for (const v of list) {
+    const g = byPath.get(v.path);
+    if (g) g.push(v);
+    else byPath.set(v.path, [v]);
+  }
+  const keyed: { v: Vehicle; k: number }[] = [];
+  for (const g of byPath.values()) {
+    g.sort((a, z) => a.seed - z.seed);
+    g.forEach((v, r) => keyed.push({ v, k: r / g.length }));
+  }
+  keyed.sort((a, z) => a.k - z.k || a.v.seed - z.v.seed);
+  return keyed.map((e) => e.v);
 }
 
 export function buildTraffic(
@@ -252,11 +278,10 @@ export function buildTraffic(
     ['fly', flyers],
     ['train', trains],
   ];
-  // Cars and drones are drawn in seed order, so any prefix (setShare) spreads over every path.
   const scaled: { geo: THREE.InstancedBufferGeometry; n: number }[] = [];
   for (const [kind, raw] of sets) {
     if (!raw.length) continue;
-    const list = kind === 'train' ? raw : [...raw].sort((a, z) => a.seed - z.seed);
+    const list = kind === 'train' ? raw : shareOrder(raw);
     const flying = kind === 'fly';
     const lg = toInstanced(kind === 'train' ? carLightGeometry() : lightGeometry(flying));
     instanceAttributes(lg, paths, list);
@@ -279,14 +304,28 @@ export function buildTraffic(
     lights.renderOrder = 2;
     disposables.push(lg, bg, lm, bm);
   }
+  let target = 1;
+  let current = 1;
   return {
     group,
     vehicles: cars.length,
     flying: flyers.length,
     trains: trains.length / TRAIN_CARS,
     setShare(share) {
-      for (const s of scaled)
-        s.geo.instanceCount = Math.round(s.n * Math.min(1, Math.max(0, share)));
+      target = Number.isFinite(share) ? Math.min(1, Math.max(0, share)) : 1;
+    },
+    drawn() {
+      return {
+        vehicles: Math.round(cars.length * target),
+        flying: Math.round(flyers.length * target),
+      };
+    },
+    update(dt) {
+      if (current === target) return;
+      const step = dt / SHARE_FADE_S;
+      current =
+        current < target ? Math.min(target, current + step) : Math.max(target, current - step);
+      for (const s of scaled) s.geo.instanceCount = Math.round(s.n * current);
     },
     dispose() {
       for (const d of disposables) d.dispose();

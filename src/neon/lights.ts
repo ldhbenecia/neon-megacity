@@ -14,8 +14,11 @@ export interface LightCandidate {
 
 export type LightBudget = Readonly<Record<LightGroup, number>>;
 
-/** Per user tier (docs/PERF.md); high is the original set. The pool always holds the high count
- * (no shader recompile), lower tiers fade the unused slots out. */
+/**
+ * Per user tier (docs/PERF.md); high is the original set. The pool always holds the high count so
+ * no program recompiles; lower tiers only fade slots to intensity 0. The lit shaders still loop
+ * over every light, so this saves almost no GPU time: it is a look knob, not a speed knob.
+ */
 export const LIGHT_BUDGETS: Readonly<Record<'high' | 'medium' | 'low', LightBudget>> = {
   high: { street: 3, screen: 1, stall: 1, river: 1 },
   medium: { street: 2, screen: 1, stall: 1, river: 0 },

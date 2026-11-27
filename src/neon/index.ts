@@ -401,17 +401,47 @@ export function init(ctx: Ctx): CityModuleInstance {
   scene.add(group);
 
   const folder = ctx.gui.addFolder('Neon');
-  const view = { signs: true, traffic: true, halos: true, reflections: true, holograms: true };
-  // User tiers (docs/PERF.md): fewer point lights, no halos, reflections or fountains on low, and a
-  // share of the cars and drones. Signs always stay. 'ci' keeps the full set, as before.
+  const view = {
+    signs: true,
+    traffic: true,
+    halos: true,
+    reflections: true,
+    holograms: true,
+    fountains: true,
+  };
   let lowFx = false;
+  let tier: UserTier = 'high';
+  const publish = (): void => {
+    if (typeof window === 'undefined') return;
+    const drawn = traffic.drawn();
+    (window as unknown as { __neon?: unknown }).__neon = {
+      quality: tier,
+      signs: P.flats.length + street.flats.length,
+      tubes: P.tubes.length,
+      crosses: P.crosses.length,
+      screens: P.screens.length,
+      rings: P.rings.length,
+      holograms: P.holos.length,
+      halos: halos.visible ? instances(halos) : 0,
+      decals: decals.visible ? instances(decals) : 0,
+      lamps: street.lamps.length,
+      vehicles: drawn.vehicles,
+      flying: drawn.flying,
+      trains: traffic.trains,
+      fountainJets: fountains.visible ? jets.length : 0,
+      pointLights: Object.values(LIGHT_BUDGETS[tier]).reduce((a, n) => a + n, 0),
+      drawCalls: countDrawables(group),
+    };
+  };
   const applyQuality = (q: Quality): void => {
-    lights.setBudget(LIGHT_BUDGETS[q === 'ci' ? 'high' : q]);
-    lowFx = q === 'low';
+    tier = userTier(q);
+    lowFx = tier === 'low';
+    lights.setBudget(LIGHT_BUDGETS[tier]);
     halos.visible = view.halos && !lowFx;
     decals.visible = view.reflections && !lowFx;
-    fountains.visible = !lowFx;
-    traffic.setShare(TRAFFIC_SHARE[q]);
+    fountains.visible = view.fountains && !lowFx;
+    traffic.setShare(TRAFFIC_SHARE[tier]);
+    publish();
   };
   applyQuality(env.quality);
   const offQuality = ctx.onQuality(applyQuality);
@@ -423,31 +453,8 @@ export function init(ctx: Ctx): CityModuleInstance {
   folder.add(view, 'halos').onChange((v: boolean) => (halos.visible = v && !lowFx));
   folder.add(view, 'reflections').onChange((v: boolean) => (decals.visible = v && !lowFx));
   folder.add(view, 'holograms').onChange((v: boolean) => (holos.visible = v));
+  folder.add(view, 'fountains').onChange((v: boolean) => (fountains.visible = v && !lowFx));
   folder.close();
-
-  if (typeof window !== 'undefined') {
-    (window as unknown as { __neon?: unknown }).__neon = {
-      signs: P.flats.length + street.flats.length,
-      tubes: P.tubes.length,
-      crosses: P.crosses.length,
-      screens: P.screens.length,
-      rings: P.rings.length,
-      holograms: P.holos.length,
-      halos:
-        halos.geometry instanceof THREE.InstancedBufferGeometry ? halos.geometry.instanceCount : 0,
-      decals:
-        decals.geometry instanceof THREE.InstancedBufferGeometry
-          ? decals.geometry.instanceCount
-          : 0,
-      lamps: street.lamps.length,
-      vehicles: traffic.vehicles,
-      flying: traffic.flying,
-      trains: traffic.trains,
-      fountainJets: jets.length,
-      pointLights: lights.count,
-      drawCalls: countDrawables(group),
-    };
-  }
 
   return {
     update(dt, elapsed) {
@@ -457,6 +464,7 @@ export function init(ctx: Ctx): CityModuleInstance {
       shared.uPower.value = env.powerOn;
       shared.uWet.value = env.wetness;
       shared.uNight.value = env.nightFactor;
+      traffic.update(dt);
       lights.update(dt, ctx.camera.position, env.neonGain * env.nightFactor * env.powerOn);
       selection.update(env.selectedBuilding, specs);
     },
@@ -502,7 +510,18 @@ function bannerWires(flats: readonly FlatSign[], L: Layout): { a: Vec3; b: Vec3 
   return out;
 }
 
-const TRAFFIC_SHARE: Readonly<Record<Quality, number>> = { high: 1, medium: 0.7, low: 0.4, ci: 1 };
+type UserTier = keyof typeof LIGHT_BUDGETS;
+
+/** 'ci' and anything unknown draw the full high set. */
+function userTier(q: Quality): UserTier {
+  return q === 'medium' || q === 'low' ? q : 'high';
+}
+
+const TRAFFIC_SHARE: Readonly<Record<UserTier, number>> = { high: 1, medium: 0.7, low: 0.4 };
+
+function instances(m: THREE.Mesh): number {
+  return m.geometry instanceof THREE.InstancedBufferGeometry ? m.geometry.instanceCount : 0;
+}
 
 function countDrawables(root: THREE.Object3D): number {
   let n = 0;
