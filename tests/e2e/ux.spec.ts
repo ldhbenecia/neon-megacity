@@ -252,6 +252,31 @@ test('?district= starts at a zone and the title names the zone in view', async (
   );
 });
 
+test('quality row: a fixed tier is applied and saved, auto goes back to the device tier', async ({
+  page,
+}) => {
+  // Plain URL (no ?quality=): the stored pick drives the tier. Start from a stored 'low' so the
+  // boot never depends on the device estimate.
+  await page.addInitScript(() => localStorage.setItem('hangang.quality', 'low'));
+  await page.goto('./?nogui&time=0');
+  await waitForCity(page);
+  await page.click('#panel-toggle');
+  const now = page.locator('#quality-now');
+  await expect(now).toHaveText('· 하');
+  await page.click('#quality-group button[data-quality="medium"]');
+  await expect(now).toHaveText('· 중');
+  await page.keyboard.press('ArrowRight');
+  await expect(now).toHaveText('· 하');
+  await expect(page.locator('#quality-group button[data-quality="low"]')).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
+  expect(await page.evaluate(() => localStorage.getItem('hangang.quality'))).toBe('low');
+  await page.click('#quality-group button[data-quality="auto"]');
+  await expect(now).toHaveText(/^· 자동 · (상|중|하)$/);
+  expect(await page.evaluate(() => localStorage.getItem('hangang.quality'))).toBe('auto');
+});
+
 test('automated runs never contact Google Analytics', async ({ page }) => {
   const calls: string[] = [];
   page.on('request', (r) => {

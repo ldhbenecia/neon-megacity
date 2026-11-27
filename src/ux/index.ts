@@ -85,7 +85,6 @@ export function initUx(ctx: Ctx, opts: UxOptions): Ux {
     idleCinematic: !deterministic,
     hud,
   });
-  const controls = createControls(ctx, rig, hud);
   const perf = createPerf(ctx, {
     overlay: q.stats,
     resize: opts.resize,
@@ -93,6 +92,7 @@ export function initUx(ctx: Ctx, opts: UxOptions): Ux {
     autoTier: opts.autoTier,
     emitQuality: opts.emitQuality,
   });
+  const controls = createControls(ctx, rig, hud, perf);
 
   // ?stats only: frames rendered with the camera inside a building volume (tells a collision
   // miss apart from a rendering fault when the screen goes black).
