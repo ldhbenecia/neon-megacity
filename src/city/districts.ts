@@ -4,6 +4,7 @@
 // point wins, so zone polygons may overlap and the fill zones cover whatever is left. Bank
 // strips are tested by distance from the bank (their offset polygons fold on the inner side of
 // a bend), so their `polygon` is only an outline.
+import { CALLS } from './calls';
 import { clamp, pointInPolygon } from './math';
 import {
   HALF_X,
@@ -676,6 +677,7 @@ const ZONE_INDEX = new Map(ZONES.map((zn, i) => [zn, i]));
 const zoneIndex = (zn: DistrictZone): number => ZONE_INDEX.get(zn) as number;
 
 function zoneExact(x: number, z: number): DistrictZone {
+  CALLS.zoneExact++;
   const e = 1e-6;
   const p = { x: clamp(x, -HALF_X + e, HALF_X - e), z: clamp(z, -HALF_Z + e, HALF_Z - e) };
   // The distance beyond the bank is only computed exactly when a threshold (band edge, bank
