@@ -140,6 +140,12 @@ export interface SkyLane {
   id: string;
   /** xz control points; neon samples a centripetal Catmull-Rom through them. */
   points: Vec2[];
+  /**
+   * The flown path sampled about every 10 m (centripetal Catmull-Rom through `points`; a closed
+   * lane repeats its first sample at the end). Clearance is measured on these. Always set by
+   * the generator; optional so hand-built lanes (tests) can omit it.
+   */
+  samples?: Vec2[];
   closed: boolean;
   /**
    * Absolute cruise height band (m, world y). The lower bound clears every building within
