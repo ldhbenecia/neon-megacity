@@ -1,8 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
-import { SWIFTSHADER_ARGS } from './tests/e2e/helpers';
+import { SWIFTSHADER_ARGS, localPort } from './tests/e2e/helpers';
 
-// E2E_PORT lets several local worktrees run e2e at the same time.
-const PORT = Number(process.env.E2E_PORT ?? 4173);
+const PORT = localPort('e2e');
 
 export default defineConfig({
   testDir: 'tests/e2e',
@@ -37,7 +36,8 @@ export default defineConfig({
     // CI runs `npm run build` in an earlier step, so only serve the existing dist/ there.
     command: `${process.env.CI ? '' : 'npx vite build && '}npx vite preview --port ${PORT} --strictPort`,
     port: PORT,
-    reuseExistingServer: !process.env.CI,
+    // Never reuse: a server already on this port may be another worktree's build.
+    reuseExistingServer: false,
     timeout: 120_000,
   },
 });
