@@ -555,7 +555,7 @@ const DEFS: ZoneDef[] = [
     id: 'fill-south',
     kind: 'midtown',
     name: '강남권',
-    nameEn: 'GANGNAM-GWON',
+    nameEn: 'GANGNAM',
     side: 'south',
     polygon: rect(-HALF_X, HALF_X, -HALF_Z, HALF_Z),
     gridAngle: 6 * DEG,

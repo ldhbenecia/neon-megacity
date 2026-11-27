@@ -6,7 +6,9 @@ import {
   fountainJetsFromNozzles,
 } from '../src/neon/fountain';
 import { laneSlots, railPaths, vehicleStreams } from '../src/neon/lanes';
-import { trainCars } from '../src/neon/traffic';
+import { shareOrder, trainCars } from '../src/neon/traffic';
+import { createRng } from '../src/core/random';
+import type { Vehicle } from '../src/neon/lanes';
 
 describe('neon fountains (SEOUL.md 3.3)', () => {
   const jets = fountainJets(LAYOUT.bridges, LAYOUT.river.waterY);
@@ -116,5 +118,35 @@ describe('neon trains on infra rail tracks', () => {
     const step = ((cars[0]!.u0 - cars[1]!.u0 + 1) % 1) * len;
     expect(step).toBeCloseTo(20, 6);
     for (const c of cars) expect(c.u0).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe('traffic share order', () => {
+  const rng = createRng(7);
+  const sizes = [1, 1, 2, 3, 5, 40, 60];
+  const list: Vehicle[] = sizes.flatMap((n, path) =>
+    Array.from({ length: n }, () => ({
+      path,
+      u0: 0,
+      speed: 1,
+      dir: 1 as const,
+      lane: 0,
+      lift: 0,
+      seed: rng.next(),
+    })),
+  );
+  const order = shareOrder(list);
+
+  it('keeps every vehicle once', () => {
+    expect(new Set(order).size).toBe(list.length);
+  });
+
+  it.each([0.4, 0.7])('share %f leaves no path empty and big paths near their share', (share) => {
+    const head = order.slice(0, Math.round(list.length * share));
+    sizes.forEach((n, path) => {
+      const k = head.filter((v) => v.path === path).length;
+      expect(k).toBeGreaterThanOrEqual(1);
+      if (n >= 40) expect(Math.abs(k - n * share)).toBeLessThanOrEqual(3);
+    });
   });
 });

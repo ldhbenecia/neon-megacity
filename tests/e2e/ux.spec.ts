@@ -275,6 +275,19 @@ test('quality row: a fixed tier is applied and saved, auto goes back to the devi
   await page.click('#quality-group button[data-quality="auto"]');
   await expect(now).toHaveText(/^· 자동 · (상|중|하)$/);
   expect(await page.evaluate(() => localStorage.getItem('hangang.quality'))).toBe('auto');
+
+test('automated runs never contact Google Analytics', async ({ page }) => {
+  const calls: string[] = [];
+  page.on('request', (r) => {
+    if (/googletagmanager\.com|google-analytics\.com/.test(r.url())) calls.push(r.url());
+  });
+  await page.goto(app('nogui&time=0'));
+  await waitForCity(page);
+  // Analytics records its decision once the city is ready; automation must get 'off'.
+  await expect(page.locator('html')).toHaveAttribute('data-analytics', 'off');
+  await waitFrames(page, 10);
+  expect(calls).toEqual([]);
+  expect(await page.evaluate(() => 'gtag' in window)).toBe(false);
 });
 
 test.describe('camera rig', () => {

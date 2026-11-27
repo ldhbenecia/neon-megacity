@@ -10,7 +10,7 @@ import {
   type Vec3,
 } from '../city/layout';
 import { MATERIAL, NEON, SCREEN_MIN_GAIN, type NeonName } from '../core/palette';
-import type { CityModuleInstance, Ctx } from '../core/types';
+import type { CityModuleInstance, Ctx, Quality } from '../core/types';
 import { buildAtlas } from './atlas';
 import { buildCatalog } from './catalog';
 import { createNeonUniforms } from './glsl';
@@ -24,7 +24,7 @@ import {
   railPaths,
   skyPaths,
 } from './lanes';
-import { createLightPool, type LightCandidate } from './lights';
+import { LIGHT_BUDGETS, createLightPool, type LightCandidate } from './lights';
 import { placeSigns, roadGapIndex, type FlatSign, type Placement } from './placement';
 import { buildHolograms, buildRings, buildScreens } from './screens';
 import { buildFountains, fountainJets, fountainJetsFromNozzles } from './fountain';
@@ -401,40 +401,60 @@ export function init(ctx: Ctx): CityModuleInstance {
   scene.add(group);
 
   const folder = ctx.gui.addFolder('Neon');
-  const view = { signs: true, traffic: true, halos: true, reflections: true, holograms: true };
-  folder.add(view, 'signs').onChange((v: boolean) => {
-    for (const m of [flats, tubeMesh, crossMesh, crossPoles, bannerCables, paint, screens, rings])
-      m.visible = v;
-  });
-  folder.add(view, 'traffic').onChange((v: boolean) => (traffic.group.visible = v));
-  folder.add(view, 'halos').onChange((v: boolean) => (halos.visible = v));
-  folder.add(view, 'reflections').onChange((v: boolean) => (decals.visible = v));
-  folder.add(view, 'holograms').onChange((v: boolean) => (holos.visible = v));
-  folder.close();
-
-  if (typeof window !== 'undefined') {
+  const view = {
+    signs: true,
+    traffic: true,
+    halos: true,
+    reflections: true,
+    holograms: true,
+    fountains: true,
+  };
+  let lowFx = false;
+  let tier: UserTier = 'high';
+  const publish = (): void => {
+    if (typeof window === 'undefined') return;
+    const drawn = traffic.drawn();
     (window as unknown as { __neon?: unknown }).__neon = {
+      quality: tier,
       signs: P.flats.length + street.flats.length,
       tubes: P.tubes.length,
       crosses: P.crosses.length,
       screens: P.screens.length,
       rings: P.rings.length,
       holograms: P.holos.length,
-      halos:
-        halos.geometry instanceof THREE.InstancedBufferGeometry ? halos.geometry.instanceCount : 0,
-      decals:
-        decals.geometry instanceof THREE.InstancedBufferGeometry
-          ? decals.geometry.instanceCount
-          : 0,
+      halos: halos.visible ? instances(halos) : 0,
+      decals: decals.visible ? instances(decals) : 0,
       lamps: street.lamps.length,
-      vehicles: traffic.vehicles,
-      flying: traffic.flying,
+      vehicles: drawn.vehicles,
+      flying: drawn.flying,
       trains: traffic.trains,
-      fountainJets: jets.length,
-      pointLights: lights.count,
+      fountainJets: fountains.visible ? jets.length : 0,
+      pointLights: Object.values(LIGHT_BUDGETS[tier]).reduce((a, n) => a + n, 0),
       drawCalls: countDrawables(group),
     };
-  }
+  };
+  const applyQuality = (q: Quality): void => {
+    tier = userTier(q);
+    lowFx = tier === 'low';
+    lights.setBudget(LIGHT_BUDGETS[tier]);
+    halos.visible = view.halos && !lowFx;
+    decals.visible = view.reflections && !lowFx;
+    fountains.visible = view.fountains && !lowFx;
+    traffic.setShare(TRAFFIC_SHARE[tier]);
+    publish();
+  };
+  applyQuality(env.quality);
+  const offQuality = ctx.onQuality(applyQuality);
+  folder.add(view, 'signs').onChange((v: boolean) => {
+    for (const m of [flats, tubeMesh, crossMesh, crossPoles, bannerCables, paint, screens, rings])
+      m.visible = v;
+  });
+  folder.add(view, 'traffic').onChange((v: boolean) => (traffic.group.visible = v));
+  folder.add(view, 'halos').onChange((v: boolean) => (halos.visible = v && !lowFx));
+  folder.add(view, 'reflections').onChange((v: boolean) => (decals.visible = v && !lowFx));
+  folder.add(view, 'holograms').onChange((v: boolean) => (holos.visible = v));
+  folder.add(view, 'fountains').onChange((v: boolean) => (fountains.visible = v && !lowFx));
+  folder.close();
 
   return {
     update(dt, elapsed) {
@@ -444,12 +464,14 @@ export function init(ctx: Ctx): CityModuleInstance {
       shared.uPower.value = env.powerOn;
       shared.uWet.value = env.wetness;
       shared.uNight.value = env.nightFactor;
+      traffic.update(dt);
       lights.update(dt, ctx.camera.position, env.neonGain * env.nightFactor * env.powerOn);
       selection.update(env.selectedBuilding, specs);
     },
     dispose() {
       scene.remove(group);
       folder.destroy();
+      offQuality();
       crossPoles.dispose();
       bannerCables.dispose();
       for (const d of disposables) d.dispose();
@@ -486,6 +508,19 @@ function bannerWires(flats: readonly FlatSign[], L: Layout): { a: Vec3; b: Vec3 
     }
   }
   return out;
+}
+
+type UserTier = keyof typeof LIGHT_BUDGETS;
+
+/** 'ci' and anything unknown draw the full high set. */
+function userTier(q: Quality): UserTier {
+  return q === 'medium' || q === 'low' ? q : 'high';
+}
+
+const TRAFFIC_SHARE: Readonly<Record<UserTier, number>> = { high: 1, medium: 0.7, low: 0.4 };
+
+function instances(m: THREE.Mesh): number {
+  return m.geometry instanceof THREE.InstancedBufferGeometry ? m.geometry.instanceCount : 0;
 }
 
 function countDrawables(root: THREE.Object3D): number {

@@ -140,6 +140,25 @@ export interface NamedRoad {
   width: number;
 }
 
+/** 경복궁 buildings in the layout (real names; SEOUL.md 4.5). */
+export type PalaceId =
+  | 'gwanghwamun'
+  | 'heungnyemun'
+  | 'geunjeongmun'
+  | 'geunjeongjeon'
+  | 'sajeongjeon'
+  | 'gangnyeongjeon'
+  | 'gyotaejeon'
+  | 'cheonchujeon'
+  | 'manchunjeon'
+  | 'sujeongjeon'
+  | 'jagyeongjeon'
+  | 'gyeonghoeru'
+  | 'hyangwonjeong'
+  | 'geonchunmun'
+  | 'yeongchumun'
+  | 'sinmumun';
+
 export interface PalaceWall {
   /** Centerline end points; a terrace runs a (south) to b (north) along the axis. */
   a: Vec2;
@@ -400,6 +419,8 @@ export interface BuildingSpec {
     landmark?: LandmarkId;
     /** Palace grounds role of a palaceHall (the axis gate, axis halls, side halls, the pond pavilion). */
     palacePart?: 'gate' | 'hall' | 'annex' | 'pavilion';
+    /** Which 경복궁 building this is (buildings draws each by its own form). */
+    palaceId?: PalaceId;
   };
 }
 
@@ -462,6 +483,6 @@ export interface Layout {
   skyLanes: SkyLane[];
   /** Palace walls, covered corridors and the throne-hall terrace (gate openings are gaps). */
   palaceWalls: PalaceWall[];
-  /** Palace pond outlines (water drawn by buildings for now; the pavilion is a building). */
+  /** Palace ponds: [0] 경회루's square pond, [1] 향원정's pond (water drawn by buildings for now). */
   palacePonds: Vec2[][];
 }
