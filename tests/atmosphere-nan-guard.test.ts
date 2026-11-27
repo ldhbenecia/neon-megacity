@@ -51,13 +51,6 @@ function safeBase(base: string): boolean {
 // file → bases known to be >= 0, with the reason. Remove an entry once its owner guards it.
 const ALLOWED: Record<string, Record<string, string>> = {
   'lighting/sky.ts': { cs: 'cs = max(dot(dir, uSunDir), 0.0)' },
-  'neon/glow.ts': {
-    'fogDensity * 0.55 * dist': 'density and distance are >= 0; replaced by x * x in #63',
-    '1.0 - vUv.y': 'NaN when vUv.y > 1; guarded in #63, remove this entry then',
-  },
-  'neon/glsl.ts': {
-    'fogDensity * 0.55 * vFogDepth': 'density and depth are >= 0; hangang-neon to use x * x',
-  },
   'infra/index.ts': {
     'fogDensity * ${EMISSIVE_FOG_DENSITY_SCALE.toFixed(4)} * vFogDepth':
       'density and depth are >= 0; hangang-infra to use x * x',
