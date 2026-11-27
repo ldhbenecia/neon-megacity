@@ -330,6 +330,22 @@ export function pierBlocksHighway(c: ColumnInstance, highways: readonly HwPath[]
 const MIN_PIER_H = 1.5;
 
 /**
+ * Axis-aligned box around a bridge and its approaches, padded by `pad` (m). Every pier station lies
+ * between the landings (tests check that each placed column is inside).
+ */
+function footprintBox(
+  b: Bridge,
+  pad: number,
+): { minX: number; maxX: number; minZ: number; maxZ: number } {
+  return {
+    minX: Math.min(b.landA.x, b.landB.x) - pad,
+    maxX: Math.max(b.landA.x, b.landB.x) + pad,
+    minZ: Math.min(b.landA.z, b.landB.z) - pad,
+    maxZ: Math.max(b.landA.z, b.landB.z) + pad,
+  };
+}
+
+/**
  * River piers (`w` × `d`, up to `topY`, a height or one per station) and ground piers under the
  * approaches and a stop island.
  * Returns the river stations actually placed.
@@ -345,8 +361,22 @@ export function pushPiers(
 ): number[] {
   const topAt = typeof topY === 'number' ? () => topY : topY;
   const rotY = rotYForLateral(f.v);
+  // Only roads and highways near the bridge can block one of its piers: test those alone.
+  const box = footprintBox(b, Math.max(w, d, b.width) + 2);
+  const near = (x0: number, x1: number, z0: number, z1: number, pad: number): boolean =>
+    x1 + pad >= box.minX && x0 - pad <= box.maxX && z1 + pad >= box.minZ && z0 - pad <= box.maxZ;
+  const nearRoads = roads.filter((r) =>
+    near(
+      Math.min(r.a.x, r.b.x),
+      Math.max(r.a.x, r.b.x),
+      Math.min(r.a.z, r.b.z),
+      Math.max(r.a.z, r.b.z),
+      r.width,
+    ),
+  );
+  const nearHighways = highways.filter((p) => near(p.minX, p.maxX, p.minZ, p.maxZ, p.hw.width));
   const blocked = (c: ColumnInstance): boolean =>
-    approachPierBlocksRoad(c, roads) || pierBlocksHighway(c, highways);
+    approachPierBlocksRoad(c, nearRoads) || pierBlocksHighway(c, nearHighways);
   // River piers can land outside the water when the span is wider than the channel.
   const placed: number[] = [];
   for (const s of pierStations(b, f)) {
