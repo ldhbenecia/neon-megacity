@@ -862,7 +862,7 @@ describe('layout v3: sky lanes', () => {
     for (const lane of lanes) {
       expect(lane.points.length, lane.id).toBeGreaterThanOrEqual(8);
       expect(lane.altitude[1]).toBeGreaterThan(lane.altitude[0]);
-      const S = lane.samples;
+      const S = lane.samples ?? [];
       expect(S.length, lane.id).toBeGreaterThan(lane.points.length);
       if (lane.closed)
         expect(Math.hypot(S[0]!.x - S.at(-1)!.x, S[0]!.z - S.at(-1)!.z)).toBeLessThan(1e-6);
