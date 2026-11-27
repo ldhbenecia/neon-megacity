@@ -20,6 +20,7 @@ const SHOTS: { name: string; query: string; limit?: number }[] = [
   { name: 'night-street', query: 'time=0.0&cam=street&rain=0.5', limit: NIGHT_LIMIT },
   { name: 'night-core-closeup', query: 'time=0.95&cam=core&rain=0.3', limit: NIGHT_LIMIT },
   { name: 'night-topdown', query: 'time=0.02&cam=topdown&rain=0.2', limit: NIGHT_LIMIT },
+  { name: 'noon-topdown', query: 'time=0.5&cam=topdown&rain=0' },
   { name: 'sunset-skyline', query: 'time=0.74&cam=skyline&rain=0' },
   { name: 'noon-overview', query: 'time=0.5&cam=overview&rain=0' },
   { name: 'noon-street', query: 'time=0.5&cam=street&rain=0' },
