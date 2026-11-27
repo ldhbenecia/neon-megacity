@@ -683,12 +683,13 @@ export const EMBANK_SLOPE = 4;
  * plain. Continuous everywhere.
  */
 export function terrainHeight(x: number, z: number): number {
-  CALLS.terrainHeight++;
   return terrainSample(x, z).h;
 }
 
 /** Ground height and the peak height of the range that made it (0, 0 on the plain). */
 function terrainSample(x: number, z: number): { h: number; top: number } {
+  // Counted here so isForest's direct samples count as height evaluations too.
+  CALLS.terrainHeight++;
   let h = 0;
   let top = 1;
   for (let k = 0; k < RANGES.length; k++) {
