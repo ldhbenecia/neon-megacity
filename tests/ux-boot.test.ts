@@ -9,6 +9,7 @@ import {
   DISTRICT_KO,
   archetypeLabel,
   buildingCard,
+  buildingKindLabel,
   zoneLabel,
 } from '../src/ux/hud';
 import {
@@ -132,6 +133,17 @@ describe('building card (8.3)', () => {
     expect(archetypeLabel('setbackTower')).toBe('셋백 타워');
     expect(archetypeLabel('domeArena')).toBe(ARCHETYPE_FALLBACK);
     expect(archetypeLabel('toString')).toBe(ARCHETYPE_FALLBACK);
+  });
+
+  it('names palace gates and pavilions by their part', () => {
+    const b = LAYOUT.buildings[0]!;
+    const palace = (palacePart?: 'gate' | 'hall' | 'annex' | 'pavilion') =>
+      buildingKindLabel({ archetype: 'palaceHall', tags: { ...b.tags, palacePart } });
+    expect(palace('gate')).toBe('문');
+    expect(palace('pavilion')).toBe('정자');
+    expect(palace('hall')).toBe('전각');
+    expect(palace('annex')).toBe('전각');
+    expect(palace(undefined)).toBe('전각');
   });
 
   it('falls back from zone name to district kind to a generic label', () => {

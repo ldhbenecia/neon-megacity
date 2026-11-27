@@ -53,6 +53,14 @@ export function archetypeLabel(archetype: string): string {
   return own(ARCHETYPE_KO, archetype) ?? ARCHETYPE_FALLBACK;
 }
 
+/** Palace buildings name their part (gate, pavilion) rather than the generic 전각. */
+const PALACE_PART_KO: Readonly<Record<string, string>> = { gate: '문', pavilion: '정자' };
+
+export function buildingKindLabel(b: Pick<BuildingSpec, 'archetype' | 'tags'>): string {
+  const part = b.tags.palacePart;
+  return (part && own(PALACE_PART_KO, part)) || archetypeLabel(b.archetype);
+}
+
 export function zoneLabel(L: Pick<Layout, 'districts'>, zoneId: string, kind: string): string {
   const name = L.districts.find((z) => z.id === zoneId)?.name;
   return name || own(DISTRICT_KO, kind) || DISTRICT_FALLBACK;
@@ -80,7 +88,7 @@ export function buildingCard(b: BuildingSpec, L: Pick<Layout, 'districts'> = LAY
     sub: sub.join(' · '),
     height: `${Math.round(b.h + b.spireH)} m`,
     floors: `${b.floors}층`,
-    archetype: archetypeLabel(b.archetype),
+    archetype: buildingKindLabel(b),
   };
 }
 
