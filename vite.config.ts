@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig, type Plugin } from 'vite';
 
 /**
@@ -38,6 +39,18 @@ function preloadApp(): Plugin {
   };
 }
 
+/** Worker build only: 'three' resolves to src/city/three-lite.ts (two classes, not three.core). */
+function threeLite(): Plugin {
+  const lite = fileURLToPath(new URL('./src/city/three-lite.ts', import.meta.url));
+  return {
+    name: 'hangang-worker-three-lite',
+    enforce: 'pre',
+    resolveId(id) {
+      return id === 'three' ? lite : null;
+    },
+  };
+}
+
 export default defineConfig({
   // Relative by default so dev, preview and e2e work from any path.
   // The Pages workflow sets BASE_PATH=/neon-megacity/ for the project site.
@@ -45,5 +58,8 @@ export default defineConfig({
   plugins: [preloadApp()],
   build: { target: 'es2022', chunkSizeWarningLimit: 1500 },
   // The city worker is an ES module worker, bundled on its own (it carries its own generator copy).
-  worker: { format: 'es' },
+  worker: {
+    format: 'es',
+    plugins: () => [threeLite()],
+  },
 });
