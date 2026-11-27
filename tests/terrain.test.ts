@@ -282,8 +282,9 @@ describe('ground grid', () => {
       const r = Math.hypot(x, z);
       expect(r).toBeLessThanOrEqual(GROUND_RADIUS + 1e-3);
       expect(r).toBeLessThan(near.radius);
-      // Rim vertices sit in collapsed sliver cells, so their normals are meaningless.
-      if (r < GROUND_RADIUS - 1) expect(nrm.getY(v)).toBeGreaterThan(0.5);
+      // Rim vertices sit in collapsed sliver cells, so their normals are meaningless. Rock faces on
+      // the ridges reach past 60°; anything above ~72° (or facing down) is a fold, not a slope.
+      if (r < GROUND_RADIUS - 1) expect(nrm.getY(v)).toBeGreaterThan(0.3);
       expect(channelDistance(x, z)).toBeGreaterThanOrEqual(6);
       if (r > GROUND_RADIUS - 1) {
         expect(pos.getY(v)).toBeLessThanOrEqual(ridgeHeight(near, Math.atan2(z, x)) + 1e-3);

@@ -57,11 +57,6 @@ export function groundPalette(): Record<
 
 type Palette = ReturnType<typeof groundPalette>;
 
-// Crown clumps at a stand scale the 8 m mountain cells resolve (0..1); shared by color and lift.
-function canopyNoise(x: number, z: number): number {
-  return noise2(x / 14 + 31, z / 14 + 7) * 0.7 + noise2(x / 5 + 3, z / 5 + 11) * 0.3;
-}
-
 // Mountains read as dark forest: canopy mottling at a few metres, lighter only on the bare
 // crests and spurs that catch the moon.
 function groundColor(
@@ -181,9 +176,11 @@ export function buildGround(): THREE.BufferGeometry {
   const mask = forestMask();
   const vertex = (x: number, z: number): number => {
     const v = groundVertex(x, z);
-    const canopy = v.y > 4 ? canopyNoise(v.x, v.z) : 0;
+    const stands = v.y > 4 ? noise2(v.x / 14 + 31, v.z / 14 + 7) : 0;
+    const canopy = v.y > 4 ? stands * 0.7 + noise2(v.x / 5 + 3, v.z / 5 + 11) * 0.3 : 0;
     groundColor(x, v.y, z, canopy, pal, tmp);
-    pos.push(v.x, v.y + canopyLift(v.x, v.y, v.z, canopy, mask), v.z);
+    // The lift follows the stand-scale term only: the 5 m term on 8 m cells tilts steep slopes.
+    pos.push(v.x, v.y + canopyLift(v.x, v.y, v.z, stands, mask), v.z);
     col.push(tmp.r, tmp.g, tmp.b);
     dist.push(groundWaterDistance(v.x, v.z));
     rim.push(Math.hypot(x, z) > GROUND_RADIUS ? 1 : 0);
