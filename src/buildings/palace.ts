@@ -80,6 +80,7 @@ function smallHall(
     Math.min(w, d) * 0.3,
     plain(SEOUL_COLORS.palaceTile, 0.55),
     0.6,
+    plain(SEOUL_COLORS.ridge, 0.7),
   );
   if (lv === 0)
     g.box(x, 0.8 + h - 0.8, z, w + 0.1, 0.5, d + 0.1, rotY, plain(SEOUL_COLORS.dancheong, 0.7));

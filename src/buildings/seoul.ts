@@ -12,6 +12,7 @@ export const SEOUL_COLORS = {
   plaster: [0x6e665a, 0x5c564c],
   tile: 0x1a1d1f,
   palaceTile: 0x2a3036,
+  ridge: 0x8a8c88,
   dancheong: 0x1f5a55,
   paving: [0x58544d, 0x5d5850, 0x55514b, 0x605a52],
   water: 0x0b1a1e,
@@ -79,6 +80,7 @@ export function hipRoof(
   rise: number,
   s: Style,
   lift = 0,
+  ridge?: Style,
 ): void {
   const inside = P(0, y + rise * 0.3, 0);
   const top = y + rise;
@@ -98,6 +100,22 @@ export function hipRoof(
     face(g, [C(1, -1), C(-1, -1), P(0, top, -r)], s, inside);
   }
   face(g, [C(-1, -1), C(1, -1), C(1, 1), C(-1, 1)], s, P(0, y + lift + 1, 0));
+  if (!ridge) return;
+  // Ridge and hip lines so the roof reads as tile from above.
+  const r = Math.abs(hw - hd);
+  const e: [V3, V3] = hw >= hd ? [P(-r, top, 0), P(r, top, 0)] : [P(0, top, -r), P(0, top, r)];
+  const t = Math.max(0.25, Math.min(hw, hd) * 0.04);
+  const up: V3 = [0, 1, 0];
+  if (r > 0.1) g.beam(e[0], e[1], t * 1.6, t * 1.2, up, ridge);
+  for (const [sx, sz] of [
+    [1, 1],
+    [1, -1],
+    [-1, -1],
+    [-1, 1],
+  ] as const) {
+    const end = hw >= hd ? e[sx > 0 ? 1 : 0] : e[sz > 0 ? 1 : 0];
+    g.beam(C(sx, sz), end, t, t, up, ridge);
+  }
 }
 
 function topTier(spec: BuildingSpec): Tier | undefined {
@@ -194,12 +212,23 @@ export function palaceHall(g: GeoBuilder, spec: BuildingSpec, lv: 0 | 1 | 2): vo
   const eave = Math.min(3, (plinth.w - hall.w) / 2 + 1.5);
   const rise = Math.min(hd, hw) * 0.55;
   const lift = Math.min(1.2, eave * 0.4);
-  hipRoof(g, P, hw + eave, hd + eave, hall.y1, rise * 0.35, tile, lift);
+  const ridge = plain(SEOUL_COLORS.ridge, 0.7);
+  hipRoof(g, P, hw + eave, hd + eave, hall.y1, rise * 0.35, tile, lift, ridge);
   const upper = Math.max(1.5, hallH * 0.28);
   if (lv < 2) {
     walls(g, P, hw * 0.78, hd * 0.72, hall.y1, hall.y1 + upper, plain(SEOUL_COLORS.wood, 0.9));
   }
-  hipRoof(g, P, hw * 0.78 + eave * 0.8, hd * 0.72 + eave * 0.8, hall.y1 + upper, rise, tile, lift);
+  hipRoof(
+    g,
+    P,
+    hw * 0.78 + eave * 0.8,
+    hd * 0.72 + eave * 0.8,
+    hall.y1 + upper,
+    rise,
+    tile,
+    lift,
+    ridge,
+  );
   if (lv === 2) return;
   // Dancheong read: a teal band under the eaves; warm light below it at night.
   walls(g, P, hw + 0.05, hd + 0.05, hall.y1 - 0.9, hall.y1, plain(SEOUL_COLORS.dancheong, 0.7));
