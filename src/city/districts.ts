@@ -467,8 +467,8 @@ const DEFS: ZoneDef[] = [
     nameEn: 'CHEONGDAM',
     side: 'south',
     // The river bends up to 테헤란로 east of 압구정, so the showroom streets sit behind the
-    // avenue's south frontage (gangnam keeps the first 130 m), east half of the avenue.
-    polygon: sideBand(TEHERAN_MID, TEHERAN[1], 130, 340, 60),
+    // avenue's south frontage (gangnam keeps its 160 m corridor), east half of the avenue.
+    polygon: sideBand(TEHERAN_MID, TEHERAN[1], 160, 380, 60),
     gridAngle: -10 * DEG,
     origin: { x: 700, z: 230 },
     pitch: [80, 80],

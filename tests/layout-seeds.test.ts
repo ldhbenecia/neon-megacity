@@ -173,7 +173,7 @@ describe.each(SEEDS)('seed %i', (seed) => {
       jamsil: 22,
       // The 테헤란로 media slabs take the avenue frontage: fewer, larger towers.
       gangnam: 17,
-      cheongdam: 3,
+      cheongdam: 20,
       hongdae: 60,
       itaewon: 140,
       jongno: 230,
@@ -189,6 +189,8 @@ describe.each(SEEDS)('seed %i', (seed) => {
     for (const [id, n] of Object.entries(min)) {
       expect(B.filter((b) => b.zoneId === id).length, id).toBeGreaterThanOrEqual(n);
     }
+    // 청담's showroom streets (SEOUL.md 4.2): glass boxes, not just back-street offices.
+    expect(B.filter((b) => b.archetype === 'showroomBox').length).toBeGreaterThanOrEqual(10);
   });
 
   it('keeps non-megatower heights under their zone caps (heights.tallMax)', () => {
