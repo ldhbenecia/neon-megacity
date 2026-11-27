@@ -325,8 +325,8 @@ export const TERRAIN_COLORS = {
 
 /**
  * Night fill (linear HDR, far below the bloom threshold): a teal floor for surfaces whose albedo
- * times the night light rounds to pure black, scaled by env.nightFactor. Shared by facades and
- * terrain so near walls, ground and slopes read at the same level.
+ * times the night light rounds to pure black. lighting turns it into env.fillColor (weighted by
+ * env.fillFactor, sky-tinted at dusk); modules read that, not this constant.
  */
 export const NIGHT_FILL_AMBIENT = [0.003, 0.005, 0.005] as const;
 
