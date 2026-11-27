@@ -71,14 +71,15 @@ function crossT(a: Road['a'], b: Road['a'], c: Road['a'], d: Road['a']): number 
 /**
  * Length of road `r` covered by crossing road `o` (each side of the crossing point). At an angle θ
  * the other road's width spans w / sin θ along `r`, and `r`'s own half width adds hw · cot θ.
+ * Very shallow crossings clear the whole road rather than leave lane marks on the other one.
  */
 export function crossingHalf(r: Road, o: Road): number {
   const rl = Math.hypot(r.b.x - r.a.x, r.b.z - r.a.z) || 1;
   const ol = Math.hypot(o.b.x - o.a.x, o.b.z - o.a.z) || 1;
   const cross = ((r.b.x - r.a.x) * (o.b.z - o.a.z) - (r.b.z - r.a.z) * (o.b.x - o.a.x)) / (rl * ol);
-  const sin = Math.max(0.25, Math.abs(cross));
+  const sin = Math.max(1e-3, Math.abs(cross));
   const cos = Math.sqrt(Math.max(0, 1 - sin * sin));
-  return (o.width / 2 + (r.width / 2) * cos) / sin + 1;
+  return Math.min(rl, (o.width / 2 + (r.width / 2) * cos) / sin + 1);
 }
 
 function strip(

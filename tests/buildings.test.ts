@@ -411,6 +411,12 @@ describe('road crossings', () => {
     const s = Math.SQRT1_2;
     expect(crossingHalf(r, diag)).toBeCloseTo((6 + 5 * s) / s + 1, 9);
     expect(crossingHalf(r, diag)).toBeGreaterThan(crossingHalf(r, road(50, -50, 50, 50, 12)));
-    expect(crossingHalf(r, road(0, -1, 100, 1, 12))).toBeLessThanOrEqual((6 + 5) / 0.25 + 1);
+    expect(crossingHalf(r, road(0, -1, 100, 1, 12))).toBe(100);
+    const shallow = road(0, -6, 100, 6.2, 30);
+    const sin = 12.2 / Math.hypot(100, 12.2);
+    expect(crossingHalf(road(0, 0, 400, 0, 10), shallow)).toBeCloseTo(
+      (15 + 5 * Math.sqrt(1 - sin * sin)) / sin + 1,
+      6,
+    );
   });
 });
