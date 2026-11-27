@@ -84,13 +84,13 @@ float fpulse(float x, float a, float b, float w) {
 
 // Far windows: cells smaller than a pixel would average into a flat glow and vanish in the haze.
 // Blocks of s × s cells light together as one small dot, about 1.5 px across, with the window
-// hash; dots are brighter by 1/area so the mean stays near the old average and districts read as
-// warm specks.
-vec3 farDots(vec2 c, float s, float ratio, float seed) {
+// hash. density (from the face's window coverage) thins the dots, so blind walls get none and
+// sparse punched walls fewer; a lit dot (area 0.16) is bright enough to read as a speck.
+vec3 farDots(vec2 c, float s, float ratio, float density, float seed) {
   vec2 q = c / s;
   vec2 b = floor(q);
   vec2 w = fwidth(q);
-  float lit = step(fhash(b + seed * 29.0), ratio * 0.75);
+  float lit = step(fhash(b + seed * 29.0), ratio * 0.75 * density);
   float dotM = fpulse(q.x, 0.3, 0.7, w.x) * fpulse(q.y, 0.3, 0.7, w.y);
   vec3 col = mix(uWinColors[0], uWinColors[1], fhash(b + seed * 7.0 + 3.1));
   return col * (lit * dotM * 2.0);
@@ -375,7 +375,12 @@ const FRAG_MAIN = /* glsl */ `
     // Blend two block sizes by distance so dots never pop between levels.
     float lvl = max(0.0, log2(max(fw.x, fw.y) / 0.75));
     float s0 = exp2(floor(lvl));
-    vec3 farE = mix(farDots(c, s0, ratio, fSeed), farDots(c, s0 * 2.0, ratio, fSeed), fract(lvl));
+    float density = clamp(cover * 1.8, 0.0, 1.0);
+    vec3 farE = mix(
+      farDots(c, s0, ratio, density, fSeed),
+      farDots(c, s0 * 2.0, ratio, density, fSeed),
+      fract(lvl)
+    );
     fEmit = mix(nearE, farE, far);
     fEmit += uWhite * 1.2 * corridor * uNight;
 
@@ -484,7 +489,7 @@ export function createFacadeMaterial(
       );
   };
   material.customProgramCacheKey = () =>
-    interior ? 'hangang-facade-near-v7' : 'hangang-facade-v7';
+    interior ? 'hangang-facade-near-v8' : 'hangang-facade-v8';
   material.userData.uLitRatio = uniforms.uLitRatio;
   return material;
 }
