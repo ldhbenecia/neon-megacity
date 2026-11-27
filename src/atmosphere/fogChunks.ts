@@ -1,6 +1,8 @@
 // Must run before any material compiles: three resolves #include chunks at compile time.
 import { ShaderChunk, ShaderLib, type IUniform } from 'three';
-import { FOG_UNIFORMS, SUN_SCATTER_POWER } from '../core/shaders/emissiveFog';
+import { FOG_UNIFORMS, HEIGHT_FOG, SUN_SCATTER_POWER } from '../core/shaders/emissiveFog';
+
+const f = (n: number): string => n.toFixed(4);
 
 const FOG_PARS_VERTEX = /* glsl */ `
 #ifdef USE_FOG
@@ -33,6 +35,23 @@ const FOG_PARS_FRAGMENT = /* glsl */ `
   uniform vec4 cityFogSun;
   uniform vec3 cityFogSunColor;
 
+  // heightFogFloorIntegral / heightFogThinIntegral (emissiveFog.ts), h = heightTop.
+  float cityFogFloor( float y, float h ) {
+    float top = cityFogHeight.y;
+    return ( 1.0 - top ) * ( y < h ? y * y / ( 2.0 * h ) : y - 0.5 * h );
+  }
+  float cityFogThin( float y, float h ) {
+    float top = cityFogHeight.y;
+    float c = max( ${f(HEIGHT_FOG.clearTop)}, h + 1.0 );
+    if ( y < h ) return cityFogFloor( y, h );
+    float atH = ( 1.0 - top ) * h * 0.5;
+    if ( y < c ) {
+      float t = y - h;
+      return atH + ( 1.0 - top ) * t + top * t * t / ( 2.0 * ( c - h ) );
+    }
+    return atH + ( 1.0 - top ) * ( c - h ) + top * ( c - h ) * 0.5 + ( y - c );
+  }
+
   float cityFogAmount( const in float densityScale ) {
     #ifdef FOG_EXP2
       float fd = fogDensity * densityScale * vFogDepth;
@@ -48,11 +67,17 @@ const FOG_PARS_FRAGMENT = /* glsl */ `
       float fLo = max( min( fy, cameraPosition.y ), 0.0 );
       float fHi = max( max( fy, cameraPosition.y ), 0.0 );
       if ( fHi - fLo > 1.0 ) {
-        float fA = fLo < fH ? fLo * fLo / ( 2.0 * fH ) : fLo - 0.5 * fH;
-        float fB = fHi < fH ? fHi * fHi / ( 2.0 * fH ) : fHi - 0.5 * fH;
-        fh = min( fh, 1.0 - ( 1.0 - cityFogHeight.y ) * ( fB - fA ) / ( fHi - fLo ) );
+        float fD = fHi - fLo;
+        float fFloor = 1.0 - ( cityFogFloor( fHi, fH ) - cityFogFloor( fLo, fH ) ) / fD;
+        float fClear = 1.0 - ( cityFogThin( fHi, fH ) - cityFogThin( fLo, fH ) ) / fD;
+        // Only steep rays get the clear upper air; near-horizontal ones keep the top floor.
+        float fSteep = abs( vFogWorld.y ) / max( length( vFogWorld ), 1e-3 );
+        float fW = smoothstep( ${f(HEIGHT_FOG.clearSteep[0])}, ${f(HEIGHT_FOG.clearSteep[1])}, fSteep );
+        fh = min( fh, mix( fFloor, fClear, fW ) );
       }
-      fh *= fy < 0.0 ? cityFogHeight.z : 1.0;
+      // fy is rebuilt from the camera height and rounds around 0 on y = 0 ground seen from far
+      // above, so the water boost ramps in below it (the park sits at y -2, the water at -4).
+      fh *= mix( 1.0, cityFogHeight.z, 1.0 - smoothstep( ${f(HEIGHT_FOG.waterRamp[1])}, ${f(HEIGHT_FOG.waterRamp[0])}, fy ) );
       fogF = min( fogF * fh, 1.0 );
     }
     return fogF;

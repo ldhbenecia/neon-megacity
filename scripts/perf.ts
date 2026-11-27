@@ -7,7 +7,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { chromium, type Browser } from '@playwright/test';
 import { preview } from 'vite';
-import { SWIFTSHADER_ARGS, collectErrors } from '../tests/e2e/helpers';
+import { SWIFTSHADER_ARGS, collectErrors, localPort } from '../tests/e2e/helpers';
 import { TIER_DPR, type UserTier } from '../src/ux/quality';
 import { bundleGzip } from './bundle';
 import { checkScreen, lightAt, type ScreenCheck } from './screen';
@@ -52,7 +52,7 @@ if (!Number.isInteger(frames) || frames <= 0) {
 }
 const only = opt('only');
 const label = (positional[0] ?? new Date().toISOString()).replace(/[^\p{L}\p{N}_.-]+/gu, '-');
-const PORT = 4175;
+const PORT = localPort('perf');
 const BASE = `http://localhost:${PORT}/`;
 // 1600×900 at DPR 2 (a retina laptop): the app caps it to 1.5.
 const VIEWPORT = { width: 1600, height: 900 };
