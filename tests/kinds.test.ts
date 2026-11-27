@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { LAYOUT, baseKind, isUnbuilt, type DistrictKind } from '../src/city/layout';
+import { LAYOUT, baseKind, baseKindOf, isUnbuilt, type DistrictKind } from '../src/city/layout';
 
 const V2: DistrictKind[] = [
   'core',
@@ -35,5 +35,13 @@ describe('baseKind', () => {
     for (const k of [...V2, 'megacore', 'corridor', 'nightlife'] as DistrictKind[]) {
       expect(isUnbuilt(k)).toBe(false);
     }
+  });
+
+  it('never reads Object.prototype for odd keys and reports unknown kinds', () => {
+    for (const k of ['__proto__', 'constructor', 'toString', 'hasOwnProperty', 'nope']) {
+      expect(baseKindOf(k), k).toBeUndefined();
+      expect(() => baseKind(k as DistrictKind), k).toThrow();
+    }
+    expect(baseKindOf('megacore')).toBe('core');
   });
 });
