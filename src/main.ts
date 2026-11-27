@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import GUI from 'lil-gui';
 import { CITY, LAYOUT } from './city/layout';
 import { postEnabled } from './core/gl';
 import { NIGHT } from './core/palette';
@@ -12,6 +11,7 @@ import * as buildings from './buildings/index';
 import * as infra from './infra/index';
 import * as neon from './neon/index';
 import * as atmosphere from './atmosphere/index';
+import { createGui } from './ux/gui';
 import { createLoader, initUx, nextFrame, parseUxQuery } from './ux/index';
 
 const BOOT_WEIGHTS = { setup: 5, compile: 15, firstFrame: 3 } as const;
@@ -75,11 +75,10 @@ async function boot(): Promise<void> {
   controls.maxPolarAngle = CAMERA_LIMITS.maxPolarAngle;
   controls.screenSpacePanning = false;
 
-  // lil-gui is the developer panel: only with ?debug (and never with ?nogui). Regular users get
-  // the ux controls (time scrubber, weather, camera) instead.
-  const gui = new GUI({ title: 'City Controls' });
+  // lil-gui is the developer panel: only with ?debug (and never with ?nogui), loaded on demand.
+  // Regular users get the ux controls (time scrubber, weather, camera) and a no-op stand-in.
+  const gui = await createGui(debug && !query.nogui);
   gui.close();
-  if (query.nogui || !debug) gui.hide();
 
   const resizeHandlers: ((w: number, h: number) => void)[] = [];
   // Filled by modules; ux calls them after changing env.quality (the controller lands with ux).
