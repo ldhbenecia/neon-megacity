@@ -32,7 +32,8 @@ export const EMISSIVE_FOG_FRAGMENT = /* glsl */ `
     vec3 glowFog = cityFogTint() + gl_FragColor.rgb * ${f(EMISSIVE_FOG_GLOW)};
   #else
     #ifdef FOG_EXP2
-      float fogE = 1.0 - exp( - pow( fogDensity * ${f(EMISSIVE_FOG_DENSITY_SCALE)} * vFogDepth, 2.0 ) );
+      float fogD = fogDensity * ${f(EMISSIVE_FOG_DENSITY_SCALE)} * vFogDepth;
+      float fogE = 1.0 - exp( - fogD * fogD );
     #else
       float fogE = smoothstep( fogNear, fogFar, vFogDepth ) * ${f(EMISSIVE_FOG_DENSITY_SCALE)};
     #endif
