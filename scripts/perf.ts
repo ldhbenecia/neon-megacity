@@ -37,7 +37,7 @@ const unknown = [...flags].filter(
   (f) => !KNOWN.some((k) => (k.endsWith('=') ? f.startsWith(k) : f === k)),
 );
 const positional = args.filter((a) => !a.startsWith('--'));
-// `--only 탑다운` (space instead of =) would otherwise turn the value into the label.
+// `--only topdown` (space instead of =) would otherwise turn the value into the label.
 if (unknown.length || positional.length > 1) {
   console.error(
     `usage: npm run perf -- [label] ${KNOWN.map((k) => (k.endsWith('=') ? `[${k}…]` : `[${k}]`)).join(' ')}`,

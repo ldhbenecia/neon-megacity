@@ -4,11 +4,19 @@ import { LOW_DPR } from '../../src/ux/perf';
 import { SETTLE_FRAMES, app, collectErrors, scrubTo, waitForCity, waitFrames } from './helpers';
 
 // Performance budget (ART_DIRECTION 11): counts only, headless fps means nothing.
-// The preset × time grid runs in the low tier (a floor: no shadow or post passes); one boot at
-// full quality checks the scene that is worst for the budget (topdown at noon, shadow pass
-// included; docs/PERF.md snapshot c546911).
+// The view × time grid runs in the low tier (a floor: no shadow or post passes); one boot at
+// full quality checks the worst view, topdown, at noon: the shadow pass runs by day (night has
+// 2 more calls but no shadow pass; docs/PERF.md snapshot c546911).
+// The same views as `npm run perf`: number-key presets and the ?cam= poses.
 const LIMITS = { calls: 300, triangles: 2_000_000, programs: 50 } as const;
-const PRESETS = [1, 2, 3, 5] as const;
+const VIEWS = [
+  'preset=1',
+  'preset=2',
+  'preset=6',
+  'preset=7',
+  'cam=overview',
+  'cam=topdown',
+] as const;
 /** Timeline minutes (the range steps by 5): 00:00, 18:45 (sunset, t = 0.781), 12:00. */
 const TIMES = [0, 1125, 720] as const;
 
@@ -45,10 +53,10 @@ test.describe('performance budget', () => {
     expect(errors).toEqual([]);
   });
 
-  for (const preset of PRESETS) {
-    test(`low: preset ${preset} @ ${TIMES.map(formatClock).join(', ')}`, async ({ page }) => {
+  for (const view of VIEWS) {
+    test(`low: ${view} @ ${TIMES.map(formatClock).join(', ')}`, async ({ page }) => {
       const errors = collectErrors(page);
-      await page.goto(app(`nogui&stats&preset=${preset}&time=0&rain=0.35`));
+      await page.goto(app(`nogui&stats&${view}&time=0&rain=0.35`));
       await waitForCity(page);
       for (const minutes of TIMES) {
         await scrubTo(page, minutes);

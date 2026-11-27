@@ -72,8 +72,9 @@ lighting or materials; paste its screen column in the PR body. CI keeps its Swif
 
 Apple M4 (Metal ANGLE), 1600×900 at DPR 1.5 (tier high), full quality, `rain=0.35`, `npm run perf`
 (240 frames per scenario). No screen-check failures and no console errors. The views are the number-key presets 1, 2, 6, 7 (`?preset=`) and
-`?cam=overview` / `?cam=topdown`; topdown is the worst case (most draw calls, longest frames), so the
-full-quality e2e budget scenario (`tests/e2e/perf.spec.ts`) boots there.
+`?cam=overview` / `?cam=topdown`. Topdown is the worst view (most draw calls, longest frames), so the
+full-quality e2e budget scenario (`tests/e2e/perf.spec.ts`) boots there at noon, when the shadow
+pass runs (night has 2 more calls, no shadow pass).
 
 | scenario                   | frame ms (mean / p95) | calls | tris   | programs | textures | geo MB | tex MB | black % (rest / move) |
 | -------------------------- | --------------------- | ----- | ------ | -------- | -------- | ------ | ------ | --------------------- |
