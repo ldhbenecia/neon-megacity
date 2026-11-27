@@ -152,11 +152,6 @@ export interface Post {
   dispose(): void;
 }
 
-function nanView(): boolean {
-  const q = new URLSearchParams(window.location.search);
-  return q.has('debug') && q.has('nan');
-}
-
 function toneMappingDefine(t: ToneMapping): string | null {
   switch (t) {
     case LinearToneMapping:
@@ -221,7 +216,7 @@ export function createPost(ctx: Ctx): Post | null {
     uAspect: { value: 1 },
     uDrops: { value: 0 },
     // ?debug&nan paints non-finite HDR pixels: magenta in the scene, cyan only in the bloom.
-    uNanView: { value: nanView() ? 1 : 0 },
+    uNanView: { value: ctx.debug?.nan ? 1 : 0 },
   };
   const finalMaterial = new RawShaderMaterial({
     name: 'atmosphere.final',
