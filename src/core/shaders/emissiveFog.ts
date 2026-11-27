@@ -15,7 +15,7 @@ export const SUN_SCATTER_POWER = 8;
 // Shared Float32Arrays updated in place by atmosphere: UniformsUtils.clone keeps typed arrays
 // by reference, so every material sees the same values. All zeros means plain FogExp2.
 export const FOG_UNIFORMS = {
-  // heightTop, top factor, water factor, enabled (the CPU mirrors read it too).
+  // heightTop, top factor, water factor, enabled (CPU callers pass heightFogEnabled()).
   cityFogHeight: {
     value: new Float32Array([HEIGHT_FOG.heightTop, HEIGHT_FOG.top, HEIGHT_FOG.water, 1]),
   },

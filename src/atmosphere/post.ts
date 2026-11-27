@@ -132,7 +132,8 @@ void main() {
     outColor = sRGBTransferOETF( outColor );
   #endif
 
-  float g = hash12( gl_FragCoord.xy + fract( uTime * 7.31 ) * 517.0 ) - 0.5;
+  // A short wrap of its own: near the 1e4 s lens wrap, uTime * 7.31 resolves only 1/128.
+  float g = hash12( gl_FragCoord.xy + fract( mod( uTime, 100.0 ) * 7.31 ) * 517.0 ) - 0.5;
   float lum = dot( outColor.rgb, vec3( 0.2126, 0.7152, 0.0722 ) );
   outColor.rgb += g * uGrain * smoothstep( 0.0, 0.12, lum );
   gl_FragColor = outColor;

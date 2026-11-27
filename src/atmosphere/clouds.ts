@@ -213,6 +213,8 @@ export function createClouds(
     const m = new Mesh(g, material);
     m.name = i === 0 ? 'atmosphere.clouds.high' : 'atmosphere.clouds.low';
     m.frustumCulled = false;
+    // Seen from below until the first update says otherwise: high deck first.
+    m.renderOrder = i === 0 ? 20 : 21;
     scene.add(m);
     return m;
   });

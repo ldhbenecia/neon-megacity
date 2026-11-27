@@ -143,7 +143,7 @@ export function init(ctx: Ctx): CityModuleInstance {
       fog.color.copy(env.fogColor);
       fog.density = f.density;
 
-      // The CPU fog mirrors read this flag too.
+      // CPU fog callers read this flag through heightFogEnabled().
       height[3] = settings.heightFog ? 1 : 0;
       const ds = env.sunDirection.lengthSq();
       if (ds > 1e-6) sunDir.copy(env.sunDirection).multiplyScalar(1 / Math.sqrt(ds));
