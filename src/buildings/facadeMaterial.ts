@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { MATERIAL, NEON, WINDOW_MIX } from '../core/palette';
-import { FACADE_DAY } from './colors';
+import { FACADE_DAY, NIGHT_FILL } from './colors';
 
 const glsl = (v: number): string => v.toFixed(4);
 const vec3 = (c: readonly [number, number, number]): string => `vec3(${c.map(glsl).join(', ')})`;
@@ -371,6 +371,11 @@ const FRAG_MAIN = /* glsl */ `
     fMetal = mix(mix(0.04, 0.45, metal * day), 0.55 * day, gm);
     fMetal = mix(fMetal, 0.6, fm);
   }
+  if (fType < 4.5 || fType > 6.5) {
+    // f.y is measured from the window start, about one ground floor above the street.
+    float bounce = exp(-max(f.y + 4.0, 0.0) / ${glsl(NIGHT_FILL.bounceFalloff)});
+    fEmit += (${vec3(NIGHT_FILL.ambient)} + ${vec3(NIGHT_FILL.bounce)} * bounce) * uNight;
+  }
   diffuseColor.rgb = fAlbedo;
 `;
 
@@ -436,7 +441,7 @@ export function createFacadeMaterial(
       );
   };
   material.customProgramCacheKey = () =>
-    interior ? 'hangang-facade-near-v3' : 'hangang-facade-v3';
+    interior ? 'hangang-facade-near-v4' : 'hangang-facade-v4';
   material.userData.uLitRatio = uniforms.uLitRatio;
   return material;
 }
