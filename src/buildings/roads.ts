@@ -10,6 +10,8 @@ import { mergeIntervals } from './params';
 
 export const ROAD_Y = 0.03;
 export const SIDEWALK_H = 0.15;
+/** Extra environment reflection in a fully wet puddle (1 + this). */
+export const PUDDLE_REFLECTION = 2;
 
 class FlatBuilder {
   pos: number[] = [];
@@ -359,8 +361,15 @@ export function createWetMaterial(
         float dryR = ${dryRough.toFixed(2)} + 0.15 * (wGrain - 0.5);
         float wetR = mix(dryR * 0.75, 0.04, wPud);
         roughnessFactor = mix(dryR, wetR, uWet);`,
+      )
+      // Puddles act as dark mirrors (ART_DIRECTION 6.1): lift only the image-based specular there,
+      // so neon and sky reflections read under the real environment map without brightening asphalt.
+      .replace(
+        '#include <lights_fragment_maps>',
+        `#include <lights_fragment_maps>
+        radiance *= 1.0 + ${PUDDLE_REFLECTION.toFixed(2)} * wPud * uWet;`,
       );
   };
-  m.customProgramCacheKey = () => `hangang-wet-${name}`;
+  m.customProgramCacheKey = () => `hangang-wet-v2-${name}`;
   return m;
 }

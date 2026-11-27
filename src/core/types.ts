@@ -9,11 +9,14 @@ import type { BuildingFace, BuildingSpec, Layout } from '../city/types';
 export type * from '../city/types';
 
 /**
- * Render quality tier. 'low' (`?quality=low`) is for software GL (CI SwiftShader): DPR 0.5, no MSAA,
- * no shadows, one lazy 64 px PMREM bake, no post chain, rain, clouds or searchlights, flat water,
- * no buildings LOD0 and no bridge detail meshes.
+ * Render quality tier (docs/PERF.md "user quality tiers").
+ * - 'high' | 'medium' | 'low': user tiers. Chosen at boot and moved by the frame-time controller;
+ *   modules apply their knobs in `ctx.onQuality` without changing any program variant at runtime.
+ * - 'ci' (`?quality=ci`): software GL test tier for CI SwiftShader, fixed at boot: DPR 0.5, no
+ *   MSAA, no shadows, one lazy 64 px PMREM bake, no post chain, rain, clouds or searchlights, flat
+ *   water, no buildings LOD0 and no bridge detail meshes. Never shown to users.
  */
-export type Quality = 'high' | 'low';
+export type Quality = 'high' | 'medium' | 'low' | 'ci';
 
 /**
  * Environment state shared by all modules. Each field has exactly one owner that writes it;
@@ -29,7 +32,10 @@ export interface Env {
   timeOfDay: number;
   /** When true (e.g. `?time=` was given), lighting must not advance `timeOfDay`. Owner: ux (set at boot). */
   timeLocked: boolean;
-  /** Render quality tier from `?quality=` (default 'high'). Owner: ux (set at boot, never changes). */
+  /**
+   * Current render tier. Owner: ux (boot choice, the frame-time controller and the control panel;
+   * 'ci' never changes). Modules react in `ctx.onQuality`, not by polling.
+   */
   quality: Quality;
   /** Unit vector from the ground toward the sun. Owner: lighting. */
   sunDirection: THREE.Vector3;
@@ -128,6 +134,11 @@ export interface Ctx {
   /** Default renderer.render; atmosphere may replace it with a composer render. */
   render: () => void;
   onResize: (fn: (w: number, h: number) => void) => void;
+  /**
+   * Register `(quality) => {}`; called after ux changes `env.quality` at runtime (not at boot).
+   * Returns the unsubscribe function: call it in the module's `dispose()`.
+   */
+  onQuality: (fn: (q: Quality) => void) => () => void;
   /** Developer views from the URL (`src/ux/query.ts`); absent or all false for regular visitors. */
   debug?: { readonly nan: boolean };
 }

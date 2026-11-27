@@ -596,7 +596,7 @@ const BUILDERS: Record<
 
 /**
  * `roads` (the layout's ground roads) and `highways`: what river and approach piers keep clear of.
- * `withDetail` false skips the fine parts entirely (quality 'low').
+ * `withDetail` false skips the fine parts entirely (quality 'ci').
  */
 export function buildBridge(
   b: Bridge,
