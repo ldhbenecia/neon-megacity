@@ -50,6 +50,7 @@ export {
   HALF_Z,
   ISLANDS,
   MOUNTAINS,
+  MOUNTAIN_RANGES,
   SAETGANG,
   riverZ,
   riverFrame,

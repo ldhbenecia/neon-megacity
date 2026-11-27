@@ -629,14 +629,28 @@ function profile(s: number): number {
 const RANGE_BOX = RANGES.map((r) => {
   const xs = r.nodes.map((n) => n.x);
   const zs = r.nodes.map((n) => n.z);
+  const w = Math.max(...r.nodes.map((n) => n.w ?? r.width));
   return {
-    x0: Math.min(...xs) - r.width,
-    x1: Math.max(...xs) + r.width,
-    z0: Math.min(...zs) - r.width,
-    z1: Math.max(...zs) + r.width,
+    x0: Math.min(...xs) - w,
+    x1: Math.max(...xs) + w,
+    z0: Math.min(...zs) - w,
+    z1: Math.max(...zs) + w,
     top: Math.max(...r.nodes.map((n) => n.h)),
   };
 });
+
+/**
+ * Ground footprint of each mountain range (ids of its peaks, axis-aligned box of the base, peak
+ * height). Bake per-range masks over these boxes: a shared range (북악·인왕) is one box.
+ */
+export const MOUNTAIN_RANGES: readonly {
+  ids: readonly string[];
+  x0: number;
+  x1: number;
+  z0: number;
+  z1: number;
+  top: number;
+}[] = RANGES.map((r, k) => ({ ids: r.ids, ...(RANGE_BOX[k] as (typeof RANGE_BOX)[number]) }));
 
 /** Height of one range without noise: the max over spine segments of h(t) · profile. */
 function rangeHeight(r: Range, top: number, x: number, z: number): number {
