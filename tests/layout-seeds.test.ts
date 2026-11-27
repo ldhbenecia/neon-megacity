@@ -1,3 +1,4 @@
+import { generateLayout } from '../src/city/generate';
 // Invariants that must hold for every seed, not just the default one.
 import { describe, expect, it } from 'vitest';
 import {
@@ -9,7 +10,6 @@ import {
   buildingFaces,
   buildingsInAabb,
   riverWidthAt,
-  generateLayout,
   highwaySamples,
   type Block,
   type BuildingSpec,
