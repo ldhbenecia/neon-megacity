@@ -306,10 +306,15 @@ export function puddleData(seed: number, N: number): Uint8Array {
   return data;
 }
 
-export function puddleTexture(seed = 2077): THREE.DataTexture {
-  // Built on the main thread during init: 512² keeps boot cost down and still gives 16 px/m.
-  const N = 512;
-  const data = puddleData(seed, N);
+/** 512² keeps the build cost down and still gives 16 px/m. */
+export const PUDDLE_SIZE = 512;
+
+/** `data` is puddleData(seed, PUDDLE_SIZE) when the city worker already made it. */
+export function puddleTexture(
+  seed = 2077,
+  data = puddleData(seed, PUDDLE_SIZE),
+): THREE.DataTexture {
+  const N = PUDDLE_SIZE;
   const tex = new THREE.DataTexture(data, N, N, THREE.RGBAFormat);
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;

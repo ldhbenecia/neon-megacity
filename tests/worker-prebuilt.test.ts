@@ -5,7 +5,7 @@ import { LAYOUT } from '../src/city/layout';
 // arrays; the main thread wraps them again. That must equal building it on the main thread.
 const bytes = (a: ArrayBufferView): Uint8Array =>
   new Uint8Array(a.buffer, a.byteOffset, a.byteLength);
-describe('terrain geometry from the city worker', () => {
+describe('geometry from the city worker', () => {
   afterEach(() => {
     vi.doUnmock('three');
     vi.resetModules();
@@ -60,6 +60,7 @@ describe('terrain geometry from the city worker', () => {
       expect(unpacked.index && bytes(unpacked.index.array)).toStrictEqual(
         direct.index && bytes(direct.index.array),
       );
+      expect(unpacked.index?.array.constructor).toBe(direct.index?.array.constructor);
       expect(unpacked.groups).toStrictEqual(direct.groups);
     }
   }, 120_000);
@@ -78,4 +79,60 @@ describe('terrain geometry from the city worker', () => {
     g.setDrawRange(0, 3);
     expect(() => packGeometry(g)).toThrow(/drawRange/);
   });
+
+  it('roads, sidewalks and the puddle mask from the worker equal the main-thread ones', async () => {
+    const layout = LAYOUT;
+    vi.resetModules();
+    vi.doMock('three', () => import('../src/city/three-lite'));
+    const w = {
+      layout: await import('../src/city/layout'),
+      roads: await import('../src/buildings/roads'),
+      pack: await import('../src/core/packedGeometry'),
+    };
+    w.layout.setLayout(layout);
+    const packed = {
+      roads: w.pack.packGeometry(w.roads.buildRoads(layout)),
+      walks: w.pack.packGeometry(w.roads.buildSidewalks(layout)),
+      puddle: w.roads.puddleData(layout.seed, w.roads.PUDDLE_SIZE),
+    };
+    const cloned = structuredClone(packed, {
+      transfer: [
+        ...w.pack.packedBuffers(packed.roads),
+        ...w.pack.packedBuffers(packed.walks),
+        packed.puddle.buffer,
+      ],
+    });
+
+    vi.doUnmock('three');
+    vi.resetModules();
+    const m = {
+      layout: await import('../src/city/layout'),
+      roads: await import('../src/buildings/roads'),
+      pack: await import('../src/core/packedGeometry'),
+    };
+    m.layout.setLayout(layout);
+    for (const [key, direct] of [
+      ['roads', m.roads.buildRoads(layout)],
+      ['walks', m.roads.buildSidewalks(layout)],
+    ] as const) {
+      const got = m.pack.unpackGeometry(cloned[key]);
+      expect(Object.keys(got.attributes).sort()).toEqual(Object.keys(direct.attributes).sort());
+      for (const [name, a] of Object.entries(direct.attributes)) {
+        const g = got.getAttribute(name);
+        expect(bytes(g.array), `${key}.${name}`).toStrictEqual(bytes(a.array));
+        expect(g.itemSize).toBe(a.itemSize);
+        expect(g.normalized).toBe(a.normalized);
+      }
+      expect(got.index?.array.constructor).toBe(direct.index?.array.constructor);
+      expect(got.index && bytes(got.index.array)).toStrictEqual(
+        direct.index && bytes(direct.index.array),
+      );
+      expect(got.groups).toStrictEqual(direct.groups);
+    }
+    expect(bytes(cloned.puddle)).toStrictEqual(
+      bytes(m.roads.puddleData(layout.seed, m.roads.PUDDLE_SIZE)),
+    );
+    const tex = m.roads.puddleTexture(layout.seed, cloned.puddle);
+    expect(tex.image.width).toBe(m.roads.PUDDLE_SIZE);
+  }, 120_000);
 });

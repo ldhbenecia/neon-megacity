@@ -3,14 +3,22 @@ import { CITY, generateLayout } from '../src/city/layout';
 import {
   loadCity,
   type CityMessage,
+  type BuildingsPrebuilt,
   type LayoutWorker,
   type TerrainPrebuilt,
 } from '../src/city/loadLayout';
 
 const reference = generateLayout(CITY.seed);
 const TERRAIN = { ground: 'g', channel: 'c' } as unknown as TerrainPrebuilt;
+const BUILDINGS = { roads: 'r', walks: 'w', puddle: 'p' } as unknown as BuildingsPrebuilt;
 
-type Script = 'ok' | 'error' | 'layout-then-error' | 'layout-then-silence';
+type Script =
+  | 'ok'
+  | 'error'
+  | 'layout-then-error'
+  | 'layout-then-silence'
+  | 'terrain-then-error'
+  | 'terrain-then-silence';
 
 /** A fake worker that answers like the real one: the layout (structured clone), then terrain. */
 function fakeWorker(script: Script = 'ok'): LayoutWorker & { terminated: number } {
@@ -29,7 +37,11 @@ function fakeWorker(script: Script = 'ok'): LayoutWorker & { terminated: number 
           w.onmessage?.({ data } as MessageEvent<CityMessage>);
         };
         send({ kind: 'layout', layout: structuredClone(generateLayout(seed)) });
-        if (script === 'ok') send({ kind: 'terrain', terrain: TERRAIN });
+        if (script === 'ok' || script.startsWith('terrain-then')) {
+          send({ kind: 'terrain', terrain: TERRAIN });
+        }
+        if (script === 'ok') send({ kind: 'buildings', buildings: BUILDINGS });
+        if (script === 'terrain-then-error') w.onerror?.({ message: 'late' } as ErrorEvent);
         if (script === 'layout-then-error') w.onerror?.({ message: 'late' } as ErrorEvent);
       });
     },
@@ -60,6 +72,7 @@ describe('loadCity', () => {
     const city = loadCity(CITY.seed, () => w);
     expect(await city.layout).toStrictEqual(reference);
     expect(await city.terrain).toBe(TERRAIN);
+    expect(await city.buildings).toBe(BUILDINGS);
     expect(w.terminated).toBe(1);
   });
 
@@ -75,6 +88,7 @@ describe('loadCity', () => {
       const city = loadCity(CITY.seed, make);
       expect(await city.layout).toStrictEqual(reference);
       expect(await city.terrain).toBeNull();
+      expect(await city.buildings).toBeNull();
     }
     warn.mockRestore();
   });
@@ -93,8 +107,23 @@ describe('loadCity', () => {
     const city = loadCity(CITY.seed, () => w, 20);
     expect(await city.layout).toStrictEqual(reference);
     expect(await city.terrain).toBeNull();
+    expect(await city.buildings).toBeNull();
     expect(w.terminated).toBe(1);
     expect(warn).toHaveBeenCalledTimes(1);
     warn.mockRestore();
   });
+
+  for (const script of ['terrain-then-error', 'terrain-then-silence'] as const) {
+    it(`${script}: terrain is kept, buildings falls back, the worker is terminated once`, async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const w = fakeWorker(script);
+      const city = loadCity(CITY.seed, () => w, 20);
+      expect(await city.layout).toStrictEqual(reference);
+      expect(await city.terrain).toBe(TERRAIN);
+      expect(await city.buildings).toBeNull();
+      expect(w.terminated).toBe(1);
+      expect(warn).toHaveBeenCalledTimes(script === 'terrain-then-silence' ? 1 : 0);
+      warn.mockRestore();
+    });
+  }
 });
