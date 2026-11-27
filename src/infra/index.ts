@@ -4,16 +4,10 @@
 // Draw calls (11, budget 12): concrete, steel, lane paint, glow lines, uplight wash (merged
 // meshes) + pillar columns, pillar beams, light points (InstancedMesh) + bridge detail steel,
 // glow and paint (BatchedMesh, one instance per bridge, hidden by distance LOD; not built for
-// quality 'low'). No real lights.
+// quality 'ci'). No real lights.
 import * as THREE from 'three';
 import { deckHeightAt, highwayCurve } from '../city/layout';
-import { MATERIAL } from '../core/palette';
-
-// TEMP until #77 lands in palette.ts.
-const NIGHT_FILL_AMBIENT = [0.003, 0.005, 0.005] as const;
-
-/** Night fill multiplier over the shared floor (measured: 1× leaves undersides at 3/255). */
-const INFRA_FILL = 3;
+import { MATERIAL, NIGHT_FILL_AMBIENT } from '../core/palette';
 import { EMISSIVE_FOG_DENSITY_SCALE, applyEmissiveFog } from '../core/shaders/emissiveFog';
 import type { CityModuleInstance, Ctx, InfraApi } from '../core/types';
 import { buildInfra } from './build';
@@ -22,6 +16,9 @@ import { bridgeDetailOn } from './lod';
 import type { MeshData, V3 } from './mesh';
 import type { BridgeDetail, DetailParts } from './parts';
 import { DECK_THICKNESS } from './profile';
+
+/** Night fill multiplier over the shared floor (measured: 1× leaves undersides at 3/255). */
+const INFRA_FILL = 3;
 
 function toGeometry(m: MeshData): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
@@ -63,7 +60,8 @@ function columnGeometry(): THREE.BufferGeometry {
 const WASH_FOG_FRAGMENT = /* glsl */ `
 #ifdef USE_FOG
   #ifdef FOG_EXP2
-    float washFog = 1.0 - exp( - pow( fogDensity * ${EMISSIVE_FOG_DENSITY_SCALE.toFixed(4)} * vFogDepth, 2.0 ) );
+    float washFogD = fogDensity * ${EMISSIVE_FOG_DENSITY_SCALE.toFixed(4)} * vFogDepth;
+    float washFog = 1.0 - exp( - washFogD * washFogD );
   #else
     float washFog = smoothstep( fogNear, fogFar, vFogDepth );
   #endif
@@ -145,11 +143,7 @@ export function init(ctx: Ctx): CityModuleInstance {
 
   const concrete = mesh(
     parts.concrete,
-    new THREE.MeshStandardMaterial({
-      vertexColors: true,
-      roughness: 0.88,
-      metalness: 0,
-    }),
+    new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.88, metalness: 0 }),
     'infra-concrete',
   );
   concrete.castShadow = true;
@@ -157,11 +151,7 @@ export function init(ctx: Ctx): CityModuleInstance {
 
   const steel = mesh(
     parts.steel,
-    new THREE.MeshStandardMaterial({
-      vertexColors: true,
-      roughness: 0.5,
-      metalness: 0.35,
-    }),
+    new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.35 }),
     'infra-steel',
   );
   steel.castShadow = true;
@@ -252,7 +242,7 @@ export function init(ctx: Ctx): CityModuleInstance {
     im.receiveShadow = true;
   }
 
-  // Empty for quality 'low' (buildInfra skipped the detail), so no BatchedMesh is created.
+  // Empty for quality 'ci' (buildInfra skipped the detail), so no BatchedMesh is created.
   const detail = buildDetail(parts.bridgeDetail, {
     steel: steel.material as THREE.Material,
     glow: glowMat,
