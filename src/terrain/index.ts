@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { NIGHT_FILL_AMBIENT } from '../core/palette';
 import type { Ctx, CityModuleInstance } from '../core/types';
 import { buildChannel, buildGround } from './ground';
 import { createRidges, type RidgeEnv } from './ridges';
@@ -64,10 +65,15 @@ export function init(ctx: Ctx): CityModuleInstance {
 
   return {
     update(_dt, elapsed) {
-      if (env.fillColor) {
-        groundMat.emissive.copy(env.fillColor);
-        channelMat.emissive.copy(env.fillColor);
+      // Before lighting has published the fill (or without lighting), fall back to the night floor
+      // as buildings do, so ground and walls never disagree.
+      if (env.fillColor) groundMat.emissive.copy(env.fillColor);
+      else {
+        const [r, g, b] = NIGHT_FILL_AMBIENT;
+        const k = env.nightFactor;
+        groundMat.emissive.setRGB(r * k, g * k, b * k);
       }
+      channelMat.emissive.copy(groundMat.emissive);
       ridgeEnv.dayFactor = env.dayFactor;
       ridgeEnv.rain = env.rain;
       water.update(elapsed, env.nightFactor);

@@ -74,12 +74,14 @@ export function dayFactorAt(sunElevation: number): number {
 
 /**
  * Weight of the shadow fill (env.fillFactor): 1 at night, and already up while the sun is low at
- * either end of the day (backlit banks and walls), 0 by day: max(nightFactor, 1 - smoothstep(0.1,
- * 0.35, e)). Between elevation 0.15 and 0.35 dayFactor is already 1, so the fill there only lifts
+ * either end of the day (backlit banks and walls), 0 by day: 1 - smoothstep(0.1, 0.35, e), the
+ * night curve shifted later. Between elevation 0.15 and 0.35 dayFactor is already 1, so the fill there only lifts
  * shadows by at most the night floor (~0.005 linear), well under the sunlit surfaces.
  */
 export function fillFactorAt(sunElevation: number): number {
-  return Math.max(1 - dayFactorAt(sunElevation), 1 - smoothstep(0.1, 0.35, sunElevation));
+  // The night curve (1 - smoothstep(-0.1, 0.15, e)) shifted 0.2 later, so it never drops below
+  // nightFactor (the test checks fill >= nightFactor).
+  return 1 - smoothstep(0.1, 0.35, sunElevation);
 }
 
 /**
