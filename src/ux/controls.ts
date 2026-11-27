@@ -5,7 +5,7 @@ import { clockMinutes } from '../core/clock';
 import type { Ctx } from '../core/types';
 import type { CameraRig } from './cameraRig';
 import type { Hud } from './hud';
-import { rigPresets } from './presets';
+import { districtViews, rigPresets } from './presets';
 
 export interface Controls {
   update(): void;
@@ -128,6 +128,35 @@ export function createControls(ctx: Ctx, rig: CameraRig, hud: Hud): Controls {
       chipsRoot.append(b);
       chips.push(b);
     }
+  }
+
+  const districtRoot = document.getElementById('district-chips');
+  if (districtRoot) {
+    const views = districtViews();
+    for (const [north, label] of [
+      [true, '강북'],
+      [false, '강남'],
+    ] as const) {
+      const row = document.createElement('div');
+      row.className = 'district-row';
+      const head = document.createElement('span');
+      head.className = 'district-side';
+      head.textContent = label;
+      row.append(head);
+      for (const d of views.filter((v) => v.north === north)) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.dataset.district = d.id;
+        b.textContent = d.name;
+        on(b, 'click', () => {
+          rig.goDistrict(d.id);
+          if (compact.matches) setPanel(false);
+        });
+        row.append(b);
+      }
+      districtRoot.append(row);
+    }
+    cleanup.push(() => districtRoot.replaceChildren());
   }
 
   on(swCine, 'click', () => {

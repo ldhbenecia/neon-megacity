@@ -238,6 +238,14 @@ test('?pose= sets the initial camera pose', async ({ page }) => {
   expect(c.target.z).toBeCloseTo(0, 0);
 });
 
+test('?district= starts at a zone and the title names the zone in view', async ({ page }) => {
+  await page.goto(app('nogui&district=jongno&time=0'));
+  await waitForCity(page);
+  await expect(page.locator('#hud-district')).toHaveText('종로·광화문');
+  await page.click('#panel-toggle');
+  await expect(page.locator('#district-chips button')).toHaveCount(23);
+});
+
 test.describe('camera rig', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto(app('nogui&stats&cam=overview&time=0.0'));
@@ -313,7 +321,7 @@ test.describe('camera rig', () => {
     await waitMode(page, 'orbit');
     const top = await page.evaluate(() => window.__hangang!.preset(8).position);
     expect(dist((await cam(page)).position, top)).toBeLessThan(2);
-    await expect(page.locator('#hud-toast')).toContainText('탑다운');
+    await expect(page.locator('#hud-toast')).toContainText('북악에서');
     await page.keyboard.press('r');
     await waitMode(page, 'flight');
     await waitMode(page, 'orbit');

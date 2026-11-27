@@ -8,9 +8,9 @@
 import {
   CITY,
   LAYOUT,
-  SKYLINE_PEAK,
   surfaceHeight,
   type DistrictZone,
+  type LandmarkId,
   type Road,
   type Vec2,
 } from '../city/layout';
@@ -27,6 +27,8 @@ type Pose = CameraPose;
 
 /** Map-relative presets: the same framing whichever layout version is loaded. */
 const TOPDOWN_Y = Math.max(CITY.extentX, CITY.extentZ) / 2 + 700;
+/** Polar margin every preset keeps under maxPolarAngle (rad), shared with ux `fitPolar`. */
+export const POLAR_MARGIN = 0.01;
 
 /**
  * OrbitControls limits applied by main.ts. Every camera preset must satisfy them,
@@ -41,8 +43,8 @@ export const CAMERA_LIMITS = {
   maxPolarAngle: Math.PI * 0.495,
 } as const;
 
-/** Used when no suitable street exists (e.g. a different layout seed): 8.4 preset 3 as written. */
-export const STREET_FALLBACK: CameraPose = { position: [-760, 6, -360], target: [-700, 1, -470] };
+/** Used when no clear nightlife or sangga street exists: the SEOUL.md 6 홍대 draft. */
+export const STREET_FALLBACK: CameraPose = { position: [-985, 4, -470], target: [-940, 2, -520] };
 
 export interface StreetAnchor {
   kind: string;
@@ -84,7 +86,7 @@ function streetLook(road: Road, t: number, reverse: boolean): Pose {
   };
 }
 
-const MIN_DROP = Math.tan(Math.PI / 2 - CAMERA_LIMITS.maxPolarAngle) * 1.1;
+const MIN_DROP = Math.tan(Math.PI / 2 - CAMERA_LIMITS.maxPolarAngle + POLAR_MARGIN);
 
 /** Inside maxPolarAngle (with margin) and no terrain crest hides the target. */
 function streetViewClear({ position: p, target: t }: Pose): boolean {
@@ -120,50 +122,110 @@ export function streetPose(roads: readonly Road[], anchor: StreetAnchor): Pose |
   return null;
 }
 
-function findStreet(): { pose: Pose; name: string } | null {
+function findStreet(): { pose: Pose; anchor: StreetAnchor } | null {
   for (const anchor of streetAnchors(LAYOUT.districts)) {
     const pose = streetPose(LAYOUT.roads, anchor);
-    if (pose) return { pose, name: anchor.name };
+    if (pose) return { pose, anchor };
   }
   return null;
 }
 
-let streetCache: { pose: Pose; name: string } | null | undefined;
+let streetCache: { pose: Pose; anchor: StreetAnchor } | null | undefined;
 
 /** First anchor with a clear street view, or null (the preset then uses STREET_FALLBACK). */
-export function streetPreset(): { pose: Pose; name: string } | null {
+export function streetPreset(): { pose: Pose; anchor: StreetAnchor } | null {
   if (streetCache === undefined) streetCache = findStreet();
   return streetCache;
 }
 
+const lifted = (x: number, y: number, z: number, clear: number): [number, number, number] => [
+  x,
+  Math.max(y, surfaceHeight(x, z) + clear),
+  z,
+];
+
+/** Lowers the target just enough that the view keeps POLAR_MARGIN under maxPolarAngle. */
+function levelFit(pose: Pose): Pose {
+  const [px, py, pz] = pose.position;
+  const [tx, ty, tz] = pose.target;
+  const horiz = Math.hypot(tx - px, tz - pz);
+  const maxY = py - horiz * MIN_DROP;
+  return ty <= maxY ? pose : { position: pose.position, target: [tx, maxY, tz] };
+}
+
+/** Pose kept above the terrain (camera 5 m, target 1 m) and inside the polar limit. */
+const pose = (p: Tuple, t: Tuple): Pose =>
+  levelFit({
+    position: lifted(p[0], p[1], p[2], 5),
+    target: lifted(t[0], t[1], t[2], 1),
+  });
+
+/** Landmark footprint centre at height `y`, or the SEOUL.md 6 draft target when it is missing. */
+function landmarkAt(id: LandmarkId, y: number, draft: Tuple): Tuple {
+  const l = LAYOUT.landmarks.find((m) => m.id === id);
+  return l ? [l.x, y, l.z] : draft;
+}
+
+/** Above the traffic on a named road's centre line, 8 % along it, looking 250 m down the road. */
+function roadPose(id: string, draft: Pose): Pose {
+  const r = LAYOUT.namedRoads.find((n) => n.id === id);
+  const a = r?.points[0];
+  const b = r?.points[1];
+  if (!a || !b) return draft;
+  const len = Math.hypot(b.x - a.x, b.z - a.z);
+  const ux = (b.x - a.x) / len;
+  const uz = (b.z - a.z) / len;
+  const px = a.x + ux * len * 0.08;
+  const pz = a.z + uz * len * 0.08;
+  const tx = px + ux * 250;
+  const tz = pz + uz * 250;
+  return levelFit({
+    position: [px, surfaceHeight(px, pz) + 9, pz],
+    target: [tx, surfaceHeight(tx, tz) + 3, tz],
+  });
+}
+
+/** Above a bridge's centre (clear of the truss), looking at `target`. */
+function bridgePose(id: string, target: Tuple, draft: Pose): Pose {
+  const br = LAYOUT.bridges.find((b) => b.id === id);
+  if (!br) return draft;
+  const x = (br.a.x + br.b.x) / 2;
+  const z = (br.a.z + br.b.z) / 2;
+  return levelFit({ position: [x, br.deckY + 20, z], target });
+}
+
 /**
- * Offsets from SKYLINE_PEAK, kept above the terrain; on layout v2 these reproduce
- * ART_DIRECTION 8.4 exactly.
+ * SEOUL.md 6 viewpoints, keyed by `?cam=` name. Targets follow `LAYOUT.landmarks`, named roads
+ * and bridges so a layout tweak keeps the framing; the drafts are fallbacks only.
  */
-const fromPeak = (position: Tuple, target: Tuple): Pose => {
-  const { x, z } = SKYLINE_PEAK;
-  const px = x + position[0];
-  const pz = z + position[2];
-  const tx = x + target[0];
-  const tz = z + target[2];
-  return {
-    position: [px, Math.max(position[1], surfaceHeight(px, pz) + 5), pz],
-    target: [tx, Math.max(target[1], surfaceHeight(tx, tz) + 1), tz],
-  };
-};
+const SEOUL_POSES = {
+  banpo: pose([215, 18, 470], [0, 10, 0]),
+  yeouido: pose([-620, 260, 0], landmarkAt('yeouido-gold', 140, [-980, 140, 220])),
+  namsan: pose([-150, 240, -360], [-600, 60, 100]),
+  teheran: roadPose('rd-teheran', pose([600, 6, 580], [900, 3, 455])),
+  seongsu: bridgePose('br-seongsu', [1600, 10, 120], pose([660, 17, -120], [1600, 10, 120])),
+  jamsil: pose([1250, 70, -260], landmarkAt('jamsil-blade', 50, [1650, 50, 300])),
+  bugak: pose([-200, 240, -1170], [-150, 60, -500]),
+  overview: pose([1800, 900, 1500], [0, 80, -100]),
+  topdown: { position: [0, TOPDOWN_Y, 1], target: [0, 0, 0] },
+} as const satisfies Record<string, Pose>;
 
 export const CAMERA_PRESETS = {
-  /** ART_DIRECTION 8.4 preset 2 (코어 상공). */
-  overview: fromPeak([580, 420, 760], [20, 120, 20]),
-  get street(): Pose {
+  ...SEOUL_POSES,
+  /** 홍대 alley: the nearest clear nightlife street (see `streetPreset`). */
+  get hongdae(): Pose {
     return streetPreset()?.pose ?? STREET_FALLBACK;
   },
-  /** Between the megatowers around the skyline peak. */
-  core: fromPeak([240, 220, 260], [0, 160, 0]),
-  /** 8.4 preset 8. */
-  topdown: { position: [0, TOPDOWN_Y, 1], target: [0, 0, 0] },
-  /** 8.4 preset 1 (강변 히어로), target lowered to satisfy the polar limit. */
-  skyline: fromPeak([-360, 38, 680], [0, 20, 80]),
+  /** Aliases kept for e2e, screenshots and old links. */
+  get skyline(): Pose {
+    return SEOUL_POSES.banpo;
+  },
+  get core(): Pose {
+    return SEOUL_POSES.yeouido;
+  },
+  get street(): Pose {
+    return CAMERA_PRESETS.hongdae;
+  },
 } as const satisfies Record<string, Pose>;
 
 export type CameraPreset = keyof typeof CAMERA_PRESETS;
