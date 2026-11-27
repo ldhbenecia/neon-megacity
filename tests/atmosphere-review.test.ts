@@ -4,6 +4,8 @@ import {
   CLOUD_LAYERS,
   RAIN,
   TIME_WRAP,
+  TUNED_EXTENT,
+  mapFogScale,
   searchlightMounts,
   wrapTime,
 } from '../src/atmosphere/logic';
@@ -30,6 +32,34 @@ describe('searchlight mounts', () => {
       expect(buildingContaining(LAYOUT, m.x, top - 1, m.z)).toBe(b.id);
     }
     expect(searchlightMounts([], 2)).toEqual([]);
+  });
+
+  it('take each named zone’s tallest building, then fall back to the tallest left', () => {
+    const tallestIn = (zone: string) =>
+      [...LAYOUT.buildings]
+        .filter((b) => b.zoneId === zone)
+        .sort((a, b) => buildingTop(b) - buildingTop(a))[0]!;
+    const zones = [...new Set(LAYOUT.buildings.map((b) => b.zoneId))].slice(0, 2);
+    const mounts = searchlightMounts(LAYOUT.buildings, 3, [...zones, 'no-such-zone']);
+    expect(mounts).toHaveLength(3);
+    zones.forEach((zone, i) => {
+      const b = tallestIn(zone);
+      expect(buildingContaining(LAYOUT, mounts[i]!.x, mounts[i]!.y - 5, mounts[i]!.z)).toBe(b.id);
+    });
+    const used = zones.map((z) => tallestIn(z).id);
+    const rest = [...LAYOUT.buildings]
+      .filter((b) => !used.includes(b.id))
+      .sort((a, b) => buildingTop(b) - buildingTop(a))[0]!;
+    const m = mounts[2]!;
+    expect(buildingContaining(LAYOUT, m.x, m.y - 5, m.z)).toBe(rest.id);
+  });
+});
+
+describe('map-scaled fog', () => {
+  it('keeps the tuned density on the tuned map and thins it by the square root on wider maps', () => {
+    expect(mapFogScale(TUNED_EXTENT)).toBe(1);
+    expect(mapFogScale(4000)).toBeCloseTo(Math.sqrt(2400 / 4000), 9);
+    expect(mapFogScale(4000)).toBeGreaterThan(2400 / 4000);
   });
 });
 

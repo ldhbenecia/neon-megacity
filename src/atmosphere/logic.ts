@@ -21,6 +21,17 @@ export const FOG = {
   rainBrighten: 0.12,
 } as const;
 
+/** Map extent (m) the fog densities and the cloud city glow were tuned on (layout v2). */
+export const TUNED_EXTENT = 2400;
+
+/**
+ * Fog density factor for a map `extent` m across. The square root thins the fog less than the map
+ * grows, so the far districts still sink into strong aerial perspective (v2: 1, v3 4000 m: 0.77).
+ */
+export function mapFogScale(extent: number): number {
+  return Math.sqrt(TUNED_EXTENT / Math.max(1, extent));
+}
+
 export function fogBrightness(rain: number): number {
   return 1 + FOG.rainBrighten * clamp01(rain);
 }
@@ -148,15 +159,36 @@ export interface Mount {
 
 const MOUNT_LIFT = 4;
 
-export function searchlightMounts(specs: readonly BuildingSpec[], count = 2): Mount[] {
-  return [...specs]
-    .sort((a, b) => buildingTop(b) - buildingTop(a))
-    .slice(0, count)
-    .flatMap((b) => {
-      let top: Tier | null = null;
-      for (const t of allTiers(b)) if (!top || t.y1 > top.y1) top = t;
-      return top ? [{ x: top.x, y: top.y1 + MOUNT_LIFT, z: top.z }] : [];
-    });
+function topMount(b: BuildingSpec): Mount | null {
+  let top: Tier | null = null;
+  for (const t of allTiers(b)) if (!top || t.y1 > top.y1) top = t;
+  return top ? { x: top.x, y: top.y1 + MOUNT_LIFT, z: top.z } : null;
+}
+
+/**
+ * One mount per zone in `zones`, on the highest tier of that zone's tallest building; zones the
+ * layout lacks (or that have no buildings) fall back to the tallest buildings left, so there are
+ * always min(count, buildings) mounts.
+ */
+export function searchlightMounts(
+  specs: readonly BuildingSpec[],
+  count = 2,
+  zones: readonly string[] = [],
+): Mount[] {
+  const byHeight = [...specs].sort((a, b) => buildingTop(b) - buildingTop(a));
+  const picked: BuildingSpec[] = [];
+  for (const zone of zones.slice(0, count)) {
+    const b = byHeight.find((s) => s.zoneId === zone && !picked.includes(s));
+    if (b) picked.push(b);
+  }
+  for (const b of byHeight) {
+    if (picked.length >= count) break;
+    if (!picked.includes(b)) picked.push(b);
+  }
+  return picked.flatMap((b) => {
+    const m = topMount(b);
+    return m ? [m] : [];
+  });
 }
 
 export function searchlightDirection(
