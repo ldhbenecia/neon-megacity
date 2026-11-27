@@ -199,6 +199,39 @@ Main thread during boot (`PerformanceObserver('longtask')`, preset 2 night, 3 ru
 764–811 ms, buildings 585–637 ms, terrain 501–516 ms, neon 351–392 ms, compile 233–289 ms, infra
 207–252 ms. Structured clone of the v3 layout: 31 ms (3.8 MB, 5,662 buildings, plain objects only).
 
+## Module init-time budget (review gate for layout v3 PRs)
+
+A PR may not make a module's boot `init` (and layout generation) more than **1.3×** its v3
+baseline, measured back to back with main on the same machine (`npm run perf -- <label>
+--no-build --no-screen --frames=30 --only="코어 상공"`, three boots; the absolute numbers move with
+machine load, the ratio does not). Baseline (main 0d4c9de, M4, under load): layout 0.8 s,
+buildings 0.6 s, terrain 0.5 s, neon 0.37 s, compile 0.26 s, infra 0.23 s. Over 1.3× the reviewer
+comments on the PR and the manager decides; work moving to the boot worker does not count.
+
+First checks (M4, low load, main 31ead8a measured in the same session; compare ratios only, not
+these absolute numbers with the loaded 0d4c9de baseline above):
+
+| PR                  | module init (ms)  | main (ms) | ratio      |
+| ------------------- | ----------------- | --------- | ---------- |
+| #101 terrain-seoul  | terrain 151–176   | 211–225   | 0.7–0.8×   |
+| #97 buildings-seoul | buildings 293–334 | 259–261   | 1.13–1.28× |
+| #104 infra-seoul    | infra 78–86       | 87–95     | 0.9×       |
+
+Top-down view: #97 triangles 0.92 → 0.93 M, geometry 60.7 → 62.0 MB; #104 0.92 → 0.86 M,
+60.7 → 56.1 MB (bridge LOD). Programs 37 and textures 29 in all three.
+
+**Textures: two budgets (manager decision).** `info.memory.textures` (29) mixes two kinds:
+
+- **Module textures** (neon atlas, car paths, cloud noise, window digits, puddles, …): about 12;
+  **target 14**, counted per module in review.
+- **Render targets and env maps** (bloom bright + 5 + 5 mips = 11, HDR scene target 1, shadow map
+  1, four baked PMREM maps 4): budgeted by **memory** (resolution × format, MB), not by count. At
+  2400×1350 the HDR target alone is ≈ 37 MB (8 B colour + 4 B depth per pixel).
+
+Bloom keeps 5 mips: fewer mips would remove the wide glow around neon in fog, and the count target
+is not a reason to change the picture. The mip count becomes a quality-tier knob instead (high 5,
+medium 4, low 3, by pass count only, no program change), done with env in the per-module knobs.
+
 ## Proposal: move boot work off the main thread (Web Worker)
 
 Status: measured and decided (Worker), not implemented. Engine stays three.js; this is about where
