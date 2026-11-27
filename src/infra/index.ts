@@ -326,9 +326,15 @@ export function init(ctx: Ctx): CityModuleInstance {
       const day = DAY_LIGHTS + (1 - DAY_LIGHTS) * ctx.env.nightFactor;
       const gain = ctx.env.neonGain * ctx.env.powerOn * settings.gain * day;
       for (const m of emissive) m.color.setScalar(gain);
-      const [r, g, b] = NIGHT_FILL_AMBIENT;
-      const k = ctx.env.nightFactor * INFRA_FILL;
-      for (const m of filled) m.emissive.setRGB(r * k, g * k, b * k);
+      // lighting's shadow fill (fillFactor already applied); before lighting sets it, the night floor.
+      const fill = ctx.env.fillColor;
+      if (fill) {
+        for (const m of filled) m.emissive.copy(fill).multiplyScalar(INFRA_FILL);
+      } else {
+        const [r, g, b] = NIGHT_FILL_AMBIENT;
+        const k = ctx.env.nightFactor * INFRA_FILL;
+        for (const m of filled) m.emissive.setRGB(r * k, g * k, b * k);
+      }
     },
     dispose() {
       ctx.scene.remove(group);
