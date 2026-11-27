@@ -8,6 +8,7 @@ import { resolve } from 'node:path';
 import { chromium, type Browser } from '@playwright/test';
 import { preview } from 'vite';
 import { SWIFTSHADER_ARGS, collectErrors } from '../tests/e2e/helpers';
+import { TIER_DPR, type UserTier } from '../src/ux/quality';
 import { bundleGzip } from './bundle';
 import { checkScreen, lightAt, type ScreenCheck } from './screen';
 
@@ -52,7 +53,6 @@ if (!Number.isInteger(frames) || frames <= 0) {
 const only = opt('only');
 const label = (positional[0] ?? new Date().toISOString()).replace(/[^\p{L}\p{N}_.-]+/gu, '-');
 const PORT = 4175;
-const expectedDpr = quality === 'ci' ? 0.5 : 1.5;
 const BASE = `http://localhost:${PORT}/`;
 // 1600×900 at DPR 2 (a retina laptop): the app caps it to 1.5.
 const VIEWPORT = { width: 1600, height: 900 };
@@ -72,7 +72,14 @@ interface Result {
   query: string;
   boot: Record<string, number>;
   frame: { mean: number; p50: number; p95: number; fps: number };
-  stats: { calls: number; triangles: number; programs: number; textures: number; dpr: number };
+  stats: {
+    calls: number;
+    triangles: number;
+    programs: number;
+    textures: number;
+    dpr: number;
+    tier: string;
+  };
   memory: ReturnType<Hangang['memory']>;
   cpu: NonNullable<Window['__city']>['cpu'];
   screen: ScreenCheck | null;
@@ -146,6 +153,12 @@ function screenCell(c: ScreenCheck | null): string {
   return `${c.rest.maxBlack} / ${c.move.maxBlack}, ${lum.toFixed(1)}${warn(c.failures.length > 0)}`;
 }
 
+/** DPR the tier should run at on the device-scale-2 page (ci: 0.5); anything else means a step down. */
+function expectedDpr(tier: string): number {
+  if (tier === 'ci') return 0.5;
+  return Math.min(tier in TIER_DPR ? TIER_DPR[tier as UserTier] : 1.5, 2);
+}
+
 const mb = (b: number): string => (b / 1024 / 1024).toFixed(1);
 const ms = (v: number | undefined): string => (v === undefined ? '-' : v.toFixed(0));
 const warn = (bad: boolean): string => (bad ? ' ⚠' : '');
@@ -161,7 +174,7 @@ function table(results: Result[]): string {
     rows.push(
       `| ${r.name} | ${r.frame.mean.toFixed(1)} / ${r.frame.p95.toFixed(1)} | ${r.frame.fps.toFixed(0)} | ` +
         // Adaptive DPR may have stepped down during the run: the numbers are then not at 1.5.
-        `${s.dpr}${warn(s.dpr !== expectedDpr)} | ` +
+        `${s.dpr} ${s.tier}${warn(s.dpr !== expectedDpr(s.tier))} | ` +
         `${s.calls}${warn(s.calls > BUDGET.calls)} | ${(s.triangles / 1e6).toFixed(2)} M${warn(s.triangles > BUDGET.triangles)} | ` +
         `${s.programs}${warn(s.programs > BUDGET.programs)} | ${s.textures}${warn(s.textures > BUDGET.textures)} | ` +
         `${mb(r.memory.geometryBytes)} | ${mb(r.memory.textureBytes)} | ` +

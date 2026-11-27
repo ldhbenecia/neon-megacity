@@ -11,7 +11,7 @@ The city is an ORIGINAL design inspired by cyberpunk anime aesthetics.
 - `npm run build` — typecheck + production build; must pass before any commit
 - `npm run format:check` / `npm run format` — Prettier check / write; must pass
 - `npm run test:e2e` — Playwright smoke tests (builds and serves on :4173)
-- `npm run shots -- [label] [--swiftshader] [--no-build]` — deterministic screenshots into `screenshots/<label>/`
+- `npm run shots -- [label] [--swiftshader|--gpu] [--no-build] [--only=<substring>] [--burst] [--black-limit=<percent>]` — deterministic screenshots into `screenshots/<label>/` (real GPU by default on macOS). Each shot prints its mean luminance and near-black pixel ratio and fails above the limit; `--burst` also shoots frame by frame while zooming, flying and orbiting
 - `npm run perf` — real-GPU measurements (frame time, draw calls, memory, boot time); results and budgets live in `docs/PERF.md`
 - `npm run size` — first-load JS gzip size of `dist/`; fails above 400 KB, warns above the 260 KB target
 - `npm run preview` — serve `dist/`
