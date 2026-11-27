@@ -117,6 +117,8 @@ wait on it before asserting or capturing. Keep it in place.
 Y up, ground at `y = 0`, 1 unit = 1 m, north = -Z, east = +X. The map spans `[-1200, 1200]` on X and Z (`CITY.extent = 2400`).
 `rotY` / `gridAngle` follow three.js `rotation.y`; `w` is the local X extent and `d` the local Z extent.
 
+`LAYOUT` is published once at boot: `src/boot.ts` (the entry in `index.html`) generates it in the city worker (`src/city/loadLayout.ts`, main-thread fallback), calls `setLayout`, and only then imports `src/main.ts`. It is `undefined` before that, so no module may read it while it is evaluated; derive layout constants on first use. Tests publish it in `tests/setup-layout.ts`. The layout must stay plain data (no class instances or functions) so the worker's structured clone keeps it intact (`tests/load-layout.test.ts`).
+
 `src/city/` is the single source of truth (data types in `src/city/types.ts`, all re-exported by `src/city/layout.ts`):
 
 | data               | what                                                                                             |
