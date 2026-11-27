@@ -55,4 +55,25 @@ describe('neon district fallback', () => {
       for (const h of P.holos) expect(cat.cells[h.cell]?.kind).toBe('koi');
     }
   });
+
+  it('respects faces buildings marks unusable, and skips unmarked landmarks', () => {
+    const tall = LAYOUT.buildings.filter((b) => b.h >= 160).map((b) => b.id);
+    const marked = new Set(tall);
+    const faces = LAYOUT.buildings.map((b) =>
+      buildingFaces(b).map((f) => (marked.has(b.id) ? { ...f, usable: false } : f)),
+    );
+    const cat = buildCatalog(LAYOUT);
+    const P = placeSigns(LAYOUT, faces, cat);
+    for (const s of [...P.flats, ...P.screens, ...P.tubes])
+      expect(marked.has(s.building)).toBe(false);
+    const landmarks = new Set(LAYOUT.buildings.filter((b) => b.tags.landmark).map((b) => b.id));
+    const plain = placeSigns(
+      LAYOUT,
+      LAYOUT.buildings.map((b) => buildingFaces(b)),
+      cat,
+    );
+    for (const s of [...plain.flats, ...plain.screens, ...plain.tubes, ...plain.rings]) {
+      expect(landmarks.has(s.building)).toBe(false);
+    }
+  });
 });

@@ -394,6 +394,11 @@ function cellColor(c: Ctx, cell: number, fallback: NeonName): NeonName {
   return c.cat.cells[cell]?.color ?? fallback;
 }
 
+// buildings may mark faces whose real shape departs from the tier box (landmarks) as unusable.
+function usable(f: BuildingFace): boolean {
+  return (f as BuildingFace & { usable?: boolean }).usable !== false;
+}
+
 function tryWallSign(
   c: Ctx,
   b: BuildingSpec,
@@ -405,7 +410,7 @@ function tryWallSign(
   props: Pick<FlatSign, 'cell' | 'color' | 'anim' | 'zone' | 'seed'>,
 ): FlatSign | null {
   const f = c.faces[b.id]?.[fi];
-  if (!f || !insideFace(f, r.u0, r.u1, r.y0, r.y1)) return null;
+  if (!f || !usable(f) || !insideFace(f, r.u0, r.u1, r.y0, r.y1)) return null;
   const vol = wallVolume(f, b, r.u0, r.u1, r.y0, r.y1, 0.02, gap + depth);
   if (firstHit(c.L, vol)) return null;
   if (!reserve(c, b.id, fi, r)) return null;
@@ -499,7 +504,7 @@ function placeBands(
 function placeBlades(c: Ctx, b: BuildingSpec, rng: Rng, zone: number, p: number, fi: number): void {
   const faces = c.faces[b.id] ?? [];
   const f = faces[fi];
-  if (!f || f.width < 6) return;
+  if (!f || f.width < 6 || !usable(f)) return;
   for (const end of [-1, 1]) {
     if (!rng.chance(p)) continue;
     const w = rng.range(0.9, 1.6);
@@ -552,7 +557,7 @@ function placeTubes(c: Ctx, b: BuildingSpec, rng: Rng, zone: number): void {
   let placed = 0;
   const maxTubes = b.h > 150 ? 4 : 2;
   faces.forEach((f, fi) => {
-    if (placed >= maxTubes || f.shape === 'cylinder') return;
+    if (placed >= maxTubes || f.shape === 'cylinder' || !usable(f)) return;
     const tierH = f.y1 - f.y0;
     if (tierH < 14 + 2 * TIER_MARGIN || f.width < 8) return;
     if (!rng.chance(f.street ? 0.75 : 0.3)) return;
@@ -647,7 +652,7 @@ function placeCrown(
   if (!t || t.shape === 'cylinder' || cell < 0) return;
   const tierIdx = b.tiers.length - 1;
   const fs = (c.faces[b.id] ?? [])
-    .filter((f) => f.stack === 0 && f.tier === tierIdx && f.width >= 12)
+    .filter((f) => f.stack === 0 && f.tier === tierIdx && f.width >= 12 && usable(f))
     .sort((a, z) => Number(z.street) - Number(a.street) || z.normal.z - a.normal.z);
   for (const f of fs.slice(0, faces)) {
     const w = Math.min(f.width * 0.7, f.width - 2 * EDGE_IN);
@@ -736,7 +741,7 @@ function placeScreens(c: Ctx, b: BuildingSpec, rng: Rng, zone: number, maxScreen
   const cands: { f: BuildingFace; fi: number; h: number; w: number; y0: number; score: number }[] =
     [];
   (c.faces[b.id] ?? []).forEach((f, fi) => {
-    if (f.shape === 'cylinder') return;
+    if (f.shape === 'cylinder' || !usable(f)) return;
     const tierH = f.y1 - f.y0;
     const y0 = Math.max(lo, f.y0 + TIER_MARGIN);
     const y1 = Math.min(hi, f.y1 - TIER_MARGIN);
@@ -784,6 +789,8 @@ function placeScreens(c: Ctx, b: BuildingSpec, rng: Rng, zone: number, maxScreen
 function placeRings(c: Ctx, b: BuildingSpec, rng: Rng, zone: number, budget: number): number {
   const t = b.tiers[0];
   if (!t || t.shape !== 'cylinder' || budget <= 0) return 0;
+  const base = (c.faces[b.id] ?? []).filter((f) => f.tier === 0 && f.stack === 0);
+  if (!base.every(usable)) return 0;
   const n = Math.min(budget, b.h >= 200 ? 3 : b.h >= 100 ? 2 : 1);
   const lo = b.baseY + b.h * 0.3;
   const hi = b.baseY + b.h * 0.6;
@@ -888,7 +895,11 @@ function placeMediaScreen(
   const cands = (c.faces[b.id] ?? [])
     .map((f, fi) => ({ f, fi, main: toMain(f) }))
     .filter(
-      ({ f }) => f.shape !== 'cylinder' && f.stack === 0 && (media ? f.side === media : f.street),
+      ({ f }) =>
+        f.shape !== 'cylinder' &&
+        f.stack === 0 &&
+        usable(f) &&
+        (media ? f.side === media : f.street),
     )
     .sort(
       (a, z) => a.main - z.main || z.f.width * (z.f.y1 - z.f.y0) - a.f.width * (a.f.y1 - a.f.y0),
@@ -1017,6 +1028,7 @@ function placePaint(c: Ctx, b: BuildingSpec, rng: Rng, zone: number): void {
         f.stack === 0 &&
         f.shape !== 'cylinder' &&
         isBlank(f, b, base) &&
+        f.side !== b.tags.mediaFace &&
         c.roadGap(f.center.x + f.normal.x * 2, f.center.z + f.normal.z * 2) < PAINT_ROAD_GAP,
     )
     .sort((p, q) => q.f.width - p.f.width);
@@ -1132,7 +1144,13 @@ export function placeSigns(
   const maxHolos = opts.maxHolos ?? 36;
 
   // Unbuilt districts (palace grounds, parks) stay dark: no sign of any kind.
-  const lit = L.buildings.filter((b) => !isUnbuilt(b.district));
+  // Landmarks whose real shape departs from their tier boxes only get signs once buildings marks
+  // which faces are usable; until then no face-mounted sign may float in the air beside them.
+  const flagged = (id: number): boolean =>
+    (faces[id] ?? []).some((f) => (f as BuildingFace & { usable?: boolean }).usable !== undefined);
+  const lit = L.buildings.filter(
+    (b) => !isUnbuilt(b.district) && (!b.tags.landmark || flagged(b.id)),
+  );
   const byHeight = [...lit].sort((a, z) => z.h - a.h);
   for (const b of byHeight) {
     const rng = createRng((seed ^ Math.imul(b.seed | 0, 0x9e3779b1)) >>> 0);
