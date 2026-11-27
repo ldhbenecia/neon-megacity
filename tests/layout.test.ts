@@ -90,7 +90,7 @@ describe('layout v3: determinism', () => {
       {
         "blocks": 1403,
         "buildings": 5653,
-        "digest": "15ed63e7",
+        "digest": "1864fc63",
         "roads": 1175,
         "slots": 3436,
       }

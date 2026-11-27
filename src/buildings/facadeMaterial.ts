@@ -1,5 +1,9 @@
 import * as THREE from 'three';
 import { MATERIAL, NEON, WINDOW_MIX } from '../core/palette';
+import { FACADE_DAY } from './colors';
+
+const glsl = (v: number): string => v.toFixed(4);
+const vec3 = (c: readonly [number, number, number]): string => `vec3(${c.map(glsl).join(', ')})`;
 
 export interface FacadeUniforms {
   uLitRatio: { value: number };
@@ -45,6 +49,9 @@ attribute vec4 aInfo;
 varying vec2 vFace;
 varying vec4 vWin;
 varying vec4 vInfo;
+vec3 srgbToLinear(vec3 c) {
+  return mix(c / 12.92, pow(max((c + 0.055) / 1.055, vec3(0.0)), vec3(2.4)), step(0.04045, c));
+}
 `;
 
 const FRAG_PARS = /* glsl */ `
@@ -221,8 +228,8 @@ const FRAG_MAIN = /* glsl */ `
     fAlbedo = mix(fAlbedo, vec3(0.42, 0.40, 0.36), s * 0.7);
     fRough = 0.7;
   } else {
-    float cw = vWin.x;
-    float chh = vWin.y;
+    float cw = max(vWin.x, 0.05);
+    float chh = max(vWin.y, 0.05);
     vec2 c = vec2(f.x / cw, f.y / chh);
     vec2 fw = fwidth(c);
     vec2 id = floor(c);
@@ -321,13 +328,17 @@ const FRAG_MAIN = /* glsl */ `
     if (far < 0.99 && mask > 0.001) {
       vec3 nV = normalize(vNormal);
       vec3 upV = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
-      vec3 tV = normalize(cross(upV, nV));
+      // A face whose normal is parallel to view-up (a horizontal face) would make the tangent
+      // normalize(0) = NaN, which bloom spreads into black blocks; fall back to another axis.
+      vec3 cr = cross(upV, nV);
+      vec3 tV = dot(cr, cr) > 1e-8 ? normalize(cr) : normalize(cross(vec3(1.0, 0.0, 0.0), nV) + vec3(0.0, 0.0, 1e-4));
       vec3 dv = normalize(-vViewPosition);
       vec3 dl = vec3(dot(dv, tV), dot(dv, upV), dot(dv, nV));
       float roomW = roomCells * cw;
       float rx = roomCells > 1.5 ? fract(c.x / roomCells) * roomW : fr.x * cw;
       vec3 R = vec3(roomW, chh, 3.5 + 4.0 * fhash(key + 23.1));
-      vec3 room = roomInterior(vec3(rx, fr.y * chh, 0.0), dl, R, key, lightC, lit);
+      // dv points at the camera; the room ray runs the other way, into the building (-z).
+      vec3 room = roomInterior(vec3(rx, fr.y * chh, 0.0), -dl, R, key, lightC, lit);
       float hCur = fhash(key + 9.1);
       if (hCur < 0.2) {
         float level = 1.0 - (0.25 + 0.5 * fhash(key + 3.3));
@@ -356,13 +367,22 @@ const FRAG_MAIN = /* glsl */ `
         fEmit = uShop * (0.3 + 0.35 * b) * step(0.15, b) * dayDim * (1.0 - smoothstep(-1.2, -0.6, f.y));
       }
     }
+    // Daytime material split (ART_DIRECTION 4.3 #6): precast concrete reads lighter, metal panels
+    // catch the sky, and glass reflects it instead of staying a black hole. Night is unchanged.
+    float day = 1.0 - uNight;
+    float matPick = fhash(vec2(fSeed * 53.0, 7.0));
+    float concrete = step(matPick, 0.4);
+    float metal = step(0.4, matPick) * step(matPick, 0.7);
+    float wallRough = mix(0.8, 0.35, metal * day);
+    fAlbedo *= 1.0 + day * (${glsl(FACADE_DAY.concreteGain)} * concrete + ${glsl(FACADE_DAY.metalGain)} * metal);
     float gm = clamp(mask, 0.0, 1.0) * (1.0 - 0.5 * far);
     float fm = frame * gm * (1.0 - far);
-    fAlbedo = mix(fAlbedo, vec3(0.012, 0.016, 0.02), gm);
+    vec3 glass = mix(${vec3(FACADE_DAY.glassNight)}, ${vec3(FACADE_DAY.glassDay)}, day);
+    fAlbedo = mix(fAlbedo, glass, gm);
     fAlbedo = mix(fAlbedo, vec3(0.03), fm);
-    fRough = mix(0.8, 0.05, gm);
+    fRough = mix(wallRough, 0.05, gm);
     fRough = mix(fRough, 0.5, fm);
-    fMetal = mix(0.04, 0.0, gm);
+    fMetal = mix(mix(0.04, 0.45, metal * day), 0.55 * day, gm);
     fMetal = mix(fMetal, 0.6, fm);
   }
   diffuseColor.rgb = fAlbedo;
@@ -408,6 +428,10 @@ export function createFacadeMaterial(
       .replace(
         '#include <begin_vertex>',
         '#include <begin_vertex>\nvFace = aFace;\nvWin = aWin;\nvInfo = aInfo;',
+      )
+      .replace(
+        '#include <color_vertex>',
+        '#include <color_vertex>\nvColor.rgb = srgbToLinear(vColor.rgb);',
       );
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>\n${FRAG_PARS}`)
