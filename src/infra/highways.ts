@@ -320,16 +320,6 @@ function buildHighway(
     }
   }
 
-  // Ring road: thin cyan line on both fascias.
-  if (hw.id === 'hw-ring') {
-    for (const sgn of [-1, 1] as const) {
-      const l0 = sgn === 1 ? half : -half - 0.06;
-      for (const run of runs(sparse, barrierOk(sgn))) {
-        parts.glow.sweep(framesOf(run), boxEdges(l0, l0 + 0.06, -0.5, -0.36, c.ringLine));
-      }
-    }
-  }
-
   buildMarkings(path, rings, sparse, parts, c);
   if (isDivided(hw) && isRaised(hw)) buildLamps(path, rings, parts, c);
   if (isRaised(hw)) buildPortals(hw, rings, parts, c);

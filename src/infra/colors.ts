@@ -21,7 +21,6 @@ export interface InfraColors {
   paintYellow: RGB;
   /** Emissive (HDR). */
   wallBand: RGB;
-  ringLine: RGB;
   archPoint: RGB;
   hanger: RGB;
   trussLine: RGB;
@@ -60,7 +59,6 @@ export function infraColors(): InfraColors {
     paintWhite: lin(MATERIAL.laneWhite),
     paintYellow: lin(MATERIAL.laneYellow),
     wallBand: lin(NEON.neonTeal.hex, 1.8),
-    ringLine: lin(NEON.neonCyan.hex, 2),
     archPoint: lin(NEON.neonCyan.hex, 3),
     hanger: lin(NEON.neonWhite.hex, 0.9),
     trussLine: lin(NEON.neonOrange.hex, 3.5),

@@ -1,5 +1,5 @@
-// Highway pillars (ART_DIRECTION 2.5): T section under hw-river-north and the ramps, Y section
-// under hw-ring. Positions come from the layout (`hw.pillars`); this file only adds the shape,
+// Highway pillars (ART_DIRECTION 2.5): Y section under the 내부순환로 main legs, T section under
+// 강변북로 and every ramp. Positions come from the layout (`hw.pillars`); this file only adds the shape,
 // orientation and the filters that keep pillars out of other decks. Pure.
 import { surfaceHeight, type Highway, type Layout } from '../city/layout';
 import { obbOverlap } from '../city/math';
@@ -29,8 +29,11 @@ export interface PillarSpec {
   deckW: number;
 }
 
-export function pillarKind(hw: Pick<Highway, 'id' | 'kind'>): PillarKind {
-  return hw.id === 'hw-ring' ? 'Y' : 'T';
+/** Highway names (SEOUL.md 5.3) that stand on Y pillars; their ramps keep T pillars. */
+const Y_PILLAR_ROADS: ReadonlySet<string> = new Set(['내부순환로']);
+
+export function pillarKind(hw: Pick<Highway, 'name' | 'kind'>): PillarKind {
+  return hw.kind !== 'ramp' && Y_PILLAR_ROADS.has(hw.name) ? 'Y' : 'T';
 }
 
 /** Column cross-section by highway (m): lateral × along. */
