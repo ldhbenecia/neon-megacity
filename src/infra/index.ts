@@ -7,7 +7,7 @@
 // quality 'ci'). No real lights.
 import * as THREE from 'three';
 import { deckHeightAt, highwayCurve, type Vec2, type Vec3 } from '../city/layout';
-import { MATERIAL } from '../core/palette';
+import { MATERIAL, NIGHT_FILL_AMBIENT } from '../core/palette';
 import { EMISSIVE_FOG_DENSITY_SCALE, applyEmissiveFog } from '../core/shaders/emissiveFog';
 import type { CityModuleInstance, Ctx, InfraApi } from '../core/types';
 import { fountainNozzles, railTracks } from './bridges';
@@ -17,6 +17,9 @@ import { bridgeDetailOn } from './lod';
 import type { MeshData, V3 } from './mesh';
 import type { BridgeDetail, DetailParts } from './parts';
 import { DECK_THICKNESS } from './profile';
+
+/** Night fill multiplier over the shared floor (measured: 1× leaves undersides at 3/255). */
+const INFRA_FILL = 3;
 
 function toGeometry(m: MeshData): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
@@ -291,6 +294,9 @@ export function init(ctx: Ctx): CityModuleInstance {
   folder.close();
 
   const emissive = [glowMat, washMat, pointMat];
+  // Night fill: unlit undersides and piers would round to pure black up close. They get no street
+  // or window light at all, so they need INFRA_FILL × the facade / terrain floor to read.
+  const filled = [concrete.material, steel.material, pillarMat] as THREE.MeshStandardMaterial[];
   return {
     update() {
       if (detail) {
@@ -311,6 +317,9 @@ export function init(ctx: Ctx): CityModuleInstance {
       const day = DAY_LIGHTS + (1 - DAY_LIGHTS) * ctx.env.nightFactor;
       const gain = ctx.env.neonGain * ctx.env.powerOn * settings.gain * day;
       for (const m of emissive) m.color.setScalar(gain);
+      const [r, g, b] = NIGHT_FILL_AMBIENT;
+      const k = ctx.env.nightFactor * INFRA_FILL;
+      for (const m of filled) m.emissive.setRGB(r * k, g * k, b * k);
     },
     dispose() {
       ctx.scene.remove(group);
