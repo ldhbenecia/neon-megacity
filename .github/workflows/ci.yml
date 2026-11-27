@@ -12,12 +12,11 @@ permissions:
   contents: read
 
 concurrency:
-  # One group per main commit: a group holds at most one pending run, so with a shared group
-  # back-to-back merges cancelled each other's pending runs even without cancel-in-progress.
-  # Pages only deploys the newest of them (pages.yml gate).
-  group: ci-${{ github.event.pull_request.number || (github.event_name == 'push' && github.sha) || github.ref }}
-  # Superseded PR runs are cancelled; main commits are never cancelled.
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  # One group per PR and one for main: a newer commit cancels the run in progress, so a batch of
+  # merges only runs CI to the end on its last commit. Pages deploys only a green run of the
+  # current main head (pages.yml gate); cancelled runs are skipped there.
+  group: ci-${{ github.event.pull_request.number || (github.ref == 'refs/heads/main' && 'main') || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   # Decides which e2e runs. Main pushes and main dispatches always run the full suite (Pages
