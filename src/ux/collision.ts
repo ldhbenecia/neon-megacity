@@ -18,17 +18,14 @@ import {
 export const GROUND_CLEARANCE = 2;
 export const WATER_CLEARANCE = 3;
 export const WALL_MARGIN = 1.5;
-/** Largest `standoff()`; also the radius of the neighbour query. */
-export const MAX_STANDOFF = 25;
-
 /**
- * Camera clearance from a building's walls and roof: 10 % of its height, 3..25 m. Closer than
- * that a tower face fills the whole view and reads as a black screen; low street buildings keep
- * a small one so eye-level views between them stay possible.
+ * Distance (12..100 m, 40 % of the building's height) inside which a building face starts to fill
+ * the view. Not a collision margin: the rig brakes and opens the view against it, smoothly.
  */
-export function standoff(b: BuildingSpec): number {
-  return Math.min(MAX_STANDOFF, Math.max(3, buildingTop(b) * 0.1));
+export function viewClearance(b: BuildingSpec): number {
+  return Math.min(100, Math.max(12, buildingTop(b) * 0.4));
 }
+
 // A point pushed onto the margin boundary must count as outside despite rotation round-off.
 const EDGE_EPS = 1e-6;
 
@@ -51,8 +48,12 @@ interface Box {
   cylinder: boolean;
 }
 
+const boxCache = new WeakMap<BuildingSpec, Box[]>();
+
 function boxesOf(b: BuildingSpec): Box[] {
-  return buildingVolumes(b).map((t) => ({
+  const hit = boxCache.get(b);
+  if (hit) return hit;
+  const boxes = buildingVolumes(b).map((t) => ({
     x: t.x,
     z: t.z,
     hw: t.w / 2,
@@ -61,6 +62,8 @@ function boxesOf(b: BuildingSpec): Box[] {
     y1: t.y1,
     cylinder: t.shape === 'cylinder',
   }));
+  boxCache.set(b, boxes);
+  return boxes;
 }
 
 function hullOf(b: BuildingSpec): Box {
@@ -108,25 +111,13 @@ function exitFrom(b: BuildingSpec, box: Box, p: Vec3, m: number): Vec3 | null {
   return { x: box.x + w.x, y: p.y, z: box.z + w.z };
 }
 
-function settle(
-  L: Layout,
-  p: Vec3,
-  marginOf: (b: BuildingSpec) => number,
-  reach: number,
-): { at: Vec3; moved: boolean; settled: boolean } {
+function settle(L: Layout, p: Vec3, m: number): { at: Vec3; moved: boolean; settled: boolean } {
   let cur: Vec3 = { x: p.x, y: p.y, z: p.z };
   let moved = false;
   for (let iter = 0; iter < 6; iter++) {
     let fix: Vec3 | null = null;
-    for (const id of buildingsInAabb(
-      L,
-      cur.x - reach,
-      cur.z - reach,
-      cur.x + reach,
-      cur.z + reach,
-    )) {
+    for (const id of buildingsInAabb(L, cur.x - m, cur.z - m, cur.x + m, cur.z + m)) {
       const b = L.buildings[id] as BuildingSpec;
-      const m = marginOf(b);
       for (const box of boxesOf(b)) {
         const e = exitFrom(b, box, cur, m);
         if (e && (!fix || dist2(cur, e) < dist2(cur, fix))) fix = e;
@@ -136,7 +127,7 @@ function settle(
       const id = buildingContaining(L, cur.x, cur.y, cur.z);
       if (id !== null) {
         const b = L.buildings[id] as BuildingSpec;
-        fix = exitFrom(b, hullOf(b), cur, marginOf(b));
+        fix = exitFrom(b, hullOf(b), cur, m);
       }
     }
     if (!fix) return { at: cur, moved, settled: true };
@@ -146,45 +137,27 @@ function settle(
   return { at: cur, moved, settled: false };
 }
 
-export interface CameraFix {
-  /** Corrected position, or null when `p` needs no change. */
-  at: Vec3 | null;
-  /**
-   * Neither clearance settles here (narrow gap between tall blocks): `at` is only guaranteed to
-   * be outside every volume, so a moving camera should rather stay where it last resolved.
-   */
-  blocked: boolean;
-}
-
-const hardMargin = (): number => WALL_MARGIN;
-
 /**
- * Camera collision. Prefers the height-scaled `standoff`; where the clearances of neighbours
- * overlap (twin towers, narrow streets between tall blocks) it accepts any point that keeps the
- * hard WALL_MARGIN. A soft result is only taken when it settles, and a hard-valid point is left
- * alone when soft cannot settle from it, so applying the fix again returns `at: null`.
+ * Pushes `p` out of every building volume plus `margin`; applying it again returns null. Margins
+ * of blocks closer than 2 x margin (rows of low sangga) ping-pong without settling; there it rises
+ * above every roof within reach instead. Towers stand farther apart, so this never lifts a camera
+ * over a skyline.
  */
-export function resolveCamera(L: Layout, p: Vec3): CameraFix {
-  const soft = settle(L, p, standoff, MAX_STANDOFF);
-  if (soft.settled) return { at: soft.moved ? soft.at : null, blocked: false };
-  const hard = settle(L, p, hardMargin, WALL_MARGIN);
-  if (hard.settled) {
-    if (!hard.moved) return { at: null, blocked: false };
-    // The next call starts from hard.at; resolve that soft attempt now so it returns null.
-    const again = settle(L, hard.at, standoff, MAX_STANDOFF);
-    return { at: again.settled ? again.at : hard.at, blocked: false };
+export function resolveCollision(L: Layout, p: Vec3, margin = WALL_MARGIN): Vec3 | null {
+  const r = settle(L, p, margin);
+  if (r.settled) return r.moved ? r.at : null;
+  const reach = margin * 2;
+  let y = r.at.y;
+  for (const id of buildingsInAabb(
+    L,
+    r.at.x - reach,
+    r.at.z - reach,
+    r.at.x + reach,
+    r.at.z + reach,
+  )) {
+    y = Math.max(y, buildingTop(L.buildings[id] as BuildingSpec) + margin);
   }
-  const stuck = buildingContaining(L, hard.at.x, hard.at.y, hard.at.z);
-  if (stuck === null) return { at: hard.at, blocked: true };
-  const b = L.buildings[stuck] as BuildingSpec;
-  return { at: { x: hard.at.x, y: buildingTop(b) + WALL_MARGIN, z: hard.at.z }, blocked: true };
-}
-
-/** `resolveCamera` without the blocked flag (presets), or with one fixed margin. */
-export function resolveCollision(L: Layout, p: Vec3, margin?: number): Vec3 | null {
-  if (margin === undefined) return resolveCamera(L, p).at;
-  const r = settle(L, p, () => margin, margin);
-  return r.moved ? r.at : null;
+  return { x: r.at.x, y, z: r.at.z };
 }
 
 const dist2 = (a: Vec3, b: Vec3): number => (a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2;

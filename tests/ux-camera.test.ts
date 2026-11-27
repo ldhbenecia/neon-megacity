@@ -17,9 +17,9 @@ import {
   frameBuildingClear,
   pick,
   raycastSurface,
-  resolveCamera,
   resolveCollision,
-  standoff,
+  viewClearance,
+  WALL_MARGIN,
 } from '../src/ux/collision';
 import {
   dampFactor,
@@ -131,12 +131,12 @@ describe('collision', () => {
     expect(resolveCollision(LAYOUT, out!)).toBeNull();
   });
 
-  it('keeps a height-scaled standoff of 3..25 m', () => {
+  it('scales the view clearance with height, 12..100 m', () => {
     for (const b of LAYOUT.buildings) {
-      expect(standoff(b)).toBeGreaterThanOrEqual(3);
-      expect(standoff(b)).toBeLessThanOrEqual(25);
+      expect(viewClearance(b)).toBeGreaterThanOrEqual(12);
+      expect(viewClearance(b)).toBeLessThanOrEqual(100);
     }
-    expect(standoff(tall)).toBe(25);
+    expect(viewClearance(tall)).toBe(100);
   });
 
   it('never leaves the camera inside a building and settles in one call', () => {
@@ -147,10 +147,9 @@ describe('collision', () => {
       for (const v of buildingVolumes(b)) {
         const w = toWorld((rng.next() - 0.5) * v.w, (rng.next() - 0.5) * v.d, b.rotY);
         const p = { x: v.x + w.x, y: v.y0 + (v.y1 - v.y0) * rng.next(), z: v.z + w.z };
-        const fix = resolveCamera(LAYOUT, p);
-        const out = fix.at ?? p;
+        const out = resolveCollision(LAYOUT, p) ?? p;
         expect(buildingContaining(LAYOUT, out.x, out.y, out.z), JSON.stringify(p)).toBeNull();
-        if (!fix.blocked) expect(resolveCamera(LAYOUT, out).at, JSON.stringify(p)).toBeNull();
+        expect(resolveCollision(LAYOUT, out), JSON.stringify(p)).toBeNull();
         checked++;
       }
     }
@@ -167,7 +166,7 @@ describe('collision', () => {
       ReturnType<typeof buildingVolumes>[number],
     ];
     const w = toWorld(up.w / 2 - 0.5, 0, b.rotY);
-    const p = { x: up.x + w.x, y: low.y1 + standoff(b), z: up.z + w.z };
+    const p = { x: up.x + w.x, y: low.y1 + WALL_MARGIN, z: up.z + w.z };
     expect(buildingContaining(LAYOUT, p.x, p.y, p.z)).toBe(b.id);
     const out = resolveCollision(LAYOUT, p);
     expect(out).not.toBeNull();
@@ -178,7 +177,7 @@ describe('collision', () => {
     const top = tall.tiers[tall.tiers.length - 1]!;
     const skim = { x: top.x, y: top.y1 + 0.5, z: top.z };
     const out = resolveCollision(LAYOUT, skim);
-    expect(out?.y).toBeCloseTo(top.y1 + standoff(tall));
+    expect(out?.y).toBeCloseTo(top.y1 + WALL_MARGIN);
   });
 
   it('leaves free space alone', () => {
@@ -242,9 +241,11 @@ describe('rig presets (8.4)', () => {
 
 describe('street-level presets', () => {
   it('keep the eye-level street preset at eye level after collision', () => {
-    const p = rigPresets()[2]!.position;
+    const street = rigPresets().find((r) => r.name.endsWith(' 거리'));
+    expect(street, 'no street preset').toBeDefined();
+    const p = street!.position;
     expect(p.y - surfaceHeight(p.x, p.z)).toBeLessThan(10);
-    expect(resolveCamera(LAYOUT, p).at).toBeNull();
+    expect(resolveCollision(LAYOUT, p)).toBeNull();
   });
 });
 

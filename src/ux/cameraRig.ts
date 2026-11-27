@@ -1,14 +1,21 @@
 import * as THREE from 'three';
-import { LAYOUT, buildingTop, surfaceHeight, type Vec3 } from '../city/layout';
+import {
+  LAYOUT,
+  buildingTop,
+  deckHeightAt,
+  raycastBuildings,
+  surfaceHeight,
+  type Vec3,
+} from '../city/layout';
 import type { Ctx } from '../core/types';
 import {
-  MAX_STANDOFF,
+  WALL_MARGIN,
   cameraFloor,
   frameBuildingClear,
   pick,
-  resolveCamera,
-  standoff,
+  resolveCollision,
   targetFloor,
+  viewClearance,
 } from './collision';
 import type { Hud, RigMode } from './hud';
 import { reducedMotion } from './loader';
@@ -81,12 +88,26 @@ const MOVE_KEYS = new Set([
 ]);
 
 /** Above this height no building volume (spires included) can be within the wall margin. */
-const SKY_CLEAR = LAYOUT.buildings.reduce((m, b) => Math.max(m, buildingTop(b)), 0) + MAX_STANDOFF;
+/** Ray offsets (tan of ~20°) around the view direction checked for crowding walls. */
+const RAY_FAN: readonly (readonly [number, number])[] = [
+  [0, 0],
+  [0.36, 0],
+  [-0.36, 0],
+  [0, 0.36],
+  [0, -0.36],
+];
+/** Camera clearance above an elevated deck surface and below it (girders, m). */
+const DECK_ABOVE = 3;
+const DECK_BELOW = 4;
+const SKY_CLEAR = LAYOUT.buildings.reduce((m, b) => Math.max(m, buildingTop(b)), 0) + WALL_MARGIN;
 
 const _v = new THREE.Vector3();
 const _w = new THREE.Vector3();
 const _fwd = new THREE.Vector3();
 const _right = new THREE.Vector3();
+const _side = new THREE.Vector3();
+const _up2 = new THREE.Vector3();
+const _ray = new THREE.Vector3();
 const _move = new THREE.Vector3();
 const _ndc = new THREE.Vector2();
 const _euler = new THREE.Euler(0, 0, 0, 'YXZ');
@@ -133,8 +154,14 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
   const vel = new THREE.Vector3();
   let zoomPending = 0;
   const zoomAnchor = new THREE.Vector3();
-  // Closest the cursor zoom gets to its anchor; a building face nearer than this fills the view.
-  let zoomStop = 6;
+  // Closest the cursor zoom gets to its anchor this gesture: the hit building's view clearance,
+  // or the 6 m floor when the gesture started inside it (the user asked to go closer).
+  let zoomFloor = 6;
+  // The last zoom deliberately went inside a building's view clearance: leave the view as is.
+  let closeZoom = false;
+  // Set by user input; once input stops, the view is opened if a wall or deck blocks it.
+  let openPending = false;
+  let openFor = 0;
   let lastAnchorAt = -1;
   const lastAnchorPx = { x: -1e9, y: -1e9 };
   let fovTarget = BASE_FOV;
@@ -318,6 +345,8 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
 
   const markInput = (): void => {
     idleFor = 0;
+    openPending = true;
+    openFor = 0;
     exitCinematic();
   };
   const touchIdle = (): void => {
@@ -464,7 +493,10 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
     if (moved > 8 || elapsed - lastAnchorAt > 0.25 || near || offRay) {
       const hit = pickRay();
       const b = hit?.kind === 'building' ? LAYOUT.buildings[hit.id] : undefined;
-      zoomStop = b ? Math.max(6, standoff(b) * 3) : 6;
+      const clear = b ? viewClearance(b) : 6;
+      const inside = hit !== null && hit.t <= clear * 1.05;
+      zoomFloor = inside ? 6 : clear;
+      closeZoom = b !== undefined && inside;
       if (hit) zoomAnchor.set(hit.point.x, hit.point.y, hit.point.z);
       else
         zoomAnchor
@@ -615,6 +647,55 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
     (pressed.has(pos) || pressed.has(alt) ? 1 : 0) -
     (pressed.has(neg) || pressed.has(alt2) ? 1 : 0);
 
+  // Slows motion toward a building face once it is inside the face's view clearance, so keys
+  // never park the camera where a wall fills the screen (collision alone allows 1.5 m).
+  const brake = (move: THREE.Vector3): void => {
+    const len = move.length();
+    if (len < 1e-6) return;
+    const hit = raycastBuildings(
+      LAYOUT,
+      toV3(camera.position),
+      toV3(_v.copy(move).divideScalar(len)),
+    );
+    if (!hit) return;
+    const c = viewClearance(LAYOUT.buildings[hit.id] as (typeof LAYOUT.buildings)[number]);
+    if (hit.t < c * 1.5) move.multiplyScalar(clamp((hit.t - c) / (c * 0.5), 0, 1));
+  };
+
+  /** How far inside a building's view clearance the view is, over five rays (centre, ±20°). */
+  const wallIntrusion = (p: THREE.Vector3, fwd: THREE.Vector3): number => {
+    _side.crossVectors(fwd, UP);
+    if (_side.lengthSq() < 1e-6) _side.set(1, 0, 0);
+    _side.normalize();
+    _up2.crossVectors(_side, fwd).normalize();
+    let worst = 0;
+    for (const [a, b] of RAY_FAN) {
+      _ray.copy(fwd).addScaledVector(_side, a).addScaledVector(_up2, b).normalize();
+      const hit = raycastBuildings(LAYOUT, toV3(p), toV3(_ray));
+      if (!hit) continue;
+      const c = viewClearance(LAYOUT.buildings[hit.id] as (typeof LAYOUT.buildings)[number]);
+      worst = Math.max(worst, c - hit.t);
+    }
+    return worst;
+  };
+
+  /** Eases the camera back from walls crowding the view and up from under a deck; true when done. */
+  const openView = (dt: number): boolean => {
+    const p = camera.position;
+    _v.copy(controls.target).sub(p);
+    if (_v.lengthSq() < 1e-6) return true;
+    _v.normalize();
+    const back = closeZoom ? 0 : wallIntrusion(p, _v);
+    const deck = deckHeightAt(LAYOUT, p.x, p.z);
+    const up = deck !== null && p.y < deck && deck - p.y < 40 ? deck + 6 - p.y : 0;
+    if (back <= 0.5 && up <= 0) return true;
+    const k = dampFactor(dt, 0.5);
+    const b = back > 0.5 ? back : 0;
+    p.addScaledVector(_v, -b * k);
+    p.y += b * k * 0.35 + up * k;
+    return false;
+  };
+
   const keyboardStep = (
     dt: number,
     forward: THREE.Vector3,
@@ -629,6 +710,7 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
     if (_move.lengthSq() > 1) _move.normalize();
     _move.multiplyScalar(speed);
     _move.y += u * speed * 0.6;
+    brake(_move);
     vel.lerp(_move, dampFactor(dt, MOVE_TAU));
     if (vel.lengthSq() < 1e-4) vel.set(0, 0, 0);
     return _w.copy(vel).multiplyScalar(dt);
@@ -645,10 +727,10 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
     if (s > 1 && orbit * s > CAMERA_LIMITS.maxDistance) {
       s = Math.max(1, CAMERA_LIMITS.maxDistance / orbit);
     }
-    // Already inside the stop distance (zoomed there before, or moved close): allow zooming
-    // on down to the hard floor rather than freezing the wheel.
-    const stop = toAnchor > zoomStop ? zoomStop : 6;
-    if (s < 1 && toAnchor * s < stop) s = Math.min(1, stop / Math.max(toAnchor, 1e-6));
+    if (s < 1 && toAnchor * s < zoomFloor) {
+      s = Math.min(1, zoomFloor / Math.max(toAnchor, 1e-6));
+      zoomPending = 0;
+    }
     camera.position.sub(zoomAnchor).multiplyScalar(s).add(zoomAnchor);
     controls.target.sub(zoomAnchor).multiplyScalar(s).add(zoomAnchor);
     const d = camera.position.distanceTo(controls.target);
@@ -665,10 +747,15 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
     const p = camera.position;
     if (p.equals(resolvedAt)) return;
     if (p.y <= SKY_CLEAR) {
-      const fix = resolveCamera(LAYOUT, p);
-      // Unresolvable gap: keep the last resolved spot instead of jumping onto the roofs.
-      if (fix.blocked && Number.isFinite(resolvedAt.x)) p.copy(resolvedAt);
-      else if (fix.at) p.set(fix.at.x, fix.at.y, fix.at.z);
+      const fixed = resolveCollision(LAYOUT, p);
+      if (fixed) p.set(fixed.x, fixed.y, fixed.z);
+    }
+    // Elevated decks are not building volumes: keep out of the slab (roadway above, girders
+    // below), leaving through whichever face is nearer.
+    const deck = deckHeightAt(LAYOUT, p.x, p.z);
+    if (deck !== null && p.y > deck - DECK_BELOW && p.y < deck + DECK_ABOVE) {
+      p.y =
+        deck + DECK_ABOVE - p.y < p.y - (deck - DECK_BELOW) ? deck + DECK_ABOVE : deck - DECK_BELOW;
     }
     const floor = cameraFloor(p.x, p.z);
     if (p.y < floor) p.y = floor;
@@ -689,6 +776,14 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
     controls.panSpeed = panSpeedFor(height);
     const tf = targetFloor(controls.target.x, controls.target.z);
     if (controls.target.y < tf) controls.target.y = tf;
+    // Also during an orbit drag: swinging around a close target must not park on a wall.
+    if (openPending && (idleFor > 0.3 || down) && pressed.size === 0 && zoomPending === 0) {
+      openFor += dt;
+      // Collision may keep pushing back into the wall's direction; give up after 2 s of trying.
+      if (openView(dt)) openFor = 0;
+      else if (openFor > 2) openPending = false;
+      if (!down && openFor === 0 && idleFor > 0.3) openPending = false;
+    }
     controls.update();
   };
 

@@ -114,9 +114,11 @@ async function burst(
     await snap(`idle${i}`, i === 0);
   }
   await page.mouse.move(VIEWPORT.width / 2, VIEWPORT.height / 2);
+  // One continuous scroll (a screenshot between notches would split it into separate gestures),
+  // then frames while the zoom eases in.
+  for (let i = 0; i < 8; i++) await page.mouse.wheel(0, -500);
   for (let i = 0; i < 8; i++) {
-    await page.mouse.wheel(0, -500);
-    await waitFrames(page, 1);
+    await waitFrames(page, 2);
     await snap(`zoom${i}`);
   }
   for (let i = 0; i < 3; i++) {
@@ -137,8 +139,9 @@ async function burst(
     await snap(`orbit${i}`);
   }
   await page.mouse.up();
+  // Rest: what the user sees after letting go (the rig opens a blocked view within ~1 s).
   for (let i = 0; i < 3; i++) {
-    await waitFrames(page, 4);
+    await waitFrames(page, 30);
     await snap(`rest${i}`, i === 2);
   }
   const inside = await page.evaluate(() => window.__hangang?.inside() ?? { frames: 0, last: null });
