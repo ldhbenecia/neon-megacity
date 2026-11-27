@@ -25,9 +25,30 @@ async function settled(page: Page): Promise<Cam> {
   return cam(page);
 }
 
-/** Trackpad-like stream: many small wheel deltas in quick succession (about one second). */
-async function stream(page: Page, deltaY: number, count: number): Promise<void> {
-  for (let i = 0; i < count; i++) await page.mouse.wheel(0, deltaY);
+/**
+ * Trackpad-like stream: many small wheel deltas in one burst. Dispatched in the page because a
+ * page.mouse.wheel round trip costs seconds under software GL (CI).
+ */
+async function stream(page: Page, deltaY: number, count: number, ctrlKey = false): Promise<void> {
+  await page.evaluate(
+    ({ deltaY, count, ctrlKey }) => {
+      const canvas = document.querySelector('#app canvas')!;
+      const r = canvas.getBoundingClientRect();
+      for (let i = 0; i < count; i++) {
+        canvas.dispatchEvent(
+          new WheelEvent('wheel', {
+            deltaY,
+            ctrlKey,
+            clientX: r.left + r.width / 2,
+            clientY: r.top + r.height / 2,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+      }
+    },
+    { deltaY, count, ctrlKey },
+  );
 }
 
 test.describe('zoom out', () => {
@@ -57,9 +78,7 @@ test.describe('zoom out', () => {
   test('a one-second pinch (ctrl + wheel) pulls back at least 2.5x', async ({ page }) => {
     test.setTimeout(180_000);
     const before = orbit(await cam(page));
-    await page.keyboard.down('Control');
-    await stream(page, 2, 60);
-    await page.keyboard.up('Control');
+    await stream(page, 2, 60, true);
     const after = orbit(await settled(page));
     expect(after).toBeGreaterThanOrEqual(Math.min(before * 2.5, CAMERA_LIMITS.maxDistance - 1));
   });
