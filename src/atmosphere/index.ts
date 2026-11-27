@@ -14,7 +14,9 @@ import {
   createQualityState,
   rainAltitudeFade,
   searchlightLevelAt,
+  skyExtrasFor,
   stepQuality,
+  userTier,
   stepRain,
   stepWetness,
   sunScatterStrength,
@@ -60,7 +62,22 @@ export function init(ctx: Ctx): CityModuleInstance {
   const stars = createStars(ctx);
   const clouds = createClouds(ctx, searchlights.spots, searchlights.colors);
   const rain = low ? null : createRain(ctx);
-  clouds.setVisible(settings.clouds);
+  // The user tier (ctx.onQuality) is a floor under the frame-time tier below.
+  let floorTier = low ? 0 : userTier(env.quality);
+  let tier = -1;
+  const applyTier = (): void => {
+    const t = Math.max(floorTier, settings.autoQuality ? quality.tier : 0);
+    clouds.setVisible(settings.clouds && skyExtrasFor(t));
+    if (t === tier) return;
+    tier = t;
+    post?.setTier(t);
+    rain?.setTier(t);
+  };
+  const offQuality = ctx.onQuality((q) => {
+    if (low) return;
+    floorTier = userTier(q);
+    applyTier();
+  });
   const post = createPost(ctx);
   const previousRender = ctx.render;
   if (post) ctx.render = () => post.render();
@@ -74,6 +91,7 @@ export function init(ctx: Ctx): CityModuleInstance {
   if (post) userData.compile = warmup;
 
   const quality = createQualityState();
+  applyTier();
 
   const folder = gui.addFolder('Atmosphere');
   folder.add(env, 'rain', 0, 1, 0.01).name('Rain').listen().disable();
@@ -85,7 +103,7 @@ export function init(ctx: Ctx): CityModuleInstance {
   folder
     .add(settings, 'clouds')
     .name('Clouds')
-    .onChange((v: boolean) => clouds.setVisible(v));
+    .onChange(() => applyTier());
   folder.add(settings, 'searchlights').name('Searchlights');
   folder.add(settings, 'stars').name('Stars');
   folder
@@ -94,8 +112,7 @@ export function init(ctx: Ctx): CityModuleInstance {
     .onChange((on: boolean) => {
       if (on) return;
       Object.assign(quality, createQualityState());
-      post?.setTier(0);
-      rain?.setTier(0);
+      applyTier();
     });
   folder.add(quality, 'tier', 0, 2, 1).name('Quality tier (0 = full)').listen().disable();
   folder.close();
@@ -171,7 +188,7 @@ export function init(ctx: Ctx): CityModuleInstance {
       const fogK = Math.min(2, Math.max(0.5, f.density / (NIGHT.fogDensity * mapFog)));
       searchlights.update(
         elapsed,
-        settings.searchlights ? searchlightLevelAt(env.timeOfDay) : 0,
+        settings.searchlights && skyExtrasFor(tier) ? searchlightLevelAt(env.timeOfDay) : 0,
         fogK,
         CLOUD_LAYERS.lowY,
       );
@@ -189,12 +206,10 @@ export function init(ctx: Ctx): CityModuleInstance {
       postSettings.drops = settings.lensDrops ? Math.min(1, r * 1.2) * below : 0;
       post?.update(elapsed, postSettings);
 
-      if (settings.autoQuality && stepQuality(quality, dt)) {
-        post?.setTier(quality.tier);
-        rain?.setTier(quality.tier);
-      }
+      if (settings.autoQuality && stepQuality(quality, dt)) applyTier();
     },
     dispose() {
+      offQuality();
       if (userData.compile === warmup) delete userData.compile;
       // Shared uniforms outlive this module in compiled materials: back to the defaults.
       height[3] = 1;

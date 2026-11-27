@@ -242,8 +242,24 @@ export function bloomScaleFor(pixelRatio: number, tier: number): number {
   return Math.min(pixelRatio, 1) * (tier >= 1 ? 0.5 : 1);
 }
 
+/** User quality tier → atmosphere tier: high 0, medium 1, low 2 (docs/PERF.md). */
+export function userTier(quality: string): number {
+  return quality === 'medium' ? 1 : quality === 'low' ? 2 : 0;
+}
+
+/** Rain drop instances: all, half, none. */
 export function rainPoolFor(tier: number): number {
-  return tier >= 2 ? RAIN.maxDrops / 2 : RAIN.maxDrops;
+  return tier >= 2 ? 0 : tier >= 1 ? RAIN.maxDrops / 2 : RAIN.maxDrops;
+}
+
+/** Bloom blur mips drawn: 5, 4, 3. Fewer passes, same programs. */
+export function bloomMipsFor(tier: number): number {
+  return tier >= 2 ? 3 : tier >= 1 ? 4 : 5;
+}
+
+/** Clouds and searchlights show below the low tier. */
+export function skyExtrasFor(tier: number): boolean {
+  return tier < 2;
 }
 
 export const QUALITY = {
