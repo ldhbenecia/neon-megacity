@@ -82,13 +82,7 @@ async function expectNoOverlap(page: Page, step: string): Promise<void> {
 }
 
 async function selectBuilding(page: Page): Promise<void> {
-  let at = await page.evaluate(() => window.__hangang?.buildingPoint() ?? null);
-  if (!at && (await page.locator('#panel').isVisible())) {
-    // On a phone the open panel can cover every building; close it first like a user would.
-    await page.click('#panel-toggle');
-    await settle(page);
-    at = await page.evaluate(() => window.__hangang?.buildingPoint() ?? null);
-  }
+  const at = await page.evaluate(() => window.__hangang?.buildingPoint() ?? null);
   expect(at, 'no building under an uncovered canvas point').not.toBeNull();
   await page.mouse.click(at!.x, at!.y);
   await page.waitForFunction(

@@ -243,7 +243,10 @@ test('?district= starts at a zone and the title names the zone in view', async (
   await waitForCity(page);
   await expect(page.locator('#hud-district')).toHaveText('종로·광화문');
   await page.click('#panel-toggle');
-  await expect(page.locator('#district-chips button')).toHaveCount(23);
+  await expect(page.locator('#district-chips button')).toHaveCount(21);
+  await expect(page.locator('#district-chips button[aria-current="true"]')).toHaveText(
+    '종로·광화문',
+  );
 });
 
 test.describe('camera rig', () => {

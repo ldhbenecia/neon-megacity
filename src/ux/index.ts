@@ -5,7 +5,13 @@ import { createControls } from './controls';
 import { createHud, type Hud } from './hud';
 import { reducedMotion } from './loader';
 import { createPerf, estimateMemory, type FrameStats, type Perf } from './perf';
-import { LAYOUT, buildingContaining, zoneAt } from '../city/layout';
+import {
+  LAYOUT,
+  buildingContaining,
+  riverSignedDistance,
+  riversideHalfAt,
+  zoneAt,
+} from '../city/layout';
 import {
   camPose,
   DEFAULT_PRESET,
@@ -149,7 +155,13 @@ export function initUx(ctx: Ctx, opts: UxOptions): Ux {
         districtFor = 0.5;
         const t = rig.debug().target;
         const zone = zoneAt(t.x, t.z);
-        hud.setDistrict(zone.kind === 'riverside' ? '한강' : zone.name);
+        // zoneAt falls back to the riverside band off every polygon (hills, map edge): only call
+        // it 한강 when the point really is on the river band.
+        const onRiver =
+          zone.kind === 'riverside' &&
+          Math.abs(riverSignedDistance(t.x, t.z)) <= riversideHalfAt(t.x);
+        hud.setDistrict(zone.kind !== 'riverside' ? zone.name : onRiver ? '한강' : '');
+        controls.markDistrict(zone.kind === 'riverside' ? '' : zone.id);
       }
       if (q.stats) {
         const p = ctx.camera.position;

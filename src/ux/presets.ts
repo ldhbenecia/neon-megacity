@@ -64,6 +64,7 @@ function build(L: Layout): RigPreset[] {
 export interface DistrictView extends Pose {
   id: string;
   name: string;
+  kind: string;
   /** North of the Han (강북) or south (강남), for grouping the zone list. */
   north: boolean;
 }
@@ -121,16 +122,30 @@ export function districtView(L: Layout, zone: DistrictZone): DistrictView {
     position: { x: cx, y: ty + back * 0.55 + tallest * 0.4, z: cz + dz * back },
     target: { x: cx, y: ty, z: cz },
   };
-  return { id: zone.id, name: zone.name, north, ...safePose(L, pose) };
+  // A hill between camera and zone (Namsan in front of 종로): climb until the view clears it.
+  for (let i = 0; i < 20 && !terrainClear(pose); i++) pose.position.y += 40;
+  return { id: zone.id, name: zone.name, kind: zone.kind, north, ...safePose(L, pose) };
+}
+
+/** True when no terrain rises within 3 m of the straight sight line from camera to target. */
+export function terrainClear({ position: p, target: t }: Pose): boolean {
+  for (let i = 1; i < 32; i++) {
+    const f = i / 32;
+    const y = p.y + (t.y - p.y) * f;
+    if (surfaceHeight(p.x + (t.x - p.x) * f, p.z + (t.z - p.z) * f) > y - 3) return false;
+  }
+  return true;
 }
 
 let districtCache: DistrictView[] | null = null;
 
-/** One view per named zone (the riverside band is reached through the bridges presets). */
+/** One view per named zone (the riverside band is reached through the bridge presets). */
 export function districtViews(): readonly DistrictView[] {
+  // Fill zones (서울 북부/남부) are generic padding, not places anyone looks for. West to east.
   districtCache ??= LAYOUT.districts
-    .filter((z) => z.kind !== 'riverside')
-    .map((z) => districtView(LAYOUT, z));
+    .filter((z) => z.kind !== 'riverside' && !z.id.startsWith('fill'))
+    .map((z) => districtView(LAYOUT, z))
+    .sort((a, b) => a.target.x - b.target.x);
   return districtCache;
 }
 

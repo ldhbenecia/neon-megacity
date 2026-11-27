@@ -43,9 +43,6 @@ export const CAMERA_LIMITS = {
   maxPolarAngle: Math.PI * 0.495,
 } as const;
 
-/** Used when no clear nightlife or sangga street exists: the SEOUL.md 6 홍대 draft. */
-export const STREET_FALLBACK: CameraPose = { position: [-985, 4, -470], target: [-940, 2, -520] };
-
 export interface StreetAnchor {
   kind: string;
   /** Zone display name, used for the rig preset label. */
@@ -160,19 +157,31 @@ const pose = (p: Tuple, t: Tuple): Pose =>
     target: lifted(t[0], t[1], t[2], 1),
   });
 
-/** Landmark footprint centre at height `y`, or the SEOUL.md 6 draft target when it is missing. */
-function landmarkAt(id: LandmarkId, y: number, draft: Tuple): Tuple {
+const landmark = (id: LandmarkId): Vec2 => {
   const l = LAYOUT.landmarks.find((m) => m.id === id);
-  return l ? [l.x, y, l.z] : draft;
-}
+  if (!l) throw new Error(`layout has no landmark ${id}`);
+  return { x: l.x, z: l.z };
+};
+
+const mountain = (id: string): Vec2 => {
+  const m = LAYOUT.mountains.find((q) => q.id === id);
+  if (!m) throw new Error(`layout has no mountain ${id}`);
+  return m.peak;
+};
+
+const bridge = (id: string): (typeof LAYOUT.bridges)[number] => {
+  const br = LAYOUT.bridges.find((q) => q.id === id);
+  if (!br) throw new Error(`layout has no bridge ${id}`);
+  return br;
+};
 
 /** Above the traffic on a named road's centre line, 8 % along it, looking 250 m down the road. */
-function roadPose(id: string, draft: Pose): Pose {
+function roadPose(id: string): Pose {
   const r = LAYOUT.namedRoads.find((n) => n.id === id);
   const a = r?.points[0];
   const b = r?.points[1];
-  if (!a || !b) return draft;
-  const len = Math.hypot(b.x - a.x, b.z - a.z);
+  const len = a && b ? Math.hypot(b.x - a.x, b.z - a.z) : 0;
+  if (!a || !b || len < 1) throw new Error(`layout has no usable road ${id}`);
   const ux = (b.x - a.x) / len;
   const uz = (b.z - a.z) / len;
   const px = a.x + ux * len * 0.08;
@@ -185,30 +194,69 @@ function roadPose(id: string, draft: Pose): Pose {
   });
 }
 
-/** Above a bridge's centre (clear of the truss), looking at `target`. */
-function bridgePose(id: string, target: Tuple, draft: Pose): Pose {
-  const br = LAYOUT.bridges.find((b) => b.id === id);
-  if (!br) return draft;
-  const x = (br.a.x + br.b.x) / 2;
-  const z = (br.a.z + br.b.z) / 2;
-  return levelFit({ position: [x, br.deckY + 20, z], target });
+/**
+ * SEOUL.md 6 viewpoints, keyed by `?cam=` name, all derived from layout features (bridges,
+ * landmarks, mountain peaks, named roads, map extents) so the framing follows layout changes.
+ * Heights over hills are terrain-relative, so lower mountains move the cameras with them.
+ */
+function seoulPoses(): Record<
+  | 'banpo'
+  | 'yeouido'
+  | 'namsan'
+  | 'teheran'
+  | 'seongsu'
+  | 'jamsil'
+  | 'bugak'
+  | 'overview'
+  | 'topdown',
+  Pose
+> {
+  const banpo = bridge('br-banpo');
+  // South abutment (b) plus 20 m down the span, looking back across to the north landing.
+  const bu = Math.hypot(banpo.b.x - banpo.a.x, banpo.b.z - banpo.a.z);
+  const bx = banpo.b.x + ((banpo.b.x - banpo.a.x) / bu) * 20;
+  const bz = banpo.b.z + ((banpo.b.z - banpo.a.z) / bu) * 20;
+  const mast = landmark('namsan-mast');
+  const apex = landmark('yongsan-apex');
+  const gold = landmark('yeouido-gold');
+  const blade = landmark('jamsil-blade');
+  const bugak = mountain('bugak');
+  const seongsu = bridge('br-seongsu');
+  const sx = (seongsu.a.x + seongsu.b.x) / 2;
+  const sz = (seongsu.a.z + seongsu.b.z) / 2;
+  return {
+    banpo: pose([bx, 18, bz], [banpo.landA.x, 10, banpo.landA.z]),
+    // Over the river east of the island, looking down at the cluster around the gold tower.
+    yeouido: pose([gold.x + 510, 260, gold.z - 120], [gold.x, 140, gold.z]),
+    // Just off the summit, over Yongsan's towers toward Yeouido and the river bend.
+    namsan: pose(
+      [mast.x + 26, surfaceHeight(mast.x + 26, mast.z + 29) + 80, mast.z + 29],
+      [(apex.x + gold.x) / 2, 60, (apex.z + gold.z) / 2],
+    ),
+    teheran: roadPose('rd-teheran'),
+    // Above the truss at mid-span, looking upstream to the Jamsil landmark.
+    seongsu: levelFit({ position: [sx, seongsu.deckY + 20, sz], target: [blade.x, 10, blade.z] }),
+    jamsil: pose([blade.x - 450, 70, blade.z - 720], [blade.x, 50, blade.z]),
+    // From Bugak's ridge over the palace and old town to the Namsan mast.
+    bugak: pose(
+      [bugak.x, surfaceHeight(bugak.x, bugak.z + 10) + 40, bugak.z + 10],
+      [mast.x, 60, mast.z],
+    ),
+    overview: pose([CITY.halfX * 0.9, 900, CITY.halfZ * 1.15], [0, 80, -CITY.halfZ * 0.08]),
+    topdown: { position: [0, TOPDOWN_Y, 1], target: [0, 0, 0] },
+  };
 }
 
+const SEOUL_POSES = seoulPoses();
+
 /**
- * SEOUL.md 6 viewpoints, keyed by `?cam=` name. Targets follow `LAYOUT.landmarks`, named roads
- * and bridges so a layout tweak keeps the framing; the drafts are fallbacks only.
+ * Used when no street of any anchor gives a clear view: eye level at the first anchor point
+ * (홍대's grid origin), looking 70 m north-east.
  */
-const SEOUL_POSES = {
-  banpo: pose([215, 18, 470], [0, 10, 0]),
-  yeouido: pose([-620, 260, 0], landmarkAt('yeouido-gold', 140, [-980, 140, 220])),
-  namsan: pose([-150, 240, -360], [-600, 60, 100]),
-  teheran: roadPose('rd-teheran', pose([600, 6, 580], [900, 3, 455])),
-  seongsu: bridgePose('br-seongsu', [1600, 10, 120], pose([660, 17, -120], [1600, 10, 120])),
-  jamsil: pose([1250, 70, -260], landmarkAt('jamsil-blade', 50, [1650, 50, 300])),
-  bugak: pose([-200, 240, -1170], [-150, 60, -500]),
-  overview: pose([1800, 900, 1500], [0, 80, -100]),
-  topdown: { position: [0, TOPDOWN_Y, 1], target: [0, 0, 0] },
-} as const satisfies Record<string, Pose>;
+export const STREET_FALLBACK: CameraPose = (() => {
+  const w = streetAnchors(LAYOUT.districts)[0]?.want ?? { x: 0, z: 0 };
+  return pose([w.x, surfaceHeight(w.x, w.z) + 4, w.z], [w.x + 45, 0, w.z - 50]);
+})();
 
 export const CAMERA_PRESETS = {
   ...SEOUL_POSES,

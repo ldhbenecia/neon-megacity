@@ -33,7 +33,13 @@ import {
   polarAngle,
   type Pose,
 } from '../src/ux/motion';
-import { CINEMATIC_ORDER, cinematicKeys, districtViews, rigPresets } from '../src/ux/presets';
+import {
+  CINEMATIC_ORDER,
+  cinematicKeys,
+  districtViews,
+  rigPresets,
+  terrainClear,
+} from '../src/ux/presets';
 
 const pose = (p: [number, number, number], t: [number, number, number]): Pose => ({
   position: { x: p[0], y: p[1], z: p[2] },
@@ -197,7 +203,7 @@ describe('collision', () => {
 describe('rig presets (8.4)', () => {
   const presets = rigPresets();
 
-  it('defines 8 presets and a closed cinematic loop over 7 of them', () => {
+  it('defines 8 presets and a closed cinematic loop over all 8', () => {
     expect(presets.map((p) => p.key)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
     expect(new Set(CINEMATIC_ORDER).size).toBe(8);
   });
@@ -235,12 +241,16 @@ describe('district views', () => {
   const views = districtViews();
 
   it('cover every named zone, grouped north and south of the river', () => {
-    const zones = LAYOUT.districts.filter((z) => z.kind !== 'riverside');
+    const zones = LAYOUT.districts.filter(
+      (z) => z.kind !== 'riverside' && !z.id.startsWith('fill'),
+    );
     expect(views.map((v) => v.id).sort()).toEqual(zones.map((z) => z.id).sort());
     expect(views.some((v) => v.north)).toBe(true);
     expect(views.some((v) => !v.north)).toBe(true);
     expect(views.find((v) => v.id === 'jongno')?.north).toBe(true);
     expect(views.find((v) => v.id === 'gangnam')?.north).toBe(false);
+    const xs = views.map((v) => v.target.x);
+    expect(xs).toEqual([...xs].sort((a, b) => a - b));
   });
 
   it.each(views.map((v) => [v.id, v] as const))(
@@ -249,6 +259,10 @@ describe('district views', () => {
       expect(zoneAt(v.target.x, v.target.z).id).toBe(id);
     },
   );
+
+  it.each(views.map((v) => [v.id, v] as const))('%s sees its target over the terrain', (_id, v) => {
+    expect(terrainClear(v)).toBe(true);
+  });
 
   it.each(views.map((v) => [v.id, v] as const))(
     '%s is outside buildings, above the floor and inside the orbit limits',
