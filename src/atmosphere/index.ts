@@ -189,7 +189,10 @@ export function init(ctx: Ctx): CityModuleInstance {
     },
     dispose() {
       if (userData.compile === warmup) delete userData.compile;
+      // Shared uniforms outlive this module in compiled materials: back to the defaults.
       height[3] = 1;
+      sun.set([0, 1, 0, 0]);
+      sunCol.fill(0);
       ctx.render = previousRender;
       post?.dispose();
       rain?.dispose();
