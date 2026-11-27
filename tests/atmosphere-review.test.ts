@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { cloudsSeenFromAbove } from '../src/atmosphere/clouds';
 import { LAYOUT, allTiers, buildingContaining, buildingTop } from '../src/city/layout';
 import {
   CLOUD_LAYERS,
@@ -66,6 +67,14 @@ describe('map-scaled fog', () => {
     expect(mapFogScale(TUNED_EXTENT)).toBe(1);
     expect(mapFogScale(4000)).toBeCloseTo(Math.sqrt(2400 / 4000), 9);
     expect(mapFogScale(4000)).toBeGreaterThan(2400 / 4000);
+  });
+});
+
+describe('cloud layer order', () => {
+  it('blends the low deck first only when the camera is above the high deck', () => {
+    expect(cloudsSeenFromAbove(CLOUD_LAYERS.highY + 500)).toBe(true);
+    expect(cloudsSeenFromAbove(CLOUD_LAYERS.lowY + 10)).toBe(false);
+    expect(cloudsSeenFromAbove(50)).toBe(false);
   });
 });
 

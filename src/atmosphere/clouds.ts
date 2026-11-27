@@ -133,6 +133,11 @@ export interface Clouds {
   dispose(): void;
 }
 
+/** True when the camera is above the high deck, so the low deck is the farther one. */
+export function cloudsSeenFromAbove(cameraY: number): boolean {
+  return cameraY > CLOUDS.highY;
+}
+
 function layerQuad(y: number, layer: number, half: number): { pos: number[]; layer: number[] } {
   return {
     pos: [-half, y, -half, half, y, -half, half, y, half, -half, y, half],
@@ -148,13 +153,17 @@ export function createClouds(
   const { scene, camera } = ctx;
   const half = CLOUDS.size / 2;
 
-  // High layer first: transparent quads in one draw are blended in index order.
-  const hi = layerQuad(CLOUDS.highY, 1, half);
-  const lo = layerQuad(CLOUDS.lowY, 0, half);
-  const geometry = new BufferGeometry();
-  geometry.setAttribute('position', new Float32BufferAttribute([...hi.pos, ...lo.pos], 3));
-  geometry.setAttribute('aLayer', new Float32BufferAttribute([...hi.layer, ...lo.layer], 1));
-  geometry.setIndex([0, 2, 1, 0, 3, 2, 4, 6, 5, 4, 7, 6]);
+  // One mesh per layer (same program): the farther layer must blend first, and which one is
+  // farther flips when the camera climbs above the high deck (topdown).
+  const layerGeometry = (y: number, layer: number): BufferGeometry => {
+    const q = layerQuad(y, layer, half);
+    const g = new BufferGeometry();
+    g.setAttribute('position', new Float32BufferAttribute(q.pos, 3));
+    g.setAttribute('aLayer', new Float32BufferAttribute(q.layer, 1));
+    g.setIndex([0, 2, 1, 0, 3, 2]);
+    return g;
+  };
+  const geometries = [layerGeometry(CLOUDS.highY, 1), layerGeometry(CLOUDS.lowY, 0)];
 
   const noise = new DataTexture(
     tileableFbm(CLOUDS.noiseSize, 650),
@@ -200,11 +209,16 @@ export function createClouds(
     side: DoubleSide,
     fog: false,
   });
-  const mesh = new Mesh(geometry, material);
-  mesh.name = 'atmosphere.clouds';
-  mesh.frustumCulled = false;
-  mesh.renderOrder = 20;
-  scene.add(mesh);
+  const meshes = geometries.map((g, i) => {
+    const m = new Mesh(g, material);
+    m.name = i === 0 ? 'atmosphere.clouds.high' : 'atmosphere.clouds.low';
+    m.frustumCulled = false;
+    scene.add(m);
+    return m;
+  });
+  const high = meshes[0];
+  const low = meshes[1];
+  if (!high || !low) throw new Error('clouds: two layers expected');
   const uTime = uniforms.uTime;
   const uRain = uniforms.uRain;
   const uNight = uniforms.uNight;
@@ -218,7 +232,10 @@ export function createClouds(
 
   return {
     update(elapsed, i) {
-      mesh.position.set(camera.position.x, 0, camera.position.z);
+      for (const m of meshes) m.position.set(camera.position.x, 0, camera.position.z);
+      const fromAbove = cloudsSeenFromAbove(camera.position.y);
+      high.renderOrder = fromAbove ? 21 : 20;
+      low.renderOrder = fromAbove ? 20 : 21;
       uTime.value = wrapTime(elapsed, TIME_WRAP.clouds);
       uRain.value = i.rain;
       uNight.value = i.night;
@@ -231,11 +248,11 @@ export function createClouds(
       uFogK.value = i.fogK;
     },
     setVisible(vis) {
-      mesh.visible = vis;
+      for (const m of meshes) m.visible = vis;
     },
     dispose() {
-      scene.remove(mesh);
-      geometry.dispose();
+      for (const m of meshes) scene.remove(m);
+      for (const g of geometries) g.dispose();
       material.dispose();
       noise.dispose();
     },
