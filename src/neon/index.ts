@@ -234,8 +234,8 @@ export function init(ctx: Ctx): CityModuleInstance {
   const catalog = buildCatalog({ buildings: [...specs] });
   const atlas = buildAtlas(catalog, ctx.renderer);
   disposables.push(atlas.texture);
-  const P = placeSigns(L, faces, catalog);
   const street = planStreet(L, catalog, sidewalkH);
+  const P = placeSigns(L, faces, catalog, { reserved: street.flats.length });
 
   const flats = buildFlatSigns(shared, atlas.texture, catalog, [...P.flats, ...street.flats]);
   const solidMat = emissiveSolidMaterial(shared);
