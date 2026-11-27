@@ -194,25 +194,29 @@ async function reset(page: Page): Promise<void> {
 }
 
 /**
- * The layout rules are pure CSS of the viewport, so the other sizes reuse the states set up once:
- * card + panel, card alone, help sheet. The full interaction flows run at one size per group.
+ * The other sizes skip the long interaction flows but rebuild each state at that size (the
+ * compact rules are partly JS: on narrow or short screens opening the card closes the panel),
+ * so every size is checked in the states its users can actually reach.
  */
-async function resizeThrough(page: Page, sizes: readonly { width: number; height: number }[]) {
-  const check = async (state: string): Promise<void> => {
-    for (const vp of sizes) {
-      await page.setViewportSize({ width: vp.width, height: vp.height });
-      await expectNoOverlap(page, `${state} at ${vp.width}x${vp.height}`);
-    }
-  };
-  await selectBuilding(page);
+async function statesAt(page: Page, vp: { width: number; height: number }): Promise<void> {
+  const at = `${vp.width}x${vp.height}`;
+  await page.setViewportSize({ width: vp.width, height: vp.height });
+  await reset(page);
   await page.click('#panel-toggle');
-  await check('card + panel');
-  await page.keyboard.press('Escape');
-  await check('card');
+  await expectNoOverlap(page, `panel at ${at}`);
+  await selectBuilding(page);
+  await expectNoOverlap(page, `card at ${at}`);
+  await page.click('#panel-toggle');
+  await expectNoOverlap(page, `card + panel at ${at}`);
   await page.keyboard.press('?');
   await expect(page.locator('#help')).toBeVisible();
-  await check('help');
+  await expectNoOverlap(page, `help at ${at}`);
   await page.keyboard.press('Escape');
+  await reset(page);
+  await page.keyboard.press('c');
+  await waitMode(page, 'cinematic');
+  await expectNoOverlap(page, `cinematic at ${at}`);
+  await page.keyboard.press('c');
 }
 
 const GROUPS = [
@@ -234,11 +238,13 @@ for (const g of GROUPS) {
       test.setTimeout(480_000);
       await page.goto(app('nogui&stats&cam=overview&time=0'));
       await waitForCity(page);
-      await buttonFlow(page);
+      await test.step(`button flow at ${g.full.width}x${g.full.height}`, () => buttonFlow(page));
       await reset(page);
-      await keyboardFlow(page);
-      await reset(page);
-      await resizeThrough(page, g.rest);
+      await test.step(`keyboard flow at ${g.full.width}x${g.full.height}`, () =>
+        keyboardFlow(page));
+      for (const vp of g.rest) {
+        await test.step(`states at ${vp.width}x${vp.height}`, () => statesAt(page, vp));
+      }
     });
   });
 }
