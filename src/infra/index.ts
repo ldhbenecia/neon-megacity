@@ -267,14 +267,15 @@ export function init(ctx: Ctx): CityModuleInstance {
   let lod: BridgeLodRange | null = null;
   // lighting renders shadows on demand; detail casts them, so every visibility change asks for one.
   const refreshDetail = (fresh: boolean): void => {
-    if (!detail || !lod) return;
+    if (!detail) return;
     const cam = ctx.camera.position;
     let changed = false;
     for (const b of detail.bridges) {
       const dx = cam.x - b.center[0];
       const dy = cam.y - b.center[1];
       const dz = cam.z - b.center[2];
-      const on = bridgeDetailOn(fresh ? false : b.on, dx * dx + dy * dy + dz * dz, lod);
+      const on =
+        lod !== null && bridgeDetailOn(fresh ? false : b.on, dx * dx + dy * dy + dz * dz, lod);
       if (on === b.on) continue;
       b.on = on;
       changed = true;
@@ -285,13 +286,12 @@ export function init(ctx: Ctx): CityModuleInstance {
     }
     if (changed) ctx.renderer.shadowMap.needsUpdate = true;
   };
+  // 'low' hides every instance but keeps the meshes themselves visible: boot warm-up compiles
+  // visible objects only, so their programs stay compiled for a later move up a tier.
   const applyQuality = (q: Quality): void => {
     lod = bridgeLodRange(q);
-    if (!detail) return;
-    for (const m of detail.meshes) m.visible = lod !== null;
     // States frozen while hidden are stale: decide afresh from the camera now.
     refreshDetail(true);
-    ctx.renderer.shadowMap.needsUpdate = true;
   };
   applyQuality(ctx.env.quality);
   const offQuality = ctx.onQuality(applyQuality);
@@ -351,7 +351,7 @@ export function init(ctx: Ctx): CityModuleInstance {
   ] as THREE.MeshStandardMaterial[];
   return {
     update() {
-      refreshDetail(false);
+      if (lod) refreshDetail(false);
       const day = DAY_LIGHTS + (1 - DAY_LIGHTS) * ctx.env.nightFactor;
       const gain = ctx.env.neonGain * ctx.env.powerOn * settings.gain * day;
       for (const m of emissive) m.color.setScalar(gain);
