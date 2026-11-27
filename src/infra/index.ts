@@ -4,10 +4,10 @@
 // Draw calls (11, budget 12): concrete, steel, lane paint, glow lines, uplight wash (merged
 // meshes) + pillar columns, pillar beams, light points (InstancedMesh) + bridge detail steel,
 // glow and paint (BatchedMesh, one instance per bridge, hidden by distance LOD; not built for
-// quality 'low'). No real lights.
+// quality 'ci'). No real lights.
 import * as THREE from 'three';
 import { deckHeightAt, highwayCurve } from '../city/layout';
-import { MATERIAL } from '../core/palette';
+import { MATERIAL, NIGHT_FILL_AMBIENT } from '../core/palette';
 import { EMISSIVE_FOG_DENSITY_SCALE, applyEmissiveFog } from '../core/shaders/emissiveFog';
 import type { CityModuleInstance, Ctx, InfraApi } from '../core/types';
 import { buildInfra } from './build';
@@ -16,6 +16,9 @@ import { bridgeDetailOn } from './lod';
 import type { MeshData, V3 } from './mesh';
 import type { BridgeDetail, DetailParts } from './parts';
 import { DECK_THICKNESS } from './profile';
+
+/** Night fill multiplier over the shared floor (measured: 1× leaves undersides at 3/255). */
+const INFRA_FILL = 3;
 
 function toGeometry(m: MeshData): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
@@ -57,7 +60,8 @@ function columnGeometry(): THREE.BufferGeometry {
 const WASH_FOG_FRAGMENT = /* glsl */ `
 #ifdef USE_FOG
   #ifdef FOG_EXP2
-    float washFog = 1.0 - exp( - pow( fogDensity * ${EMISSIVE_FOG_DENSITY_SCALE.toFixed(4)} * vFogDepth, 2.0 ) );
+    float washFogD = fogDensity * ${EMISSIVE_FOG_DENSITY_SCALE.toFixed(4)} * vFogDepth;
+    float washFog = 1.0 - exp( - washFogD * washFogD );
   #else
     float washFog = smoothstep( fogNear, fogFar, vFogDepth );
   #endif
@@ -122,7 +126,7 @@ function buildDetail(
 
 export function init(ctx: Ctx): CityModuleInstance {
   const L = ctx.LAYOUT;
-  const parts = buildInfra(L, infraColors(), ctx.env.quality !== 'low');
+  const parts = buildInfra(L, infraColors(), ctx.env.quality !== 'ci');
 
   const group = new THREE.Group();
   group.name = 'infra';
@@ -238,7 +242,7 @@ export function init(ctx: Ctx): CityModuleInstance {
     im.receiveShadow = true;
   }
 
-  // Empty for quality 'low' (buildInfra skipped the detail), so no BatchedMesh is created.
+  // Empty for quality 'ci' (buildInfra skipped the detail), so no BatchedMesh is created.
   const detail = buildDetail(parts.bridgeDetail, {
     steel: steel.material as THREE.Material,
     glow: glowMat,
@@ -266,6 +270,9 @@ export function init(ctx: Ctx): CityModuleInstance {
   folder.close();
 
   const emissive = [glowMat, washMat, pointMat];
+  // Night fill: unlit undersides and piers would round to pure black up close. They get no street
+  // or window light at all, so they need INFRA_FILL × the facade / terrain floor to read.
+  const filled = [concrete.material, steel.material, pillarMat] as THREE.MeshStandardMaterial[];
   return {
     update() {
       if (detail) {
@@ -285,6 +292,9 @@ export function init(ctx: Ctx): CityModuleInstance {
       }
       const gain = ctx.env.neonGain * ctx.env.powerOn * settings.gain;
       for (const m of emissive) m.color.setScalar(gain);
+      const [r, g, b] = NIGHT_FILL_AMBIENT;
+      const k = ctx.env.nightFactor * INFRA_FILL;
+      for (const m of filled) m.emissive.setRGB(r * k, g * k, b * k);
     },
     dispose() {
       ctx.scene.remove(group);

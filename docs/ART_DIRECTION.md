@@ -578,7 +578,7 @@ layout 단위 테스트 (반드시 통과):
 | 계단 가로등       | 200~350                   | hillside 계단 옆, 3 m 기둥, 나트륨                                                                     | neon      |
 | 지상 차량         | 400~700                   | 도로 차로를 따라 셰이더로 이동. 헤드라이트 `#fff4e0`, 테일 `#ff2030`                                   | neon      |
 | 고가 차량 광류    | 차로당 60~120             | 점 쿼드 2개(헤드, 테일)의 instanced 스트림. 곡선 파라미터 t를 셰이더에서 `fract(t0 + v*time/L)`로 계산 | neon      |
-| 비행 차량         | 40~80                     | 고도 80~260 m, 3개 항로 레이어, 경로는 고가 곡선을 위로 띄운 것                                        | neon      |
+| 비행 차량         | 40~80                     | layout의 `skyLanes` 항로(용산·여의도·강남 고리, 한강), 고도는 항로마다 건물 위 30 m 이상의 대역        | neon      |
 
 **PointLight ≤ 8 배분**: 카메라에서 가장 가까운 거리 조명 클러스터 4개(가로등, 상점 조명 대표), 거대 스크린 앞 2개(스크린 평균색을 따라감), 포장마차, 강변 1개, 예비 1개. 위치는 매 0.25초 재선정한다. 나머지 빛은 모두 발광 재질과 데칼이 맡는다.
 
@@ -803,7 +803,7 @@ main의 부팅을 async 단계로 바꾼다. 각 단계 사이에 `await nextFra
 
 - composer가 패스마다 렌더하므로 `renderer.info.autoReset = false`로 두고 프레임 시작 시 `renderer.info.reset()`을 호출한다. 그러면 info가 한 프레임 전체를 집계한다.
 - `?stats=1`이면 `window.__hangang = { stats(): { calls, triangles, programs, textures, geometries, fps, dpr } }`를 노출한다(ux 소유, 프로덕션 빌드에도 포함, 쿼리가 있을 때만 활성).
-- e2e(Playwright, `tests/e2e/perf.spec.ts`): 프리셋 1, 2, 3, 5마다 한 번 부팅하고 타임라인으로 시간 0.0, 0.78, 0.5를 바꿔 12프레임씩 기다린 뒤 `stats()`를 읽어 calls ≤ 300, triangles ≤ 2.0 M, programs ≤ 50을 확인한다. CI 시간 때문에 이 12개는 `?quality=low`(그림자, 포스트, 비 없음)로 돌므로 하한선이고, 최고 품질은 그림자 패스가 있는 프리셋 2 정오 1개만 같은 상한으로 검사한다. fps는 실기에서 측정해 PR 본문에 적는다.
+- e2e(Playwright, `tests/e2e/perf.spec.ts`): 프리셋 1, 2, 3, 5마다 한 번 부팅하고 타임라인으로 시간 0.0, 0.78, 0.5를 바꿔 12프레임씩 기다린 뒤 `stats()`를 읽어 calls ≤ 300, triangles ≤ 2.0 M, programs ≤ 50을 확인한다. CI 시간 때문에 이 12개는 `?quality=ci`(그림자, 포스트, 비 없음)로 돌므로 하한선이고, 최고 품질은 그림자 패스가 있는 프리셋 2 정오 1개만 같은 상한으로 검사한다. fps는 실기에서 측정해 PR 본문에 적는다.
 
 ---
 

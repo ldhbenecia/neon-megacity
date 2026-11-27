@@ -3,11 +3,11 @@ import type { Page } from '@playwright/test';
 export const SWIFTSHADER_ARGS = ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'];
 
 /**
- * App URL in the software-GL quality tier (`?quality=low`): the tests check behavior, not pixels,
+ * App URL in the software-GL test tier (`?quality=ci`): the tests check behavior, not pixels,
  * and SwiftShader renders the full-quality city at a few frames per second.
  */
 export function app(query = ''): string {
-  return `./?quality=low${query ? `&${query}` : ''}`;
+  return `./?quality=ci${query ? `&${query}` : ''}`;
 }
 
 /** Frames to let the scene settle after boot or a time change (env-map switch, lazy PMREM bake). */

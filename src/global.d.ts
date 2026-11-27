@@ -10,6 +10,7 @@ interface HangangStats {
   geometries: number;
   fps: number;
   dpr: number;
+  tier: string;
 }
 
 /** Rough GPU memory estimate (bytes) of what the scene graph references, for `npm run perf`. */
