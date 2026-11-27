@@ -5,7 +5,8 @@ import { SETTLE_FRAMES, app, collectErrors, scrubTo, waitForCity, waitFrames } f
 
 // Performance budget (ART_DIRECTION 11): counts only, headless fps means nothing.
 // The preset × time grid runs in the low tier (a floor: no shadow or post passes); one boot at
-// full quality checks the scene that is worst for the budget (noon, shadow pass included).
+// full quality checks the scene that is worst for the budget (topdown at noon, shadow pass
+// included; docs/PERF.md snapshot c546911).
 const LIMITS = { calls: 300, triangles: 2_000_000, programs: 50 } as const;
 const PRESETS = [1, 2, 3, 5] as const;
 /** Timeline minutes (the range steps by 5): 00:00, 18:45 (sunset, t = 0.781), 12:00. */
@@ -32,10 +33,10 @@ function checkBudget(s: Stats, label: string): void {
 test.describe('performance budget', () => {
   test.describe.configure({ mode: 'parallel' });
 
-  test('full quality: preset 2 @ noon', async ({ page }) => {
+  test('full quality: topdown @ noon', async ({ page }) => {
     const errors = collectErrors(page);
     // A manual pick: no GPU guess (SwiftShader would be 'low') and no automatic changes.
-    await page.goto('./?nogui&stats&preset=2&time=0.5&rain=0.35&quality=high');
+    await page.goto('./?nogui&stats&cam=topdown&time=0.5&rain=0.35&quality=high');
     await waitForCity(page);
     await waitFrames(page, SETTLE_FRAMES);
     const s = await stats(page);

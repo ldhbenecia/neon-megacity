@@ -12,12 +12,14 @@ import { TIER_DPR, type UserTier } from '../src/ux/quality';
 import { bundleGzip } from './bundle';
 import { checkScreen, lightAt, type ScreenCheck } from './screen';
 
-const PRESETS = [
-  [1, '강변 히어로'],
-  [2, '코어 상공'],
-  [3, '등불가 거리'],
-  [5, '별계단동'],
-  [8, '탑다운'],
+/** Camera views: number-key presets (src/ux/presets.ts) and ?cam= poses (src/core/query.ts). */
+const VIEWS = [
+  ['preset=1', '1 반포대교 남단'],
+  ['preset=2', '2 여의도 상공'],
+  ['preset=6', '6 잠실 스카이라인'],
+  ['preset=7', '7 홍대 골목'],
+  ['cam=overview', 'overview'],
+  ['cam=topdown', 'topdown'],
 ] as const;
 const TIMES = [
   [0.0, 'night'],
@@ -219,11 +221,11 @@ async function main(): Promise<void> {
     });
     await probe.close();
     console.log(`GPU: ${gpu}`);
-    for (const [preset, pname] of PRESETS) {
+    for (const [view, vname] of VIEWS) {
       for (const [time, tname] of TIMES) {
-        const name = `${preset} ${pname} · ${tname}`;
+        const name = `${vname} · ${tname}`;
         if (only && !name.includes(only)) continue;
-        const query = `nogui&stats&preset=${preset}&time=${time}&rain=0.35${quality ? `&quality=${quality}` : ''}`;
+        const query = `nogui&stats&${view}&time=${time}&rain=0.35${quality ? `&quality=${quality}` : ''}`;
         const r = await measure(browser, name, query, time);
         console.log(
           `${name}: ${r.frame.mean.toFixed(1)} ms, ${r.stats.calls} calls, ` +
