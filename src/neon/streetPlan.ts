@@ -10,7 +10,7 @@ import {
 import { closestSegmentT } from '../city/math';
 import type { NeonName } from '../core/palette';
 import { createRng } from '../core/random';
-import { Anim, type FlatSign } from './placement';
+import { Anim, roadGapIndex, signBudget, type FlatSign } from './placement';
 import type { Catalog } from './catalog';
 
 export type LampKind = 'core' | 'sodium';
@@ -146,6 +146,40 @@ export function lampBudget(L: Pick<Layout, 'roads'>): number {
   return Math.min(LAMP_CAP, Math.round(n));
 }
 
+/** Street panels and ads may take this share of the sign budget; building signs keep the rest. */
+export const STREET_SIGN_SHARE = 0.15;
+const BUSY_KINDS: ReadonlySet<string> = new Set(['nightlife', 'sangga', 'corridor', 'brick']);
+
+// Over the share, drop whole sign poles (pole and panels), quiet side streets first. A no-op
+// when the layout fits (v2), so its plan stays identical.
+function thinPoles(
+  L: Layout,
+  out: StreetPlan,
+  poles: readonly { pole: number; from: number; to?: number; slot: StreetSlot }[],
+): void {
+  const excess = out.flats.length - Math.round(signBudget(L) * STREET_SIGN_SHARE);
+  if (excess <= 0) return;
+  const mainGap = roadGapIndex({ roads: L.roads.filter((r) => r.kind === 'arterial') }, 20);
+  const order = poles
+    .map((p) => ({
+      p,
+      key:
+        (BUSY_KINDS.has(districtAt(p.slot.x, p.slot.z)) ? 2 : 0) +
+        (mainGap(p.slot.x, p.slot.z) < 20 ? 1 : 0) +
+        (p.from % 997) / 997 / 2,
+    }))
+    .sort((a, z) => a.key - z.key || a.p.from - z.p.from);
+  const dropFlats = new Set<number>();
+  const dropPoles = new Set<number>();
+  for (const { p } of order) {
+    if (dropFlats.size >= excess) break;
+    dropPoles.add(p.pole);
+    for (let i = p.from; i < (p.to ?? p.from); i++) dropFlats.add(i);
+  }
+  out.flats = out.flats.filter((_, i) => !dropFlats.has(i));
+  out.poles = out.poles.filter((_, i) => !dropPoles.has(i));
+}
+
 // `groundAt` must match `L` (bare ground or road surface); the default is the built-in map's.
 export function planStreet(
   L: Layout,
@@ -162,6 +196,7 @@ export function planStreet(
   const tents = cat.byKind.tent;
   const lift = (_s: StreetSlot): number => sidewalkH;
 
+  const poleFlats: { pole: number; from: number; to?: number; slot: StreetSlot }[] = [];
   // Over budget, keep an even subset of street lights; a no-op when the layout fits.
   const lights = L.slots.filter((s) => s.kind === 'streetLight').length;
   const lampKeep = Math.min(1, lampBudget(L) / Math.max(1, lights));
@@ -207,6 +242,7 @@ export function planStreet(
       const h = rng.range(6, 10);
       const y = s.y + lift(s);
       out.poles.push({ x: s.x, y, z: s.z, h });
+      poleFlats.push({ pole: out.poles.length - 1, from: out.flats.length, slot: s });
       const along = { x: Math.cos(s.rotY), z: -Math.sin(s.rotY) };
       const side = towardRoad(nearest, s);
       const count = rng.int(4, 8);
@@ -239,6 +275,8 @@ export function planStreet(
           vol: null,
         });
       }
+      const last = poleFlats[poleFlats.length - 1];
+      if (last) last.to = out.flats.length;
     } else if (s.kind === 'busStop') {
       const y = s.y + lift(s);
       out.busStops.push({ x: s.x, y, z: s.z, yaw: s.rotY });
@@ -313,6 +351,7 @@ export function planStreet(
       });
     }
   }
+  thinPoles(L, out, poleFlats);
   // On slopes the pool centre (under the lamp head or sign) can sit higher than the slot it
   // came from; never let a pool sink into the ground.
   for (const p of out.pools) p.y = Math.max(p.y, groundAt(p.x, p.z) + POOL_LIFT);

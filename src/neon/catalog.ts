@@ -12,6 +12,7 @@ import {
   PANEL_WORDS,
   RING_COPY,
   SHOPS,
+  PAINT_COPY,
   TENT_COPY,
   type CellKind,
 } from './content';
@@ -25,6 +26,8 @@ export interface CellSpec {
   ph: number;
   chars: number;
   key: string;
+  /** Band look: 0 neon text, 1 lit lightbox with dark text, 2 neon text in a tube frame. */
+  style?: 0 | 1 | 2;
 }
 
 export interface Cell extends CellSpec {
@@ -109,6 +112,7 @@ function specs(complexes: readonly string[]): CellSpec[] {
   RING_COPY.forEach((t, i) => add('ring', t, '', i % 2 ? 'neonCyan' : 'neonOrange', 1024, 64));
   AD_COPY.forEach((a, i) => add('ad', a.name, a.sub, color(i + 2), 128, 192));
   TENT_COPY.forEach((t) => add('tent', t, '', 'neonOrange', 256, 64));
+  PAINT_COPY.forEach((t) => add('paint', t, '', 'neonWhite', 512, 96));
   SCREEN_LINES.forEach((t, i) => add('line', t, '', i % 2 ? 'neonCyan' : 'neonOrange', 512, 64));
   CORPS.forEach((c, i) =>
     add('logo', CORP_EN[c].name, CORP_EN[c].tag, i % 2 ? 'neonCyan' : 'neonOrange', 256, 256),
@@ -122,6 +126,8 @@ export function buildCatalog(L: Pick<Layout, 'buildings'>): Catalog {
     ...new Set(L.buildings.map((b) => b.tags.complex).filter((c): c is string => !!c)),
   ];
   const list = specs(complexes);
+  let band = 0;
+  for (const c of list) if (c.kind === 'band') c.style = (band++ % 3) as 0 | 1 | 2;
   const order = list.map((_, i) => i).sort((a, b) => (list[b]?.ph ?? 0) - (list[a]?.ph ?? 0));
   const pos: { x: number; y: number }[] = list.map(() => ({ x: 0, y: 0 }));
   let x = 0;
@@ -153,6 +159,7 @@ export function buildCatalog(L: Pick<Layout, 'buildings'>): Catalog {
     tent: [],
     logo: [],
     koi: [],
+    paint: [],
   };
   const cells: Cell[] = list.map((s, index) => {
     const p = pos[index] as { x: number; y: number };

@@ -1,10 +1,12 @@
 import * as THREE from 'three';
 import {
+  buildingContaining,
   buildingFaces,
   deckHeightAt,
   highwayCurve,
   surfaceHeight,
   type BuildingFace,
+  type Layout,
   type Vec3,
 } from '../city/layout';
 import { MATERIAL, NEON, SCREEN_MIN_GAIN, type NeonName } from '../core/palette';
@@ -19,11 +21,14 @@ import {
   highwayPath,
   vehicleStreams,
   type Path,
+  railPaths,
   skyPaths,
 } from './lanes';
 import { createLightPool, type LightCandidate } from './lights';
-import { placeSigns, roadGapIndex, type Placement } from './placement';
+import { placeSigns, roadGapIndex, type FlatSign, type Placement } from './placement';
 import { buildHolograms, buildRings, buildScreens } from './screens';
+import { buildFountains, fountainJets, fountainJetsFromNozzles } from './fountain';
+import { buildPaint } from './paint';
 import { createSelection } from './selection';
 import {
   buildEmissiveSolids,
@@ -73,6 +78,7 @@ function haloList(P: Placement): HaloInstance[] {
     });
   }
   for (const f of P.flats) {
+    if (f.wash) continue;
     if (f.kind !== 'vtext') continue;
     out.push({
       x: f.x,
@@ -121,7 +127,8 @@ function decalList(
     return Number.isFinite(gap) ? Math.min(8, Math.max(3, gap + 0.3)) : 3;
   };
   for (const s of [...P.flats, ...street.flats]) {
-    if (s.kind === 'crown' || s.y0 > 30) continue;
+    // Painted walls are lit by their lamps, not glowing: no reflection on the road.
+    if (s.kind === 'crown' || s.wash || s.y0 > 30) continue;
     const f = s.face >= 0 ? faces[s.building]?.[s.face] : undefined;
     const nx = f ? f.normal.x : s.nx;
     const nz = f ? f.normal.z : s.nz;
@@ -225,9 +232,14 @@ export function init(ctx: Ctx): CityModuleInstance {
   const infra = ctx.infra;
   const deckY = (x: number, z: number): number =>
     (infra ? infra.deckHeightAt(x, z) : deckHeightAt(L, x, z)) ?? 0;
-  const curveSamples = (id: string): Vec3[] | null => {
+  // infra's curve wins: it is trimmed to the visible deck, so its `closed` (not the layout's)
+  // says whether traffic loops or fades out at the ends.
+  const curveFor = (id: string): THREE.CatmullRomCurve3 | undefined => {
     const hw = L.highways.find((h) => h.id === id);
-    const curve = infra?.curves.get(id) ?? (hw ? highwayCurve(hw) : undefined);
+    return infra?.curves.get(id) ?? (hw ? highwayCurve(hw) : undefined);
+  };
+  const curveSamples = (id: string): Vec3[] | null => {
+    const curve = curveFor(id);
     if (!curve) return null;
     return curve.getSpacedPoints(CURVE_SAMPLES).map((v) => ({ x: v.x, y: v.y, z: v.z }));
   };
@@ -244,7 +256,16 @@ export function init(ctx: Ctx): CityModuleInstance {
   const street = planStreet(L, catalog, sidewalkH);
   const P = placeSigns(L, faces, catalog, { reserved: street.flats.length });
 
-  const flats = buildFlatSigns(shared, atlas.texture, catalog, [...P.flats, ...street.flats]);
+  const flats = buildFlatSigns(shared, atlas.texture, catalog, [
+    ...P.flats.filter((f) => !f.wash),
+    ...street.flats,
+  ]);
+  const paint = buildPaint(
+    shared,
+    atlas.texture,
+    catalog,
+    P.flats.filter((f) => f.wash),
+  );
   const solidMat = emissiveSolidMaterial(shared);
   const tubes: SolidInstance[] = P.tubes.map((t) => ({
     x: t.x,
@@ -289,7 +310,25 @@ export function init(ctx: Ctx): CityModuleInstance {
   crossPoles.count = P.crosses.length;
   crossPoles.computeBoundingSphere();
   crossPoles.name = 'neon-cross-poles';
+  // Banners hang from cables tied to the facades a little higher on each side (a slight sag).
+  const wires = bannerWires(P.flats, L);
+  const wireGeo = new THREE.CylinderGeometry(0.03, 0.03, 1, 4).translate(0, 0.5, 0);
+  const bannerCables = new THREE.InstancedMesh(wireGeo, poleMat, Math.max(1, wires.length));
+  const up = new THREE.Vector3(0, 1, 0);
+  const dir = new THREE.Vector3();
+  const q = new THREE.Quaternion();
+  wires.forEach((w, i) => {
+    dir.set(w.b.x - w.a.x, w.b.y - w.a.y, w.b.z - w.a.z);
+    const len = dir.length();
+    q.setFromUnitVectors(up, dir.normalize());
+    m4.compose(new THREE.Vector3(w.a.x, w.a.y, w.a.z), q, new THREE.Vector3(1, len, 1));
+    bannerCables.setMatrixAt(i, m4);
+  });
+  bannerCables.count = wires.length;
+  bannerCables.computeBoundingSphere();
+  bannerCables.name = 'neon-banner-cables';
   disposables.push(
+    wireGeo,
     poleMat,
     poleGeo,
     solidMat,
@@ -307,10 +346,29 @@ export function init(ctx: Ctx): CityModuleInstance {
     shared,
     decalList(P, street, faces, roadY, roadGapIndex(ctx.LAYOUT)),
   );
-  for (const m of [screens, rings, holos, halos, decals]) {
+  for (const m of [screens, rings, holos, halos, decals, paint]) {
     disposables.push(m.geometry, m.material as THREE.Material);
   }
-  group.add(flats, tubeMesh, crossMesh, crossPoles, screens, rings, holos, halos, decals);
+  const nozzles = ctx.infra?.fountainNozzles;
+  const jets = nozzles
+    ? fountainJetsFromNozzles(nozzles, L.river.waterY)
+    : fountainJets(L.bridges, L.river.waterY);
+  const fountains = buildFountains(shared, jets);
+  disposables.push(fountains.geometry, fountains.material as THREE.Material);
+  group.add(
+    flats,
+    tubeMesh,
+    crossMesh,
+    crossPoles,
+    bannerCables,
+    paint,
+    screens,
+    rings,
+    holos,
+    halos,
+    decals,
+    fountains,
+  );
 
   const streetMeshes = buildStreet(street, solidMat);
   group.add(streetMeshes.group);
@@ -322,9 +380,11 @@ export function init(ctx: Ctx): CityModuleInstance {
   ];
   for (const hw of L.highways) {
     const s = curveSamples(hw.id);
-    if (s) paths.push(highwayPath(hw.id, s, hw.closed));
+    if (s) paths.push(highwayPath(hw.id, s, curveFor(hw.id)?.closed ?? hw.closed));
   }
   paths.push(...skyPaths(L.skyLanes));
+  const tracks = ctx.infra?.railTracks;
+  if (tracks) paths.push(...railPaths(tracks));
   const vehicles = vehicleStreams(paths, L.highways);
   const traffic = buildTraffic(shared, paths, vehicles);
   group.add(traffic.group);
@@ -343,7 +403,8 @@ export function init(ctx: Ctx): CityModuleInstance {
   const folder = ctx.gui.addFolder('Neon');
   const view = { signs: true, traffic: true, halos: true, reflections: true, holograms: true };
   folder.add(view, 'signs').onChange((v: boolean) => {
-    for (const m of [flats, tubeMesh, crossMesh, crossPoles, screens, rings]) m.visible = v;
+    for (const m of [flats, tubeMesh, crossMesh, crossPoles, bannerCables, paint, screens, rings])
+      m.visible = v;
   });
   folder.add(view, 'traffic').onChange((v: boolean) => (traffic.group.visible = v));
   folder.add(view, 'halos').onChange((v: boolean) => (halos.visible = v));
@@ -368,6 +429,8 @@ export function init(ctx: Ctx): CityModuleInstance {
       lamps: street.lamps.length,
       vehicles: traffic.vehicles,
       flying: traffic.flying,
+      trains: traffic.trains,
+      fountainJets: jets.length,
       pointLights: lights.count,
       drawCalls: countDrawables(group),
     };
@@ -388,9 +451,41 @@ export function init(ctx: Ctx): CityModuleInstance {
       scene.remove(group);
       folder.destroy();
       crossPoles.dispose();
+      bannerCables.dispose();
       for (const d of disposables) d.dispose();
     },
   };
+}
+
+const CABLE_MAX_REACH = 8;
+const CABLE_STEP = 0.25;
+const CABLE_RISE = 1;
+
+// A banner cable runs from the banner end across the road until it meets a facade; without a
+// wall within reach there is no cable (nothing to tie it to).
+function bannerWires(flats: readonly FlatSign[], L: Layout): { a: Vec3; b: Vec3 }[] {
+  const out: { a: Vec3; b: Vec3 }[] = [];
+  for (const s of flats) {
+    if (s.building >= 0) continue;
+    const tx = -s.nz;
+    const tz = s.nx;
+    const y = s.y1 + CABLE_RISE;
+    for (const side of [-1, 1]) {
+      const ex = s.x + (tx * side * s.w) / 2;
+      const ez = s.z + (tz * side * s.w) / 2;
+      let anchor: Vec3 | null = null;
+      for (let d = CABLE_STEP; d <= CABLE_MAX_REACH; d += CABLE_STEP) {
+        const x = ex + tx * side * d;
+        const z = ez + tz * side * d;
+        if (buildingContaining(L, x, y, z) !== null) {
+          anchor = { x: x - tx * side * CABLE_STEP, y, z: z - tz * side * CABLE_STEP };
+          break;
+        }
+      }
+      if (anchor) out.push({ a: { x: ex, y: s.y1, z: ez }, b: anchor });
+    }
+  }
+  return out;
 }
 
 function countDrawables(root: THREE.Object3D): number {

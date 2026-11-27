@@ -2,6 +2,7 @@ import { createRng, type Rng } from '../core/random';
 import type { NeonName } from '../core/palette';
 import {
   baseKind,
+  baseKindOf,
   isUnbuilt,
   type BaseKind,
   type BuildingFace,
@@ -9,11 +10,18 @@ import {
   type DistrictKind,
   type Layout,
   type Tier,
+  surfaceHeight,
 } from '../city/layout';
 import type { Catalog } from './catalog';
 import { CARGO_CROWN } from './content';
 import { firstHit, type Solid } from './solids';
-import { baseArchetype, type BaseArchetype } from '../buildings/params';
+import {
+  FACADE,
+  baseArchetype,
+  faceRole,
+  windowStyle,
+  type BaseArchetype,
+} from '../buildings/params';
 import { pointSegmentDistance } from '../city/math';
 
 export const Anim = { none: 0, flicker: 1, scroll: 2, broken: 3, fill: 4 } as const;
@@ -43,6 +51,8 @@ export interface FlatSign {
   y0: number;
   y1: number;
   vol: Solid | null;
+  /** Lit by a warm wall wash (gooseneck lamps) instead of glowing on its own. */
+  wash?: boolean;
 }
 
 export interface Tube {
@@ -144,6 +154,18 @@ interface DistrictSigns {
   holos: boolean;
   /** Multiplier on shop band and blade chances (1 = the v2 density). */
   shopScale: number;
+  /** Extra multiplier on blades only (brick keeps signs flat and small). */
+  bladeScale?: number;
+  /** Vertical signs: minimum sign height, buildings from this height, signs per building. */
+  vtextMinH?: number;
+  vtextFromH?: number;
+  vtextCount?: number;
+  /** Street-facing media screens on mid-rise towers (Teheran-ro canyon). */
+  media?: boolean;
+  /** Banners strung across alleys. */
+  banners?: boolean;
+  /** Big warm lettering on warehouse walls, lit by gooseneck lamps (Seongsu). */
+  paint?: boolean;
 }
 
 const MIDTOWN: DistrictSigns = {
@@ -215,22 +237,25 @@ const DISTRICT_SIGNS: Readonly<Record<Exclude<BaseKind, 'palace' | 'park'>, Dist
 // Hongdae carries the densest street signage.
 const KIND_OVERRIDES: ReadonlyMap<string, Partial<DistrictSigns>> = new Map([
   ['oldtown', { shopScale: 0.3, vtext: false }],
-  ['nightlife', { shopScale: 1.3, tubes: true, holos: true }],
+  [
+    'nightlife',
+    {
+      shopScale: 1.3,
+      tubes: true,
+      holos: true,
+      vtextMinH: 8,
+      vtextFromH: 9,
+      vtextCount: 2,
+      banners: true,
+    },
+  ],
+  ['brick', { shopScale: 0.68, bladeScale: 0.15, paint: true }],
+  ['corridor', { media: true }],
 ]);
-
-function safeBaseKind(district: DistrictKind): string | undefined {
-  try {
-    return baseKind(district);
-  } catch (e) {
-    // Newer layouts may carry kinds the shared table does not know yet; anything else is a bug.
-    if (e instanceof Error && e.message.startsWith('unknown district kind')) return undefined;
-    throw e;
-  }
-}
 
 export function districtSigns(district: DistrictKind): DistrictSigns {
   if (isUnbuilt(district)) return DARK;
-  const base = safeBaseKind(district);
+  const base = baseKindOf(district);
   // Kinds newer than the shared table fall back to midtown so they never go dark.
   const rules =
     base !== undefined && Object.hasOwn(DISTRICT_SIGNS, base)
@@ -243,6 +268,23 @@ export function districtSigns(district: DistrictKind): DistrictSigns {
 export function zoneDelay(district: DistrictKind, rng: Rng): number {
   const [a, b] = districtSigns(district).zone;
   return rng.range(a, b);
+}
+
+// Sign rules only know the v2 forms; newer buildings archetypes sign like their closest one.
+// (Window and blank-wall checks keep buildings' own baseArchetype.)
+const SIGN_FORM: ReadonlyMap<string, BaseArchetype> = new Map<string, BaseArchetype>([
+  ['taperTower', 'setbackTower'],
+  ['mediaSlab', 'officeSlab'],
+  ['lowOffice', 'officeSlab'],
+  ['hanokRow', 'sangga'],
+  ['palaceHall', 'pavilion'],
+  ['brickWarehouse', 'sangga'],
+  ['showroomBox', 'sangga'],
+]);
+
+function signForm(b: BuildingSpec): BaseArchetype {
+  const base = baseArchetype(b);
+  return SIGN_FORM.get(base) ?? base;
 }
 
 const TOWERS: ReadonlySet<BaseArchetype> = new Set([
@@ -369,6 +411,11 @@ function cellColor(c: Ctx, cell: number, fallback: NeonName): NeonName {
   return c.cat.cells[cell]?.color ?? fallback;
 }
 
+// buildings may mark faces whose real shape departs from the tier box (landmarks) as unusable.
+function usable(f: BuildingFace): boolean {
+  return (f as BuildingFace & { usable?: boolean }).usable !== false;
+}
+
 function tryWallSign(
   c: Ctx,
   b: BuildingSpec,
@@ -380,7 +427,7 @@ function tryWallSign(
   props: Pick<FlatSign, 'cell' | 'color' | 'anim' | 'zone' | 'seed'>,
 ): FlatSign | null {
   const f = c.faces[b.id]?.[fi];
-  if (!f || !insideFace(f, r.u0, r.u1, r.y0, r.y1)) return null;
+  if (!f || !usable(f) || !insideFace(f, r.u0, r.u1, r.y0, r.y1)) return null;
   const vol = wallVolume(f, b, r.u0, r.u1, r.y0, r.y1, 0.02, gap + depth);
   if (firstHit(c.L, vol)) return null;
   if (!reserve(c, b.id, fi, r)) return null;
@@ -440,7 +487,7 @@ function placeBands(
   const faces = c.faces[b.id] ?? [];
   const f = faces[fi];
   if (!f) return;
-  const isSangga = baseArchetype(b) === 'sangga';
+  const isSangga = signForm(b) === 'sangga';
   const top = Math.min(6, b.floors);
   const p = (isSangga ? 0.3 : 0.15) * pScale;
   for (let floor = 2; floor <= top; floor++) {
@@ -474,7 +521,7 @@ function placeBands(
 function placeBlades(c: Ctx, b: BuildingSpec, rng: Rng, zone: number, p: number, fi: number): void {
   const faces = c.faces[b.id] ?? [];
   const f = faces[fi];
-  if (!f || f.width < 6) return;
+  if (!f || f.width < 6 || !usable(f)) return;
   for (const end of [-1, 1]) {
     if (!rng.chance(p)) continue;
     const w = rng.range(0.9, 1.6);
@@ -527,7 +574,7 @@ function placeTubes(c: Ctx, b: BuildingSpec, rng: Rng, zone: number): void {
   let placed = 0;
   const maxTubes = b.h > 150 ? 4 : 2;
   faces.forEach((f, fi) => {
-    if (placed >= maxTubes || f.shape === 'cylinder') return;
+    if (placed >= maxTubes || f.shape === 'cylinder' || !usable(f)) return;
     const tierH = f.y1 - f.y0;
     if (tierH < 14 + 2 * TIER_MARGIN || f.width < 8) return;
     if (!rng.chance(f.street ? 0.75 : 0.3)) return;
@@ -560,7 +607,7 @@ function placeTubes(c: Ctx, b: BuildingSpec, rng: Rng, zone: number): void {
   });
 }
 
-function placeVText(c: Ctx, b: BuildingSpec, rng: Rng, zone: number): void {
+function placeVText(c: Ctx, b: BuildingSpec, rng: Rng, zone: number, minH = 18): void {
   const faces = c.faces[b.id] ?? [];
   const front = faces.find((f) => f.street && f.tier === 0 && f.stack === 0);
   if (!front) return;
@@ -578,9 +625,9 @@ function placeVText(c: Ctx, b: BuildingSpec, rng: Rng, zone: number): void {
   const n = Math.max(3, c.cat.cells[cell]?.chars ?? 4);
   let w = rng.range(3, 6);
   let h = w * n * 1.08;
-  if (h < 18) {
-    w = 18 / (n * 1.08);
-    h = 18;
+  if (h < minH) {
+    w = minH / (n * 1.08);
+    h = minH;
   }
   if (w > 6 || h > 45) return;
   const top = f.y1 - TIER_MARGIN;
@@ -622,7 +669,7 @@ function placeCrown(
   if (!t || t.shape === 'cylinder' || cell < 0) return;
   const tierIdx = b.tiers.length - 1;
   const fs = (c.faces[b.id] ?? [])
-    .filter((f) => f.stack === 0 && f.tier === tierIdx && f.width >= 12)
+    .filter((f) => f.stack === 0 && f.tier === tierIdx && f.width >= 12 && usable(f))
     .sort((a, z) => Number(z.street) - Number(a.street) || z.normal.z - a.normal.z);
   for (const f of fs.slice(0, faces)) {
     const w = Math.min(f.width * 0.7, f.width - 2 * EDGE_IN);
@@ -673,9 +720,15 @@ function placeCrown(
   }
 }
 
+function roofUsable(c: Ctx, b: BuildingSpec): boolean {
+  const top = b.tiers.length - 1;
+  const fs = (c.faces[b.id] ?? []).filter((f) => f.stack === 0 && f.tier === top);
+  return fs.length === 0 || fs.some(usable);
+}
+
 function placeCross(c: Ctx, b: BuildingSpec, rng: Rng, zone: number): void {
   const t = topTier(b);
-  if (!t) return;
+  if (!t || !roofUsable(c, b)) return;
   const h = rng.range(4, 8);
   const poleH = rng.range(3, 6);
   const rotY = b.rotY + rng.range(-0.3, 0.3);
@@ -711,7 +764,7 @@ function placeScreens(c: Ctx, b: BuildingSpec, rng: Rng, zone: number, maxScreen
   const cands: { f: BuildingFace; fi: number; h: number; w: number; y0: number; score: number }[] =
     [];
   (c.faces[b.id] ?? []).forEach((f, fi) => {
-    if (f.shape === 'cylinder') return;
+    if (f.shape === 'cylinder' || !usable(f)) return;
     const tierH = f.y1 - f.y0;
     const y0 = Math.max(lo, f.y0 + TIER_MARGIN);
     const y1 = Math.min(hi, f.y1 - TIER_MARGIN);
@@ -759,6 +812,8 @@ function placeScreens(c: Ctx, b: BuildingSpec, rng: Rng, zone: number, maxScreen
 function placeRings(c: Ctx, b: BuildingSpec, rng: Rng, zone: number, budget: number): number {
   const t = b.tiers[0];
   if (!t || t.shape !== 'cylinder' || budget <= 0) return 0;
+  const base = (c.faces[b.id] ?? []).filter((f) => f.tier === 0 && f.stack === 0);
+  if (!base.every(usable)) return 0;
   const n = Math.min(budget, b.h >= 200 ? 3 : b.h >= 100 ? 2 : 1);
   const lo = b.baseY + b.h * 0.3;
   const hi = b.baseY + b.h * 0.6;
@@ -843,6 +898,209 @@ function placeHolo(
   return true;
 }
 
+const MEDIA_MAX = 24;
+const MEDIA_MAIN_GAP = 40;
+const BANNER_MAX = 400;
+
+// Teheran-ro canyon: one street-facing screen per mid-rise tower; a tagged media face is covered
+// edge to edge (SEOUL.md 4.3 mediaSlab).
+function placeMediaScreen(
+  c: Ctx,
+  b: BuildingSpec,
+  rng: Rng,
+  zone: number,
+  mainGap: (x: number, z: number) => number,
+): boolean {
+  const media = b.tags.mediaFace;
+  // Faces looking onto the arterial (Teheran-ro itself) first, then the biggest wall.
+  const toMain = (f: BuildingFace): number =>
+    Math.min(MEDIA_MAIN_GAP, mainGap(f.center.x + f.normal.x * 8, f.center.z + f.normal.z * 8));
+  const cands = (c.faces[b.id] ?? [])
+    .map((f, fi) => ({ f, fi, main: toMain(f) }))
+    .filter(
+      ({ f }) =>
+        f.shape !== 'cylinder' &&
+        f.stack === 0 &&
+        usable(f) &&
+        (media ? f.side === media : f.street),
+    )
+    .sort(
+      (a, z) => a.main - z.main || z.f.width * (z.f.y1 - z.f.y0) - a.f.width * (a.f.y1 - a.f.y0),
+    );
+  for (const { f, fi } of cands) {
+    const tierH = f.y1 - f.y0 - 2 * TIER_MARGIN;
+    const h = media ? Math.min(150, tierH) : Math.min(90, tierH * 0.6);
+    const w = media
+      ? Math.min(70, f.width - 2 * EDGE_IN)
+      : Math.min(28, f.width - 2 * EDGE_IN, h / 1.6);
+    // A tagged media face is covered whatever its width; free screens need a real wall.
+    if (h < 25 || w < (media ? 4 : 10)) continue;
+    const y0 = f.y0 + TIER_MARGIN + (media ? 0 : (tierH - h) * rng.range(0.3, 0.9));
+    const r: Rect = { u0: -w / 2, u1: w / 2, y0, y1: y0 + h };
+    if (!insideFace(f, r.u0, r.u1, r.y0, r.y1)) continue;
+    const vol = wallVolume(f, b, r.u0, r.u1, r.y0, r.y1, 0.02, WALL_GAP.screen + 0.3);
+    if (firstHit(c.L, vol) || !reserve(c, b.id, fi, r)) continue;
+    c.out.screens.push({
+      building: b.id,
+      face: fi,
+      x: f.center.x + f.normal.x * WALL_GAP.screen,
+      y: y0 + h / 2,
+      z: f.center.z + f.normal.z * WALL_GAP.screen,
+      nx: f.normal.x,
+      nz: f.normal.z,
+      w,
+      h,
+      hue: rng.int(0, 2),
+      seed: rng.int(0, 1e6),
+      cell: pickCell(c, 'line', rng),
+      logo: pickCell(c, 'logo', rng),
+      zone,
+      ...r,
+      vol,
+    });
+    return true;
+  }
+  return false;
+}
+
+// Hongdae: banners strung across alleys and narrow streets, 5.5–7.5 m above the road.
+function placeBanners(c: Ctx, rng: Rng): void {
+  let placed = 0;
+  // Glowing text in a neon frame; flat lightboxes read as plain boards across a dark alley.
+  const neonBands = c.cat.byKind.band.filter((i) => c.cat.cells[i]?.style === 2);
+  for (const r of c.L.roads) {
+    if (placed >= BANNER_MAX) return;
+    if (!districtSigns(r.district).banners) continue;
+    if ((r.kind !== 'alley' && r.kind !== 'street') || r.width > 14) continue;
+    const len = Math.hypot(r.b.x - r.a.x, r.b.z - r.a.z);
+    if (len < 30) continue;
+    const dir = { x: (r.b.x - r.a.x) / len, z: (r.b.z - r.a.z) / len };
+    const across = { x: -dir.z, z: dir.x };
+    for (
+      let t = 10 + rng.range(0, 6);
+      t < len - 10 && placed < BANNER_MAX;
+      t += rng.range(12, 20)
+    ) {
+      const x = r.a.x + dir.x * t;
+      const z = r.a.z + dir.z * t;
+      const w = r.width * 0.9 + 1;
+      const h = rng.range(0.9, 1.3);
+      const y0 = surfaceHeight(x, z) + rng.range(5.5, 7.5);
+      const vol: Solid = {
+        kind: 'box',
+        x,
+        z,
+        hw: w / 2,
+        hd: 0.1,
+        rotY: Math.atan2(-across.z, across.x),
+        y0,
+        y1: y0 + h,
+        building: -1,
+        tier: -10,
+        stack: 0,
+      };
+      if (firstHit(c.L, vol)) continue;
+      const cell = neonBands.length ? rng.pick(neonBands) : pickCell(c, 'band', rng);
+      c.out.flats.push({
+        kind: 'band',
+        building: -1,
+        face: -1,
+        x,
+        y: y0 + h / 2,
+        z,
+        nx: dir.x,
+        nz: dir.z,
+        w,
+        h,
+        cell,
+        color: cellColor(c, cell, 'neonMagenta'),
+        anim: animFor(rng, 0.03),
+        zone: zoneDelay(r.district, rng),
+        seed: rng.int(0, 1e6),
+        doubleSided: true,
+        u0: -w / 2,
+        u1: w / 2,
+        y0,
+        y1: y0 + h,
+        vol,
+      });
+      placed++;
+    }
+  }
+}
+
+const PAINT_CHANCE = 0.85;
+// Must match PAINT_PAD_X / PAINT_RISE / PAINT_BELOW in glow.ts.
+export const PAINT_PAD_X = 1.15;
+export const PAINT_RISE = 2.0;
+export const PAINT_BELOW = 0.2;
+const PAINT_ROAD_GAP = 14;
+
+// Seongsu: one big painted Korean name on the street wall of a warehouse, washed by warm lamps.
+// buildings publishes `blank` (same rule as its facade); without it, fall back to that rule here.
+function isBlank(f: BuildingFace, b: BuildingSpec, base: BaseArchetype): boolean {
+  const flag = (f as BuildingFace & { blank?: boolean }).blank;
+  return flag ?? windowStyle(base, faceRole(b, f.side), b.seed).type === FACADE.plain;
+}
+
+function placePaint(c: Ctx, b: BuildingSpec, rng: Rng, zone: number): void {
+  if (!rng.chance(PAINT_CHANCE)) return;
+  // Only blank walls (no window grid under the wash) that a road can see; else no lettering.
+  const base = baseArchetype(b);
+  const blank = (c.faces[b.id] ?? [])
+    .map((f, fi) => ({ f, fi }))
+    .filter(
+      ({ f }) =>
+        f.tier === 0 &&
+        f.stack === 0 &&
+        f.shape !== 'cylinder' &&
+        isBlank(f, b, base) &&
+        f.side !== b.tags.mediaFace &&
+        c.roadGap(f.center.x + f.normal.x * 2, f.center.z + f.normal.z * 2) < PAINT_ROAD_GAP,
+    )
+    .sort((p, q) => q.f.width - p.f.width);
+  const pick = blank[0];
+  if (!pick) return;
+  const { f, fi } = pick;
+  // Big painted name across more than half the wall (SEOUL.md 4.3 brick).
+  const usable = f.width - 2 * EDGE_IN;
+  const w = Math.min(18, usable * 0.8);
+  if (w < 5) return;
+  const y0 = b.baseY + b.groundFloorH + rng.range(0.6, 1.4);
+  // Lettering shrinks to fit low warehouses: the lamps above must stay on the wall.
+  const room = (f.y1 - TIER_MARGIN - y0) / (PAINT_RISE - PAINT_BELOW);
+  const h = Math.min(3, Math.max(1.4, w / 5), room);
+  if (h < 1.2) return;
+  const uc = rng.range(-(usable - w) / 2, (usable - w) / 2);
+  const cell = pickCell(c, 'paint', rng);
+  if (cell < 0) return;
+  // The paint shader's quad (glow.ts PAINT_*) spans the lamps above and some padding: the whole
+  // quad must fit the wall and not cover other signs, so it is what gets checked and reserved.
+  const pw = (w * PAINT_PAD_X) / 2;
+  const s = tryWallSign(
+    c,
+    b,
+    fi,
+    'band',
+    { u0: uc - pw, u1: uc + pw, y0: y0 - PAINT_BELOW * h, y1: y0 + (PAINT_RISE - PAINT_BELOW) * h },
+    WALL_GAP.band,
+    0.15,
+    { cell, color: 'neonAmber', anim: Anim.none, zone, seed: rng.int(0, 1e6) },
+  );
+  if (!s) return;
+  // Keep the sign's own fields on the lettering itself (what buildPaint draws from).
+  Object.assign(s, {
+    wash: true,
+    w,
+    h,
+    u0: uc - w / 2,
+    u1: uc + w / 2,
+    y0,
+    y1: y0 + h,
+    y: y0 + h / 2,
+  });
+}
+
 /** Hard ceiling on all sign instances (ART_DIRECTION 5.1); smaller maps get a share by area. */
 export const SIGN_CAP = 16000;
 const SIGNS_PER_KM2 = 1540;
@@ -876,8 +1134,9 @@ function thinToBudget(c: Ctx, budget: number): void {
   );
   const tier = (s: FlatSign): number => {
     const shop = s.kind === 'band' || s.kind === 'blade';
+    if (s.wash) return 6;
     if (!shop) return s.kind === 'crown' ? 6 : 4;
-    return HOT_KINDS.has(c.L.buildings[s.building]?.district ?? '') ? 2 : 0;
+    return s.building < 0 || HOT_KINDS.has(c.L.buildings[s.building]?.district ?? '') ? 2 : 0;
   };
   const order = c.out.flats
     .map((s, i) => ({
@@ -920,39 +1179,60 @@ export function placeSigns(
   };
   const maxScreens = opts.maxScreens ?? 20;
   let ringBudget = opts.maxRings ?? 14;
+  let mediaCount = 0;
+  let giantCount = 0;
+  let mediaGapIndex: ((x: number, z: number) => number) | undefined;
+  const mediaGap = (): ((x: number, z: number) => number) =>
+    (mediaGapIndex ??= roadGapIndex(
+      { roads: L.roads.filter((r) => r.kind === 'arterial') },
+      MEDIA_MAIN_GAP,
+    ));
   const maxHolos = opts.maxHolos ?? 36;
 
   // Unbuilt districts (palace grounds, parks) stay dark: no sign of any kind.
-  const lit = L.buildings.filter((b) => !isUnbuilt(b.district));
+  // Landmarks whose real shape departs from their tier boxes only get signs once buildings marks
+  // which faces are usable; until then no face-mounted sign may float in the air beside them.
+  const flagged = (id: number): boolean =>
+    (faces[id] ?? []).some((f) => (f as BuildingFace & { usable?: boolean }).usable !== undefined);
+  const lit = L.buildings.filter(
+    (b) => !isUnbuilt(b.district) && (!b.tags.landmark || flagged(b.id)),
+  );
   const byHeight = [...lit].sort((a, z) => z.h - a.h);
   for (const b of byHeight) {
     const rng = createRng((seed ^ Math.imul(b.seed | 0, 0x9e3779b1)) >>> 0);
     const zone = zoneDelay(b.district, rng);
-    if (b.h >= 160 && c.out.screens.length < maxScreens) {
-      placeScreens(
-        c,
-        b,
-        rng,
-        zone,
-        Math.min(b.h >= 250 ? 2 : 1, maxScreens - c.out.screens.length),
-      );
+    // Media screens share c.out.screens, so giant screens keep their own count (5.1: 15–24).
+    if (b.h >= 160 && giantCount < maxScreens) {
+      const before = c.out.screens.length;
+      placeScreens(c, b, rng, zone, Math.min(b.h >= 250 ? 2 : 1, maxScreens - giantCount));
+      giantCount += c.out.screens.length - before;
     }
-    if (baseArchetype(b) === 'cylinderTower' && b.h >= 60) {
+    if (signForm(b) === 'cylinderTower' && b.h >= 60) {
       ringBudget -= placeRings(c, b, rng, zone, ringBudget);
+    }
+    // A tagged media face always gets its screen; free screens on other towers share the cap.
+    const tagged = !!b.tags.mediaFace;
+    if ((tagged || mediaCount < MEDIA_MAX) && b.h >= 50 && districtSigns(b.district).media) {
+      const a = signForm(b);
+      if (TOWERS.has(a) || a === 'officeSlab') {
+        const ok = placeMediaScreen(c, b, rng, zone, mediaGap());
+        if (ok && !tagged) mediaCount++;
+      }
     }
   }
 
   for (const b of lit) {
     const rng = createRng((seed ^ Math.imul((b.seed | 0) + 17, 0x85ebca6b)) >>> 0);
     const zone = zoneDelay(b.district, rng);
-    const a = baseArchetype(b);
+    const a = signForm(b);
     const d = districtSigns(b.district);
     const tower = TOWERS.has(a);
     if (d.street && (a === 'sangga' || (a === 'officeSlab' && d.shops))) {
       const sc = d.shopScale;
       shopFaces(c, b).forEach((fi, k) => {
         placeBands(c, b, rng, zone, fi, (k === 0 ? 1.6 : 0.7) * sc);
-        placeBlades(c, b, rng, zone, (a === 'sangga' ? 0.5 : 0.3) * (k === 0 ? 1.3 : 0.6) * sc, fi);
+        const bp = (a === 'sangga' ? 0.5 : 0.3) * (k === 0 ? 1.3 : 0.6) * sc;
+        placeBlades(c, b, rng, zone, d.bladeScale === undefined ? bp : bp * d.bladeScale, fi);
       });
     } else if (d.street && a === 'officeSlab' && b.h < 40) {
       const fi = shopFaces(c, b)[0];
@@ -961,8 +1241,11 @@ export function placeSigns(
     if (d.tubes && (tower || a === 'officeSlab')) {
       placeTubes(c, b, rng, zone);
     }
-    if (b.h >= 20 && b.h <= 80 && d.vtext && rng.chance(0.6)) {
-      placeVText(c, b, rng, zone);
+    if (d.paint && (a === 'sangga' || b.archetype === 'brickWarehouse')) {
+      placePaint(c, b, rng, zone);
+    }
+    if (b.h >= (d.vtextFromH ?? 20) && b.h <= 80 && d.vtext && rng.chance(0.6)) {
+      for (let k = 0; k < (d.vtextCount ?? 1); k++) placeVText(c, b, rng, zone, d.vtextMinH);
     }
     if (b.tags.corp) {
       const cell = cat.cells.findIndex((k) => k.kind === 'crown' && k.key === b.tags.corp);
@@ -977,7 +1260,7 @@ export function placeSigns(
       placeCrown(c, b, rng, zone, cell, 1);
     }
     if (b.tags.cross)
-      placeCross(c, b, rng, safeBaseKind(b.district) === 'hillside' ? rng.range(0.62, 0.8) : zone);
+      placeCross(c, b, rng, baseKind(b.district) === 'hillside' ? rng.range(0.62, 0.8) : zone);
   }
 
   const hrng = createRng(seed + 77);
@@ -988,6 +1271,7 @@ export function placeSigns(
     .sort((a, z) => a.seed - z.seed);
   for (const b of roofs) {
     if (c.out.holos.length >= maxHolos - 3) break;
+    if (!roofUsable(c, b)) continue;
     if (!hrng.chance(0.35) || logos.length === 0) continue;
     const t = topTier(b);
     if (!t) continue;
@@ -1000,6 +1284,7 @@ export function placeSigns(
       if (p) placeHolo(c, p.x, p.z, L.river.waterY + 14, hrng, 0.02, koi);
     }
   }
+  placeBanners(c, createRng(seed + 99));
   thinToBudget(c, signBudget(L) - (opts.reserved ?? 0));
   return c.out;
 }
