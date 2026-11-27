@@ -39,14 +39,17 @@ function preloadApp(): Plugin {
   };
 }
 
-/** Worker build only: 'three' resolves to src/city/three-lite.ts (two classes, not three.core). */
+/**
+ * Worker bundles only (build; dev serves workers with the full three): 'three' imported from
+ * src/city/ resolves to src/city/three-lite.ts (two classes, not three.core).
+ */
 function threeLite(): Plugin {
   const lite = fileURLToPath(new URL('./src/city/three-lite.ts', import.meta.url));
   return {
     name: 'hangang-worker-three-lite',
     enforce: 'pre',
-    resolveId(id) {
-      return id === 'three' ? lite : null;
+    resolveId(id, importer) {
+      return id === 'three' && importer?.includes('/src/city/') ? lite : null;
     },
   };
 }

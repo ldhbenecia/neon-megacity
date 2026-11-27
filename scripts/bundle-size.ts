@@ -5,6 +5,8 @@ import { bundleGzip } from './bundle';
 
 const TARGET_KB = 260;
 const LIMIT_KB = 400;
+/** The city worker without three.core is ~30 KB; above this the three-lite alias stopped working. */
+const WORKER_LIMIT_KB = 35;
 
 let files;
 try {
@@ -27,6 +29,17 @@ if (initial === 0) {
 }
 if (initial > LIMIT_KB) {
   console.error(`initial JS over the ${LIMIT_KB} KB gzip ceiling`);
+  process.exit(1);
+}
+const worker = files.find((f) => f.file.includes('layout.worker'));
+if (!worker) {
+  console.error('no city worker chunk (layout.worker) in dist/assets');
+  process.exit(1);
+}
+if (worker.gzip / 1024 > WORKER_LIMIT_KB) {
+  console.error(
+    `city worker ${kb(worker.gzip)} KB gzip is over ${WORKER_LIMIT_KB} KB: is three.core back in it (vite.config.ts threeLite)?`,
+  );
   process.exit(1);
 }
 if (initial > TARGET_KB) {
