@@ -37,7 +37,7 @@ export const POLAR_MARGIN = 0.01;
  * measured from +Y, so maxPolarAngle just under PI/2 keeps it above the horizon.
  * maxDistance lets the whole map fit the 55 deg view: the sphere around the map's half-diagonal
  * spans the vertical field of view, with 10 % to spare (v3 ~5700 m). Zoom-out scales around the
- * orbit target, and the camera itself stays inside CAMERA_RING (see below).
+ * orbit target, and the camera itself stays inside cameraRing() (see below).
  */
 export const CAMERA_FOV = 55;
 const FIT_DISTANCE = Math.ceil(
@@ -49,16 +49,22 @@ export const CAMERA_LIMITS = {
   maxPolarAngle: Math.PI * 0.495,
 } as const;
 
-const NEAREST_RIDGE = Math.min(...LAYOUT.ridges.map((r) => r.radius));
-const FARTHEST_RIDGE = Math.max(...LAYOUT.ridges.map((r) => r.radius));
+// Everything below that reads LAYOUT is computed on first use, never at module evaluation: the
+// async boot evaluates app modules while the layout is still being generated in a Worker.
+
 /**
  * The camera stays this far (horizontally) from the map centre: inside the nearest ridge ring and
  * the ground disc, so their edges never stand between the camera and the city. A low zoom-out
  * therefore stops at the ring; looking down, the full maxDistance is reachable.
  */
-export const CAMERA_RING = NEAREST_RIDGE - 150;
+export function cameraRing(): number {
+  return Math.min(...LAYOUT.ridges.map((r) => r.radius)) - 150;
+}
+
 /** Far plane: the farthest ridge seen from the zoom-out limit across the map. */
-export const CAMERA_FAR = CAMERA_LIMITS.maxDistance + FARTHEST_RIDGE + 500;
+export function cameraFar(): number {
+  return CAMERA_LIMITS.maxDistance + Math.max(...LAYOUT.ridges.map((r) => r.radius)) + 500;
+}
 
 export interface StreetAnchor {
   kind: string;
@@ -146,7 +152,7 @@ function findStreet(): { pose: Pose; anchor: StreetAnchor } | null {
 
 let streetCache: { pose: Pose; anchor: StreetAnchor } | null | undefined;
 
-/** First anchor with a clear street view, or null (the preset then uses STREET_FALLBACK). */
+/** First anchor with a clear street view, or null (the preset then uses streetFallback()). */
 export function streetPreset(): { pose: Pose; anchor: StreetAnchor } | null {
   if (streetCache === undefined) streetCache = findStreet();
   return streetCache;
@@ -216,18 +222,20 @@ function roadPose(id: string): Pose {
  * landmarks, mountain peaks, named roads, map extents) so the framing follows layout changes.
  * Heights over hills are terrain-relative, so lower mountains move the cameras with them.
  */
-function seoulPoses(): Record<
-  | 'banpo'
-  | 'yeouido'
-  | 'namsan'
-  | 'teheran'
-  | 'seongsu'
-  | 'jamsil'
-  | 'bugak'
-  | 'overview'
-  | 'topdown',
-  Pose
-> {
+const SEOUL_KEYS = [
+  'banpo',
+  'yeouido',
+  'namsan',
+  'teheran',
+  'seongsu',
+  'jamsil',
+  'bugak',
+  'overview',
+  'topdown',
+] as const;
+type SeoulKey = (typeof SEOUL_KEYS)[number];
+
+function seoulPoses(): Record<SeoulKey, Pose> {
   const banpo = bridge('br-banpo');
   // South abutment (b) plus 20 m down the span, looking back across to the north landing.
   const bu = Math.hypot(banpo.b.x - banpo.a.x, banpo.b.z - banpo.a.z);
@@ -265,34 +273,50 @@ function seoulPoses(): Record<
   };
 }
 
-const SEOUL_POSES = seoulPoses();
+let seoulCache: ReturnType<typeof seoulPoses> | undefined;
+const seoul = (): ReturnType<typeof seoulPoses> => (seoulCache ??= seoulPoses());
 
+let fallbackCache: CameraPose | undefined;
 /**
  * Used when no street of any anchor gives a clear view: eye level at the first anchor point
  * (홍대's grid origin), looking 70 m north-east.
  */
-export const STREET_FALLBACK: CameraPose = (() => {
-  const w = streetAnchors(LAYOUT.districts)[0]?.want ?? { x: 0, z: 0 };
-  return pose([w.x, surfaceHeight(w.x, w.z) + 4, w.z], [w.x + 45, 0, w.z - 50]);
-})();
+export function streetFallback(): CameraPose {
+  if (!fallbackCache) {
+    const w = streetAnchors(LAYOUT.districts)[0]?.want ?? { x: 0, z: 0 };
+    fallbackCache = pose([w.x, surfaceHeight(w.x, w.z) + 4, w.z], [w.x + 45, 0, w.z - 50]);
+  }
+  return fallbackCache;
+}
 
-export const CAMERA_PRESETS = {
-  ...SEOUL_POSES,
-  /** 홍대 alley: the nearest clear nightlife street (see `streetPreset`). */
-  get hongdae(): Pose {
-    return streetPreset()?.pose ?? STREET_FALLBACK;
+/** One lazy getter per SEOUL_KEYS entry: a viewpoint added there is reachable by `?cam=` too. */
+const seoulGetters = Object.defineProperties(
+  {},
+  Object.fromEntries(SEOUL_KEYS.map((k) => [k, { enumerable: true, get: (): Pose => seoul()[k] }])),
+) as Readonly<Record<SeoulKey, Pose>>;
+
+export const CAMERA_PRESETS = Object.defineProperties(
+  {},
+  {
+    ...Object.getOwnPropertyDescriptors(seoulGetters),
+    ...Object.getOwnPropertyDescriptors({
+      /** 홍대 alley: the nearest clear nightlife street (see `streetPreset`). */
+      get hongdae(): Pose {
+        return streetPreset()?.pose ?? streetFallback();
+      },
+      /** Aliases kept for e2e, screenshots and old links. */
+      get skyline(): Pose {
+        return seoul().banpo;
+      },
+      get core(): Pose {
+        return seoul().yeouido;
+      },
+      get street(): Pose {
+        return CAMERA_PRESETS.hongdae;
+      },
+    }),
   },
-  /** Aliases kept for e2e, screenshots and old links. */
-  get skyline(): Pose {
-    return SEOUL_POSES.banpo;
-  },
-  get core(): Pose {
-    return SEOUL_POSES.yeouido;
-  },
-  get street(): Pose {
-    return CAMERA_PRESETS.hongdae;
-  },
-} as const satisfies Record<string, Pose>;
+) as Readonly<Record<SeoulKey | 'hongdae' | 'skyline' | 'core' | 'street', Pose>>;
 
 export type CameraPreset = keyof typeof CAMERA_PRESETS;
 
