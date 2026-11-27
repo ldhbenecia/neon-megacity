@@ -1,8 +1,8 @@
 import * as THREE from 'three';
-import { LAYOUT, RIVER, isForest, terrainHeight, type Vec2 } from '../city/layout';
+import { LAYOUT, MOUNTAIN_RANGES, RIVER, isForest, terrainHeight, type Vec2 } from '../city/layout';
 import { TERRAIN_COLORS as TC } from '../core/palette';
 import {
-  GROUND_RADIUS,
+  groundRadius,
   MAP_HALF_X,
   MAP_HALF_Z,
   SIDE_REACH,
@@ -130,32 +130,34 @@ function forestMask(): (x: number, z: number) => number {
     }
     return false;
   };
-  const grids = LAYOUT.mountains.map((m) => {
-    const x0 = m.peak.x - m.radius;
-    const z0 = m.peak.z - m.radius;
-    const n = Math.ceil((2 * m.radius) / FOREST_CELL) + 1;
-    const v = new Float32Array(n * n);
-    for (let j = 0; j < n; j++) {
-      for (let i = 0; i < n; i++) {
+  // One grid per mountain range box: ranges that join (북악 and 인왕) are baked once.
+  const grids = MOUNTAIN_RANGES.map((r) => {
+    const x0 = r.x0;
+    const z0 = r.z0;
+    const nx = Math.ceil((r.x1 - r.x0) / FOREST_CELL) + 1;
+    const nz = Math.ceil((r.z1 - r.z0) / FOREST_CELL) + 1;
+    const v = new Float32Array(nx * nz);
+    for (let j = 0; j < nz; j++) {
+      for (let i = 0; i < nx; i++) {
         const x = x0 + i * FOREST_CELL;
         const z = z0 + j * FOREST_CELL;
         if (terrainHeight(x, z) <= FOREST_START) continue;
-        v[j * n + i] = isForest(x, z) && !onBuilding(x, z) ? 1 : 0;
+        v[j * nx + i] = isForest(x, z) && !onBuilding(x, z) ? 1 : 0;
       }
     }
-    return { x0, z0, n, v };
+    return { x0, z0, nx, nz, v };
   });
   return (x, z) => {
     let best = 0;
     for (const g of grids) {
       const u = (x - g.x0) / FOREST_CELL;
       const w = (z - g.z0) / FOREST_CELL;
-      if (u < 0 || w < 0 || u >= g.n - 1 || w >= g.n - 1) continue;
+      if (u < 0 || w < 0 || u >= g.nx - 1 || w >= g.nz - 1) continue;
       const i = Math.floor(u);
       const j = Math.floor(w);
       const fu = u - i;
       const fw = w - j;
-      const at = (a: number, b: number): number => g.v[(j + b) * g.n + i + a] ?? 0;
+      const at = (a: number, b: number): number => g.v[(j + b) * g.nx + i + a] ?? 0;
       const top = at(0, 0) + (at(1, 0) - at(0, 0)) * fu;
       const bottom = at(0, 1) + (at(1, 1) - at(0, 1)) * fu;
       best = Math.max(best, top + (bottom - top) * fw);
@@ -165,11 +167,11 @@ function forestMask(): (x: number, z: number) => number {
 }
 
 /** 남산's mast (buildings) stands on a level summit: no canopy within SUMMIT_FLAT of it. */
-const MAST = (() => {
+function mastAt(): Vec2 | null {
   const l = LAYOUT.landmarks.find((m) => m.id === 'namsan-mast');
   const n = LAYOUT.mountains.find((m) => m.id === 'namsan');
   return l ? { x: l.x, z: l.z } : n ? { x: n.peak.x, z: n.peak.z } : null;
-})();
+}
 
 // Only ever raises the ground, so a tree placed on surfaceHeight sinks a little rather than
 // floats, and only where the layout keeps forest: the mask must be over 0.5 (inside the baked
@@ -180,13 +182,14 @@ function canopyLift(
   z: number,
   canopy: number,
   mask: (x: number, z: number) => number,
+  mast: Vec2 | null,
 ): number {
   const f = forestAt(y);
   if (f <= 0) return 0;
   const inside = Math.min(1, Math.max(0, (mask(x, z) - 0.5) * 2));
   if (inside <= 0) return 0;
-  const keep = MAST
-    ? Math.min(1, Math.max(0, (Math.hypot(x - MAST.x, z - MAST.z) - SUMMIT_FLAT) / 20))
+  const keep = mast
+    ? Math.min(1, Math.max(0, (Math.hypot(x - mast.x, z - mast.z) - SUMMIT_FLAT) / 20))
     : 1;
   return CANOPY * f * inside * keep * canopy;
 }
@@ -194,10 +197,10 @@ function canopyLift(
 /** A cell is split once one corner rises this far (m); flat ground inside a radius stays coarse. */
 const MOUNTAIN_RISE = 2;
 
-/** Inside some mountain's radius and risen more than MOUNTAIN_RISE (terrainHeight is their max). */
+/** Inside a mountain range box and risen more than MOUNTAIN_RISE (terrainHeight is their max). */
 function raised(x: number, z: number): boolean {
-  for (const m of LAYOUT.mountains) {
-    if (Math.hypot(x - m.peak.x, z - m.peak.z) < m.radius)
+  for (const r of MOUNTAIN_RANGES) {
+    if (x >= r.x0 && x <= r.x1 && z >= r.z0 && z <= r.z1)
       return terrainHeight(x, z) > MOUNTAIN_RISE;
   }
   return false;
@@ -214,16 +217,17 @@ export function buildGround(): THREE.BufferGeometry {
   const rim: number[] = [];
   const tmp = new THREE.Color();
   const mask = forestMask();
+  const mast = mastAt();
   const vertex = (x: number, z: number): number => {
     const v = groundVertex(x, z);
     const stands = v.y > 4 ? noise2(v.x / 14 + 31, v.z / 14 + 7) : 0;
     const canopy = v.y > 4 ? stands * 0.7 + noise2(v.x / 5 + 3, v.z / 5 + 11) * 0.3 : 0;
     groundColor(x, v.y, z, canopy, pal, tmp);
     // The lift follows the stand-scale term only: the 5 m term on 8 m cells tilts steep slopes.
-    pos.push(v.x, v.y + canopyLift(v.x, v.y, v.z, stands, mask), v.z);
+    pos.push(v.x, v.y + canopyLift(v.x, v.y, v.z, stands, mask, mast), v.z);
     col.push(tmp.r, tmp.g, tmp.b);
     dist.push(groundWaterDistance(v.x, v.z));
-    rim.push(Math.hypot(x, z) > GROUND_RADIUS ? 1 : 0);
+    rim.push(Math.hypot(x, z) > groundRadius() ? 1 : 0);
     return dist.length - 1;
   };
   for (let j = 0; j < nz; j++) {
@@ -340,9 +344,60 @@ export function buildGround(): THREE.BufferGeometry {
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   g.setIndex(idx);
   g.computeVertexNormals();
+  shadeValleys(g);
   tintRock(g, pal);
   g.computeBoundingSphere();
   return g;
+}
+
+/** Neighbour-averaging rounds for the valley shading: about this many cells of reach. */
+const VALLEY_ROUNDS = 6;
+/** Darkening per metre a vertex sits below its smoothed neighbourhood (and lift above it). */
+const VALLEY_GAIN = 0.12;
+
+// Gullies and ridges the gentle height detail barely shows in the silhouette: a vertex below the
+// average of its neighbourhood (smoothed over VALLEY_ROUNDS mesh rings) is in a valley and is
+// darkened, one above it on a spur is lightened. One pass over the index per round, no extra
+// height queries; only raised ground (forest) is touched.
+function shadeValleys(g: THREE.BufferGeometry): void {
+  const pos = g.getAttribute('position');
+  const col = g.getAttribute('color');
+  const index = g.getIndex();
+  if (!index) return;
+  const n = pos.count;
+  let h = new Float32Array(n);
+  for (let i = 0; i < n; i++) h[i] = pos.getY(i);
+  const own = h.slice();
+  const sum = new Float32Array(n);
+  const cnt = new Uint16Array(n);
+  for (let round = 0; round < VALLEY_ROUNDS; round++) {
+    sum.fill(0);
+    cnt.fill(0);
+    for (let t = 0; t < index.count; t += 3) {
+      const a = index.getX(t);
+      const b = index.getX(t + 1);
+      const c = index.getX(t + 2);
+      sum[a] = (sum[a] ?? 0) + (h[b] ?? 0) + (h[c] ?? 0);
+      sum[b] = (sum[b] ?? 0) + (h[a] ?? 0) + (h[c] ?? 0);
+      sum[c] = (sum[c] ?? 0) + (h[a] ?? 0) + (h[b] ?? 0);
+      cnt[a] = (cnt[a] ?? 0) + 2;
+      cnt[b] = (cnt[b] ?? 0) + 2;
+      cnt[c] = (cnt[c] ?? 0) + 2;
+    }
+    const next = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const k = cnt[i] ?? 0;
+      next[i] = k > 0 ? ((h[i] ?? 0) + (sum[i] ?? 0) / k) * 0.5 : (h[i] ?? 0);
+    }
+    h = next;
+  }
+  for (let i = 0; i < n; i++) {
+    const f = forestAt(own[i] ?? 0);
+    if (f <= 0) continue;
+    const below = (h[i] ?? 0) - (own[i] ?? 0);
+    const k = 1 - Math.min(0.35, Math.max(-0.25, below * VALLEY_GAIN)) * f;
+    col.setXYZ(i, col.getX(i) * k, col.getY(i) * k, col.getZ(i) * k);
+  }
 }
 
 // Steep forest ground (cliffs, crests, gully walls) shows bare rock, a touch lighter so ridge lines

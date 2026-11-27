@@ -12,8 +12,8 @@ import {
 } from '../src/city/layout';
 import {
   EMBANK_SLOPE,
-  GROUND_RADIUS,
-  OUTER_EXTENT,
+  groundRadius,
+  outerExtent,
   MAP_HALF_X,
   MAP_HALF_Z,
   channelDistance,
@@ -263,8 +263,8 @@ describe('ground grid', () => {
     const { xs, zs } = groundAxes();
     for (const a of [xs, zs]) {
       for (let i = 1; i < a.length; i++) expect(a[i]!).toBeGreaterThan(a[i - 1]!);
-      expect(a[0]).toBe(-OUTER_EXTENT);
-      expect(a[a.length - 1]).toBe(OUTER_EXTENT);
+      expect(a[0]).toBe(-outerExtent());
+      expect(a[a.length - 1]).toBe(outerExtent());
     }
   });
 
@@ -283,13 +283,13 @@ describe('ground grid', () => {
       const x = pos.getX(v);
       const z = pos.getZ(v);
       const r = Math.hypot(x, z);
-      expect(r).toBeLessThanOrEqual(GROUND_RADIUS + 1e-3);
+      expect(r).toBeLessThanOrEqual(groundRadius() + 1e-3);
       expect(r).toBeLessThan(near.radius);
       // Rim vertices sit in collapsed sliver cells, so their normals are meaningless. Rock faces on
       // the ridges reach past 60°; anything above ~72° (or facing down) is a fold, not a slope.
-      if (r < GROUND_RADIUS - 1) expect(nrm.getY(v)).toBeGreaterThan(0.3);
+      if (r < groundRadius() - 1) expect(nrm.getY(v)).toBeGreaterThan(0.3);
       expect(channelDistance(x, z)).toBeGreaterThanOrEqual(6);
-      if (r > GROUND_RADIUS - 1) {
+      if (r > groundRadius() - 1) {
         expect(pos.getY(v)).toBeLessThanOrEqual(ridgeHeight(near, Math.atan2(z, x)) + 1e-3);
       }
     }
@@ -302,7 +302,7 @@ describe('ground grid', () => {
       a.fromBufferAttribute(pos, index.getX(i));
       b.fromBufferAttribute(pos, index.getX(i + 1));
       c.fromBufferAttribute(pos, index.getX(i + 2));
-      if (Math.hypot(a.x, a.z) > GROUND_RADIUS - 1) continue;
+      if (Math.hypot(a.x, a.z) > groundRadius() - 1) continue;
       const n = c.sub(b).cross(a.sub(b));
       if (n.length() > 1e-6 && n.y <= 0) down++;
     }
@@ -410,8 +410,8 @@ describe('ground grid', () => {
       [16, 40],
     ] as const) {
       const xs = riverSliceXs(fine, coarse);
-      expect(xs[0]).toBe(-OUTER_EXTENT);
-      expect(xs[xs.length - 1]).toBe(OUTER_EXTENT);
+      expect(xs[0]).toBe(-outerExtent());
+      expect(xs[xs.length - 1]).toBe(outerExtent());
       for (let i = 1; i < xs.length; i++) {
         expect(xs[i]! - xs[i - 1]!).toBeGreaterThanOrEqual(1);
         expect(xs[i]! - xs[i - 1]!).toBeLessThanOrEqual(coarse + 1e-9);
