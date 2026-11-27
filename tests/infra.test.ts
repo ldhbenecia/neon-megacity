@@ -18,6 +18,7 @@ import {
   bridgeFrame,
   bridgePoint,
   pierStations,
+  railOnly,
   resample,
 } from '../src/infra/bridges';
 import { buildInfra } from '../src/infra/build';
@@ -478,7 +479,7 @@ describe('infra: whole build', () => {
     for (const d of parts.bridgeDetail) {
       expect(d.steel.triangleCount, d.id).toBeGreaterThan(0);
       const b = LAYOUT.bridges.find((x) => x.id === d.id)!;
-      if (b.lanes > 0) expect(d.markings.triangleCount, d.id).toBeGreaterThan(0);
+      if (b.lanes > 0 && !railOnly(b)) expect(d.markings.triangleCount, d.id).toBeGreaterThan(0);
       expect(d.center[1]).toBe(b.deckY);
     }
   });
