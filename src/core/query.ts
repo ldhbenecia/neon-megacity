@@ -222,18 +222,20 @@ function roadPose(id: string): Pose {
  * landmarks, mountain peaks, named roads, map extents) so the framing follows layout changes.
  * Heights over hills are terrain-relative, so lower mountains move the cameras with them.
  */
-function seoulPoses(): Record<
-  | 'banpo'
-  | 'yeouido'
-  | 'namsan'
-  | 'teheran'
-  | 'seongsu'
-  | 'jamsil'
-  | 'bugak'
-  | 'overview'
-  | 'topdown',
-  Pose
-> {
+const SEOUL_KEYS = [
+  'banpo',
+  'yeouido',
+  'namsan',
+  'teheran',
+  'seongsu',
+  'jamsil',
+  'bugak',
+  'overview',
+  'topdown',
+] as const;
+type SeoulKey = (typeof SEOUL_KEYS)[number];
+
+function seoulPoses(): Record<SeoulKey, Pose> {
   const banpo = bridge('br-banpo');
   // South abutment (b) plus 20 m down the span, looking back across to the north landing.
   const bu = Math.hypot(banpo.b.x - banpo.a.x, banpo.b.z - banpo.a.z);
@@ -286,49 +288,34 @@ export function streetFallback(): CameraPose {
   return fallbackCache;
 }
 
-export const CAMERA_PRESETS = {
-  get banpo(): Pose {
-    return seoul().banpo;
+/** One lazy getter per SEOUL_KEYS entry: a viewpoint added there is reachable by `?cam=` too. */
+const seoulGetters = Object.defineProperties(
+  {},
+  Object.fromEntries(SEOUL_KEYS.map((k) => [k, { enumerable: true, get: (): Pose => seoul()[k] }])),
+) as Readonly<Record<SeoulKey, Pose>>;
+
+export const CAMERA_PRESETS = Object.defineProperties(
+  {},
+  {
+    ...Object.getOwnPropertyDescriptors(seoulGetters),
+    ...Object.getOwnPropertyDescriptors({
+      /** 홍대 alley: the nearest clear nightlife street (see `streetPreset`). */
+      get hongdae(): Pose {
+        return streetPreset()?.pose ?? streetFallback();
+      },
+      /** Aliases kept for e2e, screenshots and old links. */
+      get skyline(): Pose {
+        return seoul().banpo;
+      },
+      get core(): Pose {
+        return seoul().yeouido;
+      },
+      get street(): Pose {
+        return CAMERA_PRESETS.hongdae;
+      },
+    }),
   },
-  get yeouido(): Pose {
-    return seoul().yeouido;
-  },
-  get namsan(): Pose {
-    return seoul().namsan;
-  },
-  get teheran(): Pose {
-    return seoul().teheran;
-  },
-  get seongsu(): Pose {
-    return seoul().seongsu;
-  },
-  get jamsil(): Pose {
-    return seoul().jamsil;
-  },
-  get bugak(): Pose {
-    return seoul().bugak;
-  },
-  get overview(): Pose {
-    return seoul().overview;
-  },
-  get topdown(): Pose {
-    return seoul().topdown;
-  },
-  /** 홍대 alley: the nearest clear nightlife street (see `streetPreset`). */
-  get hongdae(): Pose {
-    return streetPreset()?.pose ?? streetFallback();
-  },
-  /** Aliases kept for e2e, screenshots and old links. */
-  get skyline(): Pose {
-    return seoul().banpo;
-  },
-  get core(): Pose {
-    return seoul().yeouido;
-  },
-  get street(): Pose {
-    return CAMERA_PRESETS.hongdae;
-  },
-} as const satisfies Record<string, Pose>;
+) as Readonly<Record<SeoulKey | 'hongdae' | 'skyline' | 'core' | 'street', Pose>>;
 
 export type CameraPreset = keyof typeof CAMERA_PRESETS;
 
