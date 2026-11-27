@@ -162,22 +162,32 @@ describe('palace grounds', () => {
   });
 });
 
-describe('palace grounds across LODs', () => {
-  it('places side halls and garden trees identically at LOD0 and LOD1', () => {
+describe('palace grounds from the layout', () => {
+  it('draws every palace wall, corridor and terrace up to its height', () => {
     const plan = palacePlan(LAYOUT)!;
-    // Hall plinths (0.8 m tall stone boxes) are emitted at every level; compare their tops.
-    const tops = (lv: 0 | 1): string[] => {
-      const g = new GeoBuilder(0, 0);
-      palaceGrounds(g, plan, lv);
-      const geo = g.build()!;
-      const P = geo.getAttribute('position');
-      const out = new Set<string>();
-      for (let i = 0; i < P.count; i++) {
-        if (Math.abs(P.getY(i) - 0.8) < 1e-3)
-          out.add(`${P.getX(i).toFixed(1)},${P.getZ(i).toFixed(1)}`);
+    expect(plan.walls.length).toBeGreaterThan(0);
+    for (const lv of [0, 1, 2] as const) {
+      for (const w of plan.walls) {
+        const g = new GeoBuilder(0, 0);
+        palaceGrounds(g, { ...plan, walls: [w], ponds: [] }, lv);
+        const geo = g.build()!;
+        geo.computeBoundingBox();
+        expect(geo.boundingBox!.max.y, `${w.kind} lv${lv}`).toBeGreaterThanOrEqual(w.height - 1e-3);
+        expect(windingAgreement(geo)).toBeGreaterThan(0.97);
       }
-      return [...out].sort();
-    };
-    expect(tops(0)).toEqual(tops(1));
+    }
+  });
+
+  it('axis halls are the gate and halls; annexes and the pavilion render as palace halls', () => {
+    const plan = palacePlan(LAYOUT)!;
+    for (const h of plan.halls) expect(['gate', 'hall']).toContain(h.tags.palacePart);
+    const others = LAYOUT.buildings.filter(
+      (b) => b.tags.palacePart === 'annex' || b.tags.palacePart === 'pavilion',
+    );
+    expect(others.length).toBeGreaterThanOrEqual(5);
+    for (const b of others) {
+      const g0 = emitted(b).g0!;
+      expect(windingAgreement(g0)).toBeGreaterThan(0.97);
+    }
   });
 });
