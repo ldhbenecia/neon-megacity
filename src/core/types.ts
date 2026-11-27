@@ -139,6 +139,8 @@ export interface Ctx {
    * Returns the unsubscribe function: call it in the module's `dispose()`.
    */
   onQuality: (fn: (q: Quality) => void) => () => void;
+  /** Developer views from the URL (`src/ux/query.ts`); absent or all false for regular visitors. */
+  debug?: { readonly nan: boolean };
 }
 
 export interface CityModuleInstance {
