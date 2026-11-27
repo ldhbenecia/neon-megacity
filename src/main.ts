@@ -245,8 +245,13 @@ async function boot(): Promise<void> {
   await loader.done();
 }
 
-// Any failure (no WebGL, setup errors) turns the loader red instead of hanging on it.
-// loader.fail is idempotent, so stages that already reported are not logged twice.
-boot().catch((err: unknown) => {
-  loader.fail('boot', err);
-});
+/**
+ * Called by src/boot.ts once LAYOUT is published. Any failure (no WebGL, setup errors) turns the
+ * loader red instead of hanging on it; loader.fail is idempotent, so stages that already reported
+ * are not logged twice.
+ */
+export function start(): void {
+  boot().catch((err: unknown) => {
+    loader.fail('boot', err);
+  });
+}
