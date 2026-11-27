@@ -68,7 +68,7 @@ export function init(ctx: Ctx): CityModuleInstance {
       groundMat.emissive.setRGB(r * k, g * k, b * k);
       channelMat.emissive.setRGB(r * k, g * k, b * k);
       ridgeEnv.dayFactor = env.dayFactor;
-      water.update(elapsed);
+      water.update(elapsed, env.nightFactor);
       ridges.update(elapsed, ridgeEnv, renderer.getPixelRatio());
     },
     dispose() {
