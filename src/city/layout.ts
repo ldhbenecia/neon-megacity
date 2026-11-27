@@ -2,9 +2,10 @@
 // terrain, buildings, infra, neon and the camera all agree. Units: 1 = 1 m.
 // Coordinates: Y up, ground y = 0, north = -Z, east = +X, map centered at the origin.
 // Data types: ./types.ts. Generation: ./generate.ts. Pure queries: ./queries.ts.
-import { EXTENT_X, EXTENT_Z, generateLayout } from './generate';
+import { EXTENT_X, EXTENT_Z } from './generate';
 import { HALF_X, HALF_Z } from './river';
 import { HASH_CELL } from './spatial';
+import { CITY_SEED } from './seed';
 import type { Layout } from './types';
 
 export const CITY = {
@@ -13,14 +14,23 @@ export const CITY = {
   extentZ: EXTENT_Z,
   halfX: HALF_X,
   halfZ: HALF_Z,
-  seed: 2077,
+  seed: CITY_SEED,
   /** Spatial hash cell used by layout queries (m). */
   hashCell: HASH_CELL,
   /** Suggested chunk size for merged geometry / LOD (ART_DIRECTION 4.4). */
   chunkSize: 400,
 } as const;
 
-export const LAYOUT: Layout = generateLayout(CITY.seed);
+/**
+ * The city layout, published once by `setLayout` before any other app module is evaluated:
+ * src/boot.ts generates it in the city worker (or on the main thread as a fallback) and imports
+ * the app afterwards; tests publish it in tests/setup-layout.ts.
+ */
+export let LAYOUT: Layout;
+
+export function setLayout(layout: Layout): void {
+  LAYOUT = layout;
+}
 
 export * from './types';
 export {

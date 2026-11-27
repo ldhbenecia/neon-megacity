@@ -252,6 +252,28 @@ describe('infra: traffic curves stop where the decks stop', () => {
     }
   });
 
+  it('a closed highway lies wholly inside the map (its drawn range is every sample)', () => {
+    // drawn = longest in-map run equals the old per-ring test only with one run per open road
+    // (above) and no closed road leaving the map.
+    for (const path of paths.filter((p) => p.hw.closed)) {
+      for (const p of path.pts) expect(inMap(p, 10), path.hw.id).toBe(true);
+    }
+  });
+
+  it('every placed bridge column lies inside the landA–landB box pushPiers prefilters with', () => {
+    const parts = buildInfra(LAYOUT, C);
+    for (const b of LAYOUT.bridges) {
+      const pad = b.width;
+      const minX = Math.min(b.landA.x, b.landB.x) - pad;
+      const maxX = Math.max(b.landA.x, b.landB.x) + pad;
+      const minZ = Math.min(b.landA.z, b.landB.z) - pad;
+      const maxZ = Math.max(b.landA.z, b.landB.z) + pad;
+      for (const c of parts.columns.filter((q) => q.owner === b.id)) {
+        expect(c.x >= minX && c.x <= maxX && c.z >= minZ && c.z <= maxZ, b.id).toBe(true);
+      }
+    }
+  });
+
   it('내부순환로 traffic ends inside its tunnel portal block', () => {
     for (const id of ['hw-naebu-w', 'hw-naebu-e']) {
       const vis = visiblePoints(paths.find((p) => p.hw.id === id)!);

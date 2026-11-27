@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { buildingFaces, buildingTop, terrainHeight } from '../city/layout';
+import { NIGHT_FILL_AMBIENT } from '../core/palette';
 import { pointSegmentDistance } from '../city/math';
 import { GridHash, segmentBounds } from '../city/spatial';
 import type { BuildingsApi, CityModuleInstance, Ctx, Road } from '../core/types';
@@ -386,6 +387,9 @@ export function init(ctx: Ctx): CityModuleInstance {
     update(_dt, elapsed) {
       uniforms.uLitRatio.value = env.windowLitRatio * params.litScale;
       uniforms.uNight.value = env.nightFactor;
+      // Lighting owns the fill curve; before it sets one, fall back to the night teal floor.
+      if (env.fillColor) uniforms.uFillColor.value.copy(env.fillColor);
+      else uniforms.uFillColor.value.fromArray(NIGHT_FILL_AMBIENT).multiplyScalar(env.nightFactor);
       uniforms.uPower.value = env.powerOn;
       uniforms.uTime.value = elapsed;
       wet.value = Math.max(env.wetness, 0.55 * env.nightFactor);

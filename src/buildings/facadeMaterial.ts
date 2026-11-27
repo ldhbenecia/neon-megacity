@@ -8,6 +8,8 @@ const vec3 = (c: readonly [number, number, number]): string => `vec3(${c.map(gls
 export interface FacadeUniforms {
   uLitRatio: { value: number };
   uNight: { value: number };
+  /** env.fillColor: linear HDR shadow fill, env.fillFactor already applied. */
+  uFillColor: { value: THREE.Color };
   uPower: { value: number };
   uTime: { value: number };
   uDigits: { value: THREE.Texture };
@@ -60,6 +62,7 @@ varying vec4 vWin;
 varying vec4 vInfo;
 uniform float uLitRatio;
 uniform float uNight;
+uniform vec3 uFillColor;
 uniform float uPower;
 uniform float uTime;
 uniform sampler2D uDigits;
@@ -390,7 +393,9 @@ const FRAG_MAIN = /* glsl */ `
     // f.y is measured from the window start, about one ground floor above the street.
     float bounce = exp(-max(f.y + 4.0, 0.0) / ${glsl(NIGHT_FILL.bounceFalloff)});
     float brick = step(8.5, fType);
-    fEmit += (${vec3(NIGHT_FILL_AMBIENT)} * (1.0 - 0.6 * brick) + ${vec3(NIGHT_FILL.bounce)} * bounce) * uNight;
+    // Sky fill follows lighting's curve; the bounce and brick grazing imitate street lamps, so
+    // they follow the night factor like the lamps do.
+    fEmit += uFillColor * (1.0 - 0.6 * brick) + ${vec3(NIGHT_FILL.bounce)} * bounce * uNight;
     // Seongsu brick: warm tungsten grazing from street lamps, scaled by albedo so the red and the
     // mortar courses read at night; glass is already dark here, so windows stay unlit.
     float graze = ${glsl(BRICK_GRAZE.floor)} + exp(-max(f.y + 4.0, 0.0) / ${glsl(BRICK_GRAZE.falloff)});
@@ -403,6 +408,7 @@ export function createFacadeUniforms(): FacadeUniforms {
   return {
     uLitRatio: { value: 0.32 },
     uNight: { value: 1 },
+    uFillColor: { value: new THREE.Color().fromArray(NIGHT_FILL_AMBIENT) },
     uPower: { value: 1 },
     uTime: { value: 0 },
     uDigits: { value: digitAtlas() },
@@ -461,7 +467,7 @@ export function createFacadeMaterial(
       );
   };
   material.customProgramCacheKey = () =>
-    interior ? 'hangang-facade-near-v5' : 'hangang-facade-v5';
+    interior ? 'hangang-facade-near-v6' : 'hangang-facade-v6';
   material.userData.uLitRatio = uniforms.uLitRatio;
   return material;
 }
