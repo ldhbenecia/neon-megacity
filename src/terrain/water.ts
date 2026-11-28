@@ -94,7 +94,7 @@ const WATER_LIGHT = /* glsl */ `
     // Faded with horizontal distance, where calm far ripples would lock the ray onto one panel.
     float near = 1.0 - smoothstep(1400.0, 2600.0, length(look.xz) * length(vViewPosition));
     // Schlick Fresnel for water (F0 0.02), lifted so the streaks read from above.
-    float fres = 0.02 + 0.98 * pow(1.0 - clamp(-look.y, 0.0, 1.0), 5.0);
+    float fres = 0.02 + 0.98 * pow(max(1.0 - clamp(-look.y, 0.0, 1.0), 0.0), 5.0);
     reflectedLight.indirectSpecular += city * steep * near * uNight * (0.6 + 8.0 * fres);
   }
   #endif
