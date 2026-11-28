@@ -165,7 +165,7 @@ const f1 = (v: number): string => v.toFixed(3);
  * halos or vehicle sprites (glow.ts dims those its own way; both would darken the far city). Apply
  * it to the final emitted color, after every gain (neonGain, powerOn, intensity) and before fog: a
  * gain multiplied in later lifts it back over the bloom threshold. `dist` is the camera distance
- * in metres. A plain function: it adds no define or program variant.
+ * in metres; view depth (vFogDepth) will do, it only dims lamps at the screen edge a little later. A plain function: it adds no define or program variant.
  */
 export const FAR_EMISSIVE_GLSL = /* glsl */ `
 vec3 farEmissive( vec3 color, float dist ) {
