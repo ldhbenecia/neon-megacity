@@ -61,6 +61,10 @@ export function endFade(u: number, path: Pick<Path, 'closed' | 'fade' | 'length'
   return s(0, f, u) * s(1, 1 - f, u);
 }
 
+/** Sample spacing (m) along roads that bend with the terrain, and the tolerance for a straight grade. */
+export const ROAD_SAMPLE_M = 3;
+const ROAD_FLAT_TOL = 0.005;
+
 export function groundPaths(
   roads: readonly Road[],
   roadY: (x: number, z: number, road: Road) => number,
@@ -70,11 +74,26 @@ export function groundPaths(
     if (r.kind !== 'arterial' && r.kind !== 'street') continue;
     const len = Math.hypot(r.b.x - r.a.x, r.b.z - r.a.z);
     if (len < 40) continue;
-    const a = { x: r.a.x, y: roadY(r.a.x, r.a.z, r), z: r.a.z };
-    const b = { x: r.b.x, y: roadY(r.b.x, r.b.z, r), z: r.b.z };
+    // Raised roads bend with the terrain at every slope break: sample them so traffic follows the
+    // surface; a straight grade keeps its two end points.
+    const n = Math.max(1, Math.ceil(len / ROAD_SAMPLE_M));
+    const pts: Vec3[] = [];
+    for (let i = 0; i <= n; i++) {
+      const x = r.a.x + ((r.b.x - r.a.x) * i) / n;
+      const z = r.a.z + ((r.b.z - r.a.z) * i) / n;
+      pts.push({ x, y: roadY(x, z, r), z });
+    }
+    const first = pts[0];
+    const last = pts[n];
+    if (!first || !last) continue;
+    const y0 = first.y;
+    const y1 = last.y;
+    const straight = pts.every(
+      (p, i) => Math.abs(p.y - (y0 + ((y1 - y0) * i) / n)) < ROAD_FLAT_TOL,
+    );
     out.push({
       id: `road-${r.id}`,
-      points: [a, b],
+      points: straight ? [first, last] : pts,
       length: len,
       closed: false,
       kind: 'ground',

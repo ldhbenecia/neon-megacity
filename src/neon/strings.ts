@@ -1,5 +1,5 @@
-import { buildingContaining, surfaceHeight } from '../city/layout';
-import type { Layout, Vec3 } from '../city/types';
+import { buildingContaining, roadSurfaceY } from '../city/layout';
+import type { Layout, Road, Vec3 } from '../city/types';
 import { createRng } from '../core/random';
 import { districtSigns, type FlatSign } from './placement';
 import type { StreetPlan } from './streetPlan';
@@ -84,7 +84,7 @@ export function bulbStrings(
       const y = rng.range(4.8, 6.2);
       // Blades stand every few meters on both walls: slide the string a little to find a gap.
       for (const dt of STRING_SHIFTS) {
-        const st = stringAt(L, r.a, dir, across, t + dt, y, reach);
+        const st = stringAt(L, r, dir, across, t + dt, y, reach);
         if (!st || near.some((u) => Math.abs(u - (t + dt)) < STRING_BANNER_CLEAR)) continue;
         if (stringBlocked(st, obstacles)) continue;
         out.push(st);
@@ -100,16 +100,16 @@ const STRING_SHIFTS = [0, 0.8, -0.8, 1.6, -1.6];
 /** The string across the street at `t` along it, wall to wall, or null without two walls in reach. */
 function stringAt(
   L: Layout,
-  a0: { x: number; z: number },
+  road: Road,
   dir: { x: number; z: number },
   across: { x: number; z: number },
   t: number,
   y: number,
   reach: number,
 ): BulbString | null {
-  const cx = a0.x + dir.x * t;
-  const cz = a0.z + dir.z * t;
-  const yy = surfaceHeight(cx, cz) + y;
+  const cx = road.a.x + dir.x * t;
+  const cz = road.a.z + dir.z * t;
+  const yy = roadSurfaceY(cx, cz, road) + y;
   const end = (side: number): Vec3 | null => {
     for (let d = REACH_STEP; d <= reach; d += REACH_STEP) {
       const x = cx + across.x * side * d;
