@@ -63,15 +63,15 @@ export function endFade(u: number, path: Pick<Path, 'closed' | 'fade' | 'length'
 
 export function groundPaths(
   roads: readonly Road[],
-  roadY: (x: number, z: number) => number,
+  roadY: (x: number, z: number, road: Road) => number,
 ): Path[] {
   const out: Path[] = [];
   for (const r of roads) {
     if (r.kind !== 'arterial' && r.kind !== 'street') continue;
     const len = Math.hypot(r.b.x - r.a.x, r.b.z - r.a.z);
     if (len < 40) continue;
-    const a = { x: r.a.x, y: roadY(r.a.x, r.a.z), z: r.a.z };
-    const b = { x: r.b.x, y: roadY(r.b.x, r.b.z), z: r.b.z };
+    const a = { x: r.a.x, y: roadY(r.a.x, r.a.z, r), z: r.a.z };
+    const b = { x: r.b.x, y: roadY(r.b.x, r.b.z, r), z: r.b.z };
     out.push({
       id: `road-${r.id}`,
       points: [a, b],

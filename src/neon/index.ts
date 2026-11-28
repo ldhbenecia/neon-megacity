@@ -4,6 +4,7 @@ import {
   buildingFaces,
   deckHeightAt,
   highwayCurve,
+  roadSurfaceY,
   surfaceHeight,
   type BuildingFace,
   type Layout,
@@ -25,7 +26,7 @@ import {
   skyPaths,
 } from './lanes';
 import { LIGHT_BUDGETS, createLightPool, type LightCandidate } from './lights';
-import { placeSigns, roadGapIndex, type FlatSign, type Placement } from './placement';
+import { nearestRoadIndex, placeSigns, type FlatSign, type Placement } from './placement';
 import { buildHolograms, buildRings, buildScreens } from './screens';
 import { buildFountains, fountainJets, fountainJetsFromNozzles } from './fountain';
 import { buildPaint } from './paint';
@@ -52,6 +53,8 @@ import { buildTraffic } from './traffic';
 export const SIDEWALK_FALLBACK = 0.2;
 const CURVE_SAMPLES = 400;
 const MAX_DECALS = 1500;
+/** Decals this close (m) past a road edge sit on that road's surface. */
+const DECAL_ROAD_GAP = 6;
 
 const SCREEN_HUES: readonly NeonName[] = ['neonCyan', 'neonOrange', 'neonMagenta'];
 
@@ -117,10 +120,17 @@ function decalList(
   street: StreetPlan,
   faces: readonly (readonly BuildingFace[])[],
   roadY: number,
-  roadGap: (x: number, z: number) => number,
+  nearestRoad: ReturnType<typeof nearestRoadIndex>,
 ): DecalInstance[] {
   const out: (DecalInstance & { h: number })[] = [];
-  const ground = (x: number, z: number): number => surfaceHeight(x, z) + roadY + 0.04;
+  const roadGap = (x: number, z: number): number => nearestRoad(x, z).gap;
+  // On a road the road surface (hillside roads sit higher); elsewhere the bare ground.
+  const ground = (x: number, z: number): number => {
+    const { road, gap } = nearestRoad(x, z);
+    return (
+      (road && gap < DECAL_ROAD_GAP ? roadSurfaceY(x, z, road) : surfaceHeight(x, z) + roadY) + 0.04
+    );
+  };
   // Start wall-sign reflections at the carriageway edge: on the sidewalk slab they are hidden.
   const outFromWall = (x: number, z: number): number => {
     const gap = roadGap(x, z);
@@ -344,7 +354,7 @@ export function init(ctx: Ctx): CityModuleInstance {
   const halos = buildHalos(shared, haloList(P));
   const decals = buildReflections(
     shared,
-    decalList(P, street, faces, roadY, roadGapIndex(ctx.LAYOUT)),
+    decalList(P, street, faces, roadY, nearestRoadIndex(ctx.LAYOUT, DECAL_ROAD_GAP)),
   );
   for (const m of [screens, rings, holos, halos, decals, paint]) {
     disposables.push(m.geometry, m.material as THREE.Material);
@@ -374,10 +384,7 @@ export function init(ctx: Ctx): CityModuleInstance {
   group.add(streetMeshes.group);
   disposables.push(streetMeshes);
 
-  const paths: Path[] = [
-    ...groundPaths(L.roads, (x, z) => surfaceHeight(x, z) + roadY),
-    ...bridgePaths(L.bridges, deckY),
-  ];
+  const paths: Path[] = [...groundPaths(L.roads, roadSurfaceY), ...bridgePaths(L.bridges, deckY)];
   for (const hw of L.highways) {
     const s = curveSamples(hw.id);
     if (s) paths.push(highwayPath(hw.id, s, curveFor(hw.id)?.closed ?? hw.closed));

@@ -364,10 +364,18 @@ interface Ctx {
   roadGap: (x: number, z: number) => number;
 }
 
-// Distances are exact up to `pad` m past a road edge; farther points may read Infinity.
-export function roadGapIndex(L: Pick<Layout, 'roads'>, pad = 0): (x: number, z: number) => number {
+type Road = Layout['roads'][number];
+
+/**
+ * Nearest road to (x, z) and the distance past its edge (negative on the carriageway). Exact up
+ * to `pad` m past a road edge; farther points may read `{ road: null, gap: Infinity }`.
+ */
+export function nearestRoadIndex(
+  L: Pick<Layout, 'roads'>,
+  pad = 0,
+): (x: number, z: number) => { road: Road | null; gap: number } {
   const cell = 64;
-  const grid = new Map<string, Layout['roads']>();
+  const grid = new Map<string, Road[]>();
   for (const r of L.roads) {
     if (r.kind === 'stair') continue;
     const m = r.width + pad;
@@ -385,12 +393,23 @@ export function roadGapIndex(L: Pick<Layout, 'roads'>, pad = 0): (x: number, z: 
     }
   }
   return (x, z) => {
-    let best = Infinity;
+    let road: Road | null = null;
+    let gap = Infinity;
     for (const r of grid.get(`${Math.floor(x / cell)},${Math.floor(z / cell)}`) ?? []) {
-      best = Math.min(best, pointSegmentDistance({ x, z }, r.a, r.b) - r.width / 2);
+      const g = pointSegmentDistance({ x, z }, r.a, r.b) - r.width / 2;
+      if (g < gap) {
+        gap = g;
+        road = r;
+      }
     }
-    return best;
+    return { road, gap };
   };
+}
+
+// Distances are exact up to `pad` m past a road edge; farther points may read Infinity.
+export function roadGapIndex(L: Pick<Layout, 'roads'>, pad = 0): (x: number, z: number) => number {
+  const nearest = nearestRoadIndex(L, pad);
+  return (x, z) => nearest(x, z).gap;
 }
 
 function reserve(c: Ctx, b: number, fi: number, r: Rect): boolean {
