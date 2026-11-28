@@ -241,15 +241,16 @@ describe('sun shadow per quality tier', () => {
 });
 
 describe('day sky fill (env.skyFill)', () => {
-  it('zenith hue at full strength by day, handing over to the shadow fill, 0 at dusk and night', () => {
+  it('zenith hue at full strength with the sun high, 0 from the sunset views through the night', () => {
     const sky: [number, number, number] = [0.2, 0.4, 0.5];
     const day = skyFillAt(0.8, sky, 0.35);
     expect(Math.max(...day)).toBeCloseTo(0.35, 6);
     expect(day[0] / day[2]).toBeCloseTo(0.4, 6);
-    expect(skyFillAt(0.08, sky, 0.35)).toEqual([0, 0, 0]);
+    // Sun elevation of the sunset screenshot preset (time 0.74).
+    expect(skyFillAt(0.383, sky, 0.35)).toEqual([0, 0, 0]);
     expect(skyFillAt(-0.5, sky, 0.35)).toEqual([0, 0, 0]);
-    const low = skyFillAt(0.2, sky, 0.35);
-    expect(Math.max(...low)).toBeGreaterThan(0);
-    expect(Math.max(...low)).toBeLessThan(0.35);
+    const mid = skyFillAt(0.52, sky, 0.35);
+    expect(Math.max(...mid)).toBeGreaterThan(0);
+    expect(Math.max(...mid)).toBeLessThan(0.35);
   });
 });

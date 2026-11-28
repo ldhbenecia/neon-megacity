@@ -26,6 +26,9 @@ import {
   allTiers,
   buildingContaining,
   buildingTop,
+  roadSurfaceY,
+  ROAD_Y,
+  HILL_ROAD_Y,
   buildingVolumes,
   bridgeDeckY,
   bandEdgeZ,
@@ -1033,6 +1036,60 @@ describe('layout v3: mountain feet and the river', () => {
           expect(waterSignedDistance(x, z), `${r.ids.join('+')} ${x},${z}`).toBeGreaterThanOrEqual(
             88,
           );
+        }
+      }
+    }
+  });
+});
+
+describe('layout v3: road surface', () => {
+  it('follows the ground: + ROAD_Y on city streets, + HILL_ROAD_Y in the hillside village', () => {
+    expect(roadSurfaceY(0, 2000)).toBe(ROAD_Y);
+    let raised = 0;
+    let hill = 0;
+    for (const r of LAYOUT.roads) {
+      const len = Math.hypot(r.b.x - r.a.x, r.b.z - r.a.z) || 1;
+      const nx = (-(r.b.z - r.a.z) / len) * (r.width / 2);
+      const nz = ((r.b.x - r.a.x) / len) * (r.width / 2);
+      const lift = r.district === 'hillside' ? HILL_ROAD_Y : ROAD_Y;
+      for (let t = 0; t <= 1; t += 0.125) {
+        for (const k of [0, 1, -1]) {
+          const x = r.a.x + (r.b.x - r.a.x) * t + nx * k;
+          const z = r.a.z + (r.b.z - r.a.z) * t + nz * k;
+          const h = terrainHeight(x, z);
+          // What buildings draws (roads.ts: hillside + 0.08, raised + ROAD_Y, flat ROAD_Y).
+          expect(roadSurfaceY(x, z, r), `road ${r.id}`).toBeCloseTo(h + lift, 9);
+          // Streets never sit on the river channel, so neon's surfaceHeight base is the same.
+          expect(surfaceHeight(x, z), `road ${r.id}`).toBeCloseTo(h, 9);
+          if (h > 0) raised++;
+          if (r.district === 'hillside') hill++;
+        }
+      }
+    }
+    expect(raised).toBeGreaterThan(0);
+    expect(hill).toBeGreaterThan(0);
+  });
+
+  it('uses the same constants as buildings today (one value, no visual change)', async () => {
+    const { ROAD_Y: BUILDINGS_ROAD_Y } = await import('../src/buildings/roads');
+    expect(ROAD_Y).toBe(BUILDINGS_ROAD_Y);
+    // roads.ts writes the hillside lift inline as 0.08 (to be replaced by HILL_ROAD_Y).
+    expect(HILL_ROAD_Y).toBe(0.08);
+  });
+
+  it('is continuous: no step at the edge of flat ground, at crossings or on slopes', () => {
+    // Lipschitz check on a fine grid over the hillside village and 와우산's foot (홍대).
+    for (const [x0, z0] of [
+      [-1120, -820],
+      [-60, -260],
+    ] as const) {
+      for (let x = x0; x < x0 + 80; x += 2) {
+        for (let z = z0; z < z0 + 80; z += 2) {
+          const y = roadSurfaceY(x, z);
+          const dx = Math.abs(roadSurfaceY(x + 0.25, z) - y);
+          const dz = Math.abs(roadSurfaceY(x, z + 0.25) - y);
+          // Terrain slopes stay under 100 % (mountain slopes test): a 0.25 m step rises < 0.25 m.
+          expect(Math.max(dx, dz), `${x},${z}`).toBeLessThan(0.25 + 1e-6);
         }
       }
     }
