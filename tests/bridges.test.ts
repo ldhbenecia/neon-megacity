@@ -1,5 +1,5 @@
-import { generateLayout } from '../src/city/generate';
 // Vertical clearance where roads and highways cross bridge approaches (every seed).
+import { generateLayout } from '../src/city/generate';
 import { describe, expect, it } from 'vitest';
 import {
   MAX_DECK_THICKNESS,
