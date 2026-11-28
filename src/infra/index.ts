@@ -86,7 +86,11 @@ const FAR_EMISSIVE_CALL = /* glsl */ `
 #endif
 #include <fog_fragment>`;
 
-/** Lamp heads and glow lines: far away they stay thin dots and lines instead of bloom blobs. */
+/**
+ * Lamp heads and glow lines: far away they stay thin dots and lines instead of bloom blobs.
+ * Without post (ci, no half float) fog_fragment runs after tone mapping, so far white lights only
+ * end up slightly dimmer there; that path has no bloom.
+ */
 function farEmissiveBasic(params: THREE.MeshBasicMaterialParameters): THREE.MeshBasicMaterial {
   const m = new THREE.MeshBasicMaterial({ vertexColors: true, ...params });
   m.onBeforeCompile = (shader) => {
