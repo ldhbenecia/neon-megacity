@@ -14,22 +14,27 @@ const FORBIDDEN = join(ROOT, 'src/city/generate.ts');
 function staticImports(file: string): string[] {
   const src = readFileSync(file, 'utf8');
   const out: string[] = [];
-  for (const m of src.matchAll(/^\s*(?:import|export)\s[^;]*?\sfrom\s+'([^']+)'/gms)) {
+  for (const m of src.matchAll(/^\s*(?:import|export)\s[^;]*?\sfrom\s+['"]([^'"]+)['"]/gms)) {
     const line = m[0];
     if (/^\s*import\s+type\s/u.test(line) || /^\s*export\s+type\s/u.test(line)) continue;
     out.push(m[1] as string);
   }
-  for (const m of src.matchAll(/^\s*import\s+'([^']+)'/gm)) out.push(m[1] as string);
+  for (const m of src.matchAll(/^\s*import\s+['"]([^'"]+)['"]/gm)) out.push(m[1] as string);
   return out;
 }
 
+/** Local module file for a relative specifier; packages return null. An unresolvable local
+ * specifier throws, so the walk can never skip part of the graph silently. */
 function resolveLocal(from: string, spec: string): string | null {
   if (!spec.startsWith('.')) return null;
   const base = resolve(dirname(from), spec);
-  for (const c of [base, `${base}.ts`, join(base, 'index.ts')]) {
+  const stem = base.replace(/\.(?:js|ts)$/u, '');
+  for (const c of [base, `${stem}.ts`, join(base, 'index.ts')]) {
     if (c.endsWith('.ts') && existsSync(c)) return c;
   }
-  return null;
+  // Non-code assets (styles, shaders as ?raw, JSON) are not modules of the JS graph.
+  if (/\.(?:css|glsl|json|svg|png)(?:\?.*)?$/u.test(spec) || spec.includes('?')) return null;
+  throw new Error(`unresolved local import '${spec}' in ${relative(ROOT, from)}`);
 }
 
 it('keeps the layout generator out of the first-load import graph', () => {
