@@ -1,4 +1,3 @@
-import { generateLayout } from '../src/city/generate';
 // Invariants that must hold for every seed, not just the default one.
 import { describe, expect, it } from 'vitest';
 import {
@@ -15,7 +14,7 @@ import {
   type BuildingSpec,
   type Layout,
 } from '../src/city/layout';
-import { MEDIA_SLABS, NEIGHBOUR_GAP, tooSimilar } from '../src/city/generate';
+import { MEDIA_SLABS, NEIGHBOUR_GAP, generateLayout, tooSimilar } from '../src/city/generate';
 import { obbOverlap, obbSegmentDistance } from '../src/city/math';
 import { createRng } from '../src/core/random';
 
