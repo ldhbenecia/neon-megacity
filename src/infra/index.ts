@@ -8,7 +8,11 @@
 import * as THREE from 'three';
 import { deckHeightAt, type Vec2, type Vec3 } from '../city/layout';
 import { MATERIAL, NIGHT_FILL_AMBIENT } from '../core/palette';
-import { EMISSIVE_FOG_DENSITY_SCALE, applyEmissiveFog } from '../core/shaders/emissiveFog';
+import {
+  EMISSIVE_FOG_DENSITY_SCALE,
+  FAR_EMISSIVE_GLSL,
+  applyEmissiveFog,
+} from '../core/shaders/emissiveFog';
 import type { CityModuleInstance, Ctx, InfraApi, Quality } from '../core/types';
 import { fountainNozzles, railTracks } from './bridges';
 import { buildInfra } from './build';
@@ -76,9 +80,19 @@ const WASH_FOG_FRAGMENT = /* glsl */ `
 #endif
 `;
 
-function emissiveBasic(params: THREE.MeshBasicMaterialParameters): THREE.MeshBasicMaterial {
+const FAR_EMISSIVE_CALL = /* glsl */ `
+#ifdef USE_FOG
+  gl_FragColor.rgb = farEmissive( gl_FragColor.rgb, vFogDepth );
+#endif
+#include <fog_fragment>`;
+
+/** Lamp heads and glow lines: far away they stay thin dots and lines instead of bloom blobs. */
+function farEmissiveBasic(params: THREE.MeshBasicMaterialParameters): THREE.MeshBasicMaterial {
   const m = new THREE.MeshBasicMaterial({ vertexColors: true, ...params });
   m.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader
+      .replace('void main() {', `${FAR_EMISSIVE_GLSL}\nvoid main() {`)
+      .replace('#include <fog_fragment>', FAR_EMISSIVE_CALL);
     applyEmissiveFog(shader);
   };
   return m;
@@ -178,7 +192,7 @@ export function init(ctx: Ctx): CityModuleInstance {
   const paint = mesh(parts.markings, paintMat, 'infra-paint');
   paint.receiveShadow = true;
 
-  const glowMat = emissiveBasic({});
+  const glowMat = farEmissiveBasic({});
   const glow = mesh(parts.glow, glowMat, 'infra-glow');
 
   // Additive: fogging toward fogColor would add a grey slab, so fade toward black instead.
@@ -231,7 +245,7 @@ export function init(ctx: Ctx): CityModuleInstance {
 
   const pointGeo = new THREE.OctahedronGeometry(1, 0);
   geometries.push(pointGeo);
-  const pointMat = emissiveBasic({ vertexColors: false });
+  const pointMat = farEmissiveBasic({ vertexColors: false });
   materials.push(pointMat);
   const points = new THREE.InstancedMesh(pointGeo, pointMat, parts.points.length);
   const col = new THREE.Color();
