@@ -5,6 +5,7 @@ import { NIGHT_FILL_AMBIENT } from '../core/palette';
 import type { Ctx, CityModuleInstance } from '../core/types';
 import { buildChannel, buildGround } from './ground';
 import { createRidges, type RidgeEnv } from './ridges';
+import { createRim } from './rim';
 import { createWater } from './water';
 
 export function init(ctx: Ctx): CityModuleInstance {
@@ -14,6 +15,8 @@ export function init(ctx: Ctx): CityModuleInstance {
 
   // Roads, sidewalks and plazas laid at the same height must win over the ground. Units only:
   // a slope factor grows to tens of metres at grazing angles and lets buried geometry show through.
+  const nearRidge = LAYOUT.ridges.reduce((a, b) => (b.radius < a.radius ? b : a));
+  const rim = createRim(nearRidge);
   const pre = takePrebuilt('terrain', LAYOUT);
   const groundGeo = pre ? unpackGeometry(pre.ground) : buildGround();
   const groundMat = new THREE.MeshStandardMaterial({
@@ -25,6 +28,7 @@ export function init(ctx: Ctx): CityModuleInstance {
     polygonOffsetFactor: 0,
     polygonOffsetUnits: 4,
   });
+  rim.patch(groundMat);
   const ground = new THREE.Mesh(groundGeo, groundMat);
   ground.name = 'ground';
   ground.receiveShadow = true;
@@ -42,13 +46,14 @@ export function init(ctx: Ctx): CityModuleInstance {
     polygonOffsetFactor: 0,
     polygonOffsetUnits: 2,
   });
+  rim.patch(channelMat);
   const channel = new THREE.Mesh(channelGeo, channelMat);
   channel.name = 'river-channel';
   channel.receiveShadow = true;
   channel.matrixAutoUpdate = false;
   group.add(channel);
 
-  const water = createWater(env.quality !== 'ci');
+  const water = createWater(env.quality !== 'ci', rim);
   water.mesh.matrixAutoUpdate = false;
   group.add(water.mesh);
 
@@ -81,6 +86,7 @@ export function init(ctx: Ctx): CityModuleInstance {
       ridgeEnv.rain = env.rain;
       water.update(elapsed, env.nightFactor);
       ridges.update(elapsed, ridgeEnv, renderer.getPixelRatio());
+      rim.update(ridgeEnv);
     },
     dispose() {
       scene.remove(group);

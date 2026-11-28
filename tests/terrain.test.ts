@@ -42,6 +42,7 @@ import {
   shadeValleys,
   valleyShade,
 } from '../src/terrain/ground';
+import { RIM_BAND, rimWallFog, rimWeight } from '../src/terrain/rim';
 import { createWater } from '../src/terrain/water';
 
 function profileY(d: number, park: number): number {
@@ -586,5 +587,21 @@ describe('valley shading and the range forest mask', () => {
       MOUNTAIN_RANGES.some((r) => b.x >= r.x0 && b.x <= r.x1 && b.z >= r.z0 && b.z <= r.z1),
     );
     for (const b of inRange.slice(0, 50)) expect(mask(b.x, b.z)).toBeLessThan(0.5);
+  });
+});
+
+describe('map edge (rim)', () => {
+  it('fades ground and water only over the last band before the near ridge', () => {
+    const radius = 3200;
+    expect(rimWeight(0, radius)).toBe(0);
+    expect(rimWeight(radius - RIM_BAND, radius)).toBe(0);
+    expect(rimWeight(radius - RIM_BAND / 2, radius)).toBeCloseTo(0.5, 6);
+    expect(rimWeight(radius, radius)).toBe(1);
+    expect(rimWeight(radius + 500, radius)).toBe(1);
+  });
+
+  it('ends in the fog the near ridge starts with (its fog plus the base mist)', () => {
+    expect(rimWallFog({ fog: 0.35 })).toBeCloseTo(0.35 + 0.65 * 0.22, 6);
+    expect(rimWallFog({ fog: 1 })).toBe(1);
   });
 });

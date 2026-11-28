@@ -18,6 +18,7 @@ import {
   waterEdgeD,
   type ChannelSlices,
 } from './shape';
+import type { Rim } from './rim';
 
 const WATER_PARS = /* glsl */ `
 uniform float uTime;
@@ -179,7 +180,7 @@ export function buildWaterGeometry(): THREE.BufferGeometry {
 }
 
 /** `ripples: false` (ci quality tier) keeps the flat glossy surface without the noise normals. */
-export function createWater(ripples = true): Water {
+export function createWater(ripples = true, rim?: Rim): Water {
   const geometry = buildWaterGeometry();
 
   const uTime: THREE.IUniform<number> = { value: 0 };
@@ -200,6 +201,7 @@ export function createWater(ripples = true): Water {
       '#include <lights_fragment_end>',
       WATER_LIGHT,
     );
+    rim?.patchShader(shader);
     if (ripples) {
       shader.uniforms.uTime = uTime;
       shader.vertexShader = shader.vertexShader
