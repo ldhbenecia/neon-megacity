@@ -6,6 +6,7 @@ import {
   highwayCurve,
   surfaceHeight,
   type BuildingFace,
+  type BuildingSpec,
   type Layout,
   type Vec3,
 } from '../city/layout';
@@ -47,11 +48,17 @@ import {
 } from './signs';
 import { buildStreet, poolColor } from './street';
 import { planStreet, type StreetPlan } from './streetPlan';
+import { bulbPositions, bulbStrings, stringPoint, type BulbString } from './strings';
 import { buildTraffic } from './traffic';
 
 export const SIDEWALK_FALLBACK = 0.2;
 const CURVE_SAMPLES = 400;
 const MAX_DECALS = 1500;
+const BULB_R = 0.07;
+const BULB_HDR = 3;
+const SHOP_POOL_OUT = 2.5;
+const SHOP_POOL_R = 3.5;
+const shopPool = hdrColor(NEON.windowWarm.hex, 0.8);
 
 const SCREEN_HUES: readonly NeonName[] = ['neonCyan', 'neonOrange', 'neonMagenta'];
 
@@ -118,6 +125,7 @@ function decalList(
   faces: readonly (readonly BuildingFace[])[],
   roadY: number,
   roadGap: (x: number, z: number) => number,
+  buildings: readonly BuildingSpec[],
 ): DecalInstance[] {
   const out: (DecalInstance & { h: number })[] = [];
   const ground = (x: number, z: number): number => surfaceHeight(x, z) + roadY + 0.04;
@@ -158,6 +166,17 @@ function decalList(
       color: signColor(SCREEN_HUES[s.hue] ?? 'neonCyan', 0.8),
       h: 0,
     });
+  }
+  // Warm shopfront spill on the ground in front of every lit ground-floor band in nightlife.
+  for (const s of P.flats) {
+    if (s.kind !== 'band' || s.building < 0) continue;
+    const b = buildings[s.building];
+    if (!b || b.district !== 'nightlife' || s.y0 > b.baseY + b.groundFloorH + 1) continue;
+    const f = faces[s.building]?.[s.face];
+    if (!f) continue;
+    const x = s.x + f.normal.x * SHOP_POOL_OUT;
+    const z = s.z + f.normal.z * SHOP_POOL_OUT;
+    out.push({ x, y: ground(x, z), z, width: SHOP_POOL_R, length: -1, color: shopPool, h: 0 });
   }
   for (const p of street.pools) {
     out.push({ x: p.x, y: p.y, z: p.z, width: p.radius, length: -1, color: poolColor(p), h: 0 });
@@ -311,7 +330,11 @@ export function init(ctx: Ctx): CityModuleInstance {
   crossPoles.computeBoundingSphere();
   crossPoles.name = 'neon-cross-poles';
   // Banners hang from cables tied to the facades a little higher on each side (a slight sag).
-  const wires = bannerWires(P.flats, L);
+  const strings = bulbStrings(
+    L,
+    P.flats.filter((f) => f.building < 0),
+  );
+  const wires = [...bannerWires(P.flats, L), ...stringWires(strings)];
   const wireGeo = new THREE.CylinderGeometry(0.03, 0.03, 1, 4).translate(0, 0.5, 0);
   const bannerCables = new THREE.InstancedMesh(wireGeo, poleMat, Math.max(1, wires.length));
   const up = new THREE.Vector3(0, 1, 0);
@@ -327,8 +350,29 @@ export function init(ctx: Ctx): CityModuleInstance {
   bannerCables.count = wires.length;
   bannerCables.computeBoundingSphere();
   bannerCables.name = 'neon-banner-cables';
+  const warmBulb = hdrColor(NEON.windowWarm.hex, BULB_HDR);
+  const bulbs: SolidInstance[] = strings.flatMap((st, si) =>
+    bulbPositions(st).map((p, i) => ({
+      x: p.x,
+      y: p.y,
+      z: p.z,
+      sx: BULB_R,
+      sy: BULB_R,
+      sz: BULB_R,
+      rotY: 0,
+      color: warmBulb,
+      anim: 0,
+      seed: si * 64 + i,
+      zone: 0.4,
+      minPx: 1,
+    })),
+  );
+  const bulbGeo = new THREE.OctahedronGeometry(1, 0);
+  const bulbMesh = buildEmissiveSolids(bulbGeo, solidMat, bulbs, 'neon-string-bulbs');
   disposables.push(
     wireGeo,
+    bulbGeo,
+    bulbMesh.geometry,
     poleMat,
     poleGeo,
     solidMat,
@@ -344,7 +388,7 @@ export function init(ctx: Ctx): CityModuleInstance {
   const halos = buildHalos(shared, haloList(P));
   const decals = buildReflections(
     shared,
-    decalList(P, street, faces, roadY, roadGapIndex(ctx.LAYOUT)),
+    decalList(P, street, faces, roadY, roadGapIndex(ctx.LAYOUT), L.buildings),
   );
   for (const m of [screens, rings, holos, halos, decals, paint]) {
     disposables.push(m.geometry, m.material as THREE.Material);
@@ -361,6 +405,7 @@ export function init(ctx: Ctx): CityModuleInstance {
     crossMesh,
     crossPoles,
     bannerCables,
+    bulbMesh,
     paint,
     screens,
     rings,
@@ -446,7 +491,17 @@ export function init(ctx: Ctx): CityModuleInstance {
   applyQuality(env.quality);
   const offQuality = ctx.onQuality(applyQuality);
   folder.add(view, 'signs').onChange((v: boolean) => {
-    for (const m of [flats, tubeMesh, crossMesh, crossPoles, bannerCables, paint, screens, rings])
+    for (const m of [
+      flats,
+      tubeMesh,
+      crossMesh,
+      crossPoles,
+      bannerCables,
+      bulbMesh,
+      paint,
+      screens,
+      rings,
+    ])
       m.visible = v;
   });
   folder.add(view, 'traffic').onChange((v: boolean) => (traffic.group.visible = v));
@@ -485,6 +540,22 @@ const CABLE_RISE = 1;
 
 // A banner cable runs from the banner end across the road until it meets a facade; without a
 // wall within reach there is no cable (nothing to tie it to).
+/** Each string as short straight pieces along its sag, for the shared cable mesh. */
+function stringWires(strings: readonly BulbString[]): { a: Vec3; b: Vec3 }[] {
+  const out: { a: Vec3; b: Vec3 }[] = [];
+  for (const st of strings) {
+    for (let i = 0; i < STRING_PIECES; i++) {
+      out.push({
+        a: stringPoint(st, i / STRING_PIECES),
+        b: stringPoint(st, (i + 1) / STRING_PIECES),
+      });
+    }
+  }
+  return out;
+}
+
+const STRING_PIECES = 4;
+
 function bannerWires(flats: readonly FlatSign[], L: Layout): { a: Vec3; b: Vec3 }[] {
   const out: { a: Vec3; b: Vec3 }[] = [];
   for (const s of flats) {

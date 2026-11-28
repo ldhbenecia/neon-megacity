@@ -24,6 +24,7 @@ import {
   signCount,
   type FlatSign,
   BANNER_BLADE_CLEAR,
+  BANNER_BLADE_REACH,
   BANNER_MAX_W,
 } from '../src/neon/placement';
 import { buildingSolids, firstHit, solidsOverlap, type Solid } from '../src/neon/solids';
@@ -273,7 +274,7 @@ describe('neon sign placement: zero penetration (5.1)', () => {
       for (const b of blades) {
         const along = Math.abs((b.x - s.x) * s.nx + (b.z - s.z) * s.nz);
         const off = Math.abs((b.x - s.x) * -s.nz + (b.z - s.z) * s.nx);
-        if (off > 14 || b.y0 >= s.y1 + 1 || b.y1 <= s.y0 - 1) continue;
+        if (off > BANNER_BLADE_REACH || b.y0 >= s.y1 + 1 || b.y1 <= s.y0 - 1) continue;
         expect(along).toBeGreaterThanOrEqual(BANNER_BLADE_CLEAR - 0.01);
       }
     }
