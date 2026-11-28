@@ -14,6 +14,9 @@ export interface NeonUniforms {
   uSkyFill: THREE.IUniform<THREE.Color>;
 }
 
+/** Albedo of dark sign boards and LED panels under the day sky fill (env.skyFill). */
+export const PANEL_ALBEDO = 0.06;
+
 // Every neon material holds these uniform objects by reference: one write per frame updates all.
 export function createNeonUniforms(): NeonUniforms {
   return {
