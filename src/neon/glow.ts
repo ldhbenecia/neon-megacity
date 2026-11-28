@@ -251,23 +251,30 @@ const FRAGMENT = /* glsl */ `
       float halfW = mix(0.16, 0.34, nHash(id)) * (1.0 + 0.8 * sArc);
       // fwidth can be 0 (flat-on, no motion): keep the smoothstep edges apart.
       float aa = max(fwidth(cu), 1e-4);
-      float core = 1.0 - smoothstep(halfW - aa, halfW + aa, abs(fract(cu) - 0.5));
+      // Soft-edged bands: seen up close from the deck a hard edge reads as drawn white stripes.
+      float core = 1.0 - smoothstep(halfW * 0.35, halfW + aa, abs(fract(cu) - 0.5));
       // Far away the bands would alias into moire: fade them into an even translucent sheet.
       float jet = mix(core, 0.4, smoothstep(0.25, 0.8, aa));
+      // Close by (a band many pixels wide) the sheet thins out, so the jets read as spray.
+      float nearThin = mix(0.5, 1.0, smoothstep(0.004, 0.04, aa));
       float on = step(0.12, nHash(id + 11.0));
-      float flow = 0.6 + 0.4 * sin(sArc * 18.0 - uTime * (4.0 + 2.0 * nHash(id + 3.0)) + id * 1.7);
+      float flow = 0.75 + 0.25 * sin(sArc * 18.0 - uTime * (4.0 + 2.0 * nHash(id + 3.0)) + id * 1.7);
       // Dense at the nozzle, thinning as it falls and breaking up before the water.
       float body = (1.0 - 0.55 * sArc) * smoothstep(0.0, 0.04, sArc) * (1.0 - smoothstep(0.5, 0.88, sArc));
       float splash = smoothstep(0.6, 0.85, sArc) * (1.0 - smoothstep(0.85, 0.97, sArc));
+      // Mist where the jets meet the river: a soft drifting band across the whole curtain.
+      float mist = smoothstep(0.78, 0.95, sArc) * (1.0 - smoothstep(0.97, 1.0, sArc))
+        * (0.55 + 0.45 * vnoise(vec2(vUv.x * 40.0 + vParam.w * 7.0, sArc * 6.0 - uTime * 0.4)));
       // Cyan, white, magenta drifting along the bridge in soft waves (SEOUL.md 3.3: no rainbow).
       float k = fract(vParam.w + uTime * 0.03) * 3.0;
       float f = smoothstep(0.0, 0.35, fract(k));
       vec3 c0 = k < 1.0 ? uGlowA : (k < 2.0 ? uHead : uGlowB);
       vec3 c1 = k < 1.0 ? uHead : (k < 2.0 ? uGlowB : uGlowA);
       vec3 col = mix(uTail, mix(c0, c1, f), uNight);
-      // Daylight: faint translucent white water; night: lit jets.
-      float strength = mix(0.22, 0.6, uNight);
-      float a = strength * (jet * on * flow * body + 0.22 * splash) * vFade * uPower;
+      // Additive light: by day and at dusk keep it a faint veil so the water does not glow.
+      float night = uNight * uNight;
+      float strength = mix(0.09, 0.6, night);
+      float a = strength * (jet * on * flow * body * nearThin + 0.22 * splash + 0.3 * mist) * vFade * uPower;
       gl_FragColor = vec4(col * a, 1.0);
     } else if (uMode > 2.5) {
       float a;
