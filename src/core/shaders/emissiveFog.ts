@@ -1,6 +1,8 @@
 // Usage: material.onBeforeCompile = (s) => applyEmissiveFog(s). ShaderMaterials put
 // EMISSIVE_FOG_FRAGMENT where <fog_fragment> would go and spread FOG_UNIFORMS next to
 // UniformsLib.fog (without them the chunk falls back to plain FogExp2).
+import { FAR_EMISSIVE } from '../palette';
+
 export const EMISSIVE_FOG_DENSITY_SCALE = 0.55;
 export const EMISSIVE_FOG_GLOW = 0.25;
 
@@ -154,4 +156,26 @@ export function emissiveFogFactor(
   heightFog = true,
 ): number {
   return fogFactor(fogDensity * EMISSIVE_FOG_DENSITY_SCALE, depth, worldY, cameraY, heightFog);
+}
+
+const f1 = (v: number): string => v.toFixed(3);
+
+/**
+ * GLSL `vec3 farEmissive(vec3 color, float dist)` for point emitters, applied before fog; `dist` is
+ * the camera distance in metres. A plain function: it adds no define or program variant.
+ */
+export const FAR_EMISSIVE_GLSL = /* glsl */ `
+vec3 farEmissive( vec3 color, float dist ) {
+  float t = smoothstep( ${f1(FAR_EMISSIVE.near)}, ${f1(FAR_EMISSIVE.far)}, dist );
+  float lum = dot( color, vec3( 0.2126, 0.7152, 0.0722 ) );
+  return color * mix( 1.0, min( 1.0, ${f1(FAR_EMISSIVE.peak)} / max( lum, 1e-4 ) ), t );
+}
+`;
+
+/** CPU mirror of farEmissive(): the factor its color is multiplied by. */
+export function farEmissiveScale(luminance: number, dist: number): number {
+  const { near, far, peak } = FAR_EMISSIVE;
+  const x = Math.min(1, Math.max(0, (dist - near) / (far - near)));
+  const t = x * x * (3 - 2 * x);
+  return 1 + (Math.min(1, peak / Math.max(luminance, 1e-4)) - 1) * t;
 }

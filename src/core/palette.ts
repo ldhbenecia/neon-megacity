@@ -336,6 +336,13 @@ export const NIGHT_FILL_AMBIENT = [0.003, 0.005, 0.005] as const;
  */
 export const DAY_SKY_FILL = 0.35;
 
+/**
+ * Far point emitters (lamp heads, bridge lights): full strength within `near` m; from there to
+ * `far` their luminance is pulled down to `peak`, just under the lowest bloom threshold (0.85,
+ * night), so a far lamp stays a small dot instead of a blurred blob. Dimmer emitters keep theirs.
+ */
+export const FAR_EMISSIVE = { near: 300, far: 1200, peak: 0.8 } as const;
+
 /** Aviation obstruction lights on the far ridges (2.4): neonRed at this HDR multiplier. */
 export const RIDGE_BEACON_HDR = 4;
 
