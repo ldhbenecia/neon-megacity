@@ -252,6 +252,12 @@ export function rainPoolFor(tier: number): number {
   return tier >= 2 ? 0 : tier >= 1 ? RAIN.maxDrops / 2 : RAIN.maxDrops;
 }
 
+/** Lens drop amount: none in light and moderate rain, building up only in a downpour. */
+export function lensDropsFor(rain: number): number {
+  const t = Math.min(1, Math.max(0, (rain - 0.6) / 0.35));
+  return t * t * (3 - 2 * t);
+}
+
 /** Bloom blur mips drawn: 5, 4, 3. Fewer passes, same programs. */
 export function bloomMipsFor(tier: number): number {
   return tier >= 2 ? 3 : tier >= 1 ? 4 : 5;
