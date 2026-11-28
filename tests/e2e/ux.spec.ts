@@ -148,9 +148,14 @@ test('HUD: brand mark, clock, help sheet on ?, inline SVG favicon', async ({ pag
   await expect(page.locator('#hud')).not.toHaveClass(/is-hidden/);
 });
 
-test('first entry shows a controls hint that fades out', async ({ page }) => {
+test('first entry starts before sunset and shows a controls hint that fades out', async ({
+  page,
+}) => {
   await page.goto(app('nogui'));
   await waitForCity(page);
+  // 0.76 of the day is 18:14; the clock runs on from there (about 3 minutes a second), so only
+  // "after 18:14, before midnight" holds however slow the boot is.
+  await expect(page.locator('#clock')).toHaveText(/^(18:(1[4-9]|[2-5]\d)|(19|2[0-3]):\d\d)$/);
   await expect(page.locator('#hud-hint')).toBeVisible();
   await expect(page.locator('#hud-hint')).toBeHidden({ timeout: 15_000 });
 });
