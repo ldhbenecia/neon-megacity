@@ -10,6 +10,8 @@ export interface NeonUniforms {
   uScroll: THREE.IUniform<number>;
   uWet: THREE.IUniform<number>;
   uNight: THREE.IUniform<number>;
+  /** env.skyFill (linear day sky fill for shade, 0 at dusk and night); screens read it. */
+  uSkyFill: THREE.IUniform<THREE.Color>;
 }
 
 // Every neon material holds these uniform objects by reference: one write per frame updates all.
@@ -23,6 +25,7 @@ export function createNeonUniforms(): NeonUniforms {
     uScroll: { value: 1 },
     uWet: { value: 0.55 },
     uNight: { value: 1 },
+    uSkyFill: { value: new THREE.Color(0, 0, 0) },
   };
 }
 

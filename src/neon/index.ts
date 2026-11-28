@@ -534,6 +534,7 @@ export function init(ctx: Ctx): CityModuleInstance {
       shared.uPower.value = env.powerOn;
       shared.uWet.value = env.wetness;
       shared.uNight.value = env.nightFactor;
+      if (env.skyFill) shared.uSkyFill.value.copy(env.skyFill);
       traffic.update(dt);
       lights.update(dt, ctx.camera.position, env.neonGain * env.nightFactor * env.powerOn);
       selection.update(env.selectedBuilding, specs);
