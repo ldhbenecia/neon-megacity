@@ -251,7 +251,7 @@ export function createCameraRig(ctx: Ctx, opts: RigOptions): CameraRig {
     const p = rigPreset(key);
     presetKey = p.key;
     hud.toast(`프리셋 ${p.key} · ${p.name}`);
-    track('preset_used', { preset: p.name });
+    track('preset_used', { preset: p.cam });
     flyTo(p);
   };
 
