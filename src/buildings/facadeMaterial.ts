@@ -421,7 +421,8 @@ const FRAG_MAIN = /* glsl */ `
     // Sky fill follows lighting's curve; the bounce and brick grazing imitate street lamps, so
     // they follow the night factor like the lamps do.
     fEmit += uFillColor * (1.0 - 0.6 * brick) + ${vec3(NIGHT_FILL.bounce)} * bounce * uNight;
-    // Daylight in shade: the dark facades read as material instead of black up close.
+    // Day sky fill on every face (sunlit ones gain only 1-2 %): shaded facades read as material
+    // up close instead of black.
     fEmit += fAlbedo * uSkyFill;
     // Seongsu brick: warm tungsten grazing from street lamps, scaled by albedo so the red and the
     // mortar courses read at night; glass is already dark here, so windows stay unlit.
