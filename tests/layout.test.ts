@@ -1070,13 +1070,6 @@ describe('layout v3: road surface', () => {
     expect(hill).toBeGreaterThan(0);
   });
 
-  it('uses the same constants as buildings today (one value, no visual change)', async () => {
-    const { ROAD_Y: BUILDINGS_ROAD_Y } = await import('../src/buildings/roads');
-    expect(ROAD_Y).toBe(BUILDINGS_ROAD_Y);
-    // roads.ts writes the hillside lift inline as 0.08 (to be replaced by HILL_ROAD_Y).
-    expect(HILL_ROAD_Y).toBe(0.08);
-  });
-
   it('is continuous: no step at the edge of flat ground, at crossings or on slopes', () => {
     // Lipschitz check on a fine grid over the hillside village and 와우산's foot (홍대).
     for (const [x0, z0] of [

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { createRng } from '../core/random';
-import { MOUNTAIN_RANGES, terrainHeight } from '../city/layout';
+import { MOUNTAIN_RANGES, ROAD_Y, roadSurfaceY, terrainHeight } from '../city/layout';
 import { SIDEWALK } from '../city/constants';
 import { toLocal } from '../city/math';
 import { GridHash, segmentBounds, type Bounds } from '../city/spatial';
@@ -8,7 +8,7 @@ import type { Block, BuildingSpec, Layout, Road } from '../city/types';
 import { ROAD } from './colors';
 import { mergeIntervals } from './params';
 
-export const ROAD_Y = 0.03;
+export { ROAD_Y };
 export const SIDEWALK_H = 0.15;
 /** Extra environment reflection in a fully wet puddle (1 + this). */
 export const PUDDLE_REFLECTION = 2;
@@ -115,11 +115,9 @@ function raised(r: Road): boolean {
   return v;
 }
 
-// City roads stay at ROAD_Y above the ground, so they meet flat roads exactly where the ground is 0
-// and match the height neon uses for traffic and decals (surfaceHeight + roadY).
+// Roads that never leave flat ground skip the terrain lookup: roadSurfaceY is ROAD_Y there.
 function roadHeight(r: Road, x: number, z: number): number {
-  if (isHill(r)) return terrainHeight(x, z) + 0.08;
-  return raised(r) ? terrainHeight(x, z) + ROAD_Y : ROAD_Y;
+  return raised(r) ? roadSurfaceY(x, z, r) : ROAD_Y;
 }
 
 function crossT(a: Road['a'], b: Road['a'], c: Road['a'], d: Road['a']): number | null {
