@@ -1068,6 +1068,20 @@ describe('layout v3: road surface', () => {
     expect(raised).toBeGreaterThan(0);
   });
 
+  it('matches what buildings and neon draw today (one value, no visual change)', async () => {
+    // buildings: roads.ts ROAD_Y; neon: surfaceHeight + roadY, equal to terrainHeight off the
+    // channel, which every street sample is (checked here).
+    const { ROAD_Y: BUILDINGS_ROAD_Y } = await import('../src/buildings/roads');
+    expect(ROAD_Y).toBe(BUILDINGS_ROAD_Y);
+    for (const r of LAYOUT.roads) {
+      for (let t = 0; t <= 1; t += 0.25) {
+        const x = r.a.x + (r.b.x - r.a.x) * t;
+        const z = r.a.z + (r.b.z - r.a.z) * t;
+        expect(roadSurfaceY(x, z), `road ${r.id}`).toBeCloseTo(surfaceHeight(x, z) + ROAD_Y, 9);
+      }
+    }
+  });
+
   it('is continuous: no step at the edge of flat ground, at crossings or on slopes', () => {
     // Lipschitz check on a fine grid over the hillside village and 와우산's foot (홍대).
     for (const [x0, z0] of [
