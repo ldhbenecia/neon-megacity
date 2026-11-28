@@ -366,6 +366,33 @@ test('zone labels: shown from high up, a click flies there, gone at street level
   await expect(labels).toBeHidden();
 });
 
+test('zone labels: a drag that starts on a label orbits the camera instead of flying', async ({
+  page,
+}) => {
+  await page.goto(app('nogui&stats&cam=overview&time=0'));
+  await waitForCity(page);
+  const label = page.locator('#zone-labels button:not([hidden])').first();
+  await expect(label).toBeVisible();
+  const box = (await label.boundingBox())!;
+  const azimuth = async (): Promise<number> => {
+    const c = await cam(page);
+    return Math.atan2(c.position.x - c.target.x, c.position.z - c.target.z);
+  };
+  const before = await azimuth();
+  const title = await page.locator('#hud-district').textContent();
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  for (let i = 1; i <= 12; i++) await page.mouse.move(x + i * 15, y);
+  await page.mouse.up();
+  await expect.poll(async () => Math.abs((await azimuth()) - before)).toBeGreaterThan(0.05);
+  // No click on the label: the camera did not fly off to its zone.
+  await waitFrames(page, 30);
+  expect(await page.locator('#hud-district').textContent()).toBe(title);
+  expect(await page.locator('#zone-labels').getAttribute('class')).not.toContain('is-passing');
+});
+
 test.describe('camera rig', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto(app('nogui&stats&cam=overview&time=0.0'));
