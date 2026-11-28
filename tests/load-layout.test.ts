@@ -1,5 +1,6 @@
+import { generateLayout } from '../src/city/generate';
 import { describe, expect, it, vi } from 'vitest';
-import { CITY, generateLayout } from '../src/city/layout';
+import { CITY } from '../src/city/layout';
 import {
   loadCity,
   type CityMessage,

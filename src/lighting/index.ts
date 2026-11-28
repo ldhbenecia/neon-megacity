@@ -13,6 +13,7 @@ import {
   moonDirectionAt,
   shadowFrameFor,
   shadowKnobs,
+  shadowRequestDue,
   shouldRefreshShadow,
   sunDirectionAt,
   type EnvKey,
@@ -100,11 +101,16 @@ export function init(ctx: Ctx): CityModuleInstance {
   // while the frustum (and the light target) stays where it is.
   let resized = false;
   let secondsSinceShadow = 0;
+  let requested = false;
+  const defaultRequest = ctx.requestShadowUpdate;
+  ctx.requestShadowUpdate = () => {
+    requested = true;
+  };
   let frame = 0;
   let pal: PaletteSample = paletteAt(env.timeOfDay);
   let palTime = env.timeOfDay;
 
-  function updateShadowCamera(dt: number): void {
+  function updateShadowCamera(dt: number, asked: boolean): void {
     const dist = camera.position.distanceTo(controls.target);
     const f = shadowFrameFor(controls.target.x, controls.target.z, dist);
     const changed =
@@ -127,7 +133,10 @@ export function init(ctx: Ctx): CityModuleInstance {
     }
     secondsSinceShadow += dt;
     const sunAngle = lastShadowSun.angleTo(env.sunDirection);
-    if (shouldRefreshShadow(changed, sunAngle, secondsSinceShadow, frame < 3, shadow.minInterval)) {
+    if (
+      asked ||
+      shouldRefreshShadow(changed, sunAngle, secondsSinceShadow, frame < 3, shadow.minInterval)
+    ) {
       renderer.shadowMap.needsUpdate = true;
       lastShadowSun.copy(env.sunDirection);
       secondsSinceShadow = 0;
@@ -171,7 +180,10 @@ export function init(ctx: Ctx): CityModuleInstance {
       if (sunShadow) renderer.shadowMap.needsUpdate = true;
     }
     // Shadow frustum first, so the light target below already sits on this frame's frustum.
-    if (sunShadow) updateShadowCamera(dt);
+    // Requests are dropped without sun shadows; the map is redrawn when they come back on.
+    const asked = shadowRequestDue(requested, sunShadow);
+    requested = false;
+    if (sunShadow) updateShadowCamera(dt, asked);
     const dir = kl.body === 'sun' ? env.sunDirection : moonDir;
     const center = lastShadowFrame ?? ORIGIN_FRAME;
     key.target.position.set(center.cx, 0, center.cz);
@@ -236,6 +248,7 @@ export function init(ctx: Ctx): CityModuleInstance {
       frame++;
     },
     dispose() {
+      ctx.requestShadowUpdate = defaultRequest;
       offQuality();
       folder.destroy();
       scene.remove(key, key.target, hemi, sky.mesh);

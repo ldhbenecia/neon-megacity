@@ -2,8 +2,7 @@
 // terrain, buildings, infra, neon and the camera all agree. Units: 1 = 1 m.
 // Coordinates: Y up, ground y = 0, north = -Z, east = +X, map centered at the origin.
 // Data types: ./types.ts. Generation: ./generate.ts. Pure queries: ./queries.ts.
-import { EXTENT_X, EXTENT_Z } from './generate';
-import { HALF_X, HALF_Z } from './river';
+import { EXTENT_X, EXTENT_Z, HALF_X, HALF_Z } from './constants';
 import { HASH_CELL } from './spatial';
 import { CITY_SEED } from './seed';
 import type { Layout } from './types';
@@ -33,14 +32,7 @@ export function setLayout(layout: Layout): void {
 }
 
 export * from './types';
-export {
-  generateLayout,
-  SKYLINE_PEAK,
-  MEGA_MIN_H,
-  RIVER_CLEARANCE,
-  EXTENT_X,
-  EXTENT_Z,
-} from './generate';
+export { SKYLINE_PEAK, MEGA_MIN_H, RIVER_CLEARANCE, EXTENT_X, EXTENT_Z } from './constants';
 export {
   ZONES,
   zoneAt,
