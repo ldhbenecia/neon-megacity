@@ -64,8 +64,8 @@ varying vec2 vUv;
 ${HASH_GLSL}
 ${HDR_SAFE_GLSL}
 
-// One drop per cell at most, its center anywhere in the cell. Two grids of different size and
-// offset, so drops do not line up in rows.
+// One drop per cell at most, kept inside its cell (no neighbor lookups). Two grids of different
+// size and offset, so drops do not line up in rows.
 vec2 lensDropCell( vec2 uv, float scale, vec2 shift, float salt ) {
   vec2 p = uv * vec2( uAspect, 1.0 ) * scale + shift;
   vec2 id = floor( p ) + salt;
@@ -78,29 +78,30 @@ vec2 lensDropCell( vec2 uv, float scale, vec2 shift, float salt ) {
   float cycle = uTime / period + hash12( id + 7.1 );
   float life = fract( cycle );
   float n = mod( floor( cycle ), lives );
-  float dice = hash12( id + n * 13.7 );
-  if ( dice < 1.0 - 0.45 * uDrops ) return vec2( 0.0 );
-  vec2 center = vec2( 0.2, 0.25 ) + 0.6 * vec2( hash12( id + 3.3 + n ), hash12( id + 5.9 ) );
-  float r = 0.06 + 0.12 * hash12( id + 9.4 );
-  // Forms over the first fifth, holds, then runs down faster and faster and thins out.
-  float grow = smoothstep( 0.0, 0.2, life );
+  if ( hash12( id + n * 13.7 ) < 1.0 - 0.45 * uDrops ) return vec2( 0.0 );
+  float r0 = 0.06 + 0.1 * hash12( id + 9.4 + n );
+  // Starts in the upper half so it has room to run before it fades.
+  vec2 center = vec2(
+    0.05 + r0 + ( 0.9 - 2.0 * r0 ) * hash12( id + 3.3 + n ),
+    0.45 + ( 0.5 - r0 ) * hash12( id + 5.9 + n )
+  );
   float run = max( 0.0, life - 0.55 ) / 0.45;
   center.y -= run * run * 1.6;
   center.x += sin( run * 9.0 + h * 6.3 ) * 0.03 * run;
-  r *= grow * ( 1.0 - 0.45 * run );
+  float r = r0 * smoothstep( 0.0, 0.2, life ) * ( 1.0 - 0.45 * run );
   vec2 d = f - center;
   d.x /= 1.0 - 0.25 * run;
   d.y /= 1.0 + 1.2 * run;
-  // Above the drop while it runs: the narrow wet trail it left, bending light sideways a little.
   vec2 t = f - center;
-  float trail = run * ( 1.0 - smoothstep( 0.0, r * 0.35 + 1e-3, abs( t.x ) ) ) * step( 0.0, t.y )
-    * ( 1.0 - smoothstep( 0.0, run * 1.4 + 1e-3, t.y ) ) * ( 1.0 - smoothstep( 0.8, 1.0, f.y ) );
+  float trail = run * ( 1.0 - smoothstep( 0.0, r * 0.35 + 1e-3, abs( t.x ) ) )
+    * smoothstep( 0.0, r * 0.5 + 1e-3, t.y ) * ( 1.0 - smoothstep( 0.0, run * 1.4 + 1e-3, t.y ) )
+    * ( 1.0 - smoothstep( 0.8, 1.0, f.y ) );
   float q = clamp( dot( d, d ) / max( r * r, 1e-6 ), 0.0, 1.0 );
-  // A dome: the bend grows from the middle and falls to zero at the rim, so there is no hard edge.
+  // Zero bend at the rim, so a still frame shows no hard circle.
   vec2 bend = -d / max( r, 1e-3 ) * ( 1.0 - q ) * ( 1.0 - q ) * 0.022;
   bend.x -= t.x / ( r * 0.35 + 1e-3 ) * trail * 0.004;
-  // Gone before it slides out of its cell.
-  return bend * smoothstep( 0.1, 0.4, center.y );
+  // Gone before the stretched lower end reaches the cell edge.
+  return bend * smoothstep( 0.05, 0.2, center.y - r * ( 1.0 + 1.2 * run ) );
 }
 
 vec2 lensDrops( vec2 uv ) {
