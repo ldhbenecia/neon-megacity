@@ -44,6 +44,7 @@ Only the owner writes a field; everyone else reads it. Types and comments live i
 | `horizonColor`, `skyColor`     | lighting   | sky colors (palette)                                                    |
 | `horizonAntiColor`             | lighting   | horizon away from the sun (optional; set in lighting init)              |
 | `fillFactor`, `fillColor`      | lighting   | shadow fill: weight 0..1 (night and late sunset) and its linear color   |
+| `skyFill`                      | lighting   | day sky fill for shade, linear; consumers multiply by albedo            |
 | `neonGain`                     | lighting   | sign brightness multiplier: night 1.0, sunset 0.7, day 0.3              |
 | `windowLitRatio`               | lighting   | city-wide lit window ratio; buildings applies per-district factors      |
 | `rain`                         | atmosphere | 0..1 rain intensity this frame, eased toward `rainTarget`               |

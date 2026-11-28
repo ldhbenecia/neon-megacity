@@ -1,5 +1,11 @@
 import * as THREE from 'three';
-import { NIGHT_FILL_AMBIENT, paletteAt, type PaletteSample, type RGB } from '../core/palette';
+import {
+  DAY_SKY_FILL,
+  NIGHT_FILL_AMBIENT,
+  paletteAt,
+  type PaletteSample,
+  type RGB,
+} from '../core/palette';
 import type { Ctx, CityModuleInstance } from '../core/types';
 import { createEnvMaps } from './envMap';
 import { createSky } from './sky';
@@ -15,6 +21,7 @@ import {
   shadowKnobs,
   shadowRequestDue,
   shouldRefreshShadow,
+  skyFillAt,
   sunDirectionAt,
   type EnvKey,
   type ShadowFrame,
@@ -95,6 +102,9 @@ export function init(ctx: Ctx): CityModuleInstance {
   const fillRgb: [number, number, number] = [0, 0, 0];
   env.fillColor = fillColor;
   env.fillFactor = 0;
+  const skyFill = new THREE.Color(0, 0, 0);
+  const skyFillRgb: [number, number, number] = [0, 0, 0];
+  env.skyFill = skyFill;
   const lastShadowSun = new THREE.Vector3(0, -1, 0);
   let lastShadowFrame: ShadowFrame | null = null;
   // Set when the map size changes: the next shadow update refits the bias and redraws the map
@@ -164,6 +174,8 @@ export function init(ctx: Ctx): CityModuleInstance {
     const zenith = env.skyColor;
     fillColorAt(env.sunElevation, [zenith.r, zenith.g, zenith.b], NIGHT_FILL_AMBIENT, fillRgb);
     fillColor.setRGB(fillRgb[0], fillRgb[1], fillRgb[2]);
+    skyFillAt(env.sunElevation, [zenith.r, zenith.g, zenith.b], DAY_SKY_FILL, skyFillRgb);
+    skyFill.setRGB(skyFillRgb[0], skyFillRgb[1], skyFillRgb[2]);
     env.neonGain = pal.neonGain;
     env.windowLitRatio = pal.windowLitRatio;
 

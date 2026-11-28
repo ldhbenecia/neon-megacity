@@ -73,6 +73,23 @@ export function dayFactorAt(sunElevation: number): number {
 }
 
 /**
+ * Day sky fill (env.skyFill): the zenith hue scaled so its brightest channel is `strength`, only
+ * with the sun high (smoothstep(0.4, 0.65, e)): the low sun of the sunset views keeps its backlit
+ * walls dark and is left as it was.
+ */
+export function skyFillAt(
+  sunElevation: number,
+  sky: readonly [number, number, number],
+  strength: number,
+  out: [number, number, number] = [0, 0, 0],
+): [number, number, number] {
+  const k =
+    (smoothstep(0.4, 0.65, sunElevation) * strength) / Math.max(sky[0], sky[1], sky[2], 1e-6);
+  for (let i = 0; i < 3; i++) out[i] = (sky[i] ?? 0) * k;
+  return out;
+}
+
+/**
  * Weight of the shadow fill (env.fillFactor): 1 at night, and already up while the sun is low at
  * either end of the day (backlit banks and walls), 0 by day: 1 - smoothstep(0.1, 0.35, e), the
  * night curve shifted later. Between elevation 0.15 and 0.35 dayFactor is already 1, so the fill there only lifts

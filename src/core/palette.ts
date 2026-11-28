@@ -330,6 +330,12 @@ export const TERRAIN_COLORS = {
  */
 export const NIGHT_FILL_AMBIENT = [0.003, 0.005, 0.005] as const;
 
+/**
+ * Day sky fill strength: the brightest channel of env.skyFill at full day. Consumers multiply it
+ * by albedo, so very dark facades in shade read instead of going black next to sunlit ones.
+ */
+export const DAY_SKY_FILL = 0.35;
+
 /** Aviation obstruction lights on the far ridges (2.4): neonRed at this HDR multiplier. */
 export const RIDGE_BEACON_HDR = 4;
 
