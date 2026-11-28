@@ -95,14 +95,9 @@ export function initUx(ctx: Ctx, opts: UxOptions): Ux {
   });
   const controls = createControls(ctx, rig, hud, perf);
   const labelsRoot = document.getElementById('zone-labels');
+  const hudRoot = document.getElementById('hud');
   const zoneLabels = labelsRoot
-    ? createZoneLabels(
-        labelsRoot,
-        (id) => rig.goDistrict(id),
-        () => [
-          ...document.querySelectorAll('#panel, #hud-card, #timeline, #panel-toggle, .hud-brand'),
-        ],
-      )
+    ? createZoneLabels(labelsRoot, ctx.renderer.domElement, (id) => rig.goDistrict(id))
     : null;
 
   // ?stats only: frames rendered with the camera inside a building volume (tells a collision
@@ -169,7 +164,12 @@ export function initUx(ctx: Ctx, opts: UxOptions): Ux {
     afterUpdate(dt) {
       hud.update(ctx.env.timeOfDay);
       controls.update();
-      zoneLabels?.update(ctx.camera);
+      if (zoneLabels) {
+        const mode = hudRoot?.dataset.mode;
+        const shown =
+          !hudRoot?.classList.contains('is-hidden') && mode !== 'fly' && mode !== 'cinematic';
+        zoneLabels.update(ctx.camera, shown);
+      }
       districtFor -= dt;
       if (districtFor <= 0) {
         districtFor = 0.5;

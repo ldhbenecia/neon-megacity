@@ -1070,7 +1070,7 @@ body {
   color: var(--c-cyan);
   border-color: var(--c-edge-hi);
 }
-#hud[data-mode='fly'] .zone-labels,
-#hud[data-mode='cinematic'] .zone-labels {
-  display: none;
+.zone-labels.is-faint .zone-label,
+.zone-labels.is-passing .zone-label {
+  pointer-events: none;
 }

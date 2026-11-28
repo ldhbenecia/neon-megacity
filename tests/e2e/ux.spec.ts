@@ -341,12 +341,22 @@ test('automated runs never contact Google Analytics', async ({ page }) => {
 test('zone labels: shown from high up, a click flies there, gone at street level', async ({
   page,
 }) => {
-  await page.goto(app('nogui&cam=topdown&time=0'));
+  await page.goto(app('nogui&stats&cam=topdown&time=0'));
   await waitForCity(page);
   const labels = page.locator('#zone-labels');
   await expect(labels).toBeVisible();
   const yeouido = labels.locator('button', { hasText: '여의도' });
   await expect(yeouido).toBeVisible();
+  // A wheel over a label still zooms the map (handed to the canvas).
+  const before = (await cam(page)).position.y;
+  await yeouido.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    const at = { clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 };
+    el.dispatchEvent(
+      new WheelEvent('wheel', { ...at, deltaY: -100, bubbles: true, cancelable: true }),
+    );
+  });
+  await expect.poll(async () => (await cam(page)).position.y).toBeLessThan(before - 50);
   await yeouido.click();
   await expect(page.locator('#hud-district')).toHaveText('여의도', { timeout: 30_000 });
 
