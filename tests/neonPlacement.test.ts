@@ -278,7 +278,7 @@ describe('neon sign placement: zero penetration (5.1)', () => {
       }
     }
     if (LAYOUT.roads.some((r) => r.district === 'nightlife'))
-      expect(banners.length).toBeGreaterThan(10);
+      expect(banners.length).toBeGreaterThan(45);
   });
 
   it('ring billboards wrap cylinder towers without touching other solids', () => {
