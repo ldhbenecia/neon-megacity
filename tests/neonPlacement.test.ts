@@ -23,6 +23,9 @@ import {
   signBudget,
   signCount,
   type FlatSign,
+  BANNER_BLADE_CLEAR,
+  BANNER_BLADE_REACH,
+  BANNER_MAX_W,
 } from '../src/neon/placement';
 import { buildingSolids, firstHit, solidsOverlap, type Solid } from '../src/neon/solids';
 import { planStreet } from '../src/neon/streetPlan';
@@ -261,13 +264,22 @@ describe('neon sign placement: zero penetration (5.1)', () => {
 
   it('banners hang across Hongdae alleys, clear of every building', () => {
     const banners = P.flats.filter((s) => s.building < 0);
+    const blades = P.flats.filter((s) => s.kind === 'blade');
     for (const s of banners) {
       expect(s.kind).toBe('band');
       expect(s.doubleSided).toBe(true);
       expect(s.vol && firstHit(LAYOUT, s.vol)).toBeFalsy();
+      expect(s.w).toBeLessThanOrEqual(BANNER_MAX_W);
+      // Banner normal runs along the street: no blade in its height band closer than the clearance.
+      for (const b of blades) {
+        const along = Math.abs((b.x - s.x) * s.nx + (b.z - s.z) * s.nz);
+        const off = Math.abs((b.x - s.x) * -s.nz + (b.z - s.z) * s.nx);
+        if (off > BANNER_BLADE_REACH || b.y0 >= s.y1 + 1 || b.y1 <= s.y0 - 1) continue;
+        expect(along).toBeGreaterThanOrEqual(BANNER_BLADE_CLEAR - 0.01);
+      }
     }
     if (LAYOUT.roads.some((r) => r.district === 'nightlife'))
-      expect(banners.length).toBeGreaterThan(20);
+      expect(banners.length).toBeGreaterThan(45);
   });
 
   it('ring billboards wrap cylinder towers without touching other solids', () => {

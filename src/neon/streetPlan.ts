@@ -147,7 +147,7 @@ export function lampBudget(L: Pick<Layout, 'roads'>): number {
 }
 
 /** Street panels and ads may take this share of the sign budget; building signs keep the rest. */
-export const STREET_SIGN_SHARE = 0.15;
+export const STREET_SIGN_SHARE = 0.13;
 const BUSY_KINDS: ReadonlySet<string> = new Set(['nightlife', 'sangga', 'corridor', 'brick']);
 
 // Over the share, drop whole sign poles (pole and panels), quiet side streets first. A no-op
