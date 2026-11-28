@@ -284,7 +284,7 @@ export function init(ctx: Ctx): CityModuleInstance {
         if (id >= 0) m.setVisibleAt(id, on);
       });
     }
-    if (changed) ctx.renderer.shadowMap.needsUpdate = true;
+    if (changed) ctx.requestShadowUpdate();
   };
   // 'low' hides every instance but keeps the meshes themselves visible: boot warm-up compiles
   // visible objects only, so their programs stay compiled for a later move up a tier.
