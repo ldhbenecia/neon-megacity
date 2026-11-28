@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { NEON, type NeonName } from '../core/palette';
 import type { Catalog } from './catalog';
-import { COMMON_PARS, EMISSIVE_TAIL, neonMaterial, type NeonUniforms } from './glsl';
+import { COMMON_PARS, EMISSIVE_TAIL, neonMaterial, type NeonUniforms, PANEL_ALBEDO } from './glsl';
 import { hdrColor, setInstanceAttributes, toInstanced } from './geom';
 import { GlowMode, glowMaterial } from './glow';
 import type { FlatSign } from './placement';
@@ -63,7 +63,7 @@ export function buildFlatSigns(
   });
   const mat = neonMaterial(shared, {
     side: THREE.DoubleSide,
-    uniforms: { uAtlas: { value: atlas } },
+    uniforms: { uAtlas: { value: atlas }, uSkyFill: shared.uSkyFill },
     vertexShader: /* glsl */ `
       ${COMMON_PARS}
       attribute vec3 iPos; attribute vec4 iDir; attribute vec4 iSize; attribute vec4 iRect; attribute vec4 iAnim;
@@ -88,7 +88,9 @@ export function buildFlatSigns(
     fragmentShader: /* glsl */ `
       ${COMMON_PARS}
       #define NEAR_HDR ${NEAR_HDR.toFixed(2)}
+      #define SIGN_BOARD_ALBEDO ${PANEL_ALBEDO.toFixed(3)}
       uniform sampler2D uAtlas;
+      uniform vec3 uSkyFill;
       varying vec2 vUv; varying vec4 vRect; varying vec4 vSize; varying vec4 vAnim; varying float vDouble;
       varying float vFar; varying float vPower; varying float vNear;
       #include <fog_pars_fragment>
@@ -96,7 +98,11 @@ export function buildFlatSigns(
         if (vFar < 1.0 && nHash2(gl_FragCoord.xy) > vFar) discard;
         vec2 uv = vUv;
         if (!gl_FrontFacing) {
-          if (vDouble < 0.5) { gl_FragColor = vec4(0.004, 0.005, 0.006, 1.0); ${EMISSIVE_TAIL} return; }
+          if (vDouble < 0.5) {
+            gl_FragColor = vec4(vec3(0.004, 0.005, 0.006) + uSkyFill * SIGN_BOARD_ALBEDO, 1.0);
+            ${EMISSIVE_TAIL}
+            return;
+          }
           uv.x = 1.0 - uv.x;
         }
         float quadAspect = vSize.x / vSize.y;
@@ -126,7 +132,8 @@ export function buildFlatSigns(
         float hdr = mix(vAnim.w, min(vAnim.w, NEAR_HDR), vNear);
         float boost = mix(1.0, hdr, smoothstep(0.08, 0.55, lum));
         vec3 board = col * 0.6;
-        gl_FragColor = vec4(mix(board, col * boost * uGain, on), 1.0);
+        // By day the dark board takes the sky fill like the wall behind it (same as media screens).
+        gl_FragColor = vec4(mix(board, col * boost * uGain, on) + uSkyFill * SIGN_BOARD_ALBEDO, 1.0);
         ${EMISSIVE_TAIL}
       }
     `,
