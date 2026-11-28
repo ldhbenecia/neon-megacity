@@ -306,10 +306,15 @@ export function puddleData(seed: number, N: number): Uint8Array {
   return data;
 }
 
-export function puddleTexture(seed = 2077): THREE.DataTexture {
-  // Built on the main thread during init: 512² keeps boot cost down and still gives 16 px/m.
-  const N = 512;
-  const data = puddleData(seed, N);
+/** 512² keeps the build cost down and still gives 16 px/m. */
+export const PUDDLE_SIZE = 512;
+
+/** `data` is puddleData(seed, PUDDLE_SIZE) when the city worker already made it. */
+export function puddleTexture(
+  seed = 2077,
+  data = puddleData(seed, PUDDLE_SIZE),
+): THREE.DataTexture {
+  const N = PUDDLE_SIZE;
   const tex = new THREE.DataTexture(data, N, N, THREE.RGBAFormat);
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;
@@ -356,8 +361,13 @@ export function createWetMaterial(
       .replace(
         '#include <color_fragment>',
         `#include <color_fragment>
-        vec4 pz = texture2D(uPuddle, vWXZ / 32.0);
-        wPud = pz.r * smoothstep(0.15, 0.6, uWet);
+        // Puddle mask averaged along the view direction: puddles stretch toward the camera like
+        // real wet-road reflections and their edges soften instead of reading as paint blots.
+        vec2 toCam = cameraPosition.xz - vWXZ;
+        vec2 vdir = toCam / max(length(toCam), 1e-3);
+        float pm = 0.0;
+        for (int k = -2; k <= 2; k++) pm += texture2D(uPuddle, (vWXZ + vdir * float(k) * 0.9) / 32.0).r;
+        wPud = smoothstep(0.2, 0.85, pm / 5.0) * smoothstep(0.15, 0.6, uWet);
         wGrain = texture2D(uPuddle, vWXZ / 3.0).g;
         diffuseColor.rgb *= (0.85 + 0.3 * wGrain) * mix(1.0, 0.45, wPud);`,
       )
@@ -365,17 +375,19 @@ export function createWetMaterial(
         '#include <roughnessmap_fragment>',
         `#include <roughnessmap_fragment>
         float dryR = ${dryRough.toFixed(2)} + 0.15 * (wGrain - 0.5);
-        float wetR = mix(dryR * 0.75, 0.04, wPud);
+        float wetR = mix(dryR * 0.75, 0.1, wPud);
         roughnessFactor = mix(dryR, wetR, uWet);`,
       )
       // Puddles act as dark mirrors (ART_DIRECTION 6.1): lift only the image-based specular there,
-      // so neon and sky reflections read under the real environment map without brightening asphalt.
+      // half desaturated so the environment's colour panels read as reflections, not paint.
       .replace(
         '#include <lights_fragment_maps>',
         `#include <lights_fragment_maps>
+        float rLum = dot(radiance, vec3(0.299, 0.587, 0.114));
+        radiance = mix(radiance, mix(vec3(rLum), radiance, 0.5), wPud);
         radiance *= 1.0 + ${PUDDLE_REFLECTION.toFixed(2)} * wPud * uWet;`,
       );
   };
-  m.customProgramCacheKey = () => `hangang-wet-v2-${name}`;
+  m.customProgramCacheKey = () => `hangang-wet-v3-${name}`;
   return m;
 }

@@ -26,7 +26,7 @@ import { FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import type { Ctx } from '../core/types';
 import { postEnabled } from '../core/gl';
-import { LENS, TIME_WRAP, bloomScaleFor, msaaSamplesFor, wrapTime } from './logic';
+import { LENS, TIME_WRAP, bloomMipsFor, bloomScaleFor, msaaSamplesFor, wrapTime } from './logic';
 import { HASH_GLSL } from './noise';
 import { shareBlurProgram } from './bloomBlur';
 import { HDR_SAFE_GLSL, guardHighPass } from './hdrGuard';
@@ -208,6 +208,15 @@ export function createPost(ctx: Ctx): Post | null {
   const oldClear = new Color();
   const highPass = bloom.materialHighPassFilter.uniforms;
   const composite = bloom.compositeMaterial.uniforms;
+  const baseFactors = [...(uniform(composite, 'bloomFactors').value as number[])];
+  let mips = bloom.nMips;
+  let staleMips = false;
+  const applyMips = (): void => {
+    mips = bloomMipsFor(tier);
+    const f = uniform(composite, 'bloomFactors').value as number[];
+    for (let i = 0; i < f.length; i++) f[i] = i < mips ? (baseFactors[i] ?? 0) : 0;
+    staleMips = true;
+  };
 
   const finalUniforms = {
     tScene: { value: sceneTarget.texture },
@@ -254,6 +263,8 @@ export function createPost(ctx: Ctx): Post | null {
     );
     const s = bloomScaleFor(pixelRatio, tier);
     bloom.setSize(Math.max(2, Math.round(w * s)), Math.max(2, Math.round(h * s)));
+    // Resized targets come back with undefined contents: clear the skipped mips again.
+    staleMips = true;
     aspect.value = w / Math.max(1, h);
   }
 
@@ -308,7 +319,7 @@ export function createPost(ctx: Ctx): Post | null {
     bloomQuad.render(renderer);
 
     let input = bloom.renderTargetBright;
-    for (let i = 0; i < bloom.nMips; i++) {
+    for (let i = 0; i < Math.min(mips, bloom.nMips); i++) {
       const mat = bloom.separableBlurMaterials[i];
       const hTarget = bloom.renderTargetsHorizontal[i];
       const vTarget = bloom.renderTargetsVertical[i];
@@ -325,6 +336,18 @@ export function createPost(ctx: Ctx): Post | null {
       renderer.clear();
       bloomQuad.render(renderer);
       input = vTarget;
+    }
+
+    // Skipped mips are cleared to black once and stay black, so they add nothing: the composite
+    // still weights them (lerpBloomFactor gives a factor of 0 up to 1.2 × radius).
+    if (staleMips) {
+      for (let i = mips; i < bloom.nMips; i++) {
+        const v = bloom.renderTargetsVertical[i];
+        if (!v) continue;
+        renderer.setRenderTarget(v);
+        renderer.clear();
+      }
+      staleMips = false;
     }
 
     bloomQuad.material = bloom.compositeMaterial;
@@ -396,6 +419,7 @@ export function createPost(ctx: Ctx): Post | null {
     setTier(t) {
       if (t === tier) return;
       tier = t;
+      applyMips();
       resize();
     },
     dispose() {

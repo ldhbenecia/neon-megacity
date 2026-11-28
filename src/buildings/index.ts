@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { unpackGeometry } from '../core/packedGeometry';
+import { takePrebuilt } from '../core/prebuilt';
 import { buildingFaces, buildingTop, terrainHeight } from '../city/layout';
 import { NIGHT_FILL_AMBIENT } from '../core/palette';
 import { pointSegmentDistance } from '../city/math';
@@ -286,12 +288,13 @@ export function init(ctx: Ctx): CityModuleInstance {
     }
   }
 
-  const puddle = puddleTexture(LAYOUT.seed);
+  const pre = takePrebuilt('buildings', LAYOUT);
+  const puddle = puddleTexture(LAYOUT.seed, pre?.puddle);
   const wet = { value: 0.55 };
   const roadMat = createWetMaterial('road', puddle, wet, 0.6);
   const walkMat = createWetMaterial('sidewalk', puddle, wet, 0.7);
-  const roadGeo = buildRoads(LAYOUT);
-  const walkGeo = buildSidewalks(LAYOUT);
+  const roadGeo = pre ? unpackGeometry(pre.roads) : buildRoads(LAYOUT);
+  const walkGeo = pre ? unpackGeometry(pre.walks) : buildSidewalks(LAYOUT);
   geometries.push(roadGeo, walkGeo);
   const roads = new THREE.Mesh(roadGeo, roadMat);
   roads.name = 'roads';

@@ -74,7 +74,7 @@ export function judgeScreen(rest: PhaseStats, move: PhaseStats, light: Light): s
 // valid in the same task as the render; read after compositing it is empty and every frame
 // reads as 0, which judgeScreen reports as a read failure rather than a black screen.
 const START = `(() => {
-  const gl = document.querySelector('canvas');
+  const gl = document.querySelector('#city-canvas');
   const c = document.createElement('canvas');
   c.width = 64;
   c.height = 36;

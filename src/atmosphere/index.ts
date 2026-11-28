@@ -11,10 +11,11 @@ import {
   computeFog,
   mapFogScale,
   fogBrightness,
-  createQualityState,
   rainAltitudeFade,
   searchlightLevelAt,
-  stepQuality,
+  rainPoolFor,
+  skyExtrasFor,
+  userTier,
   stepRain,
   stepWetness,
   sunScatterStrength,
@@ -45,7 +46,6 @@ export function init(ctx: Ctx): CityModuleInstance {
     clouds: !low,
     searchlights: !low,
     stars: true,
-    autoQuality: true,
   };
 
   const uninstallFog = installFogChunks();
@@ -60,7 +60,22 @@ export function init(ctx: Ctx): CityModuleInstance {
   const stars = createStars(ctx);
   const clouds = createClouds(ctx, searchlights.spots, searchlights.colors);
   const rain = low ? null : createRain(ctx);
-  clouds.setVisible(settings.clouds);
+  // ux alone decides the tier (env.quality, ctx.onQuality); atmosphere only applies its knobs.
+  let floorTier = low ? 0 : userTier(env.quality);
+  let tier = -1;
+  const applyTier = (): void => {
+    const t = floorTier;
+    clouds.setVisible(settings.clouds && skyExtrasFor(t));
+    if (t === tier) return;
+    tier = t;
+    post?.setTier(t);
+    rain?.setTier(t);
+  };
+  const offQuality = ctx.onQuality((q) => {
+    if (low) return;
+    floorTier = userTier(q);
+    applyTier();
+  });
   const post = createPost(ctx);
   const previousRender = ctx.render;
   if (post) ctx.render = () => post.render();
@@ -73,7 +88,7 @@ export function init(ctx: Ctx): CityModuleInstance {
   };
   if (post) userData.compile = warmup;
 
-  const quality = createQualityState();
+  applyTier();
 
   const folder = gui.addFolder('Atmosphere');
   folder.add(env, 'rain', 0, 1, 0.01).name('Rain').listen().disable();
@@ -85,19 +100,9 @@ export function init(ctx: Ctx): CityModuleInstance {
   folder
     .add(settings, 'clouds')
     .name('Clouds')
-    .onChange((v: boolean) => clouds.setVisible(v));
+    .onChange(() => applyTier());
   folder.add(settings, 'searchlights').name('Searchlights');
   folder.add(settings, 'stars').name('Stars');
-  folder
-    .add(settings, 'autoQuality')
-    .name('Auto quality')
-    .onChange((on: boolean) => {
-      if (on) return;
-      Object.assign(quality, createQualityState());
-      post?.setTier(0);
-      rain?.setTier(0);
-    });
-  folder.add(quality, 'tier', 0, 2, 1).name('Quality tier (0 = full)').listen().disable();
   folder.close();
 
   let palette: PaletteSample = paletteAt(env.timeOfDay);
@@ -171,7 +176,7 @@ export function init(ctx: Ctx): CityModuleInstance {
       const fogK = Math.min(2, Math.max(0.5, f.density / (NIGHT.fogDensity * mapFog)));
       searchlights.update(
         elapsed,
-        settings.searchlights ? searchlightLevelAt(env.timeOfDay) : 0,
+        settings.searchlights && skyExtrasFor(tier) ? searchlightLevelAt(env.timeOfDay) : 0,
         fogK,
         CLOUD_LAYERS.lowY,
       );
@@ -186,15 +191,12 @@ export function init(ctx: Ctx): CityModuleInstance {
       postSettings.radius = palette.bloomRadius;
       postSettings.threshold = palette.bloomThreshold;
       postSettings.lens = settings.lens;
-      postSettings.drops = settings.lensDrops ? Math.min(1, r * 1.2) * below : 0;
+      postSettings.drops =
+        settings.lensDrops && rainPoolFor(tier) > 0 ? Math.min(1, r * 1.2) * below : 0;
       post?.update(elapsed, postSettings);
-
-      if (settings.autoQuality && stepQuality(quality, dt)) {
-        post?.setTier(quality.tier);
-        rain?.setTier(quality.tier);
-      }
     },
     dispose() {
+      offQuality();
       if (userData.compile === warmup) delete userData.compile;
       // Shared uniforms outlive this module in compiled materials: back to the defaults.
       height[3] = 1;

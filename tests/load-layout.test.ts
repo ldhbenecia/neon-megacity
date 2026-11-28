@@ -1,23 +1,53 @@
 import { describe, expect, it, vi } from 'vitest';
 import { CITY, generateLayout } from '../src/city/layout';
-import { loadLayout, type LayoutWorker } from '../src/city/loadLayout';
-import type { Layout } from '../src/city/types';
+import {
+  loadCity,
+  type CityMessage,
+  type BuildingsPrebuilt,
+  type LayoutWorker,
+  type TerrainPrebuilt,
+} from '../src/city/loadLayout';
 
 const reference = generateLayout(CITY.seed);
+const TERRAIN = { ground: 'g', channel: 'c' } as unknown as TerrainPrebuilt;
+const BUILDINGS = { roads: 'r', walks: 'w', puddle: 'p' } as unknown as BuildingsPrebuilt;
 
-/** A fake worker that answers like the real one: the layout after a structured clone. */
-function fakeWorker(fail = false): LayoutWorker {
-  const w: LayoutWorker = {
+type Script =
+  | 'ok'
+  | 'error'
+  | 'layout-then-error'
+  | 'layout-then-silence'
+  | 'terrain-then-error'
+  | 'terrain-then-silence';
+
+/** A fake worker that answers like the real one: the layout (structured clone), then terrain. */
+function fakeWorker(script: Script = 'ok'): LayoutWorker & { terminated: number } {
+  const w: LayoutWorker & { terminated: number } = {
     onmessage: null,
     onerror: null,
     onmessageerror: null,
+    terminated: 0,
     postMessage: ({ seed }) => {
       queueMicrotask(() => {
-        if (fail) w.onerror?.({ message: 'boom' } as ErrorEvent);
-        else w.onmessage?.({ data: structuredClone(generateLayout(seed)) } as MessageEvent<Layout>);
+        if (script === 'error') {
+          w.onerror?.({ message: 'boom' } as ErrorEvent);
+          return;
+        }
+        const send = (data: CityMessage): void => {
+          w.onmessage?.({ data } as MessageEvent<CityMessage>);
+        };
+        send({ kind: 'layout', layout: structuredClone(generateLayout(seed)) });
+        if (script === 'ok' || script.startsWith('terrain-then')) {
+          send({ kind: 'terrain', terrain: TERRAIN });
+        }
+        if (script === 'ok') send({ kind: 'buildings', buildings: BUILDINGS });
+        if (script === 'terrain-then-error') w.onerror?.({ message: 'late' } as ErrorEvent);
+        if (script === 'layout-then-error') w.onerror?.({ message: 'late' } as ErrorEvent);
       });
     },
-    terminate: () => {},
+    terminate: () => {
+      w.terminated++;
+    },
   };
   return w;
 }
@@ -32,25 +62,68 @@ function unclonable(v: unknown, path = 'layout', out: string[] = []): string[] {
   return out;
 }
 
-describe('loadLayout', () => {
+describe('loadCity', () => {
   it('the layout is plain data: the worker clone keeps no class instances or functions', () => {
     expect(unclonable(reference).slice(0, 5)).toEqual([]);
   });
 
-  it('worker path: the cloned layout equals the main-thread one', async () => {
-    expect(await loadLayout(CITY.seed, () => fakeWorker())).toStrictEqual(reference);
+  it('worker path: the cloned layout equals the main-thread one, then terrain arrives', async () => {
+    const w = fakeWorker();
+    const city = loadCity(CITY.seed, () => w);
+    expect(await city.layout).toStrictEqual(reference);
+    expect(await city.terrain).toBe(TERRAIN);
+    expect(await city.buildings).toBe(BUILDINGS);
+    expect(w.terminated).toBe(1);
   });
 
   it('falls back to the main thread when there are no workers, creation throws or the worker fails', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    expect(await loadLayout(CITY.seed, null)).toStrictEqual(reference);
-    expect(
-      await loadLayout(CITY.seed, () => {
+    for (const make of [
+      null,
+      () => {
         throw new Error('blocked');
-      }),
-    ).toStrictEqual(reference);
-    expect(await loadLayout(CITY.seed, () => fakeWorker(true))).toStrictEqual(reference);
-    expect(warn).toHaveBeenCalledTimes(2);
+      },
+      () => fakeWorker('error'),
+    ]) {
+      const city = loadCity(CITY.seed, make);
+      expect(await city.layout).toStrictEqual(reference);
+      expect(await city.terrain).toBeNull();
+      expect(await city.buildings).toBeNull();
+    }
     warn.mockRestore();
   });
+
+  it('a worker error after the layout keeps the layout and leaves terrain to init', async () => {
+    const w = fakeWorker('layout-then-error');
+    const city = loadCity(CITY.seed, () => w);
+    expect(await city.layout).toStrictEqual(reference);
+    expect(await city.terrain).toBeNull();
+    expect(w.terminated).toBeGreaterThan(0);
+  });
+
+  it('a worker that goes silent after the layout times out: terrain null, worker terminated', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const w = fakeWorker('layout-then-silence');
+    const city = loadCity(CITY.seed, () => w, 20);
+    expect(await city.layout).toStrictEqual(reference);
+    expect(await city.terrain).toBeNull();
+    expect(await city.buildings).toBeNull();
+    expect(w.terminated).toBe(1);
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+  });
+
+  for (const script of ['terrain-then-error', 'terrain-then-silence'] as const) {
+    it(`${script}: terrain is kept, buildings falls back, the worker is terminated once`, async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const w = fakeWorker(script);
+      const city = loadCity(CITY.seed, () => w, 20);
+      expect(await city.layout).toStrictEqual(reference);
+      expect(await city.terrain).toBe(TERRAIN);
+      expect(await city.buildings).toBeNull();
+      expect(w.terminated).toBe(1);
+      expect(warn).toHaveBeenCalledTimes(script === 'terrain-then-silence' ? 1 : 0);
+      warn.mockRestore();
+    });
+  }
 });

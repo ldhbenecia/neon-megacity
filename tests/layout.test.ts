@@ -106,9 +106,9 @@ describe('layout v3: determinism', () => {
       {
         "blocks": 1413,
         "buildings": 5585,
-        "digest": "96cf8860",
-        "roads": 1161,
-        "slots": 3240,
+        "digest": "43dcc67c",
+        "roads": 1158,
+        "slots": 3244,
       }
     `);
   });
@@ -1042,18 +1042,35 @@ describe('layout v3: mountain feet and the river', () => {
 describe('layout v3: mountains stay wooded', () => {
   it('keeps streets, street furniture and buildings off the forest and the mountain feet', () => {
     for (const r of LAYOUT.roads) {
+      if (r.kind === 'arterial') continue;
+      const len = Math.hypot(r.b.x - r.a.x, r.b.z - r.a.z) || 1;
+      const nx = (-(r.b.z - r.a.z) / len) * (r.width / 2);
+      const nz = ((r.b.x - r.a.x) / len) * (r.width / 2);
       for (const t of [0, 0.25, 0.5, 0.75, 1]) {
         const x = r.a.x + (r.b.x - r.a.x) * t;
         const z = r.a.z + (r.b.z - r.a.z) * t;
-        if (r.kind === 'arterial' || zoneAt(x, z).kind === 'hillside') continue;
-        expect(isForest(x, z), `road ${r.id}`).toBe(false);
+        if (zoneAt(x, z).kind === 'hillside') continue;
+        // Centerline and both edges.
+        for (const k of [0, 1, -1]) {
+          expect(isForest(x + nx * k, z + nz * k), `road ${r.id}`).toBe(false);
+        }
       }
     }
-    for (const s of LAYOUT.slots) expect(isForest(s.x, s.z), `slot ${s.kind}`).toBe(false);
+    for (const s of LAYOUT.slots) {
+      expect(isForest(s.x, s.z), `slot ${s.kind}`).toBe(false);
+      if (zoneAt(s.x, s.z).kind !== 'hillside') {
+        expect(terrainHeight(s.x, s.z), `slot ${s.kind}`).toBeLessThanOrEqual(FLAT_GROUND + 1e-6);
+      }
+    }
     // Only the hillside village stands on raised ground; elsewhere the mountain feet stay empty.
     for (const b of B) {
       if (b.district === 'hillside') continue;
-      for (const p of obbCorners(obb(b))) {
+      const c = obbCorners(obb(b));
+      const mids = c.map((a, i) => {
+        const e = c[(i + 1) % 4]!;
+        return { x: (a.x + e.x) / 2, z: (a.z + e.z) / 2 };
+      });
+      for (const p of [...c, ...mids]) {
         expect(terrainHeight(p.x, p.z), `building ${b.id} ${b.zoneId}`).toBeLessThanOrEqual(
           FLAT_GROUND + 1e-6,
         );

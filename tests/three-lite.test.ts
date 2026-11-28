@@ -12,13 +12,27 @@ describe('city worker three-lite', () => {
   it('generates the same layout as with the full three.js', async () => {
     vi.resetModules();
     vi.doMock('three', () => import('../src/city/three-lite'));
-    expect(Object.keys(await import('three')).sort()).toEqual(['CatmullRomCurve3', 'Vector3']);
+    expect(Object.keys(await import('three')).sort()).toEqual([
+      'BufferAttribute',
+      'BufferGeometry',
+      'CatmullRomCurve3',
+      'Color',
+      'Float32BufferAttribute',
+      'Vector3',
+    ]);
     const { generateLayout } = await import('../src/city/generate');
     expect(generateLayout(CITY.seed)).toStrictEqual(LAYOUT);
   }, 60_000);
 
-  it('exports only what the generator imports from three', async () => {
+  it('exports only what the worker code (generator, terrain geometry) imports from three', async () => {
     const lite = await import('../src/city/three-lite');
-    expect(Object.keys(lite).sort()).toEqual(['CatmullRomCurve3', 'Vector3']);
+    expect(Object.keys(lite).sort()).toEqual([
+      'BufferAttribute',
+      'BufferGeometry',
+      'CatmullRomCurve3',
+      'Color',
+      'Float32BufferAttribute',
+      'Vector3',
+    ]);
   });
 });
