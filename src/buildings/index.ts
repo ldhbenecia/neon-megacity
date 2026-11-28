@@ -339,6 +339,8 @@ export function init(ctx: Ctx): CityModuleInstance {
       // Lighting owns the fill curve; before it sets one, fall back to the night teal floor.
       if (env.fillColor) uniforms.uFillColor.value.copy(env.fillColor);
       else uniforms.uFillColor.value.fromArray(NIGHT_FILL_AMBIENT).multiplyScalar(env.nightFactor);
+      if (env.skyFill) uniforms.uSkyFill.value.copy(env.skyFill);
+      else uniforms.uSkyFill.value.setRGB(0, 0, 0);
       uniforms.uPower.value = env.powerOn;
       uniforms.uTime.value = elapsed;
       wet.value = Math.max(env.wetness, 0.55 * env.nightFactor);
