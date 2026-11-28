@@ -164,6 +164,8 @@ interface DistrictSigns {
   media?: boolean;
   /** Banners strung across alleys. */
   banners?: boolean;
+  /** Blade signs every few meters along shop faces, staggered over floors 2–9 (Hongdae alleys). */
+  alleyBlades?: boolean;
   /** Big warm lettering on warehouse walls, lit by gooseneck lamps (Seongsu). */
   paint?: boolean;
 }
@@ -247,6 +249,7 @@ const KIND_OVERRIDES: ReadonlyMap<string, Partial<DistrictSigns>> = new Map([
       vtextFromH: 9,
       vtextCount: 2,
       banners: true,
+      alleyBlades: true,
     },
   ],
   ['brick', { shopScale: 0.68, bladeScale: 0.15, paint: true }],
@@ -362,7 +365,12 @@ interface Ctx {
   out: Placement;
   occupied: Map<string, Rect[]>;
   roadGap: (x: number, z: number) => number;
+  /** Alley blades walk this cursor through every blade cell, so neighbours rarely repeat a name. */
+  bladeCursor: number;
 }
+
+/** City-wide cap on alley blades, so they cannot crowd every other district out of the budget. */
+export const ALLEY_BLADE_MAX = 600;
 
 type Road = Layout['roads'][number];
 
@@ -480,6 +488,90 @@ function animFor(rng: Rng, scrollP: number): AnimMode {
 }
 
 const OPPOSITE: Record<string, string> = { px: 'nx', nx: 'px', pz: 'nz', nz: 'pz' };
+
+export const ALLEY_BLADE_STEP: readonly [number, number] = [3, 4];
+const ALLEY_BLADE_COLORS: readonly NeonName[] = [
+  'neonCyan',
+  'neonMagenta',
+  'neonOrange',
+  'neonWhite',
+];
+
+// Hongdae: blades every 3–4 m along the shop face, in two-floor slots from floor 2 up to floor 9.
+// Neighbouring columns take alternate slots (even columns floors 2–3 and 6–7, odd ones 4–5 and 8–9), so two
+// blades side by side never share a height band and their lettering does not overlap down the alley.
+const ALLEY_SLOTS = 4;
+function placeAlleyBlades(c: Ctx, b: BuildingSpec, rng: Rng, zone: number, fi: number): void {
+  const f = c.faces[b.id]?.[fi];
+  if (!f || f.width < 6 || !usable(f)) return;
+  const base = b.baseY + b.groundFloorH;
+  const span = f.width / 2 - EDGE_IN - 0.8;
+  let k = rng.int(0, 1);
+  for (
+    let uc = -span + rng.range(0, 1);
+    uc <= span;
+    uc += rng.range(ALLEY_BLADE_STEP[0], ALLEY_BLADE_STEP[1]), k++
+  ) {
+    for (let slot = k % 2; slot < ALLEY_SLOTS; slot += 2) {
+      if (c.bladeCursor >= ALLEY_BLADE_MAX) return;
+      placeAlleyBlade(c, b, rng, zone, fi, f, uc, base + slot * 2 * b.floorH);
+    }
+  }
+}
+
+function placeAlleyBlade(
+  c: Ctx,
+  b: BuildingSpec,
+  rng: Rng,
+  zone: number,
+  fi: number,
+  f: BuildingFace,
+  uc: number,
+  slotY: number,
+): void {
+  const y0 = slotY + 0.5;
+  const h = Math.min(rng.range(2, 6), b.floorH * 2 - 0.9, f.y1 - TIER_MARGIN - y0);
+  if (h < 2) return;
+  const w = rng.range(0.6, 1);
+  const r: Rect = { u0: uc - 0.1, u1: uc + 0.1, y0, y1: y0 + h };
+  if (!insideFace(f, r.u0, r.u1, r.y0, r.y1)) return;
+  const g0 = WALL_GAP.blade;
+  const vol = wallVolume(f, b, r.u0, r.u1, r.y0, r.y1, 0.02, g0 + w);
+  if (firstHit(c.L, wallVolume(f, b, r.u0, r.u1, r.y0, r.y1, 0.02, g0 + w + BLADE_CLEARANCE)))
+    return;
+  if (!reserve(c, b.id, fi, r)) return;
+  const blades = c.cat.byKind.blade;
+  const cell = blades.length
+    ? (blades[(c.bladeCursor * coprimeStride(blades.length)) % blades.length] ?? -1)
+    : -1;
+  c.bladeCursor++;
+  c.out.flats.push({
+    kind: 'blade',
+    building: b.id,
+    face: fi,
+    x: f.center.x + f.tangent.x * uc + f.normal.x * (g0 + w / 2),
+    y: y0 + h / 2,
+    z: f.center.z + f.tangent.z * uc + f.normal.z * (g0 + w / 2),
+    nx: f.tangent.x,
+    nz: f.tangent.z,
+    w,
+    h,
+    cell,
+    color: rng.pick(ALLEY_BLADE_COLORS),
+    anim: animFor(rng, 0.04),
+    zone,
+    seed: rng.int(0, 1e6),
+    doubleSided: true,
+    ...r,
+    vol,
+  });
+}
+
+/** A stride that visits every index of a list of length n before repeating, skipping neighbours. */
+export function coprimeStride(n: number): number {
+  const gcd = (a: number, b: number): number => (b ? gcd(b, a % b) : a);
+  return [7, 5, 3, 2].find((k) => k < n && gcd(k, n) === 1) ?? 1;
+}
 
 function shopFaces(c: Ctx, b: BuildingSpec): number[] {
   const faces = c.faces[b.id] ?? [];
@@ -920,6 +1012,12 @@ function placeHolo(
 const MEDIA_MAX = 24;
 const MEDIA_MAIN_GAP = 40;
 const BANNER_MAX = 400;
+/** Board width cap (m); the cables span the rest of the street to the walls. */
+export const BANNER_MAX_W = 7;
+/** No blade sign within this distance along the street, so the two never overlap down the alley. */
+export const BANNER_BLADE_CLEAR = 8;
+/** Blades this far across from the banner count, on this street or a crossing one. */
+export const BANNER_BLADE_REACH = 14;
 
 // Teheran-ro canyon: one street-facing screen per mid-rise tower; a tagged media face is covered
 // edge to edge (SEOUL.md 4.3 mediaSlab).
@@ -995,16 +1093,37 @@ function placeBanners(c: Ctx, rng: Rng): void {
     if (len < 30) continue;
     const dir = { x: (r.b.x - r.a.x) / len, z: (r.b.z - r.a.z) / len };
     const across = { x: -dir.z, z: dir.x };
+    const blades = c.out.flats.filter((f) => {
+      if (f.kind !== 'blade') return false;
+      const along = (f.x - r.a.x) * dir.x + (f.z - r.a.z) * dir.z;
+      const off = Math.abs((f.x - r.a.x) * across.x + (f.z - r.a.z) * across.z);
+      return (
+        along > -BANNER_BLADE_CLEAR &&
+        along < len + BANNER_BLADE_CLEAR &&
+        off < r.width / 2 + BANNER_BLADE_REACH
+      );
+    });
     for (
       let t = 10 + rng.range(0, 6);
       t < len - 10 && placed < BANNER_MAX;
-      t += rng.range(12, 20)
+      t += rng.range(22, 34)
     ) {
       const x = r.a.x + dir.x * t;
       const z = r.a.z + dir.z * t;
-      const w = r.width * 0.9 + 1;
-      const h = rng.range(0.9, 1.3);
-      const y0 = surfaceHeight(x, z) + rng.range(5.5, 7.5);
+      const w = Math.min(r.width * 0.9 + 1, BANNER_MAX_W);
+      const h = rng.range(0.8, 1.1);
+      const y0 = surfaceHeight(x, z) + rng.range(6, 8);
+      const nearBlade = blades.some((f) => {
+        const along = (f.x - x) * dir.x + (f.z - z) * dir.z;
+        const off = (f.x - x) * across.x + (f.z - z) * across.z;
+        return (
+          Math.abs(along) < BANNER_BLADE_CLEAR &&
+          Math.abs(off) <= BANNER_BLADE_REACH &&
+          f.y0 < y0 + h + 1 &&
+          f.y1 > y0 - 1
+        );
+      });
+      if (nearBlade) continue;
       const vol: Solid = {
         kind: 'box',
         x,
@@ -1195,6 +1314,7 @@ export function placeSigns(
     out: { flats: [], tubes: [], crosses: [], screens: [], rings: [], holos: [] },
     occupied: new Map(),
     roadGap: roadGapIndex(L),
+    bladeCursor: 0,
   };
   const maxScreens = opts.maxScreens ?? 20;
   let ringBudget = opts.maxRings ?? 14;
@@ -1251,7 +1371,10 @@ export function placeSigns(
       shopFaces(c, b).forEach((fi, k) => {
         placeBands(c, b, rng, zone, fi, (k === 0 ? 1.6 : 0.7) * sc);
         const bp = (a === 'sangga' ? 0.5 : 0.3) * (k === 0 ? 1.3 : 0.6) * sc;
-        placeBlades(c, b, rng, zone, d.bladeScale === undefined ? bp : bp * d.bladeScale, fi);
+        // Alley blades replace the two tall end blades, which would share their height bands.
+        // Past the city-wide cap the usual end blades take over, so no nightlife face stays bare.
+        if (d.alleyBlades && c.bladeCursor < ALLEY_BLADE_MAX) placeAlleyBlades(c, b, rng, zone, fi);
+        else placeBlades(c, b, rng, zone, d.bladeScale === undefined ? bp : bp * d.bladeScale, fi);
       });
     } else if (d.street && a === 'officeSlab' && b.h < 40) {
       const fi = shopFaces(c, b)[0];

@@ -7,6 +7,7 @@ import {
   roadSurfaceY,
   surfaceHeight,
   type BuildingFace,
+  type BuildingSpec,
   type Layout,
   type Vec3,
 } from '../city/layout';
@@ -48,13 +49,25 @@ import {
 } from './signs';
 import { buildStreet, poolColor } from './street';
 import { planStreet, type StreetPlan } from './streetPlan';
+import {
+  bulbPositions,
+  bulbStrings,
+  stringPoint,
+  stringObstacles,
+  type BulbString,
+} from './strings';
 import { buildTraffic } from './traffic';
 
 export const SIDEWALK_FALLBACK = 0.2;
 const CURVE_SAMPLES = 400;
 const MAX_DECALS = 1500;
-/** Decals this close (m) past a road edge sit on that road's surface. */
-const DECAL_ROAD_GAP = 6;
+/** Decals on the carriageway (up to this far past its edge, m) sit on that road's surface. */
+const DECAL_ROAD_GAP = 0.5;
+const BULB_R = 0.07;
+const BULB_HDR = 3;
+const SHOP_POOL_MAX = 400;
+const SHOP_POOL_R = 3.5;
+const shopPool = hdrColor(NEON.windowWarm.hex, 0.8);
 
 const SCREEN_HUES: readonly NeonName[] = ['neonCyan', 'neonOrange', 'neonMagenta'];
 
@@ -121,10 +134,14 @@ function decalList(
   faces: readonly (readonly BuildingFace[])[],
   roadY: number,
   nearestRoad: ReturnType<typeof nearestRoadIndex>,
+  buildings: readonly BuildingSpec[],
 ): DecalInstance[] {
   const out: (DecalInstance & { h: number })[] = [];
+  const pools: DecalInstance[] = [];
   const roadGap = (x: number, z: number): number => nearestRoad(x, z).gap;
-  // On a road the road surface (hillside roads sit higher); elsewhere the bare ground.
+  // On the carriageway the road surface (hillside roads sit higher); off it the bare ground. The
+  // switch is at the road edge, where the curb changes the height anyway: roads near the river
+  // channel have ground (surfaceHeight) a few meters off that differs from the terrain under the road.
   const ground = (x: number, z: number): number => {
     const { road, gap } = nearestRoad(x, z);
     return (
@@ -169,6 +186,21 @@ function decalList(
       h: 0,
     });
   }
+  // Warm shopfront spill on the ground in front of every lit ground-floor band in nightlife.
+  for (const s of P.flats) {
+    if (s.kind !== 'band' || s.building < 0) continue;
+    const b = buildings[s.building];
+    if (!b || b.district !== 'nightlife' || s.y0 > b.baseY + b.groundFloorH + 1) continue;
+    const f = faces[s.building]?.[s.face];
+    if (!f) continue;
+    // Past the sidewalk edge like the sign reflections: on the sidewalk slab the pool is hidden.
+    const off = outFromWall(s.x, s.z) + SHOP_POOL_R * 0.5;
+    const x = s.x + f.normal.x * off;
+    const z = s.z + f.normal.z * off;
+    if (pools.length < SHOP_POOL_MAX) {
+      pools.push({ x, y: ground(x, z), z, width: SHOP_POOL_R, length: -1, color: shopPool });
+    }
+  }
   for (const p of street.pools) {
     out.push({ x: p.x, y: p.y, z: p.z, width: p.radius, length: -1, color: poolColor(p), h: 0 });
   }
@@ -184,7 +216,8 @@ function decalList(
     });
   }
   out.sort((a, b) => a.h - b.h);
-  return out.slice(0, MAX_DECALS);
+  // Shopfront pools have their own cap, so they never push sign reflections out of the list.
+  return [...out.slice(0, MAX_DECALS), ...pools];
 }
 
 function lightCandidates(P: Placement, street: StreetPlan): LightCandidate[] {
@@ -320,8 +353,14 @@ export function init(ctx: Ctx): CityModuleInstance {
   crossPoles.count = P.crosses.length;
   crossPoles.computeBoundingSphere();
   crossPoles.name = 'neon-cross-poles';
+  const strings = bulbStrings(
+    L,
+    P.flats.filter((f) => f.building < 0),
+    stringObstacles(P.flats, street),
+  );
   // Banners hang from cables tied to the facades a little higher on each side (a slight sag).
-  const wires = bannerWires(P.flats, L);
+  const bannerWireList = bannerWires(P.flats, L);
+  const wires = [...bannerWireList, ...stringWires(strings)];
   const wireGeo = new THREE.CylinderGeometry(0.03, 0.03, 1, 4).translate(0, 0.5, 0);
   const bannerCables = new THREE.InstancedMesh(wireGeo, poleMat, Math.max(1, wires.length));
   const up = new THREE.Vector3(0, 1, 0);
@@ -337,8 +376,28 @@ export function init(ctx: Ctx): CityModuleInstance {
   bannerCables.count = wires.length;
   bannerCables.computeBoundingSphere();
   bannerCables.name = 'neon-banner-cables';
+  const warmBulb = hdrColor(NEON.windowWarm.hex, BULB_HDR);
+  const bulbs: SolidInstance[] = strings.flatMap((st, si) =>
+    bulbPositions(st).map((p, i) => ({
+      x: p.x,
+      y: p.y,
+      z: p.z,
+      sx: BULB_R,
+      sy: BULB_R,
+      sz: BULB_R,
+      rotY: 0,
+      color: warmBulb,
+      anim: 0,
+      seed: si * 64 + i,
+      zone: 0.4,
+    })),
+  );
+  const bulbGeo = new THREE.OctahedronGeometry(1, 0);
+  const bulbMesh = buildEmissiveSolids(bulbGeo, solidMat, bulbs, 'neon-string-bulbs');
   disposables.push(
     wireGeo,
+    bulbGeo,
+    bulbMesh.geometry,
     poleMat,
     poleGeo,
     solidMat,
@@ -354,7 +413,7 @@ export function init(ctx: Ctx): CityModuleInstance {
   const halos = buildHalos(shared, haloList(P));
   const decals = buildReflections(
     shared,
-    decalList(P, street, faces, roadY, nearestRoadIndex(ctx.LAYOUT, DECAL_ROAD_GAP)),
+    decalList(P, street, faces, roadY, nearestRoadIndex(ctx.LAYOUT, DECAL_ROAD_GAP), L.buildings),
   );
   for (const m of [screens, rings, holos, halos, decals, paint]) {
     disposables.push(m.geometry, m.material as THREE.Material);
@@ -371,6 +430,7 @@ export function init(ctx: Ctx): CityModuleInstance {
     crossMesh,
     crossPoles,
     bannerCables,
+    bulbMesh,
     paint,
     screens,
     rings,
@@ -447,13 +507,25 @@ export function init(ctx: Ctx): CityModuleInstance {
     halos.visible = view.halos && !lowFx;
     decals.visible = view.reflections && !lowFx;
     fountains.visible = view.fountains && !lowFx;
+    bulbMesh.visible = !lowFx;
+    bannerCables.count = lowFx ? bannerWireList.length : wires.length;
     traffic.setShare(TRAFFIC_SHARE[tier]);
     publish();
   };
   applyQuality(env.quality);
   const offQuality = ctx.onQuality(applyQuality);
   folder.add(view, 'signs').onChange((v: boolean) => {
-    for (const m of [flats, tubeMesh, crossMesh, crossPoles, bannerCables, paint, screens, rings])
+    for (const m of [
+      flats,
+      tubeMesh,
+      crossMesh,
+      crossPoles,
+      bannerCables,
+      bulbMesh,
+      paint,
+      screens,
+      rings,
+    ])
       m.visible = v;
   });
   folder.add(view, 'traffic').onChange((v: boolean) => (traffic.group.visible = v));
@@ -489,6 +561,22 @@ export function init(ctx: Ctx): CityModuleInstance {
 const CABLE_MAX_REACH = 8;
 const CABLE_STEP = 0.25;
 const CABLE_RISE = 1;
+
+/** Each string as short straight pieces along its sag, for the shared cable mesh. */
+function stringWires(strings: readonly BulbString[]): { a: Vec3; b: Vec3 }[] {
+  const out: { a: Vec3; b: Vec3 }[] = [];
+  for (const st of strings) {
+    for (let i = 0; i < STRING_PIECES; i++) {
+      out.push({
+        a: stringPoint(st, i / STRING_PIECES),
+        b: stringPoint(st, (i + 1) / STRING_PIECES),
+      });
+    }
+  }
+  return out;
+}
+
+const STRING_PIECES = 4;
 
 // A banner cable runs from the banner end across the road until it meets a facade; without a
 // wall within reach there is no cable (nothing to tie it to).

@@ -13,6 +13,7 @@ import {
   fogBrightness,
   rainAltitudeFade,
   searchlightLevelAt,
+  lensDropsFor,
   rainPoolFor,
   skyExtrasFor,
   userTier,
@@ -192,7 +193,7 @@ export function init(ctx: Ctx): CityModuleInstance {
       postSettings.threshold = palette.bloomThreshold;
       postSettings.lens = settings.lens;
       postSettings.drops =
-        settings.lensDrops && rainPoolFor(tier) > 0 ? Math.min(1, r * 1.2) * below : 0;
+        settings.lensDrops && rainPoolFor(tier) > 0 ? lensDropsFor(r) * below : 0;
       post?.update(elapsed, postSettings);
     },
     dispose() {

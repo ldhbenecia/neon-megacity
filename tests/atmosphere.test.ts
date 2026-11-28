@@ -12,6 +12,7 @@ import {
   msaaSamplesFor,
   rainAltitudeFade,
   rainDropCount,
+  lensDropsFor,
   rainPoolFor,
   searchlightDirection,
   searchlightLevelAt,
@@ -126,6 +127,13 @@ describe('rain and wetness', () => {
     expect(rainDropCount(0.35)).toBeGreaterThanOrEqual(6000);
     expect(rainDropCount(1, rainPoolFor(1))).toBe(RAIN.maxDrops / 2);
     expect(rainPoolFor(2)).toBe(0);
+  });
+
+  it('lens drops only in a downpour', () => {
+    expect(lensDropsFor(0.35)).toBe(0);
+    expect(lensDropsFor(0.6)).toBe(0);
+    expect(lensDropsFor(0.8)).toBeGreaterThan(0.3);
+    expect(lensDropsFor(1)).toBe(1);
   });
 
   it('stops above the cloud deck', () => {
