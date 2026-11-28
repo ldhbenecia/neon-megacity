@@ -64,27 +64,48 @@ varying vec2 vUv;
 ${HASH_GLSL}
 ${HDR_SAFE_GLSL}
 
-vec2 lensDrops( vec2 uv ) {
-  vec2 p = uv * vec2( uAspect, 1.0 ) * 7.0;
-  vec2 id = floor( p );
-  vec2 f = fract( p ) - 0.5;
+// One drop per cell at most, kept inside its cell (no neighbor lookups). Two grids of different
+// size and offset, so drops do not line up in rows.
+vec2 lensDropCell( vec2 uv, float scale, vec2 shift, float salt ) {
+  vec2 p = uv * vec2( uAspect, 1.0 ) * scale + shift;
+  vec2 id = floor( p ) + salt;
+  vec2 f = fract( p );
   float h = hash12( id );
-  // A whole number of drop lives per wrap period, and the per-life dice indexed modulo that
-  // number, so the time wrap lands on the same drop in the same phase.
-  float lives = floor( ${TIME_WRAP.lens.toFixed(1)} / ( 4.0 + 5.0 * h ) + 0.5 );
+  // A whole number of lives per wrap period, the per-life dice indexed modulo that number, so the
+  // time wrap lands on the same drop in the same phase.
+  float lives = floor( ${TIME_WRAP.lens.toFixed(1)} / ( 6.0 + 8.0 * h ) + 0.5 );
   float period = ${TIME_WRAP.lens.toFixed(1)} / lives;
   float cycle = uTime / period + hash12( id + 7.1 );
   float life = fract( cycle );
-  float alive = step( 1.0 - 0.3 * uDrops, hash12( id + mod( floor( cycle ), lives ) * 13.7 ) );
-  vec2 center = ( vec2( hash12( id + 3.3 ), hash12( id + 5.9 ) ) - 0.5 ) * 0.5;
-  center.y -= life * 0.12;
-  float r = 0.07 + 0.13 * hash12( id + 9.4 );
+  float n = mod( floor( cycle ), lives );
+  if ( hash12( id + n * 13.7 ) < 1.0 - 0.45 * uDrops ) return vec2( 0.0 );
+  float r0 = 0.06 + 0.1 * hash12( id + 9.4 + n );
+  // Starts in the upper half so it has room to run before it fades.
+  vec2 center = vec2(
+    0.05 + r0 + ( 0.9 - 2.0 * r0 ) * hash12( id + 3.3 + n ),
+    0.45 + ( 0.5 - r0 ) * hash12( id + 5.9 + n )
+  );
+  float run = max( 0.0, life - 0.55 ) / 0.45;
+  center.y -= run * run * 1.6;
+  center.x += sin( run * 9.0 + h * 6.3 ) * 0.03 * run;
+  float r = r0 * smoothstep( 0.0, 0.2, life ) * ( 1.0 - 0.45 * run );
   vec2 d = f - center;
-  d.y *= 1.0 + 0.25 * life;
-  float len = length( d );
-  float inside = 1.0 - smoothstep( r * 0.8, r, len );
-  float fade = smoothstep( 0.0, 0.06, life ) * ( 1.0 - smoothstep( 0.55, 1.0, life ) ) * alive;
-  return - d / r * 0.010 * inside * fade;
+  d.x /= 1.0 - 0.25 * run;
+  d.y /= 1.0 + 1.2 * run;
+  vec2 t = f - center;
+  float trail = run * ( 1.0 - smoothstep( 0.0, r * 0.35 + 1e-3, abs( t.x ) ) )
+    * smoothstep( 0.0, r * 0.5 + 1e-3, t.y ) * ( 1.0 - smoothstep( 0.0, run * 1.4 + 1e-3, t.y ) )
+    * ( 1.0 - smoothstep( 0.8, 1.0, f.y ) );
+  float q = clamp( dot( d, d ) / max( r * r, 1e-6 ), 0.0, 1.0 );
+  // Zero bend at the rim, so a still frame shows no hard circle.
+  vec2 bend = -d / max( r, 1e-3 ) * ( 1.0 - q ) * ( 1.0 - q ) * 0.022;
+  bend.x -= t.x / ( r * 0.35 + 1e-3 ) * trail * 0.004;
+  // Gone before the stretched lower end reaches the cell edge.
+  return bend * smoothstep( 0.05, 0.2, center.y - r * ( 1.0 + 1.2 * run ) );
+}
+
+vec2 lensDrops( vec2 uv ) {
+  return lensDropCell( uv, 4.3, vec2( 0.0 ), 0.0 ) + lensDropCell( uv, 6.7, vec2( 0.37, 0.61 ), 41.0 );
 }
 
 void main() {
