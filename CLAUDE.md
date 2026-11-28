@@ -13,7 +13,7 @@ The city is an ORIGINAL design inspired by cyberpunk anime aesthetics.
 - `npm run test:e2e` — Playwright smoke tests (builds and serves on a per-worktree port; `E2E_PORT` overrides, and `SHOTS_PORT` / `PERF_PORT` do the same for `shots` and `perf`). An already-running server is never reused
 - `npm run shots -- [label] [--swiftshader|--gpu] [--no-build] [--only=<substring>] [--burst] [--black-limit=<percent>]` — deterministic screenshots into `screenshots/<label>/` (real GPU by default on macOS). Each shot prints its mean luminance and near-black pixel ratio and fails above the limit; `--burst` also shoots frame by frame while zooming, flying and orbiting
 - `npm run perf` — real-GPU measurements (frame time, draw calls, memory, boot time); results and budgets live in `docs/PERF.md`
-- `npm run size` — first-load JS gzip size of `dist/`; fails above 400 KB, warns above the 260 KB target
+- `npm run size` — first-load JS gzip size of `dist/`; fails above 400 KB, warns above the 330 KB target
 - `npm run preview` — serve `dist/`
 
 ## Architecture
