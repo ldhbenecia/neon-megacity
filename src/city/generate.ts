@@ -23,7 +23,6 @@ import {
   SKYLINE_PEAK,
 } from './constants';
 
-export { EXTENT_X, EXTENT_Z, MEGA_MIN_H, RIVER_CLEARANCE, SIDEWALK, SKYLINE_PEAK };
 import {
   MAX_DECK_THICKNESS,
   MIN_ROAD_CLEARANCE,
@@ -91,7 +90,14 @@ import type {
   Vec2,
 } from './types';
 
-/** Play area size (m). */
+export {
+  EXTENT_X,
+  EXTENT_Z,
+  MEGA_MIN_H,
+  RIVER_CLEARANCE,
+  SIDEWALK,
+  SKYLINE_PEAK,
+} from './constants';
 
 interface TowerTier {
   count: number;
@@ -143,8 +149,6 @@ const MEGA: Record<string, MegaPlan> = {
     landmark: 'jamsil-blade',
   },
 };
-
-/** Building must keep this far from the channel edge (riverSignedDistance). */
 
 const zoneRng = (seed: number, key: string): Rng => createRng((seed ^ hashString(key)) >>> 0);
 

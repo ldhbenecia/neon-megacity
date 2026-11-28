@@ -1,4 +1,3 @@
-import { generateLayout } from '../src/city/generate';
 import { describe, expect, it } from 'vitest';
 import {
   CITY,
@@ -51,6 +50,7 @@ import {
 import {
   FLAT_GROUND,
   MAX_SLENDER,
+  generateLayout,
   PALACE_FRONT_DEPTH,
   SKY_LANE_CLEAR,
   SKY_LANE_MARGIN,
