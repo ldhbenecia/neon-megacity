@@ -73,8 +73,9 @@ export function dayFactorAt(sunElevation: number): number {
 }
 
 /**
- * Day sky fill (env.skyFill): the zenith hue scaled so its brightest channel is `strength`,
- * weighted 1 - fillFactorAt so it hands over to the dusk and night shadow fill.
+ * Day sky fill (env.skyFill): the zenith hue scaled so its brightest channel is `strength`, only
+ * with the sun high (smoothstep(0.4, 0.65, e)): the low sun of the sunset views keeps its backlit
+ * walls dark and is left as it was.
  */
 export function skyFillAt(
   sunElevation: number,
@@ -82,7 +83,8 @@ export function skyFillAt(
   strength: number,
   out: [number, number, number] = [0, 0, 0],
 ): [number, number, number] {
-  const k = ((1 - fillFactorAt(sunElevation)) * strength) / Math.max(sky[0], sky[1], sky[2], 1e-6);
+  const k =
+    (smoothstep(0.4, 0.65, sunElevation) * strength) / Math.max(sky[0], sky[1], sky[2], 1e-6);
   for (let i = 0; i < 3; i++) out[i] = (sky[i] ?? 0) * k;
   return out;
 }

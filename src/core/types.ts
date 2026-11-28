@@ -66,8 +66,8 @@ export interface Env {
   fillColor?: THREE.Color;
   /**
    * Linear day sky fill for shade: consumers multiply it by their albedo and add it. Zenith hue,
-   * brightest channel DAY_SKY_FILL by day, handing over to fillColor as the sun sinks (weight
-   * 1 - fillFactor), 0 at dusk and night. Owner: lighting (set in lighting init).
+   * brightest channel DAY_SKY_FILL with the sun high, 0 from the sunset views (sun elevation
+   * below 0.4) through the night. Owner: lighting (set in lighting init).
    */
   skyFill?: THREE.Color;
   /** Emissive brightness multiplier for signs: night 1.0, sunset 0.7, day 0.3 (palette). Owner: lighting. */
