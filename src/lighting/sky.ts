@@ -69,7 +69,9 @@ void main() {
     col += uMoonColor * (moon * 2.4 + halo) * uMoonVis * horizonMask;
   }
 
-  col = mix(col, uGround, smoothstep(0.0, -0.06, h));
+  // Below the horizon the haze and the city glow hold for a few degrees: between the ridge rings
+  // the sky shows through, and it must read as fog with a low band of light, not as dark water.
+  col = mix(col, uGround, smoothstep(-0.1, -0.4, h));
 
   gl_FragColor = vec4(col, 1.0);
   #include <tonemapping_fragment>
