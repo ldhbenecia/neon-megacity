@@ -12,6 +12,7 @@ import {
   keyLightAt,
   moonDirectionAt,
   shadowFrameFor,
+  shadowKnobs,
   shadowRequestDue,
   shouldRefreshShadow,
   sunDirectionAt,
@@ -19,7 +20,6 @@ import {
   type ShadowFrame,
 } from './sun';
 
-const SHADOW_MAP_SIZE = 2048;
 const LIGHT_DISTANCE = 2500;
 const ORIGIN_FRAME = { cx: 0, cz: 0 } as const;
 const TIME_PRESETS: readonly (readonly [label: string, timeOfDay: number])[] = [
@@ -57,12 +57,27 @@ export function init(ctx: Ctx): CityModuleInstance {
   // materials keep sampling the map; pre-compiling both variants would exceed 50 programs.
   key.castShadow = !low;
   key.shadow.intensity = 0;
-  key.shadow.mapSize.set(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
+  let shadow = shadowKnobs(env.quality);
+  key.shadow.mapSize.set(shadow.mapSize, shadow.mapSize);
   key.shadow.bias = -0.0004;
   key.shadow.radius = 1.5;
   key.shadow.camera.near = 1;
   key.shadow.camera.far = LIGHT_DISTANCE * 2;
   scene.add(key, key.target);
+  // A new map size takes a dispose and reallocation of the map (same program); the frustum fit
+  // and normal bias follow on the next shadow update.
+  const offQuality = ctx.onQuality((q) => {
+    if (low) return;
+    const next = shadowKnobs(q);
+    if (next.mapSize !== shadow.mapSize) {
+      key.shadow.map?.dispose();
+      key.shadow.map = null;
+      key.shadow.mapSize.set(next.mapSize, next.mapSize);
+      resized = true;
+    }
+    shadow = next;
+    renderer.shadowMap.needsUpdate = true;
+  });
 
   const hemi = new THREE.HemisphereLight(0xffffff, 0x000000, 0);
   hemi.name = 'hemiLight';
@@ -82,6 +97,9 @@ export function init(ctx: Ctx): CityModuleInstance {
   env.fillFactor = 0;
   const lastShadowSun = new THREE.Vector3(0, -1, 0);
   let lastShadowFrame: ShadowFrame | null = null;
+  // Set when the map size changes: the next shadow update refits the bias and redraws the map
+  // while the frustum (and the light target) stays where it is.
+  let resized = false;
   let secondsSinceShadow = 0;
   let requested = false;
   const defaultRequest = ctx.requestShadowUpdate;
@@ -96,6 +114,7 @@ export function init(ctx: Ctx): CityModuleInstance {
     const dist = camera.position.distanceTo(controls.target);
     const f = shadowFrameFor(controls.target.x, controls.target.z, dist);
     const changed =
+      resized ||
       !lastShadowFrame ||
       f.cx !== lastShadowFrame.cx ||
       f.cz !== lastShadowFrame.cz ||
@@ -108,12 +127,16 @@ export function init(ctx: Ctx): CityModuleInstance {
       sc.bottom = -f.half;
       sc.updateProjectionMatrix();
       // ~0.7 texel of normal offset kills acne on large flat roofs without peter-panning.
-      key.shadow.normalBias = ((2 * f.half) / SHADOW_MAP_SIZE) * 0.7;
+      key.shadow.normalBias = ((2 * f.half) / shadow.mapSize) * 0.7;
       lastShadowFrame = f;
+      resized = false;
     }
     secondsSinceShadow += dt;
     const sunAngle = lastShadowSun.angleTo(env.sunDirection);
-    if (asked || shouldRefreshShadow(changed, sunAngle, secondsSinceShadow, frame < 3)) {
+    if (
+      asked ||
+      shouldRefreshShadow(changed, sunAngle, secondsSinceShadow, frame < 3, shadow.minInterval)
+    ) {
       renderer.shadowMap.needsUpdate = true;
       lastShadowSun.copy(env.sunDirection);
       secondsSinceShadow = 0;
@@ -146,7 +169,11 @@ export function init(ctx: Ctx): CityModuleInstance {
 
     const kl = keyLightAt(env.sunElevation, moonDir.y);
     const sunShadow =
-      settings.shadows && kl.body === 'sun' && pal.shadows > 0.5 && env.sunElevation > 0.02;
+      settings.shadows &&
+      shadow.sunShadows &&
+      kl.body === 'sun' &&
+      pal.shadows > 0.5 &&
+      env.sunElevation > 0.02;
     const shadowIntensity = sunShadow ? 1 : 0;
     if (shadowIntensity !== key.shadow.intensity) {
       key.shadow.intensity = shadowIntensity;
@@ -222,6 +249,7 @@ export function init(ctx: Ctx): CityModuleInstance {
     },
     dispose() {
       ctx.requestShadowUpdate = defaultRequest;
+      offQuality();
       folder.destroy();
       scene.remove(key, key.target, hemi, sky.mesh);
       key.dispose();

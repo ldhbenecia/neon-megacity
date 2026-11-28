@@ -1,6 +1,7 @@
 // Ownership (ARCHITECTURE env table): `timeLocked` and `rainTarget` are ux-owned. A user scrub
 // writes `timeOfDay` only while `timeLocked` is true (the documented exception: lighting does
 // not advance it while locked). Weather buttons set `rainTarget`; atmosphere eases `rain` to it.
+import { Vector3 } from 'three';
 import { clockMinutes } from '../core/clock';
 import { parseQuery } from '../core/query';
 import type { Ctx } from '../core/types';
@@ -13,9 +14,10 @@ import {
   storage,
 } from './analytics';
 import type { Hud } from './hud';
+import { createMinimap } from './minimap';
 import type { Perf } from './perf';
 import { QUALITY_STORAGE_KEY, type UserTier } from './quality';
-import { districtViews, rigPresets } from './presets';
+import { MAJOR_KINDS, districtViewById, districtViews, rigPresets } from './presets';
 
 export interface Controls {
   update(): void;
@@ -25,9 +27,6 @@ export interface Controls {
 }
 
 const TIER_KO: Readonly<Record<string, string>> = { high: '상', medium: '중', low: '하', ci: 'CI' };
-/** Zone kinds whose chips stand out: the quarters most visitors look for first. */
-
-const MAJOR_KINDS = new Set(['megacore', 'corridor', 'nightlife', 'brick', 'oldtown']);
 
 export const RAIN_STEPS = [0, 0.35, 1] as const;
 
@@ -147,6 +146,20 @@ export function createControls(ctx: Ctx, rig: CameraRig, hud: Hud, perf: Perf): 
     }
   }
 
+  const viewDir = new Vector3();
+  const minimapCanvas = document.getElementById('minimap');
+  const minimap =
+    minimapCanvas instanceof HTMLCanvasElement
+      ? createMinimap(
+          minimapCanvas,
+          (id) => {
+            rig.goDistrict(id);
+            if (compact.matches) setPanel(false);
+          },
+          (id) => districtViewById(id) !== undefined,
+        )
+      : null;
+  if (minimap) cleanup.push(() => minimap.dispose());
   const districtRoot = document.getElementById('district-chips');
   const districtGroup = document.getElementById('district-group');
   // On a phone the long list would hide the whole city behind the panel: start folded there.
@@ -291,6 +304,10 @@ export function createControls(ctx: Ctx, rig: CameraRig, hud: Hud, perf: Perf): 
       }
     },
     update() {
+      if (minimap && panel?.hidden === false) {
+        ctx.camera.getWorldDirection(viewDir);
+        minimap.update(ctx.camera.position.x, ctx.camera.position.z, viewDir.x, viewDir.z);
+      }
       const mins = clockMinutes(env.timeOfDay);
       if (input && mins !== lastMins && !scrubbing) {
         lastMins = mins;

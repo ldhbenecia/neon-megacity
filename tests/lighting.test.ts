@@ -8,6 +8,7 @@ import {
   keyLightAt,
   moonDirectionAt,
   shadowFrameFor,
+  shadowKnobs,
   shadowRequestDue,
   shouldRefreshShadow,
   SHADOW_REFRESH,
@@ -212,5 +213,28 @@ describe('shadow redraw requests (ctx.requestShadowUpdate)', () => {
     expect(shadowRequestDue(true, true)).toBe(true);
     expect(shadowRequestDue(true, false)).toBe(false);
     expect(shadowRequestDue(false, true)).toBe(false);
+  });
+});
+
+describe('sun shadow per quality tier', () => {
+  it('halves the map on medium and low, keeps refreshing slower, turns sun shadows off on low', () => {
+    expect(shadowKnobs('high')).toEqual({
+      mapSize: 2048,
+      minInterval: SHADOW_REFRESH.minInterval,
+      sunShadows: true,
+    });
+    expect(shadowKnobs('medium')).toMatchObject({
+      mapSize: 1024,
+      minInterval: 2,
+      sunShadows: true,
+    });
+    expect(shadowKnobs('low')).toMatchObject({ mapSize: 1024, sunShadows: false });
+  });
+
+  it('a longer minimum interval holds back sun-driven refreshes but not frustum changes', () => {
+    const angle = SHADOW_REFRESH.sunEps * 2;
+    expect(shouldRefreshShadow(false, angle, 1.5, false)).toBe(true);
+    expect(shouldRefreshShadow(false, angle, 1.5, false, 2)).toBe(false);
+    expect(shouldRefreshShadow(true, 0, 0.1, false, 2)).toBe(true);
   });
 });

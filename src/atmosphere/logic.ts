@@ -242,56 +242,22 @@ export function bloomScaleFor(pixelRatio: number, tier: number): number {
   return Math.min(pixelRatio, 1) * (tier >= 1 ? 0.5 : 1);
 }
 
+/** User quality tier → atmosphere tier: high 0, medium 1, low 2 (docs/PERF.md). */
+export function userTier(quality: string): number {
+  return quality === 'medium' ? 1 : quality === 'low' ? 2 : 0;
+}
+
+/** Rain drop instances: all, half, none. */
 export function rainPoolFor(tier: number): number {
-  return tier >= 2 ? RAIN.maxDrops / 2 : RAIN.maxDrops;
+  return tier >= 2 ? 0 : tier >= 1 ? RAIN.maxDrops / 2 : RAIN.maxDrops;
 }
 
-export const QUALITY = {
-  maxTier: 2,
-  slowMs: 20,
-  fastMs: 14,
-  averageSeconds: 2,
-  // Also gives ux time to lower the DPR first.
-  downAfter: 3,
-  upAfter: 5,
-  warmup: 3,
-} as const;
-
-export interface QualityState {
-  tier: number;
-  avgMs: number;
-  slowFor: number;
-  fastFor: number;
-  age: number;
+/** Bloom blur mips drawn: 5, 4, 3. Fewer passes, same programs. */
+export function bloomMipsFor(tier: number): number {
+  return tier >= 2 ? 3 : tier >= 1 ? 4 : 5;
 }
 
-export function createQualityState(): QualityState {
-  return { tier: 0, avgMs: 16.7, slowFor: 0, fastFor: 0, age: 0 };
-}
-
-export function stepQuality(s: QualityState, dt: number): boolean {
-  if (dt <= 0) return false;
-  s.age += dt;
-  const ms = dt * 1000;
-  if (s.age < QUALITY.warmup) {
-    s.avgMs = ms;
-    return false;
-  }
-  const a = Math.min(1, dt / QUALITY.averageSeconds);
-  s.avgMs += (ms - s.avgMs) * a;
-  s.slowFor = s.avgMs > QUALITY.slowMs ? s.slowFor + dt : 0;
-  s.fastFor = s.avgMs < QUALITY.fastMs ? s.fastFor + dt : 0;
-  if (s.slowFor >= QUALITY.downAfter && s.tier < QUALITY.maxTier) {
-    s.tier++;
-    s.slowFor = 0;
-    s.fastFor = 0;
-    return true;
-  }
-  if (s.fastFor >= QUALITY.upAfter && s.tier > 0) {
-    s.tier--;
-    s.slowFor = 0;
-    s.fastFor = 0;
-    return true;
-  }
-  return false;
+/** Clouds and searchlights show below the low tier. */
+export function skyExtrasFor(tier: number): boolean {
+  return tier < 2;
 }

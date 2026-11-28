@@ -199,10 +199,17 @@ export const FLAT_GROUND = 6;
  * the hillside village (이태원·해방촌). The mountain feet stay green and empty (the terrain paints
  * forest from about this height), and no streetlight or car ends up on a slope.
  */
+/** Inside some mountain range's box (elsewhere the ground is the flat plain). */
+const onRange = (x: number, z: number): boolean =>
+  MOUNTAIN_RANGES.some((r) => x >= r.x0 && x <= r.x1 && z >= r.z0 && z <= r.z1);
+
 function buildableGround(zone: DistrictZone, x: number, z: number): boolean {
   // Off every mountain range the ground is the plain: no terrain samples needed.
-  if (!MOUNTAIN_RANGES.some((r) => x >= r.x0 && x <= r.x1 && z >= r.z0 && z <= r.z1)) return true;
-  if (zone.kind !== 'hillside' && terrainHeight(x, z) > FLAT_GROUND) return false;
+  if (!onRange(x, z)) return true;
+  const h = terrainHeight(x, z);
+  // isForest is false on flat ground (h 0): skip its slope samples there.
+  if (h <= 0) return true;
+  if (zone.kind !== 'hillside' && h > FLAT_GROUND) return false;
   return !isForest(x, z);
 }
 
@@ -231,13 +238,25 @@ function clipLine(
   const at = (t: number): Vec2 =>
     along === 'v' ? gridToWorld(zone, fixed, t) : gridToWorld(zone, t, fixed);
   const n = Math.ceil((t1 - t0) / ROAD_STEP);
+  // Across-road offset to the two edges (the grid line's normal, half the road plus 1 m).
+  const d0 = at(t0);
+  const d1 = at(t0 + 1);
+  const side = { x: -(d1.z - d0.z) * half, z: (d1.x - d0.x) * half };
+  // Edges are checked only where the centerline already stands on raised ground: on the plain
+  // (feet at most 15 % steep) a road half width away cannot reach forest or 6 m.
+  const edgesOk = (p: Vec2): boolean =>
+    buildableGround(zone, p.x, p.z) &&
+    (!onRange(p.x, p.z) ||
+      terrainHeight(p.x, p.z) <= 0.5 ||
+      (buildableGround(zone, p.x + side.x, p.z + side.z) &&
+        buildableGround(zone, p.x - side.x, p.z - side.z)));
   for (let i = 0; i <= n + 1; i++) {
     const t = t0 + i * ROAD_STEP;
     const p = at(t);
     const inside =
       i <= n &&
       zoneAt(p.x, p.z).id === zone.id &&
-      buildableGround(zone, p.x, p.z) &&
+      edgesOk(p) &&
       waterClear(p.x, p.z, half) &&
       !underLowDeck(bridges, p.x, p.z, half);
     if (inside && start === null) start = t;
@@ -572,10 +591,22 @@ function buildLots(seed: number, obstacles: Obstacles, bridges: readonly Bridge[
   const alleys: LotsResult['alleys'] = [];
   const lotHash = new GridHash();
   const accept = (o: Obb, zone: DistrictZone): boolean => {
-    for (const p of [...obbCorners(o), { x: o.x, z: o.z }]) {
+    const corners = obbCorners(o);
+    for (const p of [...corners, { x: o.x, z: o.z }]) {
       if (zoneAt(p.x, p.z).id !== zone.id) return false;
       if (!waterClear(p.x, p.z, RIVER_CLEARANCE)) return false;
       if (!buildableGround(zone, p.x, p.z)) return false;
+    }
+    // Side midpoints too (height only; corners and centre covered forest): a long lot along a
+    // mountain foot can rise between its corners.
+    if (zone.kind !== 'hillside') {
+      for (let i = 0; i < 4; i++) {
+        const a = corners[i] as Vec2;
+        const b = corners[(i + 1) % 4] as Vec2;
+        const mx = (a.x + b.x) / 2;
+        const mz = (a.z + b.z) / 2;
+        if (onRange(mx, mz) && terrainHeight(mx, mz) > FLAT_GROUND) return false;
+      }
     }
     if (obbOverlap(o, PALACE_FRONT, -1e-6)) return false;
     if (obstacles.blocked(o)) return false;
@@ -1700,12 +1731,12 @@ function buildSlots(
     for (const id of hash.query(obbBounds(probe))) {
       if (obbOverlap(footprints[id] as Obb, probe)) return false;
     }
-    // Park strips (둔치) are fine; open water, 샛강 included, and forest are not.
+    // Park strips (둔치) are fine; open water, 샛강 included, forest and the mountain feet are not.
     return (
       Math.abs(p.x) < HALF_X &&
       Math.abs(p.z) < HALF_Z &&
       surfaceHeight(p.x, p.z) > RIVER.waterY + 0.5 &&
-      !isForest(p.x, p.z)
+      buildableGround(zoneAt(p.x, p.z), p.x, p.z)
     );
   };
   const add = (kind: SlotKind, p: Vec2, rotY: number): void => {

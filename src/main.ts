@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { CITY, LAYOUT } from './city/layout';
 import { postEnabled } from './core/gl';
+import { awaitPrebuilt } from './core/prebuilt';
 import { NIGHT } from './core/palette';
 import { CAMERA_FOV, CAMERA_LIMITS, cameraFar, parseQuery } from './core/query';
 import type { CityModule, CityModuleInstance, CompileHook, Ctx, Quality } from './core/types';
@@ -15,6 +16,9 @@ import { startAnalytics, track } from './ux/analytics';
 import { createGui } from './ux/gui';
 import { createLoader, initUx, nextFrame, parseUxQuery } from './ux/index';
 import { QUALITY_STORAGE_KEY, storedTier, tierFromRenderer } from './ux/quality';
+
+/** Without ?time= the visit opens just before sunset (18:14) and runs into the night. */
+const START_TIME = 0.76;
 
 const BOOT_WEIGHTS = { setup: 5, compile: 15, firstFrame: 3 } as const;
 
@@ -86,6 +90,8 @@ async function boot(): Promise<void> {
   // on the driver: a ~500 ms stall the first time the timeline leaves noon (M4, Metal). Kept in
   // dev, under automation (e2e, screenshots) and with ?debug, so shader errors stay diagnosable.
   renderer.debug.checkShaderErrors = import.meta.env.DEV || navigator.webdriver || debug;
+  // Tests and scripts find the city by this id (the control panel has its own minimap canvas).
+  renderer.domElement.id = 'city-canvas';
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
@@ -133,7 +139,7 @@ async function boot(): Promise<void> {
     LAYOUT,
     debug: { nan: uxQuery.nan },
     env: {
-      timeOfDay: query.time ?? 0.9,
+      timeOfDay: query.time ?? START_TIME,
       timeLocked: query.time !== undefined,
       quality,
       sunDirection: new THREE.Vector3(0, -1, 0),
@@ -185,6 +191,8 @@ async function boot(): Promise<void> {
   for (const [name, weight, mod] of MODULES) {
     loader.stage(name, weight);
     await nextFrame();
+    // Data the city worker builds for this module (terrain geometry), if it is still on its way.
+    await awaitPrebuilt(name);
     try {
       modules.push([name, mod.init(ctx)]);
     } catch (err) {

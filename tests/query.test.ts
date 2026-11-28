@@ -1,9 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { CITY, LAYOUT, buildingContaining, surfaceHeight } from '../src/city/layout';
+import {
+  CITY,
+  LAYOUT,
+  buildingContaining,
+  riverCenterDistance,
+  riverWidthAt,
+  surfaceHeight,
+} from '../src/city/layout';
 import { pointSegmentDistance } from '../src/city/math';
 import { PerspectiveCamera, Vector3 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import {
+  CAMERA_FOV,
   CAMERA_LIMITS,
   CAMERA_PRESETS,
   type CameraPreset,
@@ -11,6 +19,8 @@ import {
   parseQuery,
   streetAnchors,
   streetFallback,
+  nearBlockers,
+  streetFrontage,
   streetPose,
   streetPreset,
   type StreetAnchor,
@@ -140,6 +150,33 @@ describe('CAMERA_PRESETS', () => {
     const { position: p, target: t } = CAMERA_PRESETS.street;
     const polar = Math.atan2(Math.hypot(t[0] - p[0], t[2] - p[2]), p[1] - t[1]);
     expect(polar).toBeLessThan(CAMERA_LIMITS.maxPolarAngle);
+  });
+
+  it('keeps trees and buildings out of the near view of the framed presets', () => {
+    for (const name of ['banpo', 'jamsil', 'teheran', 'hongdae'] as const) {
+      expect(nearBlockers(CAMERA_PRESETS[name]), name).toBe(0);
+    }
+  });
+
+  it('fits the whole landmark tower in the frame of the river presets', () => {
+    const half = (CAMERA_FOV / 2) * (Math.PI / 180);
+    for (const [name, id] of [
+      ['banpo', 'yongsan-apex'],
+      ['jamsil', 'jamsil-blade'],
+    ] as const) {
+      const { position: p, target: t } = CAMERA_PRESETS[name];
+      const l = LAYOUT.landmarks.find((m) => m.id === id)!;
+      const pitch = Math.atan2(t[1] - p[1], Math.hypot(t[0] - p[0], t[2] - p[2]));
+      const top = Math.atan2(l.h - p[1], Math.hypot(l.x - p[0], l.z - p[2]));
+      expect(top - pitch, name).toBeLessThan(half);
+      // Over open water, not behind the bank's buildings.
+      const [x, , z] = p;
+      expect(riverCenterDistance(x, z), name).toBeLessThan(riverWidthAt(x) / 2);
+    }
+  });
+
+  it('frames the street preset between buildings on both sides', () => {
+    expect(streetFrontage(CAMERA_PRESETS.hongdae)).toBeGreaterThan(0);
   });
 
   it('keeps the topdown preset inside maxDistance', () => {
