@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { createRng } from '../core/random';
 import { MOUNTAIN_RANGES, terrainHeight } from '../city/layout';
-import { SIDEWALK } from '../city/generate';
+import { SIDEWALK } from '../city/constants';
 import { toLocal } from '../city/math';
 import { GridHash, segmentBounds, type Bounds } from '../city/spatial';
 import type { Block, BuildingSpec, Layout, Road } from '../city/types';

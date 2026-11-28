@@ -13,6 +13,8 @@ import { clamp, fitPolar, type Pose } from './motion';
 export interface RigPreset extends Pose {
   key: number;
   name: string;
+  /** Stable `?cam=` key; statistics use it so renaming a preset does not split its counts. */
+  cam: CameraPreset;
 }
 
 type Tuple = readonly [number, number, number];
@@ -43,7 +45,7 @@ export function safePose(L: Layout, pose: Pose): Pose {
 
 /** SEOUL.md 6: number keys 1-8 (cameraPreset names in brackets). */
 const SEOUL_PRESETS: readonly [string, CameraPreset][] = [
-  ['반포대교 남단', 'banpo'],
+  ['한강과 용산', 'banpo'],
   ['여의도 상공', 'yeouido'],
   ['남산에서', 'namsan'],
   ['테헤란로', 'teheran'],
@@ -57,6 +59,7 @@ function build(L: Layout): RigPreset[] {
   return SEOUL_PRESETS.map(([name, cam], i) => ({
     key: i + 1,
     name,
+    cam,
     ...safePose(L, camPose(cam)),
   }));
 }

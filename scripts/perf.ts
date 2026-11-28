@@ -14,7 +14,7 @@ import { checkScreen, lightAt, type ScreenCheck } from './screen';
 
 /** Camera views: number-key presets (src/ux/presets.ts) and ?cam= poses (src/core/query.ts). */
 const VIEWS = [
-  ['preset=1', '1 반포대교 남단'],
+  ['preset=1', '1 한강과 용산'],
   ['preset=2', '2 여의도 상공'],
   ['preset=6', '6 잠실 스카이라인'],
   ['preset=7', '7 홍대 골목'],

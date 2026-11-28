@@ -1,3 +1,4 @@
+import { generateLayout } from '../src/city/generate';
 import { describe, expect, it } from 'vitest';
 import {
   CITY,
@@ -35,7 +36,6 @@ import {
   buildingsInAabb,
   deckHeightAt,
   districtAt,
-  generateLayout,
   highwaySamples,
   raycastBuildings,
   ridgeHeight,
