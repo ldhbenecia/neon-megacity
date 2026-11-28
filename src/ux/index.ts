@@ -3,6 +3,7 @@ import type { Ctx, Quality } from '../core/types';
 import { createCameraRig, type CameraRig, type RigDebug } from './cameraRig';
 import { createControls } from './controls';
 import { createHud, type Hud } from './hud';
+import { createZoneLabels } from './zoneLabels';
 import { reducedMotion } from './loader';
 import type { UserTier } from './quality';
 import { createPerf, estimateMemory, type FrameStats, type Perf } from './perf';
@@ -93,6 +94,11 @@ export function initUx(ctx: Ctx, opts: UxOptions): Ux {
     emitQuality: opts.emitQuality,
   });
   const controls = createControls(ctx, rig, hud, perf);
+  const labelsRoot = document.getElementById('zone-labels');
+  const hudRoot = document.getElementById('hud');
+  const zoneLabels = labelsRoot
+    ? createZoneLabels(labelsRoot, ctx.renderer.domElement, (id) => rig.goDistrict(id))
+    : null;
 
   // ?stats only: frames rendered with the camera inside a building volume (tells a collision
   // miss apart from a rendering fault when the screen goes black).
@@ -158,6 +164,12 @@ export function initUx(ctx: Ctx, opts: UxOptions): Ux {
     afterUpdate(dt) {
       hud.update(ctx.env.timeOfDay);
       controls.update();
+      if (zoneLabels) {
+        const mode = hudRoot?.dataset.mode;
+        const shown =
+          !hudRoot?.classList.contains('is-hidden') && mode !== 'fly' && mode !== 'cinematic';
+        zoneLabels.update(ctx.camera, shown);
+      }
       districtFor -= dt;
       if (districtFor <= 0) {
         districtFor = 0.5;
@@ -189,6 +201,7 @@ export function initUx(ctx: Ctx, opts: UxOptions): Ux {
       perf.frameEnd(dt);
     },
     dispose() {
+      zoneLabels?.dispose();
       controls.dispose();
       rig.dispose();
       hud.dispose();
