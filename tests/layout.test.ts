@@ -26,6 +26,8 @@ import {
   allTiers,
   buildingContaining,
   buildingTop,
+  roadSurfaceY,
+  ROAD_Y,
   buildingVolumes,
   bridgeDeckY,
   bandEdgeZ,
@@ -1033,6 +1035,52 @@ describe('layout v3: mountain feet and the river', () => {
           expect(waterSignedDistance(x, z), `${r.ids.join('+')} ${x},${z}`).toBeGreaterThanOrEqual(
             88,
           );
+        }
+      }
+    }
+  });
+});
+
+describe('layout v3: road surface', () => {
+  it('is the ground plus ROAD_Y on every street (ROAD_Y on flat ground)', () => {
+    expect(roadSurfaceY(0, 2000)).toBe(ROAD_Y);
+    let raised = 0;
+    for (const r of LAYOUT.roads) {
+      const len = Math.hypot(r.b.x - r.a.x, r.b.z - r.a.z) || 1;
+      const nx = (-(r.b.z - r.a.z) / len) * (r.width / 2);
+      const nz = ((r.b.x - r.a.x) / len) * (r.width / 2);
+      for (let t = 0; t <= 1; t += 0.125) {
+        for (const k of [0, 1, -1]) {
+          const x = r.a.x + (r.b.x - r.a.x) * t + nx * k;
+          const z = r.a.z + (r.b.z - r.a.z) * t + nz * k;
+          const h = terrainHeight(x, z);
+          const y = roadSurfaceY(x, z);
+          // ROAD_Y above the ground (exactly ROAD_Y on flat ground), the same value as neon's
+          // surfaceHeight + ROAD_Y off the river channel.
+          expect(y - h, `road ${r.id}`).toBeCloseTo(ROAD_Y, 9);
+          if (h > 0) {
+            raised++;
+            expect(y, `road ${r.id}`).toBeCloseTo(surfaceHeight(x, z) + ROAD_Y, 9);
+          }
+        }
+      }
+    }
+    expect(raised).toBeGreaterThan(0);
+  });
+
+  it('is continuous: no step at the edge of flat ground, at crossings or on slopes', () => {
+    // Lipschitz check on a fine grid over the hillside village and 와우산's foot (홍대).
+    for (const [x0, z0] of [
+      [-1120, -820],
+      [-60, -260],
+    ] as const) {
+      for (let x = x0; x < x0 + 80; x += 2) {
+        for (let z = z0; z < z0 + 80; z += 2) {
+          const y = roadSurfaceY(x, z);
+          const dx = Math.abs(roadSurfaceY(x + 0.25, z) - y);
+          const dz = Math.abs(roadSurfaceY(x, z + 0.25) - y);
+          // Terrain slopes stay under 100 % (mountain slopes test): a 0.25 m step rises < 0.25 m.
+          expect(Math.max(dx, dz), `${x},${z}`).toBeLessThan(0.25 + 1e-6);
         }
       }
     }

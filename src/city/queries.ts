@@ -12,6 +12,7 @@ import {
   type Obb,
 } from './math';
 import { bridgeDeckY, highwaySamples } from './highways';
+import { terrainHeight } from './river';
 import { GridHash, boundsOverlap, segmentBounds, type Bounds } from './spatial';
 import type { BuildingFace, BuildingSpec, Layout, Ridge, Side, Tier, Vec2, Vec3 } from './types';
 
@@ -167,6 +168,20 @@ export function buildingVolumes(b: BuildingSpec): Tier[] {
 }
 
 /** World y of the highest point (spire included). */
+/** Street surface above the ground (m): just above it so it never z-fights the ground. */
+export const ROAD_Y = 0.03;
+
+/**
+ * Height of the street surface at (x, z): the terrain plus ROAD_Y (ROAD_Y on flat ground).
+ * Continuous everywhere, so crossings and slopes meet without steps. The single source for
+ * roads, sidewalks and markings (buildings) and for traffic and street furniture (neon, which
+ * uses surfaceHeight + ROAD_Y: the same value off the river channel). Raised stretches must be
+ * drawn finely enough (buildings splits them every 3 m) to follow the ground mesh.
+ */
+export function roadSurfaceY(x: number, z: number): number {
+  return terrainHeight(x, z) + ROAD_Y;
+}
+
 export function buildingTop(b: BuildingSpec): number {
   return b.baseY + b.h + b.spireH;
 }

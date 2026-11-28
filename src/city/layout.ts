@@ -101,6 +101,8 @@ export {
   raycastBuildings,
   buildingFaces,
   buildingTop,
+  roadSurfaceY,
+  ROAD_Y,
   allTiers,
   buildingVolumes,
   deckHeightAt,
