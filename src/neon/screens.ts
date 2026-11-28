@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { NEON } from '../core/palette';
 import type { Catalog } from './catalog';
-import { COMMON_PARS, EMISSIVE_TAIL, neonMaterial, type NeonUniforms } from './glsl';
+import { COMMON_PARS, EMISSIVE_TAIL, PANEL_ALBEDO, neonMaterial, type NeonUniforms } from './glsl';
 import { setInstanceAttributes, toInstanced } from './geom';
 import { GlowMode, glowMaterial } from './glow';
 import type { Holo, Ring, Screen } from './placement';
@@ -41,6 +41,7 @@ export function buildScreens(
       uHueA: { value: lin(NEON.neonCyan.hex) },
       uHueB: { value: lin(NEON.neonOrange.hex) },
       uHueC: { value: lin(NEON.neonMagenta.hex) },
+      uSkyFill: shared.uSkyFill,
     },
     vertexShader: /* glsl */ `
       ${COMMON_PARS}
@@ -59,6 +60,8 @@ export function buildScreens(
     `,
     fragmentShader: /* glsl */ `
       ${COMMON_PARS}
+      #define PANEL_ALBEDO ${PANEL_ALBEDO.toFixed(3)}
+      uniform vec3 uSkyFill;
       uniform sampler2D uAtlas;
       uniform vec3 uHueA; uniform vec3 uHueB; uniform vec3 uHueC;
       varying vec2 vUv; varying vec2 vSize; varying vec4 vRect; varying vec4 vLogo; varying vec4 vParam; varying float vPower;
@@ -177,6 +180,9 @@ export function buildScreens(
         float scan = 0.85 + 0.15 * sin(uv.y * vSize.y * 1.3 - t * 2.0) * (1.0 - smoothstep(0.8, 2.5, scanW));
         float bright = mix(1.5, 2.2, fract(seed * 13.0));
         col *= mix(0.45, 1.0, mask) * scan * bright * uScreenGain * vPower;
+        // By day the dark panel takes the sky fill like the walls around it, so a dark frame reads as
+        // an unlit LED panel with its cell grid instead of a black slab.
+        col += uSkyFill * PANEL_ALBEDO * mix(0.55, 1.0, mask);
         float edge = min(min(vUv.x, 1.0 - vUv.x) * vSize.x, min(vUv.y, 1.0 - vUv.y) * vSize.y);
         col *= smoothstep(0.2, 0.5, edge);
         gl_FragColor = vec4(col, 1.0);
