@@ -94,8 +94,8 @@ function haloList(P: Placement): HaloInstance[] {
       x: c.x,
       y: c.roofY + c.poleH + c.h * 0.6,
       z: c.z,
-      size: c.h * 0.35,
-      color: signColor('neonRed', 0.7),
+      size: c.h * 0.45,
+      color: signColor('neonRed', 1),
       zone: c.zone,
     });
   }

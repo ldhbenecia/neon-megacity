@@ -17,9 +17,6 @@ import { createGui } from './ux/gui';
 import { createLoader, initUx, nextFrame, parseUxQuery } from './ux/index';
 import { QUALITY_STORAGE_KEY, storedTier, tierFromRenderer } from './ux/quality';
 
-/** Without ?time= the visit opens just before sunset (18:14) and runs into the night. */
-const START_TIME = 0.76;
-
 const BOOT_WEIGHTS = { setup: 5, compile: 15, firstFrame: 3 } as const;
 
 const MODULES: readonly (readonly [name: string, weight: number, module: CityModule])[] = [
@@ -139,7 +136,7 @@ async function boot(): Promise<void> {
     LAYOUT,
     debug: { nan: uxQuery.nan },
     env: {
-      timeOfDay: query.time ?? START_TIME,
+      timeOfDay: query.time ?? 0.9,
       timeLocked: query.time !== undefined,
       quality,
       sunDirection: new THREE.Vector3(0, -1, 0),
