@@ -10,6 +10,8 @@ export interface FacadeUniforms {
   uNight: { value: number };
   /** env.fillColor: linear HDR shadow fill, env.fillFactor already applied. */
   uFillColor: { value: THREE.Color };
+  /** env.skyFill: linear day sky fill, multiplied by albedo (0 at dusk and night). */
+  uSkyFill: { value: THREE.Color };
   uPower: { value: number };
   uTime: { value: number };
   uDigits: { value: THREE.Texture };
@@ -63,6 +65,7 @@ varying vec4 vInfo;
 uniform float uLitRatio;
 uniform float uNight;
 uniform vec3 uFillColor;
+uniform vec3 uSkyFill;
 uniform float uPower;
 uniform float uTime;
 uniform sampler2D uDigits;
@@ -418,6 +421,9 @@ const FRAG_MAIN = /* glsl */ `
     // Sky fill follows lighting's curve; the bounce and brick grazing imitate street lamps, so
     // they follow the night factor like the lamps do.
     fEmit += uFillColor * (1.0 - 0.6 * brick) + ${vec3(NIGHT_FILL.bounce)} * bounce * uNight;
+    // Day sky fill on every face (sunlit ones gain only 1-2 %): shaded facades read as material
+    // up close instead of black.
+    fEmit += fAlbedo * uSkyFill;
     // Seongsu brick: warm tungsten grazing from street lamps, scaled by albedo so the red and the
     // mortar courses read at night; glass is already dark here, so windows stay unlit.
     float graze = ${glsl(BRICK_GRAZE.floor)} + exp(-max(f.y + 4.0, 0.0) / ${glsl(BRICK_GRAZE.falloff)});
@@ -431,6 +437,7 @@ export function createFacadeUniforms(): FacadeUniforms {
     uLitRatio: { value: 0.32 },
     uNight: { value: 1 },
     uFillColor: { value: new THREE.Color().fromArray(NIGHT_FILL_AMBIENT) },
+    uSkyFill: { value: new THREE.Color(0, 0, 0) },
     uPower: { value: 1 },
     uTime: { value: 0 },
     uDigits: { value: digitAtlas() },
@@ -489,7 +496,7 @@ export function createFacadeMaterial(
       );
   };
   material.customProgramCacheKey = () =>
-    interior ? 'hangang-facade-near-v8' : 'hangang-facade-v8';
+    interior ? 'hangang-facade-near-v9' : 'hangang-facade-v9';
   material.userData.uLitRatio = uniforms.uLitRatio;
   return material;
 }
