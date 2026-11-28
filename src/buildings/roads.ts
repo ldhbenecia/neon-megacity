@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { createRng } from '../core/random';
-import { terrainHeight } from '../city/layout';
-import { SIDEWALK } from '../city/generate';
+import { MOUNTAIN_RANGES, terrainHeight } from '../city/layout';
+import { SIDEWALK } from '../city/constants';
 import { toLocal } from '../city/math';
 import { GridHash, segmentBounds, type Bounds } from '../city/spatial';
 import type { Block, BuildingSpec, Layout, Road } from '../city/types';
@@ -46,8 +46,80 @@ class FlatBuilder {
 
 const isHill = (r: Road): boolean => r.district === 'hillside';
 
+/** Ground sample spacing for raised roads and slabs (m). */
+export const TERRAIN_STEP = 3;
+/** Sidewalk slab sample spacing: the slab top stands 0.15 m clear, so coarser is fine (m). */
+const SLAB_STEP = 6;
+/** Largest gap between a straight piece and the ground samples it spans (m). */
+const TERRAIN_TOL = 0.015;
+
+/**
+ * Indices of equally spaced height samples to keep so that straight pieces between kept samples
+ * stay within TERRAIN_TOL of every dropped one: flat or evenly sloped runs become one piece.
+ */
+export function terrainBreaks(h: readonly number[]): number[] {
+  const out = [0];
+  let i = 0;
+  while (i < h.length - 1) {
+    let j = i + 1;
+    while (j + 1 < h.length) {
+      const k = j + 1;
+      const hi = h[i] as number;
+      const hk = h[k] as number;
+      let ok = true;
+      for (let m = i + 1; m < k; m++) {
+        if (Math.abs(hi + ((hk - hi) * (m - i)) / (k - i) - (h[m] as number)) > TERRAIN_TOL) {
+          ok = false;
+          break;
+        }
+      }
+      if (!ok) break;
+      j = k;
+    }
+    out.push(j);
+    i = j;
+  }
+  return out;
+}
+
+/** Ground is 0 outside every range box, so most city roads skip sampling entirely. */
+function nearRange(x0: number, z0: number, x1: number, z1: number): boolean {
+  return MOUNTAIN_RANGES.some((m) => x1 >= m.x0 && x0 <= m.x1 && z1 >= m.z0 && z0 <= m.z1);
+}
+
+/** Highest ground along a segment, sampled every TERRAIN_STEP. */
+function maxTerrainAlong(ax: number, az: number, bx: number, bz: number): number {
+  if (!nearRange(Math.min(ax, bx), Math.min(az, bz), Math.max(ax, bx), Math.max(az, bz))) return 0;
+  const n = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / TERRAIN_STEP));
+  let m = 0;
+  for (let i = 0; i <= n; i++)
+    m = Math.max(m, terrainHeight(ax + ((bx - ax) * i) / n, az + ((bz - az) * i) / n));
+  return m;
+}
+
+const raisedCache = new WeakMap<Road, boolean>();
+/** Hillside roads and city roads crossing a mountain foot follow the ground. */
+function raised(r: Road): boolean {
+  let v = raisedCache.get(r);
+  if (v === undefined) {
+    // Both edges, not just the centre line: a road can brush a mountain foot with one side.
+    const len = Math.hypot(r.b.x - r.a.x, r.b.z - r.a.z) || 1;
+    const ox = (-(r.b.z - r.a.z) / len) * (r.width / 2);
+    const oz = ((r.b.x - r.a.x) / len) * (r.width / 2);
+    v =
+      isHill(r) ||
+      maxTerrainAlong(r.a.x + ox, r.a.z + oz, r.b.x + ox, r.b.z + oz) > 0 ||
+      maxTerrainAlong(r.a.x - ox, r.a.z - oz, r.b.x - ox, r.b.z - oz) > 0;
+    raisedCache.set(r, v);
+  }
+  return v;
+}
+
+// City roads stay at ROAD_Y above the ground, so they meet flat roads exactly where the ground is 0
+// and match the height neon uses for traffic and decals (surfaceHeight + roadY).
 function roadHeight(r: Road, x: number, z: number): number {
-  return isHill(r) ? terrainHeight(x, z) + 0.08 : ROAD_Y;
+  if (isHill(r)) return terrainHeight(x, z) + 0.08;
+  return raised(r) ? terrainHeight(x, z) + ROAD_Y : ROAD_Y;
 }
 
 function crossT(a: Road['a'], b: Road['a'], c: Road['a'], d: Road['a']): number | null {
@@ -97,7 +169,20 @@ function strip(
     const z = r.a.z + dz * s + pz * l;
     return [x, roadHeight(r, x, z) + lift, z];
   };
-  B.quad([P(s0, l1), P(s1, l1), P(s1, l0), P(s0, l0)], hex);
+  const n = raised(r) ? Math.max(1, Math.ceil((s1 - s0) / TERRAIN_STEP)) : 1;
+  const at = (i: number): number => s0 + ((s1 - s0) * i) / n;
+  let keep = [0, n];
+  if (n > 1) {
+    const lc = (l0 + l1) / 2;
+    const h: number[] = [];
+    for (let i = 0; i <= n; i++) h.push(P(at(i), lc)[1]);
+    keep = terrainBreaks(h);
+  }
+  for (let i = 1; i < keep.length; i++) {
+    const a = at(keep[i - 1] as number);
+    const b = at(keep[i] as number);
+    B.quad([P(a, l1), P(b, l1), P(b, l0), P(a, l0)], hex);
+  }
 }
 
 export function buildRoads(L: Layout): THREE.BufferGeometry {
@@ -111,10 +196,8 @@ export function buildRoads(L: Layout): THREE.BufferGeometry {
     const len = Math.hypot(r.b.x - r.a.x, r.b.z - r.a.z);
     if (len < 0.5) continue;
     const hw = r.width / 2;
-    const step = isHill(r) ? 6 : len;
     const color = r.kind === 'alley' ? ROAD.alley : ROAD.asphalt;
-    for (let s = 0; s < len - 1e-6; s += step)
-      strip(B, r, s, Math.min(len, s + step), -hw, hw, 0, color);
+    strip(B, r, 0, len, -hw, hw, 0, color);
     if (r.kind === 'alley' || isHill(r)) continue;
 
     const crossings: { t: number; half: number }[] = [];
@@ -233,25 +316,74 @@ function slab(
 ): void {
   const c = Math.cos(block.rotY);
   const s = Math.sin(block.rotY);
-  const W = (lx: number, lz: number, y: number): [number, number, number] => [
-    block.x + c * lx + s * lz,
-    y,
-    block.z - s * lx + c * lz,
+  const wx = (lx: number, lz: number): number => block.x + c * lx + s * lz;
+  const wz = (lx: number, lz: number): number => block.z - s * lx + c * lz;
+  const corners: [number, number][] = [
+    [r.x0, r.z1],
+    [r.x1, r.z1],
+    [r.x1, r.z0],
+    [r.x0, r.z0],
   ];
+  let up = 0;
+  for (let i = 0; i < 4; i++) {
+    const [ax, az] = corners[i] as [number, number];
+    const [bx, bz] = corners[(i + 1) % 4] as [number, number];
+    up = Math.max(up, maxTerrainAlong(wx(ax, az), wz(ax, az), wx(bx, bz), wz(bx, bz)));
+  }
+  up = Math.max(up, terrainHeight(block.x, block.z));
+  // Flat ground keeps one quad. On a mountain foot the slab is a grid whose columns and rows break
+  // only where some row or column of ground samples bends, so it has no T-junction cracks.
+  const ground = up > 0 ? (x: number, z: number): number => terrainHeight(x, z) : (): number => 0;
+  const nx = up > 0 ? Math.max(1, Math.ceil((r.x1 - r.x0) / SLAB_STEP)) : 1;
+  const nz = up > 0 ? Math.max(1, Math.ceil((r.z1 - r.z0) / SLAB_STEP)) : 1;
+  const lxAt = (i: number): number => r.x0 + ((r.x1 - r.x0) * i) / nx;
+  const lzAt = (k: number): number => r.z0 + ((r.z1 - r.z0) * k) / nz;
+  const H: number[][] = [];
+  for (let k = 0; k <= nz; k++) {
+    const row: number[] = [];
+    for (let i = 0; i <= nx; i++) {
+      const lx = lxAt(i);
+      const lz = lzAt(k);
+      row.push(ground(wx(lx, lz), wz(lx, lz)));
+    }
+    H.push(row);
+  }
+  const xs = new Set<number>();
+  const zs = new Set<number>();
+  for (const row of H) for (const i of terrainBreaks(row)) xs.add(i);
+  for (let i = 0; i <= nx; i++)
+    for (const k of terrainBreaks(H.map((row) => row[i] as number))) zs.add(k);
+  const xi = [...xs].sort((a, b) => a - b);
+  const zi = [...zs].sort((a, b) => a - b);
   const y = SIDEWALK_H;
-  B.quad([W(r.x0, r.z1, y), W(r.x1, r.z1, y), W(r.x1, r.z0, y), W(r.x0, r.z0, y)], ROAD.pavement);
-  const edges: [number, number, number, number][] = [
-    [r.x0, r.z1, r.x1, r.z1],
-    [r.x1, r.z1, r.x1, r.z0],
-    [r.x1, r.z0, r.x0, r.z0],
-    [r.x0, r.z0, r.x0, r.z1],
+  const V = (i: number, k: number, dy: number): [number, number, number] => {
+    const lx = lxAt(i);
+    const lz = lzAt(k);
+    return [wx(lx, lz), ((H[k] as number[])[i] as number) + dy, wz(lx, lz)];
+  };
+  for (let a = 1; a < xi.length; a++) {
+    for (let b = 1; b < zi.length; b++) {
+      const i0 = xi[a - 1] as number;
+      const i1 = xi[a] as number;
+      const k0 = zi[b - 1] as number;
+      const k1 = zi[b] as number;
+      B.quad([V(i0, k1, y), V(i1, k1, y), V(i1, k0, y), V(i0, k0, y)], ROAD.pavement);
+    }
+  }
+  // Curbs along the four edges, broken where the top surface is.
+  const edges: { pts: [number, number][]; n: [number, number] }[] = [
+    { pts: xi.map((i) => [i, nz]), n: [0, 1] },
+    { pts: [...zi].reverse().map((k) => [nx, k]), n: [1, 0] },
+    { pts: [...xi].reverse().map((i) => [i, 0]), n: [0, -1] },
+    { pts: zi.map((k) => [0, k]), n: [-1, 0] },
   ];
-  for (const [ax, az, bx, bz] of edges) {
-    const a0 = W(ax, az, 0);
-    const b0 = W(bx, bz, 0);
-    const len = Math.hypot(b0[0] - a0[0], b0[2] - a0[2]);
-    const n: [number, number, number] = [-(b0[2] - a0[2]) / len, 0, (b0[0] - a0[0]) / len];
-    B.quad([a0, b0, W(bx, bz, y), W(ax, az, y)], ROAD.curb, n);
+  for (const e of edges) {
+    const n: [number, number, number] = [c * e.n[0] + s * e.n[1], 0, -s * e.n[0] + c * e.n[1]];
+    for (let j = 1; j < e.pts.length; j++) {
+      const [ia, ka] = e.pts[j - 1] as [number, number];
+      const [ib, kb] = e.pts[j] as [number, number];
+      B.quad([V(ia, ka, 0), V(ib, kb, 0), V(ib, kb, y), V(ia, ka, y)], ROAD.curb, n);
+    }
   }
 }
 

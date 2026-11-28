@@ -173,6 +173,11 @@ export function shadowFrameFor(
   };
 }
 
+/** A pending ctx.requestShadowUpdate() redraws on the next frame, but only while sun shadows show. */
+export function shadowRequestDue(requested: boolean, sunShadows: boolean): boolean {
+  return requested && sunShadows;
+}
+
 /**
  * Sun shadow per user quality tier (docs/PERF.md). Only the map size, the refresh interval and
  * whether sun shadows show change: castShadow stays, so no program variant changes at runtime.

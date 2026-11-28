@@ -9,6 +9,7 @@ import {
   moonDirectionAt,
   shadowFrameFor,
   shadowKnobs,
+  shadowRequestDue,
   shouldRefreshShadow,
   SHADOW_REFRESH,
   sunDirectionAt,
@@ -204,6 +205,14 @@ describe('shadow fill (env.fillFactor / fillColor)', () => {
     expect(Math.max(...dusk)).toBeCloseTo(0.005 * k, 6);
     expect(dusk[2]).toBeGreaterThan(dusk[1]);
     expect(fillColorAt(0.8, navy, floor)).toEqual([0, 0, 0]);
+  });
+});
+
+describe('shadow redraw requests (ctx.requestShadowUpdate)', () => {
+  it('redraw on the next frame while sun shadows show, and never at night or on low', () => {
+    expect(shadowRequestDue(true, true)).toBe(true);
+    expect(shadowRequestDue(true, false)).toBe(false);
+    expect(shadowRequestDue(false, true)).toBe(false);
   });
 });
 

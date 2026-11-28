@@ -189,10 +189,8 @@ export function init(ctx: Ctx): CityModuleInstance {
   info['tris LOD2'] = triangles[1] ?? 0;
 
   let lod0Count = 0;
-  // Lighting keeps shadowMap.autoUpdate off: casters that appear or vanish must ask for a redraw.
-  const shadowsChanged = (): void => {
-    ctx.renderer.shadowMap.needsUpdate = true;
-  };
+  // Casters that appear or vanish ask lighting to redraw the shadow map.
+  const shadowsChanged = (): void => ctx.requestShadowUpdate();
   const attachLod0 = (c: ChunkLod, g: THREE.BufferGeometry | null): void => {
     const obj = makeMesh(g, 0);
     obj.visible = false;

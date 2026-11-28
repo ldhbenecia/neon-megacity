@@ -7,9 +7,9 @@ import { noise2, ridged2 } from './noise';
 import { clamp, closestSegmentT, pointInPolygon, pointSegmentDistance, smoothstep } from './math';
 import type { Island, Mountain, River, SideChannel, Vec2 } from './types';
 
-/** Map half extents (m). The map spans x ±HALF_X, z ±HALF_Z. */
-export const HALF_X = 2000;
-export const HALF_Z = 1300;
+import { HALF_X, HALF_Z } from './constants';
+
+export { HALF_X, HALF_Z };
 
 /**
  * Control points: x, z, bank-to-bank width, park width (each side). Bridge rows use the

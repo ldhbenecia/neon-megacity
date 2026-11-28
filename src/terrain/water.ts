@@ -77,6 +77,27 @@ const WATER_LIGHT = /* glsl */ `
   float peak = max(max(ds.r, ds.g), max(ds.b, 1e-4));
   reflectedLight.directSpecular = ds * mix(1.0, min(1.0, 0.03 / peak), uNight);
   reflectedLight.indirectSpecular *= mix(1.0, 2.0, uNight);
+  #ifdef ENVMAP_TYPE_PMREM
+  {
+    // Night city light seen from above: the mirror ray, laid down to the panels' elevation.
+    vec3 rv = transformDirectionByInverseViewMatrix(reflect(-geometryViewDir, geometryNormal), viewMatrix);
+    vec3 look = transformDirectionByInverseViewMatrix(-geometryViewDir, viewMatrix);
+    // Elevation pinned at most 0.22 rad (sin) and the heading rebuilt, so a ray straight up works.
+    float h = clamp(rv.y, 0.0, 0.22);
+    float lh = length(rv.xz);
+    vec2 d = lh > 1e-4 ? rv.xz / lh : vec2(1.0, 0.0);
+    vec3 flatRay = vec3(d.x * sqrt(1.0 - h * h), h, d.y * sqrt(1.0 - h * h));
+    // Blurred: ripples scatter the ray, a sharp sample mostly hits sky between panels.
+    vec3 city = textureLod(envMap, envMapRotation * flatRay, roughnessToMip(0.3)).rgb * envMapIntensity;
+    // Only for cameras looking steeply down from well above the water.
+    float steep = smoothstep(0.3, 0.85, -look.y) * smoothstep(60.0, 250.0, cameraPosition.y);
+    // Faded with horizontal distance, where calm far ripples would lock the ray onto one panel.
+    float near = 1.0 - smoothstep(1400.0, 2600.0, length(look.xz) * length(vViewPosition));
+    // Schlick Fresnel for water (F0 0.02), lifted so the streaks read from above.
+    float fres = 0.02 + 0.98 * pow(max(1.0 - clamp(-look.y, 0.0, 1.0), 0.0), 5.0);
+    reflectedLight.indirectSpecular += city * steep * near * uNight * (0.6 + 8.0 * fres);
+  }
+  #endif
 }
 `;
 
