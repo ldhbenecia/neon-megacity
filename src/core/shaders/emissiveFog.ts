@@ -161,8 +161,11 @@ export function emissiveFogFactor(
 const f1 = (v: number): string => v.toFixed(3);
 
 /**
- * GLSL `vec3 farEmissive(vec3 color, float dist)` for point emitters, applied before fog; `dist` is
- * the camera distance in metres. A plain function: it adds no define or program variant.
+ * GLSL `vec3 farEmissive(vec3 color, float dist)` for point-emitter meshes such as lamp heads, not
+ * halos or vehicle sprites (glow.ts dims those its own way; both would darken the far city). Apply
+ * it to the final emitted color, after every gain (neonGain, powerOn, intensity) and before fog: a
+ * gain multiplied in later lifts it back over the bloom threshold. `dist` is the camera distance
+ * in metres. A plain function: it adds no define or program variant.
  */
 export const FAR_EMISSIVE_GLSL = /* glsl */ `
 vec3 farEmissive( vec3 color, float dist ) {
