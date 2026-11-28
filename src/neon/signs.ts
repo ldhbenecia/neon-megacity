@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { FAR_EMISSIVE_GLSL } from '../core/shaders/emissiveFog';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { NEON, type NeonName } from '../core/palette';
 import type { Catalog } from './catalog';
@@ -166,7 +167,9 @@ export function emissiveSolidMaterial(
   return neonMaterial(shared, {
     additive: opts.additive ?? false,
     side: opts.additive ? THREE.DoubleSide : THREE.FrontSide,
-    uniforms: { uAlpha: { value: opts.alpha ?? 1 } },
+    // uFarDim 1 dims a far emitter under the bloom threshold (core farEmissive); a clone of this
+    // material with only that uniform changed shares the program.
+    uniforms: { uAlpha: { value: opts.alpha ?? 1 }, uFarDim: { value: 0 } },
     vertexShader: /* glsl */ `
       ${COMMON_PARS}
       attribute vec4 iPos;
@@ -193,8 +196,10 @@ export function emissiveSolidMaterial(
     fragmentShader: /* glsl */ `
       ${COMMON_PARS}
       uniform float uAlpha;
+      uniform float uFarDim;
       varying vec3 vCol; varying float vY; varying vec4 vAnim; varying float vPower;
       #include <fog_pars_fragment>
+      ${FAR_EMISSIVE_GLSL}
       void main() {
         float on = vPower;
         float mode = vAnim.x;
@@ -205,8 +210,11 @@ export function emissiveSolidMaterial(
           float level = uMotion > 0.5 ? min(ph / rise, 1.0) : 1.0;
           on *= mix(0.12, 1.0, step(vY, level));
         }
-        vec3 col = vCol * uGain * on;
-        gl_FragColor = vec4(col * uAlpha, 1.0);
+        vec3 col = vCol * uGain * on * uAlpha;
+        #ifdef USE_FOG
+          if (uFarDim > 0.5) col = farEmissive(col, vFogDepth);
+        #endif
+        gl_FragColor = vec4(col, 1.0);
         ${EMISSIVE_TAIL}
       }
     `,

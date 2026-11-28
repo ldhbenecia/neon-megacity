@@ -199,7 +199,12 @@ export function buildStreet(plan: StreetPlan, solidMat: THREE.ShaderMaterial): S
     }
   }
   const headGeo = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
-  const headMesh = buildEmissiveSolids(headGeo, solidMat, heads, 'street-lamp-heads');
+  // Lamp heads alone dim with distance: far away they would bloom into soft blobs (signs keep
+  // their glow). Same uniforms by reference plus uFarDim, so the clone shares the program.
+  const headMat = solidMat.clone();
+  headMat.uniforms = { ...solidMat.uniforms, uFarDim: { value: 1 } };
+  disposables.push(headMat);
+  const headMesh = buildEmissiveSolids(headGeo, headMat, heads, 'street-lamp-heads');
   group.add(headMesh);
   disposables.push(headMesh.geometry);
 
