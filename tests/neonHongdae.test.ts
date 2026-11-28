@@ -9,7 +9,14 @@ import {
   signCount,
 } from '../src/neon/placement';
 import { planStreet } from '../src/neon/streetPlan';
-import { BULB_SPACING, STRING_BANNER_CLEAR, bulbPositions, bulbStrings } from '../src/neon/strings';
+import {
+  BULB_SPACING,
+  STRING_BANNER_CLEAR,
+  bulbPositions,
+  bulbStrings,
+  stringBlocked,
+  stringObstacles,
+} from '../src/neon/strings';
 
 const faces = LAYOUT.buildings.map((b) => buildingFaces(b));
 const cat = buildCatalog(LAYOUT);
@@ -54,7 +61,8 @@ describe('Hongdae alley density', () => {
 });
 
 describe('bulb strings', () => {
-  const strings = bulbStrings(LAYOUT, banners);
+  const obstacles = stringObstacles(P.flats, street);
+  const strings = bulbStrings(LAYOUT, banners, obstacles);
 
   it('hang wall to wall across nightlife alleys, clear of banners', () => {
     if (!hongdae) return;
@@ -75,6 +83,13 @@ describe('bulb strings', () => {
         if (across < span / 2) expect(along).toBeGreaterThanOrEqual(STRING_BANNER_CLEAR - 0.5);
       }
     }
+  });
+
+  it('never run through a sign or a lamp post', () => {
+    for (const s of strings) expect(stringBlocked(s, obstacles)).toBe(false);
+    // Without the obstacle check some strings would have crossed a sign: the check does work.
+    const free = bulbStrings(LAYOUT, banners);
+    expect(free.some((s) => stringBlocked(s, obstacles))).toBe(true);
   });
 
   it('spaces bulbs evenly between the ends, below the anchors', () => {

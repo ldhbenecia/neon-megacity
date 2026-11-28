@@ -48,7 +48,13 @@ import {
 } from './signs';
 import { buildStreet, poolColor } from './street';
 import { planStreet, type StreetPlan } from './streetPlan';
-import { bulbPositions, bulbStrings, stringPoint, type BulbString } from './strings';
+import {
+  bulbPositions,
+  bulbStrings,
+  stringPoint,
+  stringObstacles,
+  type BulbString,
+} from './strings';
 import { buildTraffic } from './traffic';
 
 export const SIDEWALK_FALLBACK = 0.2;
@@ -56,7 +62,7 @@ const CURVE_SAMPLES = 400;
 const MAX_DECALS = 1500;
 const BULB_R = 0.07;
 const BULB_HDR = 3;
-const SHOP_POOL_OUT = 2.5;
+const SHOP_POOL_MAX = 400;
 const SHOP_POOL_R = 3.5;
 const shopPool = hdrColor(NEON.windowWarm.hex, 0.8);
 
@@ -128,6 +134,7 @@ function decalList(
   buildings: readonly BuildingSpec[],
 ): DecalInstance[] {
   const out: (DecalInstance & { h: number })[] = [];
+  const pools: DecalInstance[] = [];
   const ground = (x: number, z: number): number => surfaceHeight(x, z) + roadY + 0.04;
   // Start wall-sign reflections at the carriageway edge: on the sidewalk slab they are hidden.
   const outFromWall = (x: number, z: number): number => {
@@ -174,9 +181,13 @@ function decalList(
     if (!b || b.district !== 'nightlife' || s.y0 > b.baseY + b.groundFloorH + 1) continue;
     const f = faces[s.building]?.[s.face];
     if (!f) continue;
-    const x = s.x + f.normal.x * SHOP_POOL_OUT;
-    const z = s.z + f.normal.z * SHOP_POOL_OUT;
-    out.push({ x, y: ground(x, z), z, width: SHOP_POOL_R, length: -1, color: shopPool, h: 0 });
+    // Past the sidewalk edge like the sign reflections: on the sidewalk slab the pool is hidden.
+    const off = outFromWall(s.x, s.z) + SHOP_POOL_R * 0.5;
+    const x = s.x + f.normal.x * off;
+    const z = s.z + f.normal.z * off;
+    if (pools.length < SHOP_POOL_MAX) {
+      pools.push({ x, y: ground(x, z), z, width: SHOP_POOL_R, length: -1, color: shopPool });
+    }
   }
   for (const p of street.pools) {
     out.push({ x: p.x, y: p.y, z: p.z, width: p.radius, length: -1, color: poolColor(p), h: 0 });
@@ -193,7 +204,8 @@ function decalList(
     });
   }
   out.sort((a, b) => a.h - b.h);
-  return out.slice(0, MAX_DECALS);
+  // Shopfront pools have their own cap, so they never push sign reflections out of the list.
+  return [...out.slice(0, MAX_DECALS), ...pools];
 }
 
 function lightCandidates(P: Placement, street: StreetPlan): LightCandidate[] {
@@ -329,12 +341,14 @@ export function init(ctx: Ctx): CityModuleInstance {
   crossPoles.count = P.crosses.length;
   crossPoles.computeBoundingSphere();
   crossPoles.name = 'neon-cross-poles';
-  // Banners hang from cables tied to the facades a little higher on each side (a slight sag).
   const strings = bulbStrings(
     L,
     P.flats.filter((f) => f.building < 0),
+    stringObstacles(P.flats, street),
   );
-  const wires = [...bannerWires(P.flats, L), ...stringWires(strings)];
+  // Banners hang from cables tied to the facades a little higher on each side (a slight sag).
+  const bannerWireList = bannerWires(P.flats, L);
+  const wires = [...bannerWireList, ...stringWires(strings)];
   const wireGeo = new THREE.CylinderGeometry(0.03, 0.03, 1, 4).translate(0, 0.5, 0);
   const bannerCables = new THREE.InstancedMesh(wireGeo, poleMat, Math.max(1, wires.length));
   const up = new THREE.Vector3(0, 1, 0);
@@ -364,7 +378,6 @@ export function init(ctx: Ctx): CityModuleInstance {
       anim: 0,
       seed: si * 64 + i,
       zone: 0.4,
-      minPx: 1,
     })),
   );
   const bulbGeo = new THREE.OctahedronGeometry(1, 0);
@@ -485,6 +498,8 @@ export function init(ctx: Ctx): CityModuleInstance {
     halos.visible = view.halos && !lowFx;
     decals.visible = view.reflections && !lowFx;
     fountains.visible = view.fountains && !lowFx;
+    bulbMesh.visible = !lowFx;
+    bannerCables.count = lowFx ? bannerWireList.length : wires.length;
     traffic.setShare(TRAFFIC_SHARE[tier]);
     publish();
   };
@@ -538,8 +553,6 @@ const CABLE_MAX_REACH = 8;
 const CABLE_STEP = 0.25;
 const CABLE_RISE = 1;
 
-// A banner cable runs from the banner end across the road until it meets a facade; without a
-// wall within reach there is no cable (nothing to tie it to).
 /** Each string as short straight pieces along its sag, for the shared cable mesh. */
 function stringWires(strings: readonly BulbString[]): { a: Vec3; b: Vec3 }[] {
   const out: { a: Vec3; b: Vec3 }[] = [];
@@ -556,6 +569,8 @@ function stringWires(strings: readonly BulbString[]): { a: Vec3; b: Vec3 }[] {
 
 const STRING_PIECES = 4;
 
+// A banner cable runs from the banner end across the road until it meets a facade; without a
+// wall within reach there is no cable (nothing to tie it to).
 function bannerWires(flats: readonly FlatSign[], L: Layout): { a: Vec3; b: Vec3 }[] {
   const out: { a: Vec3; b: Vec3 }[] = [];
   for (const s of flats) {

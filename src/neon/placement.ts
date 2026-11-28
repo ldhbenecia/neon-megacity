@@ -164,7 +164,7 @@ interface DistrictSigns {
   media?: boolean;
   /** Banners strung across alleys. */
   banners?: boolean;
-  /** Blade signs every few meters along shop faces, staggered over floors 2–4 (Hongdae alleys). */
+  /** Blade signs every few meters along shop faces, staggered over floors 2–9 (Hongdae alleys). */
   alleyBlades?: boolean;
   /** Big warm lettering on warehouse walls, lit by gooseneck lamps (Seongsu). */
   paint?: boolean;
@@ -1353,7 +1353,8 @@ export function placeSigns(
         placeBands(c, b, rng, zone, fi, (k === 0 ? 1.6 : 0.7) * sc);
         const bp = (a === 'sangga' ? 0.5 : 0.3) * (k === 0 ? 1.3 : 0.6) * sc;
         // Alley blades replace the two tall end blades, which would share their height bands.
-        if (d.alleyBlades) placeAlleyBlades(c, b, rng, zone, fi);
+        // Past the city-wide cap the usual end blades take over, so no nightlife face stays bare.
+        if (d.alleyBlades && c.bladeCursor < ALLEY_BLADE_MAX) placeAlleyBlades(c, b, rng, zone, fi);
         else placeBlades(c, b, rng, zone, d.bladeScale === undefined ? bp : bp * d.bladeScale, fi);
       });
     } else if (d.street && a === 'officeSlab' && b.h < 40) {
