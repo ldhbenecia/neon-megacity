@@ -14,7 +14,17 @@ import {
 import { bridgeDeckY, highwaySamples } from './highways';
 import { terrainHeight } from './river';
 import { GridHash, boundsOverlap, segmentBounds, type Bounds } from './spatial';
-import type { BuildingFace, BuildingSpec, Layout, Ridge, Side, Tier, Vec2, Vec3 } from './types';
+import type {
+  BuildingFace,
+  BuildingSpec,
+  Layout,
+  Ridge,
+  Road,
+  Side,
+  Tier,
+  Vec2,
+  Vec3,
+} from './types';
 
 export type Vec3Like = Readonly<Vec3>;
 
@@ -167,21 +177,23 @@ export function buildingVolumes(b: BuildingSpec): Tier[] {
   return out;
 }
 
-/** World y of the highest point (spire included). */
 /** Street surface above the ground (m): just above it so it never z-fights the ground. */
 export const ROAD_Y = 0.03;
+/** Hillside-village streets (stairs and lanes on the slope) sit higher, over the coarser mesh. */
+export const HILL_ROAD_Y = 0.08;
 
 /**
- * Height of the street surface at (x, z): the terrain plus ROAD_Y (ROAD_Y on flat ground).
- * Continuous everywhere, so crossings and slopes meet without steps. The single source for
- * roads, sidewalks and markings (buildings) and for traffic and street furniture (neon, which
- * uses surfaceHeight + ROAD_Y: the same value off the river channel). Raised stretches must be
- * drawn finely enough (buildings splits them every 3 m) to follow the ground mesh.
+ * Height of the street surface at (x, z) on `road` (or on a city street when omitted): the
+ * terrain plus ROAD_Y, ROAD_Y on flat ground; hillside-village streets use HILL_ROAD_Y. Continuous
+ * along any street, so crossings and slopes meet without steps. The single source for roads,
+ * sidewalks and markings (buildings) and for traffic and street furniture (neon). Raised
+ * stretches must be drawn finely enough (buildings splits them every 3 m) to follow the ground.
  */
-export function roadSurfaceY(x: number, z: number): number {
-  return terrainHeight(x, z) + ROAD_Y;
+export function roadSurfaceY(x: number, z: number, road?: Pick<Road, 'district'>): number {
+  return terrainHeight(x, z) + (road?.district === 'hillside' ? HILL_ROAD_Y : ROAD_Y);
 }
 
+/** World y of the highest point (spire included). */
 export function buildingTop(b: BuildingSpec): number {
   return b.baseY + b.h + b.spireH;
 }

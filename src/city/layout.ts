@@ -95,6 +95,7 @@ export {
   buildingTop,
   roadSurfaceY,
   ROAD_Y,
+  HILL_ROAD_Y,
   allTiers,
   buildingVolumes,
   deckHeightAt,
