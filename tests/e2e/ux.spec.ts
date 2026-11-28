@@ -338,6 +338,24 @@ test('automated runs never contact Google Analytics', async ({ page }) => {
   expect(await page.evaluate(() => 'gtag' in window)).toBe(false);
 });
 
+test('zone labels: shown from high up, a click flies there, gone at street level', async ({
+  page,
+}) => {
+  await page.goto(app('nogui&cam=topdown&time=0'));
+  await waitForCity(page);
+  const labels = page.locator('#zone-labels');
+  await expect(labels).toBeVisible();
+  const yeouido = labels.locator('button', { hasText: '여의도' });
+  await expect(yeouido).toBeVisible();
+  await yeouido.click();
+  await expect(page.locator('#hud-district')).toHaveText('여의도', { timeout: 30_000 });
+
+  await page.goto(app('nogui&cam=street&time=0'));
+  await waitForCity(page);
+  await waitFrames(page, 5);
+  await expect(labels).toBeHidden();
+});
+
 test.describe('camera rig', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto(app('nogui&stats&cam=overview&time=0.0'));
