@@ -11,6 +11,7 @@ import {
   shadowKnobs,
   shadowRequestDue,
   shouldRefreshShadow,
+  skyFillAt,
   SHADOW_REFRESH,
   sunDirectionAt,
   SHADOW_SNAP,
@@ -236,5 +237,19 @@ describe('sun shadow per quality tier', () => {
     expect(shouldRefreshShadow(false, angle, 1.5, false)).toBe(true);
     expect(shouldRefreshShadow(false, angle, 1.5, false, 2)).toBe(false);
     expect(shouldRefreshShadow(true, 0, 0.1, false, 2)).toBe(true);
+  });
+});
+
+describe('day sky fill (env.skyFill)', () => {
+  it('zenith hue at full strength by day, handing over to the shadow fill, 0 at dusk and night', () => {
+    const sky: [number, number, number] = [0.2, 0.4, 0.5];
+    const day = skyFillAt(0.8, sky, 0.35);
+    expect(Math.max(...day)).toBeCloseTo(0.35, 6);
+    expect(day[0] / day[2]).toBeCloseTo(0.4, 6);
+    expect(skyFillAt(0.08, sky, 0.35)).toEqual([0, 0, 0]);
+    expect(skyFillAt(-0.5, sky, 0.35)).toEqual([0, 0, 0]);
+    const low = skyFillAt(0.2, sky, 0.35);
+    expect(Math.max(...low)).toBeGreaterThan(0);
+    expect(Math.max(...low)).toBeLessThan(0.35);
   });
 });
