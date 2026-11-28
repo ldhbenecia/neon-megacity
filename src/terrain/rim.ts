@@ -2,10 +2,13 @@ import * as THREE from 'three';
 import type { Ridge } from '../city/layout';
 import { RIDGE_COLORS } from '../core/palette';
 import { HORIZON_SIDE_GLSL } from '../lighting/horizonGlsl';
+import { MAP_HALF_X, MAP_HALF_Z } from './shape';
 import type { RidgeEnv } from './ridges';
 
-/** Width (m) of the band before the near ridge over which ground and water take its base color. */
+/** Widest band (m) before the near ridge over which ground and water take its base color. */
 export const RIM_BAND = 1800;
+/** Clearance (m) between the map's corners and the start of the band. */
+const RIM_CLEAR = 100;
 
 /**
  * Fog the near ridge's bottom carries (ridges.ts: its `fog` plus the 0.22 mist at the base), so
@@ -15,9 +18,18 @@ export function rimWallFog(ridge: Pick<Ridge, 'fog'>): number {
   return ridge.fog + (1 - ridge.fog) * 0.22;
 }
 
-/** 0 inside, 1 at the near ridge: smoothstep over the last RIM_BAND metres. */
-export function rimWeight(r: number, radius: number): number {
-  const t = Math.min(1, Math.max(0, (r - (radius - RIM_BAND)) / RIM_BAND));
+/**
+ * Radii (m) where the band starts and ends: it ends at the near ridge and starts outside the
+ * map's corners, so ground and river under the city's roads and buildings never darken.
+ */
+export function rimBand(ridge: Pick<Ridge, 'radius'>): { start: number; end: number } {
+  const corner = Math.hypot(MAP_HALF_X, MAP_HALF_Z) + RIM_CLEAR;
+  return { start: Math.max(ridge.radius - RIM_BAND, corner), end: ridge.radius };
+}
+
+/** 0 inside, 1 at the near ridge: smoothstep over rimBand, as the shader does. */
+export function rimWeight(r: number, band: { start: number; end: number }): number {
+  const t = Math.min(1, Math.max(0, (r - band.start) / (band.end - band.start)));
   return t * t * (3 - 2 * t);
 }
 
@@ -44,6 +56,8 @@ export function createRim(ridge: Ridge): Rim {
     uRimBase: { value: new THREE.Color().setHex(RIDGE_COLORS[ridge.id]) },
   };
   const f = (v: number): string => v.toFixed(3);
+  const band = rimBand(ridge);
+  const fog = rimWallFog(ridge);
   const pars = /* glsl */ `
 uniform vec3 uRimHorizon;
 uniform vec3 uRimHorizonAnti;
@@ -60,9 +74,15 @@ ${HORIZON_SIDE_GLSL}
   vec3 rimDir = normalize( vRimWorld - cameraPosition );
   vec3 rimHz = mix( uRimHorizonAnti, uRimHorizon, pow( horizonSide( rimDir, uRimSunDir ), 2.2 ) );
   vec3 rimBase = mix( uRimBase, rimHz * 0.28, uRimDay );
-  float rimFog = 1.0 - ( 1.0 - ${f(rimWallFog(ridge))} ) * ( 1.0 - 0.75 * uRimRain );
+  float rimFog = 1.0 - ( 1.0 - ${f(fog)} ) * ( 1.0 - 0.75 * uRimRain );
   vec3 rimWall = mix( rimBase, mix( rimHz, uRimFogColor, uRimRain ), rimFog );
-  float rimT = smoothstep( ${f(ridge.radius - RIM_BAND)}, ${f(ridge.radius)}, length( vRimWorld.xz ) );
+  // Mixed after fog_fragment, i.e. after tone mapping and output encoding: without post (canvas
+  // output) the wall color goes through both, as the ridge shader's own color does.
+  #ifdef TONE_MAPPING
+    rimWall = toneMapping( rimWall );
+  #endif
+  rimWall = linearToOutputTexel( vec4( rimWall, 1.0 ) ).rgb;
+  float rimT = smoothstep( ${f(band.start)}, ${f(band.end)}, length( vRimWorld.xz ) );
   gl_FragColor.rgb = mix( gl_FragColor.rgb, rimWall, rimT );
 }
 `;
@@ -81,7 +101,8 @@ ${HORIZON_SIDE_GLSL}
   return {
     patch(material) {
       material.onBeforeCompile = patchShader;
-      material.customProgramCacheKey = () => 'terrain-rim';
+      material.customProgramCacheKey = () =>
+        `terrain-rim:${f(band.start)}:${f(band.end)}:${f(fog)}`;
     },
     patchShader,
     update(env) {

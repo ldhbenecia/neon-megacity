@@ -42,7 +42,7 @@ import {
   shadeValleys,
   valleyShade,
 } from '../src/terrain/ground';
-import { RIM_BAND, rimWallFog, rimWeight } from '../src/terrain/rim';
+import { RIM_BAND, rimBand, rimWallFog, rimWeight } from '../src/terrain/rim';
 import { createWater } from '../src/terrain/water';
 
 function profileY(d: number, park: number): number {
@@ -591,13 +591,14 @@ describe('valley shading and the range forest mask', () => {
 });
 
 describe('map edge (rim)', () => {
-  it('fades ground and water only over the last band before the near ridge', () => {
-    const radius = 3200;
-    expect(rimWeight(0, radius)).toBe(0);
-    expect(rimWeight(radius - RIM_BAND, radius)).toBe(0);
-    expect(rimWeight(radius - RIM_BAND / 2, radius)).toBeCloseTo(0.5, 6);
-    expect(rimWeight(radius, radius)).toBe(1);
-    expect(rimWeight(radius + 500, radius)).toBe(1);
+  it('starts outside the map corners and ends at the near ridge', () => {
+    const band = rimBand({ radius: 3200 });
+    expect(band.end).toBe(3200);
+    expect(band.start).toBeGreaterThan(Math.hypot(CITY.halfX, CITY.halfZ));
+    expect(band.start).toBeGreaterThanOrEqual(3200 - RIM_BAND);
+    expect(rimWeight(Math.hypot(CITY.halfX, CITY.halfZ), band)).toBe(0);
+    expect(rimWeight(band.end, band)).toBe(1);
+    expect(rimWeight((band.start + band.end) / 2, band)).toBeCloseTo(0.5, 6);
   });
 
   it('ends in the fog the near ridge starts with (its fog plus the base mist)', () => {

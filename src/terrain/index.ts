@@ -6,6 +6,7 @@ import type { Ctx, CityModuleInstance } from '../core/types';
 import { buildChannel, buildGround } from './ground';
 import { createRidges, type RidgeEnv } from './ridges';
 import { createRim } from './rim';
+import { nearRidge } from './shape';
 import { createWater } from './water';
 
 export function init(ctx: Ctx): CityModuleInstance {
@@ -15,8 +16,7 @@ export function init(ctx: Ctx): CityModuleInstance {
 
   // Roads, sidewalks and plazas laid at the same height must win over the ground. Units only:
   // a slope factor grows to tens of metres at grazing angles and lets buried geometry show through.
-  const nearRidge = LAYOUT.ridges.reduce((a, b) => (b.radius < a.radius ? b : a));
-  const rim = createRim(nearRidge);
+  const rim = createRim(nearRidge());
   const pre = takePrebuilt('terrain', LAYOUT);
   const groundGeo = pre ? unpackGeometry(pre.ground) : buildGround();
   const groundMat = new THREE.MeshStandardMaterial({

@@ -22,7 +22,8 @@ export { EMBANK_SLOPE };
 // setLayout must be picked up).
 // Keyed on the layout object, so a later setLayout (another seed) is picked up.
 let nearRidgeCache: { layout: typeof LAYOUT; ridge: Ridge } | null = null;
-function nearRidge(): Ridge {
+/** The near ridge ring (id 'ridge-near'): the ground disc ends just inside it. */
+export function nearRidge(): Ridge {
   if (nearRidgeCache?.layout !== LAYOUT) {
     const r = LAYOUT.ridges.find((q) => q.id === 'ridge-near') ?? LAYOUT.ridges[0];
     if (!r) throw new Error('terrain: layout has no ridges');
