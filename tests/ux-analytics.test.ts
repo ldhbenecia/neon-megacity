@@ -83,8 +83,8 @@ describe('analytics events', () => {
       result: 'ready',
       ready_bucket: '2-5s',
     });
-    expect(cleanEvent('preset_used', { preset: '반포대교 남단' })).toEqual({
-      preset: '반포대교 남단',
+    expect(cleanEvent('preset_used', { preset: 'banpo' })).toEqual({
+      preset: 'banpo',
     });
     expect(cleanEvent('district_used', { district: 'x'.repeat(41) })).toEqual({});
     expect(cleanEvent('district_used', { district: 'a\nb' })).toEqual({});

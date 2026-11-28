@@ -82,8 +82,7 @@ export interface PixelStats {
  */
 export async function canvasStats(page: Page): Promise<PixelStats> {
   const png = await page
-    .locator('canvas')
-    .first()
+    .locator('#city-canvas')
     .screenshot({ style: '#hud, #hud-stats, .lil-gui { visibility: hidden !important; }' });
   return page.evaluate(async (b64) => {
     const img = new Image();

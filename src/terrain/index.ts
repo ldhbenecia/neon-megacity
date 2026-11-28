@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { unpackGeometry } from '../core/packedGeometry';
+import { takePrebuilt } from '../core/prebuilt';
 import { NIGHT_FILL_AMBIENT } from '../core/palette';
 import type { Ctx, CityModuleInstance } from '../core/types';
 import { buildChannel, buildGround } from './ground';
@@ -12,7 +14,8 @@ export function init(ctx: Ctx): CityModuleInstance {
 
   // Roads, sidewalks and plazas laid at the same height must win over the ground. Units only:
   // a slope factor grows to tens of metres at grazing angles and lets buried geometry show through.
-  const groundGeo = buildGround();
+  const pre = takePrebuilt('terrain', LAYOUT);
+  const groundGeo = pre ? unpackGeometry(pre.ground) : buildGround();
   const groundMat = new THREE.MeshStandardMaterial({
     name: 'TerrainGround',
     vertexColors: true,
@@ -28,7 +31,7 @@ export function init(ctx: Ctx): CityModuleInstance {
   ground.matrixAutoUpdate = false;
   group.add(ground);
 
-  const channelGeo = buildChannel();
+  const channelGeo = pre ? unpackGeometry(pre.channel) : buildChannel();
   const channelMat = new THREE.MeshStandardMaterial({
     name: 'RiverChannel',
     vertexColors: true,

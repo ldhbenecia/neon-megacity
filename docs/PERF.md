@@ -278,8 +278,8 @@ medium 4, low 3, by pass count only, no program change), done with env in the pe
 
 ## Proposal: move boot work off the main thread (Web Worker)
 
-Status: measured and decided (Worker), not implemented. Engine stays three.js; this is about where
-the CPU work runs.
+Status: implemented as far as it pays off; results, timeouts and the parts left out are in
+"Result: async boot" below. This section keeps the original measurements and plan.
 
 **Measured** (main c0fc4be, M4, preset 2 night, `PerformanceObserver('longtask')`, 3 runs): the
 main thread is blocked 2.1–3.2 s in total during boot, so the loader skeleton cannot update.
@@ -343,6 +343,121 @@ lazy, not counted in the initial-load budget). Determinism is unchanged (same co
 boot → interactive time must not grow, and the loader must keep animating (no task > 100 ms
 during the buildings stage).
 
+## Result: async boot
+
+**What runs where now.** `src/boot.ts` (the entry in `index.html`, 2 KB) starts the city worker
+and imports the app chunk at the same time; modulepreload links fetch the app chunks with the HTML.
+No module reads `LAYOUT` while it is evaluated (`tests/layout-import.test.ts`), so the app is
+evaluated while the worker works. The worker posts three messages in module init order:
+
+1. the layout (`generateLayout`); main publishes it (`setLayout`) and calls `start()`;
+2. terrain ground and channel geometry (`buildGround`, `buildChannel`, typed arrays transferred);
+3. road and sidewalk geometry and the puddle mask (`buildRoads`, `buildSidewalks`, `puddleData`).
+
+`main.ts` awaits a module's prebuilt entry (`src/core/prebuilt.ts`) just before its init; terrain
+and buildings wrap the arrays (`unpackGeometry`) or, with no entry, build as before. Entries are
+tied to the layout object they were built from. Without workers, or when the worker throws, errs
+or times out, every module builds on the main thread as it did before the worker existed. The
+worker bundles `src/city/three-lite.ts` (a few three source modules) instead of three.core; `npm
+run size` fails if three's entry module (`__THREE__`) or more than 60 KB ends up in it.
+Identity: `tests/worker-prebuilt.test.ts` builds through the three-lite module graph, transfers,
+unpacks and compares bytes, item sizes, flags, index types and groups with the main-thread build.
+
+**Per step** (M4 Metal, `?preset=2&time=0`, DPR 2, 1600×900, `PerformanceObserver('longtask')`;
+each row is main vs the PR, alternating boots in one session, so compare within a row: the
+absolute values move with machine load).
+
+| step                               | runs | longest main task | main blocked total | `__city.ready`         |
+| ---------------------------------- | ---- | ----------------- | ------------------ | ---------------------- |
+| v3 baseline (main 0d4c9de, loaded) | 3    | 764–811 ms        | 2.8–3.0 s          | 3.1–3.4 s              |
+| #114 layout in the worker          | 7+7  | 312 → 258 ms      | 1204 → 890 ms      | 1498 → 1535 ms (noise) |
+| #139 app evaluated beside it       | 7+7  | 625 → 597 ms      | 2169 → 1603 ms     | 3082 → 2538 ms         |
+| #147 terrain geometry in it        | 7+7  | 323 → 274 ms      | 901 → 569 ms       | 1488 → 1209 ms         |
+| #158 roads, sidewalks, puddles     | 7+7  | 296 → 193 ms      | 595 → 501 ms       | 1284 → 1279 ms         |
+
+Goal met: no main-thread task over 200 ms on the M4 (longest: buildings init 193 ms, then neon
+~170 ms), and ready ~1.2–1.3 s against the 3.1–3.4 s v3 baseline.
+
+**Boot timeline after #158** (5 boots, ms since navigation): app chunk evaluated ~47; layout
+arrives ~350 (setup starts); terrain stage starts ~450, its geometry arrives ~530; buildings stage
+starts ~545, its data arrives ~630; neon ~890; first frame ~1200; ready ~1240. The critical path
+is the worker (layout ~350, terrain ~180, roads ~95 ms); the main thread waits ~80 ms before
+terrain and before buildings.
+
+**Timeouts** (`src/city/loadLayout.ts`). After the layout, the worker has `WORKER_TIMEOUT_MS`
+= 8 s for its geometry; after terrain, buildings gets `BUILDINGS_AFTER_TERRAIN_MS` = 1.5 s. On
+the M4 the worker needs ~0.3 s for both after the layout (~13× margin on 8 s; a 6× slower CPU
+still fits), and buildings' share is ~95 ms against a ~90 ms main-thread fallback, so 1.5 s only
+fires for a worker that hangs or was killed without an error event (memory pressure). A timeout
+logs a warning, terminates the worker and the modules build on the main thread.
+
+**Left out, and why** (measured; do not retry without new numbers):
+
+- **Lazy neon / atmosphere chunks (plan step 5).** The app chunk is evaluated at ~47 ms and then
+  waits ~300 ms for the layout: splitting it saves nothing on the critical path, and every module
+  is needed before `__city.ready` anyway.
+- **A second worker for the buildings data.** It would remove the ~80 ms wait before buildings
+  (the critical path is layout → terrain in one worker); below the 100 ms bar for a step.
+- **Neon placement in the worker (plan step 3, neon half).** Neon init is ~170 ms (`placeSigns`
+  69, `decalList` 32, `planStreet` 22 ms), already under 200 ms, and the main thread reaches it
+  long after the worker is done: no ready gain.
+- **Buildings chunk geometry (plan step 2 proper).** `collectChunks` (82 ms) and the LOD1/LOD2
+  emit build closures and three objects per chunk; with roads and puddles moved, buildings init
+  is 193 ms, so the remaining work is not worth a second transfer format.
+- **Compile (plan step 4).** Done by env/ux (#93, #106: `compileAsync` on the HDR target); the
+  compile stage is ~100 ms.
+
+## User quality tiers
+
+Design #66, implemented (#87 controller, #143 picker API, #145 picker UI; module knobs below).
+
+**Tiers.** `env.quality` is `'high' | 'medium' | 'low'` for users (owner ux, may change at
+runtime) plus `'ci'` (CI SwiftShader: DPR 0.5, no shadows / post / rain / LOD0 / bridge detail,
+never changes). Modules apply their knobs in `ctx.onQuality`, never by polling.
+
+**Selection.** At boot `tierFromRenderer` (`src/ux/quality.ts`) maps the WebGL renderer string:
+Apple M* / NVIDIA / RTX / Radeon RX / Radeon Pro → high; Intel / Iris / UHD / other Radeon →
+medium; SwiftShader, llvmpipe, Mali, Adreno, PowerVR → low; Safari's masked "Apple GPU" → medium on
+a Mac, low on touch devices; unreadable → medium. A pick in the panel (자동 / 상 / 중 / 하) or
+`?quality=` overrides it; the pick is stored under `hangang.quality` ('auto' clears it).
+
+**Controller** (`QualityController`, automatic mode only). Median frame time over 2 s (a median:
+a few long frames must not move the tier); the first 60 frames are skipped; a 2 s boot probe
+steps down at once above 25 ms. Down: DPR first in 0.25 steps (caps high 1.5, medium 1, low 0.75,
+never above the device ratio), then the next tier, after 2 s above 20 ms. Up: after 8 s below
+18.2 ms (55 fps: a 60 Hz display never reports less than 16.7 ms), up to high; a step up that
+makes the median slow within 6 s is undone once and climbing stops for the session. At most one
+step per 3 s. Hidden tabs and frames over 0.25 s are ignored.
+
+**Runtime rule.** No knob may change a material's program variant at runtime (the #31 / #42
+stalls): use intensity, visibility, instance counts, distances or render-target sizes. Light
+counts stay fixed (lights fade to 0), shadows stay enabled (low stops refreshing), hidden detail
+stays compiled at boot (#141 hides instances, not the mesh). Every tier boots with 37 programs.
+
+| knob (module, PR)                      | high                                                                                                                             | medium      | low                     |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ----------- | ----------------------- |
+| DPR cap (ux, #87)                      | min(dpr, 1.5)                                                                                                                    | 1           | 0.75                    |
+| sun shadow map (lighting, #148)        | 2048²                                                                                                                            | 1024²       | 1024² kept, intensity 0 |
+| shadow refresh, minimum gap (lighting) | 1 s                                                                                                                              | 2 s         | none                    |
+| bloom blur mips (atmosphere, #148)     | 5                                                                                                                                | 4           | 3                       |
+| bloom resolution ratio                 | 1                                                                                                                                | 0.5         | 0.5                     |
+| rain instances                         | 100 %                                                                                                                            | 50 %        | 0 %                     |
+| clouds, searchlights                   | on                                                                                                                               | on          | hidden                  |
+| buildings LOD0 radius (#140)           | 380 m                                                                                                                            | 250 m       | no LOD0                 |
+| interior mapping                       | on (LOD0)                                                                                                                        | on (LOD0)   | off (no LOD0)           |
+| bridge detail on / off distance (#141) | 600 / 660 m                                                                                                                      | 400 / 440 m | base only               |
+| point lights in use (neon, #144)       | 6                                                                                                                                | 4           | 0 (all 6 stay, faded)   |
+| halos, road reflections, fountain      | on                                                                                                                               | on          | off                     |
+| ground / highway / flying traffic      | 100 %                                                                                                                            | 70 %        | 40 %                    |
+| signs, fog, window lights              | on                                                                                                                               | on          | on (never dropped)      |
+| terrain                                | no runtime knob: three static merged meshes, the forest is vertex color and canopy height, water ripples are a boot-only program |
+
+Measured per PR on the M4 under the heavy-job lock (init within 1.07× of main, 37 programs at
+every tier): at the 반포대교 남단 night view calls go 87 → 85 → 74–79 (high → medium → low,
+#148) and geometry 68.9 → 62.4 → 60.3 MB (#140); frame times are vsync-capped on the M4 and
+only show on slower GPUs. Shadow updates requested by buildings and infra are to go through
+lighting (`ctx.requestShadowUpdate`, #155) so that low runs no shadow pass at all.
+
 ## JS bundle: what it is made of, and a proposed target
 
 Measured on main 3db3a31 (neon included): initial JS 298.7 KB gzip (target 260, ceiling 400).
@@ -377,7 +492,7 @@ inside their modules (neon's 25.7 KB includes its GLSL and catalogue).
 | + buildings, infra lazy too                                     | ~225 KB      | diminishing returns: every stage waits for its own fetch |
 
 **Decision (manager, #88).** The 400 KB ceiling covers _all_ JS (every chunk, worker chunks
-included); the 260 KB target covers the _first_ chunk. three core (173.6 KB) is the floor, so the
+included); the 260 KB target (since replaced by ~330 KB, see the update below) covers the _first_ chunk. three core (173.6 KB) is the floor, so the
 target is met by splitting, not trimming:
 
 1. lil-gui only with `?debug` (dynamic import, stub panel otherwise): now, small PR.
@@ -388,6 +503,15 @@ target is met by splitting, not trimming:
    gets slower; the init order and the meaning of `__city.ready` stay; a failed chunk download
    shows an error and retry in the loader (never half a city); an e2e run under `BASE_PATH`
    checks chunk URLs. `npm run size` already reports first and lazy chunks separately (#45).
+
+**Update (manager, after async boot): target ~330 KB, ceiling 400 KB.** The lazy neon /
+atmosphere chunks were dropped (they save nothing once the app chunk is evaluated beside the
+worker, see "Result: async boot"), so 260 KB would only be reachable by loading modules after
+`__city.ready`, which contradicts the boot goal. Initial JS is 342.1 KB on main 0d15df1 (app
+chunk 214.5 KB, the shared three + city chunk ~122 KB). Taking the layout generator out of the
+static graph (only the worker and the main-thread fallback import it; the app needs a few
+constants) measured 342.1 → 327.2 KB and is done by hangang-seoul. `npm run size` warns above
+330 KB and fails above 400 KB.
 
 ## Findings and candidates
 
@@ -432,5 +556,5 @@ target is met by splitting, not trimming:
   0.5–0.9 s, later runs 31–79 ms; the OS shader cache likely explains it. Re-check once buildings
   and neon add programs.
 - **JS bundle.** lil-gui now loads only with `?debug` (#89): first chunk 298.7 → 291.9 KB gzip,
-  lil-gui a 7.7 KB lazy chunk; without `?debug` modules get a chainable no-op stand-in. The rest
-  of the 260 KB target comes from lazy neon / atmosphere chunks (see "JS bundle" above).
+  lil-gui a 7.7 KB lazy chunk; without `?debug` modules get a chainable no-op stand-in. The 260
+  KB target was later replaced by ~330 KB (see "JS bundle", update).

@@ -1,7 +1,7 @@
 import { errors, expect, test, type Page } from '@playwright/test';
 import { cameraFloor, targetFloor } from '../../src/ux/collision';
 import '../setup-layout';
-import { LAYOUT, buildingContaining } from '../../src/city/layout';
+import { CITY, LAYOUT, buildingContaining, zoneAt } from '../../src/city/layout';
 import { app, collectErrors, waitForCity, waitFrames } from './helpers';
 
 type Cam = NonNullable<Window['__hangang']>;
@@ -148,9 +148,14 @@ test('HUD: brand mark, clock, help sheet on ?, inline SVG favicon', async ({ pag
   await expect(page.locator('#hud')).not.toHaveClass(/is-hidden/);
 });
 
-test('first entry shows a controls hint that fades out', async ({ page }) => {
+test('first entry starts before sunset and shows a controls hint that fades out', async ({
+  page,
+}) => {
   await page.goto(app('nogui'));
   await waitForCity(page);
+  // 0.76 of the day is 18:14; the clock runs on from there (about 3 minutes a second), so only
+  // "after 18:14, before midnight" holds however slow the boot is.
+  await expect(page.locator('#clock')).toHaveText(/^(18:(1[4-9]|[2-5]\d)|(19|2[0-3]):\d\d)$/);
   await expect(page.locator('#hud-hint')).toBeVisible();
   await expect(page.locator('#hud-hint')).toBeHidden({ timeout: 15_000 });
 });
@@ -250,6 +255,53 @@ test('?district= starts at a zone and the title names the zone in view', async (
   await expect(page.locator('#district-chips button[aria-current="true"]')).toHaveText(
     '종로·광화문',
   );
+});
+
+test('minimap: drawn in the panel, and clicking a zone flies there', async ({ page }) => {
+  const zone = LAYOUT.districts.find((d) => d.id === 'yeouido');
+  if (!zone) throw new Error('no yeouido zone');
+  const n = zone.polygon.length;
+  const c = zone.polygon.reduce((a, q) => ({ x: a.x + q.x / n, z: a.z + q.z / n }), { x: 0, z: 0 });
+  expect(zoneAt(c.x, c.z).id).toBe('yeouido');
+  const errors = collectErrors(page);
+  // The ResizeObserver loop warning arrives as a window error event, not a page error.
+  await page.addInitScript(() => {
+    const seen: string[] = [];
+    (window as unknown as { __winErrors: string[] }).__winErrors = seen;
+    window.addEventListener('error', (e) => seen.push(e.message));
+  });
+  await page.goto(app('nogui&district=jongno&time=0'));
+  await waitForCity(page);
+  await page.click('#panel-toggle');
+  const map = page.locator('#minimap');
+  await expect(map).toBeVisible();
+  await expect
+    .poll(() =>
+      map.evaluate((el) => {
+        const cv = el as HTMLCanvasElement;
+        const d = cv.getContext('2d')?.getImageData(0, 0, cv.width, cv.height).data;
+        let lit = 0;
+        for (let i = 3; d && i < d.length; i += 4) if ((d[i] ?? 0) > 0) lit++;
+        return lit;
+      }),
+    )
+    .toBeGreaterThan(1000);
+  const box = await map.boundingBox();
+  if (!box) throw new Error('minimap has no box');
+  await map.screenshot({ path: test.info().outputPath('minimap.png') });
+  await map.click({
+    position: {
+      x: ((c.x + CITY.halfX) / (2 * CITY.halfX)) * box.width,
+      y: ((c.z + CITY.halfZ) / (2 * CITY.halfZ)) * box.height,
+    },
+  });
+  await expect(page.locator('#hud-district')).toHaveText('여의도', { timeout: 30_000 });
+  await page.setViewportSize({ width: 1100, height: 720 });
+  await waitFrames(page, 10);
+  expect(
+    await page.evaluate(() => (window as unknown as { __winErrors: string[] }).__winErrors),
+  ).toEqual([]);
+  expect(errors).toEqual([]);
 });
 
 test('quality row: a fixed tier is applied and saved, auto goes back to the device tier', async ({
