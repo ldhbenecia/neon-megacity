@@ -8,6 +8,8 @@
 import {
   CITY,
   LAYOUT,
+  buildingContaining,
+  riverWidthAt,
   surfaceHeight,
   type DistrictZone,
   type LandmarkId,
@@ -100,17 +102,70 @@ function streetLook(road: Road, t: number, reverse: boolean): Pose {
   const pz = from.z + uz * s;
   const tx = px + ux * 140;
   const tz = pz + uz * 140;
+  // A little over head height, so both rows of shop signs recede along the street.
   return {
-    position: [px, surfaceHeight(px, pz) + 5, pz],
-    target: [tx, surfaceHeight(tx, tz) + 1, tz],
+    position: [px, surfaceHeight(px, pz) + STREET_EYE, pz],
+    target: [tx, surfaceHeight(tx, tz) + 2, tz],
   };
+}
+
+const STREET_EYE = 8;
+
+/**
+ * Buildings fronting the first 140 m of the view, counted on the side with fewer: a street lined
+ * on both sides reads as an alley, one with a gap on one side reads as an open lot.
+ */
+export function streetFrontage({ position: p, target: t }: Pose): number {
+  const dx = t[0] - p[0];
+  const dz = t[2] - p[2];
+  const len = Math.hypot(dx, dz);
+  if (len < 1) return 0;
+  const ux = dx / len;
+  const uz = dz / len;
+  let left = 0;
+  let right = 0;
+  for (const b of LAYOUT.buildings) {
+    const rx = b.x - p[0];
+    const rz = b.z - p[2];
+    const along = rx * ux + rz * uz;
+    if (along < 10 || along > 140) continue;
+    const across = rx * uz - rz * ux;
+    if (Math.abs(across) > 30) continue;
+    if (across > 0) right++;
+    else left++;
+  }
+  return Math.min(left, right);
 }
 
 const MIN_DROP = Math.tan(Math.PI / 2 - CAMERA_LIMITS.maxPolarAngle + POLAR_MARGIN);
 
-/** Inside maxPolarAngle (with margin) and no terrain crest hides the target. */
-function streetViewClear({ position: p, target: t }: Pose): boolean {
+/** Inside maxPolarAngle (with margin), level enough to read as a street, no crest hides it. */
+function streetViewClear({ position: p, target: t }: Pose, strict = true): boolean {
   if (p[1] - t[1] < Math.hypot(t[0] - p[0], t[2] - p[2]) * MIN_DROP) return false;
+  if (!strict) return terrainClear(p, t);
+  // A street dropping away down a slope fills the lower frame with dark roofs.
+  if (Math.abs(p[1] - STREET_EYE - (t[1] - 2)) > 4) return false;
+  // No building over the first 80 m of the street below eye height (a low roof right in front of
+  // the lens fills the lower half of the frame).
+  const dx = t[0] - p[0];
+  const dz = t[2] - p[2];
+  const len = Math.hypot(dx, dz);
+  for (let d = 4; d <= 80; d += 4) {
+    const x = p[0] + (dx / len) * d;
+    const z = p[2] + (dz / len) * d;
+    const ground = surfaceHeight(x, z);
+    // The street ahead stays level with the camera's own ground (a rise reads as a dark wall), and
+    // at road level: where the terrain lies above the flat road mesh it covers the street.
+    if (Math.abs(ground - (p[1] - STREET_EYE)) > 2 || ground > 0.3) return false;
+    for (let y = ground + 1; y < p[1]; y += 2) {
+      if (buildingContaining(LAYOUT, x, y, z) !== null) return false;
+    }
+  }
+  return terrainClear(p, t);
+}
+
+/** No terrain crest between the eye and the target. */
+function terrainClear(p: Tuple, t: Tuple): boolean {
   for (let i = 1; i < 20; i++) {
     const f = i / 20;
     const y = p[1] + (t[1] - p[1]) * f;
@@ -120,8 +175,8 @@ function streetViewClear({ position: p, target: t }: Pose): boolean {
 }
 
 /**
- * Eye-level shot on the center line of an `anchor.kind` street: the nearest street to
- * `anchor.want` whose view (either direction) is clear of hills.
+ * Shot along the center line of an `anchor.kind` street: among the streets near `anchor.want`
+ * whose view (either direction) is clear of hills, the one lined best on both sides.
  */
 export function streetPose(roads: readonly Road[], anchor: StreetAnchor): Pose | null {
   const { want } = anchor;
@@ -133,14 +188,29 @@ export function streetPose(roads: readonly Road[], anchor: StreetAnchor): Pose |
     candidates.push({ road, t, d: pointSegmentDistance(want, road.a, road.b) });
   }
   candidates.sort((x, y) => x.d - y.d);
+  // The anchor's quarter only: the best-lined level street there, else the nearest clear one.
+  const near = (q: Pose): boolean =>
+    Math.hypot(q.position[0] - want.x, q.position[2] - want.z) < STREET_REACH;
+  let best: { pose: Pose; score: number } | null = null;
+  for (const { road, t } of candidates.slice(0, 8)) {
+    for (const reverse of [false, true]) {
+      const pose = streetLook(road, t, reverse);
+      if (!near(pose) || !streetViewClear(pose)) continue;
+      const score = streetFrontage(pose);
+      if (!best || score > best.score) best = { pose, score };
+    }
+  }
+  if (best) return best.pose;
   for (const { road, t } of candidates) {
     for (const reverse of [false, true]) {
       const pose = streetLook(road, t, reverse);
-      if (streetViewClear(pose)) return pose;
+      if (streetViewClear(pose, false)) return pose;
     }
   }
   return null;
 }
+
+const STREET_REACH = 380;
 
 function findStreet(): { pose: Pose; anchor: StreetAnchor } | null {
   for (const anchor of streetAnchors(LAYOUT.districts)) {
@@ -198,7 +268,39 @@ const bridge = (id: string): (typeof LAYOUT.bridges)[number] => {
   return br;
 };
 
-/** Above the traffic on a named road's centre line, 8 % along it, looking 250 m down the road. */
+/**
+ * Trees and buildings standing in the near part of the view (closer than 60 m, within 40 degrees
+ * of the line of sight): at that range a tree crown or a corner fills a quarter of the frame.
+ */
+export function nearBlockers({ position: p, target: t }: Pose): number {
+  const dx = t[0] - p[0];
+  const dz = t[2] - p[2];
+  const len = Math.hypot(dx, dz);
+  // No line of sight to judge: count it as blocked.
+  if (len < 1) return Infinity;
+  const ux = dx / len;
+  const uz = dz / len;
+  const cos = Math.cos((40 * Math.PI) / 180);
+  let n = 0;
+  for (const s of LAYOUT.slots) {
+    if (s.kind !== 'tree') continue;
+    const rx = s.x - p[0];
+    const rz = s.z - p[2];
+    const d = Math.hypot(rx, rz);
+    if (d < 60 && d > 0 && (rx * ux + rz * uz) / d > cos) n++;
+  }
+  for (let i = 1; i <= 12; i++) {
+    const f = Math.min(1, (i * 5) / len);
+    const y = p[1] + (t[1] - p[1]) * f;
+    if (buildingContaining(LAYOUT, p[0] + dx * f, y, p[2] + dz * f) !== null) n++;
+  }
+  return n;
+}
+
+/**
+ * Above the traffic on a named road's centre line, looking 250 m down the road: the first spot
+ * from 8 % along with no tree or building close in front of the lens.
+ */
 function roadPose(id: string): Pose {
   const r = LAYOUT.namedRoads.find((n) => n.id === id);
   const a = r?.points[0];
@@ -207,14 +309,81 @@ function roadPose(id: string): Pose {
   if (!a || !b || len < 1) throw new Error(`layout has no usable road ${id}`);
   const ux = (b.x - a.x) / len;
   const uz = (b.z - a.z) / len;
-  const px = a.x + ux * len * 0.08;
-  const pz = a.z + uz * len * 0.08;
-  const tx = px + ux * 250;
-  const tz = pz + uz * 250;
-  return levelFit({
-    position: [px, surfaceHeight(px, pz) + 9, pz],
-    target: [tx, surfaceHeight(tx, tz) + 3, tz],
-  });
+  const at = (f: number): Pose => {
+    const px = a.x + ux * len * f;
+    const pz = a.z + uz * len * f;
+    const tx = px + ux * 250;
+    const tz = pz + uz * 250;
+    return levelFit({
+      position: [px, surfaceHeight(px, pz) + 9, pz],
+      target: [tx, surfaceHeight(tx, tz) + 3, tz],
+    });
+  };
+  for (let f = 0.08; f < 0.4; f += 0.01) {
+    const p = at(f);
+    if (nearBlockers(p) === 0) return p;
+  }
+  return at(0.08);
+}
+
+/**
+ * Slope from the eye to the top edge of the frame when the camera looks as level as the polar
+ * limit allows, with about 3 degrees of headroom.
+ */
+const TOP_SLOPE = Math.tan(((CAMERA_FOV / 2 - 3) * Math.PI) / 180 - Math.atan(MIN_DROP));
+
+/** Line from the eye to half the hero's height passes no other building. */
+function heroInSight(
+  e: Tuple,
+  hero: { x: number; z: number; h: number; id: number | null },
+): boolean {
+  for (let i = 1; i < 40; i++) {
+    const f = i / 40;
+    const x = e[0] + (hero.x - e[0]) * f;
+    const z = e[2] + (hero.z - e[2]) * f;
+    const y = e[1] + (hero.h * 0.5 - e[1]) * f;
+    const id = buildingContaining(LAYOUT, x, y, z);
+    if (id !== null && id !== hero.id) return false;
+  }
+  return true;
+}
+
+/**
+ * A point over the Han from which the whole landmark tower fits the frame (top included) with
+ * nothing standing in front of it: the open water the tower rises behind, nearest to `near`.
+ */
+function overWaterView(id: LandmarkId, near: Vec2, eye: number, fallback: Pose): Pose {
+  const l = LAYOUT.landmarks.find((m) => m.id === id);
+  if (!l) throw new Error(`layout has no landmark ${id}`);
+  const need = (l.h - eye) / TOP_SLOPE;
+  const pts = LAYOUT.river.samples;
+  let best: { e: Tuple; d: number } | null = null;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const a = pts[i - 1] as Vec2;
+    const c = pts[i] as Vec2;
+    const b = pts[i + 1] as Vec2;
+    const tl = Math.hypot(b.x - a.x, b.z - a.z) || 1;
+    const nx = -(b.z - a.z) / tl;
+    const nz = (b.x - a.x) / tl;
+    const w = riverWidthAt(c.x);
+    for (const k of [-0.3, -0.15, 0, 0.15, 0.3]) {
+      const x = c.x + nx * w * k;
+      const z = c.z + nz * w * k;
+      const d = Math.hypot(x - l.x, z - l.z);
+      if (d < need || d > need + 700) continue;
+      const e: Tuple = [x, Math.max(eye, surfaceHeight(x, z) + 5), z];
+      const score = Math.hypot(x - near.x, z - near.z);
+      if (best && score >= best.d) continue;
+      // ?cam= poses skip the rig's safePose: the spot itself must already be a legal camera.
+      if (Math.hypot(x, z) > cameraRing() || buildingContaining(LAYOUT, x, e[1], z) !== null)
+        continue;
+      if (!heroInSight(e, { x: l.x, z: l.z, h: l.h, id: l.buildingId })) continue;
+      best = { e, d: score };
+    }
+  }
+  // A layout without such a spot keeps the old fixed framing rather than failing every preset.
+  if (!best) return fallback;
+  return pose(best.e, [l.x, best.e[1], l.z]);
 }
 
 /**
@@ -250,8 +419,13 @@ function seoulPoses(): Record<SeoulKey, Pose> {
   const sx = (seongsu.a.x + seongsu.b.x) / 2;
   const sz = (seongsu.a.z + seongsu.b.z) / 2;
   return {
-    // 22 m over the deck: lower, the deck itself fills the bottom of the frame.
-    banpo: pose([bx, banpo.deckY + 22, bz], [banpo.landA.x, 10, banpo.landA.z]),
+    // Off the south end of the bridge over the water, far enough back for the Yongsan tower's top.
+    banpo: overWaterView(
+      'yongsan-apex',
+      { x: bx, z: bz },
+      70,
+      pose([bx, banpo.deckY + 22, bz], [banpo.landA.x, 10, banpo.landA.z]),
+    ),
     // Over the river east of the island, looking down at the cluster around the gold tower.
     yeouido: pose([gold.x + 510, 260, gold.z - 120], [gold.x, 140, gold.z]),
     // Just off the summit, over Yongsan's towers toward Yeouido and the river bend.
@@ -262,7 +436,12 @@ function seoulPoses(): Record<SeoulKey, Pose> {
     teheran: roadPose('rd-teheran'),
     // Above the truss at mid-span, looking upstream to the Jamsil landmark.
     seongsu: levelFit({ position: [sx, seongsu.deckY + 20, sz], target: [blade.x, 10, blade.z] }),
-    jamsil: pose([blade.x - 450, 70, blade.z - 720], [blade.x, 50, blade.z]),
+    jamsil: overWaterView(
+      'jamsil-blade',
+      { x: blade.x - 450, z: blade.z - 720 },
+      70,
+      pose([blade.x - 450, 70, blade.z - 720], [blade.x, 50, blade.z]),
+    ),
     // From Bugak's ridge over the palace and old town to the Namsan mast.
     bugak: pose(
       [bugak.x, surfaceHeight(bugak.x, bugak.z + 10) + 40, bugak.z + 10],

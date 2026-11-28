@@ -1,11 +1,12 @@
 // Usage: npm run size (after npm run build). ART_DIRECTION 11 JS budget, counted on the initial
 // load (scripts index.html references; lazy chunks such as a ?debug-only panel are reported but
-// not counted): target 260 KB gzip (warning), ceiling 400 KB gzip (fails).
+// not counted): target 330 KB gzip (warning; docs/PERF.md "JS bundle", update), ceiling 400 KB
+// gzip (fails).
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { bundleGzip } from './bundle';
 
-const TARGET_KB = 260;
+const TARGET_KB = 330;
 const LIMIT_KB = 400;
 /**
  * The city worker (layout generator, terrain and road geometry, three-lite) is ~54 KB; with a

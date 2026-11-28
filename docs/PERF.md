@@ -492,7 +492,7 @@ inside their modules (neon's 25.7 KB includes its GLSL and catalogue).
 | + buildings, infra lazy too                                     | ~225 KB      | diminishing returns: every stage waits for its own fetch |
 
 **Decision (manager, #88).** The 400 KB ceiling covers _all_ JS (every chunk, worker chunks
-included); the 260 KB target covers the _first_ chunk. three core (173.6 KB) is the floor, so the
+included); the 260 KB target (since replaced by ~330 KB, see the update below) covers the _first_ chunk. three core (173.6 KB) is the floor, so the
 target is met by splitting, not trimming:
 
 1. lil-gui only with `?debug` (dynamic import, stub panel otherwise): now, small PR.

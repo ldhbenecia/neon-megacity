@@ -15,6 +15,16 @@ import {
 import { TEHERAN, ZONES, zoneAt, zoneBank, zoneById, zoneSide } from './districts';
 import { makeNamedRoads } from './named';
 import {
+  EXTENT_X,
+  EXTENT_Z,
+  MEGA_MIN_H,
+  RIVER_CLEARANCE,
+  SIDEWALK,
+  SKYLINE_PEAK,
+} from './constants';
+
+export { EXTENT_X, EXTENT_Z, MEGA_MIN_H, RIVER_CLEARANCE, SIDEWALK, SKYLINE_PEAK };
+import {
   MAX_DECK_THICKNESS,
   MIN_ROAD_CLEARANCE,
   bridgeDeckY,
@@ -82,12 +92,6 @@ import type {
 } from './types';
 
 /** Play area size (m). */
-export const EXTENT_X = HALF_X * 2;
-export const EXTENT_Z = HALF_Z * 2;
-/** Skyline peak: the 용산 apex, the tallest tower of the city (SEOUL.md 4.5). */
-export const SKYLINE_PEAK: Vec2 = { x: -380, z: -80 };
-/** Megatower threshold. */
-export const MEGA_MIN_H = 250;
 
 interface TowerTier {
   count: number;
@@ -141,7 +145,6 @@ const MEGA: Record<string, MegaPlan> = {
 };
 
 /** Building must keep this far from the channel edge (riverSignedDistance). */
-export const RIVER_CLEARANCE = 5;
 
 const zoneRng = (seed: number, key: string): Rng => createRng((seed ^ hashString(key)) >>> 0);
 
@@ -430,22 +433,6 @@ interface Lot {
   /** Set on palace lots: which 경복궁 building (its name and form follow). */
   palace?: PalaceBuilding;
 }
-
-export const SIDEWALK: Record<string, number> = {
-  core: 4,
-  midtown: 4,
-  sangga: 2,
-  hillside: 1,
-  apartment: 6,
-  industrial: 4,
-  megacore: 5,
-  corridor: 4,
-  oldtown: 2,
-  palace: 10,
-  brick: 2,
-  nightlife: 1.5,
-  showroom: 4,
-};
 
 const SANGGA_ALLEY = 5;
 /** Hillside lot occupancy: low slope + ridge floor (see draftsFor). */
