@@ -13,6 +13,7 @@ const SURFACES = [
   '#hud-hint',
   '.touch-pad',
   '#hud-stats',
+  '.zone-label',
 ] as const;
 
 interface Box {
@@ -41,15 +42,21 @@ async function visibleBoxes(page: Page): Promise<Box[]> {
   return page.evaluate((selectors) => {
     const out: Box[] = [];
     for (const sel of selectors) {
-      const el = document.querySelector<HTMLElement>(sel);
-      if (!el) continue;
-      const st = getComputedStyle(el);
-      if (st.display === 'none' || st.visibility === 'hidden' || Number(st.opacity) < 0.05) {
-        continue;
-      }
-      const r = el.getBoundingClientRect();
-      if (r.width < 1 || r.height < 1) continue;
-      out.push({ name: sel, x: r.left, y: r.top, w: r.width, h: r.height });
+      document.querySelectorAll<HTMLElement>(sel).forEach((el, i) => {
+        const st = getComputedStyle(el);
+        // Opacity of the element itself and of its layer (zone labels fade as a group).
+        const layer = el.parentElement ? Number(getComputedStyle(el.parentElement).opacity) : 1;
+        if (
+          st.display === 'none' ||
+          st.visibility === 'hidden' ||
+          Number(st.opacity) * layer < 0.05
+        ) {
+          return;
+        }
+        const r = el.getBoundingClientRect();
+        if (r.width < 1 || r.height < 1) return;
+        out.push({ name: i ? `${sel}[${i}]` : sel, x: r.left, y: r.top, w: r.width, h: r.height });
+      });
     }
     return out;
   }, SURFACES);
